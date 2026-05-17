@@ -1,0 +1,53 @@
+# === Internal working files (never commit) ===
+Internal Notes/
+
+# === Rust / Cargo ===
+target/
+**/*.rs.bk
+
+# === Tauri ===
+src-tauri/target/
+src-tauri/gen/
+src-tauri/WixTools/
+
+# === Node / Vite ===
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# === Environment ===
+.env
+.env.local
+.env.*.local
+
+# === IDE ===
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Logs ===
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# === Build artifacts ===
+build/
+*.tsbuildinfo
+
+# === TypeScript project-reference emit (from `tsc -b`) ===
+# tsconfig.node.json must have `composite: true` for references mode, which
+# forces emission. The source of truth is the .ts file; the emitted .js/.d.ts
+# are derivative artifacts and shouldn't be tracked.
+vite.config.js
+vite.config.d.ts
