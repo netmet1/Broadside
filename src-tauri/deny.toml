@@ -17,6 +17,9 @@ unmaintained = "workspace"
 
 [licenses]
 version = 2
+# Skip license checking for our own workspace crate (it's `publish = false`
+# and proprietary; cf. NOTICE.md). cargo-deny still checks third-party deps.
+private = { ignore = true }
 allow = [
     "MIT",
     "Apache-2.0",
