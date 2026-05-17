@@ -3,7 +3,8 @@ name = "omniterminal"
 version = "0.1.0-alpha.0"
 description = "Windows desktop SSH broadcast console"
 authors = ["netmet1"]
-license = "LicenseRef-Proprietary"
+# No `license` field by design. NOTICE.md is the authoritative statement.
+# Combined with `publish = false`, Cargo never asks for an SPDX expression.
 publish = false
 edition = "2021"
 
