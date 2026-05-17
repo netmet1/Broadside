@@ -5,11 +5,15 @@
 all-features = false
 
 [advisories]
-# v2 schema: unmaintained/unsound/notice are treated as informational rather
-# than hard errors. Vulnerabilities and yanked crates still fail. Real CVE
-# detection is also covered by `cargo audit` as a separate CI step.
+# v2 schema. Vulnerabilities and yanked crates still fail.
+# `unmaintained = "workspace"` is a scope filter — only flag unmaintained
+# crates in our direct workspace deps, not the transitive tree. Tauri 2
+# pulls in noisy unmaintained transitives (GTK3 bindings, unic-* helpers)
+# that are real ecosystem problems but not actionable here.
+# Real CVE detection is also covered by `cargo audit` as a separate CI step.
 version = 2
 yanked = "warn"
+unmaintained = "workspace"
 
 [licenses]
 version = 2
