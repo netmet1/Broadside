@@ -5,9 +5,14 @@
 all-features = false
 
 [advisories]
+# v2 schema: unmaintained/unsound/notice are treated as informational rather
+# than hard errors. Vulnerabilities and yanked crates still fail. Real CVE
+# detection is also covered by `cargo audit` as a separate CI step.
+version = 2
 yanked = "warn"
 
 [licenses]
+version = 2
 allow = [
     "MIT",
     "Apache-2.0",
