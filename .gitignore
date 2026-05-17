@@ -29,6 +29,10 @@ dist-ssr/
 *.swp
 *.swo
 
+# === Claude Code personal settings ===
+# settings.json is shared (commit it); *.local.json is per-machine (never commit)
+.claude/*.local.json
+
 # === OS ===
 .DS_Store
 Thumbs.db
