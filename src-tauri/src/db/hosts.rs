@@ -1,8 +1,22 @@
 use chrono::Utc;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{ffi, params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
+
+fn map_label_unique(label: &str, e: rusqlite::Error) -> AppError {
+    if let rusqlite::Error::SqliteFailure(ref se, Some(ref msg)) = e {
+        if se.extended_code == ffi::SQLITE_CONSTRAINT_UNIQUE
+            && msg.contains("hosts.label")
+        {
+            return AppError::InvalidInput(format!(
+                r#"A host with label "{}" already exists"#,
+                label
+            ));
+        }
+    }
+    AppError::Db(e)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Host {
@@ -99,11 +113,12 @@ pub fn get(conn: &Connection, id: i64) -> AppResult<Host> {
 pub fn create(conn: &Connection, input: HostInput) -> AppResult<Host> {
     validate(&input)?;
     let now = Utc::now().to_rfc3339();
+    let label = input.label.trim();
     conn.execute(
         "INSERT INTO hosts (label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
         params![
-            input.label.trim(),
+            label,
             input.hostname.trim(),
             input.port as i64,
             input.username.trim(),
@@ -112,7 +127,8 @@ pub fn create(conn: &Connection, input: HostInput) -> AppResult<Host> {
             input.notes,
             now,
         ],
-    )?;
+    )
+    .map_err(|e| map_label_unique(label, e))?;
     let id = conn.last_insert_rowid();
     get(conn, id)
 }
@@ -120,23 +136,26 @@ pub fn create(conn: &Connection, input: HostInput) -> AppResult<Host> {
 pub fn update(conn: &Connection, id: i64, input: HostInput) -> AppResult<Host> {
     validate(&input)?;
     let now = Utc::now().to_rfc3339();
-    let affected = conn.execute(
-        "UPDATE hosts
+    let label = input.label.trim();
+    let affected = conn
+        .execute(
+            "UPDATE hosts
             SET label = ?1, hostname = ?2, port = ?3, username = ?4, color = ?5,
                 linux_flavor = ?6, notes = ?7, updated_at = ?8
           WHERE id = ?9",
-        params![
-            input.label.trim(),
-            input.hostname.trim(),
-            input.port as i64,
-            input.username.trim(),
-            input.color,
-            input.linux_flavor,
-            input.notes,
-            now,
-            id,
-        ],
-    )?;
+            params![
+                label,
+                input.hostname.trim(),
+                input.port as i64,
+                input.username.trim(),
+                input.color,
+                input.linux_flavor,
+                input.notes,
+                now,
+                id,
+            ],
+        )
+        .map_err(|e| map_label_unique(label, e))?;
     if affected == 0 {
         return Err(AppError::HostNotFound(id));
     }
@@ -233,11 +252,32 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_label_rejected() {
+    fn duplicate_label_rejected_with_friendly_message() {
         let conn = open_in_memory().unwrap();
         create(&conn, sample()).unwrap();
         let err = create(&conn, sample()).unwrap_err();
-        assert!(matches!(err, AppError::Db(_)));
+        match err {
+            AppError::InvalidInput(msg) => {
+                assert!(msg.contains("already exists"), "got: {msg}");
+                assert!(msg.contains("web-01"), "got: {msg}");
+            }
+            other => panic!("expected InvalidInput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rename_to_existing_label_rejected_with_friendly_message() {
+        let conn = open_in_memory().unwrap();
+        let a = create(&conn, sample()).unwrap();
+        let mut other = sample();
+        other.label = "web-02".into();
+        let b = create(&conn, other).unwrap();
+        let _ = a;
+        // Try to rename b to a's label
+        let mut conflict = sample();
+        conflict.label = "web-01".into();
+        let err = update(&conn, b.id, conflict).unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(ref m) if m.contains("web-01")));
     }
 
     #[test]
