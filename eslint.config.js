@@ -25,4 +25,11 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // shadcn co-locates variant constants with components by convention.
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
+  },
 );
