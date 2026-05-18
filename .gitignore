@@ -28,6 +28,7 @@ dist-ssr/
 .idea/
 *.swp
 *.swo
+*.code-workspace
 
 # === Claude Code personal settings ===
 # settings.json is shared (commit it); *.local.json is per-machine (never commit)
@@ -44,6 +45,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
 
 # === Build artifacts ===
 build/
