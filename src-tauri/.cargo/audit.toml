@@ -1,0 +1,12 @@
+# cargo-audit configuration. Mirror of the advisories ignore list in
+# ../deny.toml — keep the two in sync (D-037).
+
+[advisories]
+ignore = [
+    # Marvin Attack timing side channel in the `rsa` crate (no fixed release
+    # exists). Pulled in by russh's `rsa` feature for RSA public-key auth.
+    # Desktop SSH client risk profile: attacker would need to time many RSA
+    # private-key operations; not applicable to occasional client-side auth
+    # signatures. Revisit at beta hardening (D-037).
+    "RUSTSEC-2023-0071",
+]
