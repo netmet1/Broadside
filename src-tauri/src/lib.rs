@@ -1,11 +1,14 @@
 // Public so the integration test crate (tests/) can drive the ssh + db
 // layers directly against docker fixtures.
+pub mod audit;
 pub mod commands;
 pub mod credentials;
+pub mod crypto;
 pub mod db;
 pub mod error;
 pub mod guard;
 mod licensing;
+pub mod session;
 pub mod ssh;
 
 use tauri::Manager;
@@ -20,12 +23,21 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle();
             let db_state = db::init(&handle)?;
-            app.manage(db_state);
 
             let app_data_dir = handle
                 .path()
                 .app_data_dir()
                 .map_err(|e| format!("app_data_dir: {e}"))?;
+
+            // Rolling audit log (D-011): on by default, persisted toggle.
+            let audit_enabled = {
+                let conn = db_state.0.lock().expect("fresh db mutex");
+                db::settings::get_bool(&conn, "audit_enabled", true)?
+            };
+            app.manage(audit::AuditState::new(app_data_dir.clone(), audit_enabled));
+
+            app.manage(db_state);
+
             let cred_state = credentials::CredentialState::new(app_data_dir);
             app.manage(cred_state);
 
@@ -55,6 +67,12 @@ pub fn run() {
             commands::pty::pty_write,
             commands::pty::pty_resize,
             commands::pty::pty_close,
+            commands::session::save_session,
+            commands::session::session_is_encrypted,
+            commands::session::load_session,
+            commands::audit::audit_info,
+            commands::audit::audit_tail,
+            commands::audit::set_audit_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

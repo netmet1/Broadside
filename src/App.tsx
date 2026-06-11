@@ -4,6 +4,7 @@ import { AppShell, type Page } from "@/components/AppShell";
 import { HostsPage } from "@/pages/HostsPage";
 import { BroadcastPage } from "@/pages/BroadcastPage";
 import { TerminalsPage, type TermSession } from "@/pages/TerminalsPage";
+import { LogsPage } from "@/pages/LogsPage";
 import { UnlockDialog } from "@/components/UnlockDialog";
 import { Toaster } from "@/components/ui/sonner";
 import {
@@ -69,6 +70,10 @@ function App() {
           onActivate={setActiveSessionId}
           onCloseSession={closeSession}
         />
+      </div>
+      {/* Logs stay mounted so a loaded session survives navigation. */}
+      <div className={page === "logs" ? "block h-full" : "hidden"}>
+        <LogsPage visible={page === "logs"} />
       </div>
       <UnlockDialog
         open={unlockOpen}

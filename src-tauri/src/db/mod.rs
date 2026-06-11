@@ -7,6 +7,7 @@ use crate::error::{AppError, AppResult};
 
 pub mod host_keys;
 pub mod hosts;
+pub mod settings;
 
 pub struct DbState(pub Mutex<Connection>);
 
@@ -63,6 +64,11 @@ const MIGRATIONS: &[&str] = &[
     // 4: sudo password presence flag (PR#4, D-026). The secret itself lives
     // in the credential store; this flag only drives UI affordances.
     "ALTER TABLE hosts ADD COLUMN has_sudo_password INTEGER NOT NULL DEFAULT 0;",
+    // 5: app settings key-value store (PR#7; first consumer: audit_enabled)
+    "CREATE TABLE IF NOT EXISTS settings (
+        key    TEXT PRIMARY KEY,
+        value  TEXT NOT NULL
+    );",
 ];
 
 fn bootstrap(conn: &Connection) -> AppResult<()> {
