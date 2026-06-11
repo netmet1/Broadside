@@ -30,6 +30,28 @@ pub fn open_in_memory() -> AppResult<Connection> {
 
 fn bootstrap(conn: &Connection) -> AppResult<()> {
     conn.execute_batch(SCHEMA)?;
+    add_column_if_missing(conn, "hosts", "auth_method", "TEXT")?;
+    add_column_if_missing(conn, "hosts", "key_path", "TEXT")?;
+    Ok(())
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    type_def: &str,
+) -> AppResult<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let exists = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(Result::ok)
+        .any(|name| name == column);
+    if !exists {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {type_def}"),
+            [],
+        )?;
+    }
     Ok(())
 }
 

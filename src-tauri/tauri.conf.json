@@ -14,7 +14,9 @@
       {
         "title": "OmniTerminal",
         "width": 1280,
-        "height": 800
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 700
       }
     ],
     "security": {

@@ -11,6 +11,8 @@ export type Host = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  auth_method: string | null;
+  key_path: string | null;
 };
 
 export type HostInput = {
@@ -23,8 +25,20 @@ export type HostInput = {
   notes: string | null;
 };
 
+export type AuthInput =
+  | { kind: "password"; value: string }
+  | { kind: "key"; path: string; passphrase: string | null };
+
 export type AppErrorPayload = {
-  kind: "db" | "io" | "host_not_found" | "invalid_input" | "state";
+  kind:
+    | "db"
+    | "io"
+    | "host_not_found"
+    | "invalid_input"
+    | "state"
+    | "credentials_locked"
+    | "credentials"
+    | "serde";
   message: string;
 };
 
@@ -46,6 +60,29 @@ export function updateHost(id: number, input: HostInput): Promise<Host> {
 
 export function deleteHost(id: number): Promise<void> {
   return invoke<void>("delete_host", { id });
+}
+
+export function setHostCredentials(
+  host_id: number,
+  auth: AuthInput,
+): Promise<void> {
+  return invoke<void>("set_host_credentials", { hostId: host_id, auth });
+}
+
+export function clearHostCredentials(host_id: number): Promise<void> {
+  return invoke<void>("clear_host_credentials", { hostId: host_id });
+}
+
+export function isCredentialsUnlocked(): Promise<boolean> {
+  return invoke<boolean>("is_credentials_unlocked");
+}
+
+export function requiresMasterPassword(): Promise<boolean> {
+  return invoke<boolean>("requires_master_password");
+}
+
+export function unlockCredentials(masterPassword: string): Promise<boolean> {
+  return invoke<boolean>("unlock_credentials", { masterPassword });
 }
 
 export function errorMessage(e: unknown): string {
