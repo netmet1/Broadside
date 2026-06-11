@@ -17,6 +17,7 @@ import {
   type UnknownKeyEntry,
 } from "@/components/BatchTofuDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
+import { SearchBar, type SearchMode } from "@/components/SearchBar";
 import {
   type ExecResult,
   type GuardHit,
@@ -27,10 +28,23 @@ import {
 } from "@/lib/tauri/broadcast";
 import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
 import type { PresentedKey } from "@/lib/tauri/ssh";
+import {
+  buildMatcher,
+  isMatcher,
+  matchLine,
+  type LineMatch,
+  type Matcher,
+  type SearchOptions,
+} from "@/lib/search";
 
 const DEFAULT_TIMEOUT_SECS = 30;
 
 type Block = HostExecReport & { collapsed: boolean };
+
+type StreamRef = { hostId: number; stream: "stdout" | "stderr" };
+
+/** One navigable find hit (a single match occurrence). */
+type FindHit = StreamRef & { line: number; start: number; end: number };
 
 export function BroadcastPage() {
   const [hosts, setHosts] = useState<Host[]>([]);
@@ -49,6 +63,14 @@ export function BroadcastPage() {
     stored: string;
     presented: PresentedKey;
   } | null>(null);
+
+  // Search (D-015): Ctrl+F find, Ctrl+Shift+F filter.
+  const [searchMode, setSearchMode] = useState<SearchMode | null>(null);
+  const [searchPattern, setSearchPattern] = useState("");
+  const [searchOptions, setSearchOptions] = useState<SearchOptions | null>(
+    null,
+  );
+  const [activeHitIdx, setActiveHitIdx] = useState(0);
 
   const runIdRef = useRef<string>("");
   const lastCommandRef = useRef<string>("");
@@ -91,8 +113,103 @@ export function BroadcastPage() {
   }, []);
 
   useEffect(() => {
-    outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
-  }, [blocks]);
+    // Don't yank the scroll position around while the user is searching.
+    if (searchMode === null) {
+      outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
+    }
+  }, [blocks, searchMode]);
+
+  // Keyboard entry points (D-015).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && (e.key === "f" || e.key === "F")) {
+        e.preventDefault();
+        setSearchMode(e.shiftKey ? "filter" : "find");
+        setActiveHitIdx(0);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const closeSearch = useCallback(() => {
+    setSearchMode(null);
+    setSearchPattern("");
+    setSearchOptions(null);
+    setActiveHitIdx(0);
+  }, []);
+
+  const matcherOrError = useMemo(
+    () =>
+      searchMode !== null && searchOptions !== null
+        ? buildMatcher(searchPattern, searchOptions)
+        : null,
+    [searchMode, searchPattern, searchOptions],
+  );
+  const matcher = isMatcher(matcherOrError) ? matcherOrError : null;
+
+  /** Per-stream line matches for every completed block, in display order. */
+  const scan = useMemo(() => {
+    if (!matcher) return null;
+    const byRef = new Map<string, Map<number, LineMatch[]>>();
+    const hits: FindHit[] = [];
+    const hostsWithMatches = new Set<number>();
+    let total = 0;
+    for (const block of blocks) {
+      if (block.result.status !== "completed") continue;
+      for (const stream of ["stdout", "stderr"] as const) {
+        const text = block.result[stream];
+        if (!text) continue;
+        const lines = text.split("\n");
+        const lineMap = new Map<number, LineMatch[]>();
+        for (let i = 0; i < lines.length; i++) {
+          const matches = matchLine(matcher, lines[i]);
+          if (matches.length > 0) {
+            lineMap.set(i, matches);
+            hostsWithMatches.add(block.host_id);
+            total += matches.length;
+            for (const m of matches) {
+              hits.push({ hostId: block.host_id, stream, line: i, ...m });
+            }
+          }
+        }
+        if (lineMap.size > 0) {
+          byRef.set(`${block.host_id}:${stream}`, lineMap);
+        }
+      }
+    }
+    return { byRef, hits, total, hostCount: hostsWithMatches.size };
+  }, [matcher, blocks]);
+
+  const navigate = useCallback(
+    (direction: 1 | -1) => {
+      if (!scan || scan.hits.length === 0) return;
+      setActiveHitIdx(
+        (idx) => (idx + direction + scan.hits.length) % scan.hits.length,
+      );
+    },
+    [scan],
+  );
+
+  useEffect(() => {
+    setActiveHitIdx(0);
+  }, [searchPattern, searchOptions]);
+
+  const searchStatus = (() => {
+    if (matcherOrError && "error" in matcherOrError) {
+      return { text: matcherOrError.error, tone: "error" as const };
+    }
+    if (!scan || searchPattern === "") return { text: "", tone: "normal" as const };
+    if (scan.total === 0) return { text: "No matches", tone: "normal" as const };
+    const base = `${scan.total} ${scan.total === 1 ? "match" : "matches"} in ${scan.hostCount} ${scan.hostCount === 1 ? "host" : "hosts"}`;
+    return {
+      text:
+        searchMode === "find"
+          ? `${scan.hits.length === 0 ? 0 : activeHitIdx + 1}/${scan.hits.length} · ${base}`
+          : base,
+      tone: "normal" as const,
+    };
+  })();
 
   const allSelected = hosts.length > 0 && selected.size === hosts.length;
   const toggleAll = () => {
@@ -199,6 +316,13 @@ export function BroadcastPage() {
     .map((id) => hostsById.get(id)?.label ?? `#${id}`)
     .join(", ");
 
+  const activeHit =
+    searchMode === "find" && scan && scan.hits.length > 0
+      ? scan.hits[Math.min(activeHitIdx, scan.hits.length - 1)]
+      : null;
+
+  const filterActive = searchMode === "filter" && matcher !== null && searchPattern !== "";
+
   return (
     <div className="flex h-full min-h-screen">
       {/* Host selection rail */}
@@ -246,6 +370,21 @@ export function BroadcastPage() {
 
       {/* Output + composer */}
       <div className="flex min-w-0 flex-1 flex-col">
+        {searchMode !== null && (
+          <SearchBar
+            modes={["find", "filter"]}
+            mode={searchMode}
+            onModeChange={setSearchMode}
+            status={searchStatus.text}
+            statusTone={searchStatus.tone}
+            onQueryChange={(pattern, options) => {
+              setSearchPattern(pattern);
+              setSearchOptions(options);
+            }}
+            onNavigate={navigate}
+            onClose={closeSearch}
+          />
+        )}
         <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
           {blocks.length === 0 && pendingHosts.size === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">
@@ -257,6 +396,15 @@ export function BroadcastPage() {
               <OutputBlock
                 key={block.host_id}
                 block={block}
+                findData={
+                  searchMode === "find" && scan
+                    ? {
+                        byRef: scan.byRef,
+                        activeHit,
+                      }
+                    : null
+                }
+                filterMatcher={filterActive ? matcher : null}
                 onToggle={() => toggleCollapsed(block.host_id)}
                 onReviewMismatch={(stored, presented) => {
                   const host = hostsById.get(block.host_id);
@@ -376,12 +524,21 @@ function statusSummary(result: ExecResult): {
   }
 }
 
+type FindData = {
+  byRef: Map<string, Map<number, LineMatch[]>>;
+  activeHit: FindHit | null;
+};
+
 function OutputBlock({
   block,
+  findData,
+  filterMatcher,
   onToggle,
   onReviewMismatch,
 }: {
   block: Block;
+  findData: FindData | null;
+  filterMatcher: Matcher | null;
   onToggle: () => void;
   onReviewMismatch: (stored: string, presented: PresentedKey) => void;
 }) {
@@ -394,62 +551,168 @@ function OutputBlock({
         ? "text-amber-400"
         : "text-red-400";
 
+  // Filter mode: a completed block with zero matching lines collapses to a
+  // summary row (D-015).
+  if (filterMatcher && result.status === "completed") {
+    const matchingLines = filteredLines(result, filterMatcher);
+    if (matchingLines.length === 0) {
+      return (
+        <div className="flex items-center gap-2 rounded-md border border-border/30 px-3 py-1.5 text-xs text-muted-foreground">
+          <span
+            className="h-2 w-2 shrink-0 rounded-full opacity-50"
+            style={{ backgroundColor: block.color }}
+          />
+          {block.label} — 0 matches
+        </div>
+      );
+    }
+    return (
+      <div className="overflow-hidden rounded-md border border-border/40">
+        <BlockHeader
+          block={block}
+          summaryText={summary.text}
+          toneClass={toneClass}
+          onToggle={onToggle}
+        />
+        {!block.collapsed && (
+          <div className="px-3 pb-3 font-mono text-xs">
+            {matchingLines.map((l, i) => (
+              <pre
+                key={i}
+                className={`whitespace-pre-wrap break-words ${l.stream === "stderr" ? "text-red-400/90" : ""}`}
+              >
+                <HighlightedLine
+                  text={l.text}
+                  matches={l.matches}
+                  activeRange={null}
+                />
+              </pre>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-hidden rounded-md border border-border/40">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent/40"
-      >
-        {block.collapsed ? (
-          <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
-        <span
-          className="h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: block.color }}
-        />
-        <span className="font-medium">{block.label}</span>
-        <span className={`ml-auto font-mono text-xs ${toneClass}`}>
-          {summary.text}
-        </span>
-      </button>
+      <BlockHeader
+        block={block}
+        summaryText={summary.text}
+        toneClass={toneClass}
+        onToggle={onToggle}
+      />
       {!block.collapsed && (
         <div className="px-3 pb-3">
-          <BlockBody result={result} onReviewMismatch={onReviewMismatch} />
+          <BlockBody
+            result={result}
+            hostId={block.host_id}
+            findData={findData}
+            onReviewMismatch={onReviewMismatch}
+          />
         </div>
       )}
     </div>
   );
 }
 
+function filteredLines(
+  result: Extract<ExecResult, { status: "completed" }>,
+  matcher: Matcher,
+): { stream: "stdout" | "stderr"; text: string; matches: LineMatch[] }[] {
+  const out: { stream: "stdout" | "stderr"; text: string; matches: LineMatch[] }[] =
+    [];
+  for (const stream of ["stdout", "stderr"] as const) {
+    const text = result[stream];
+    if (!text) continue;
+    for (const line of text.split("\n")) {
+      const matches = matchLine(matcher, line);
+      if (matches.length > 0) out.push({ stream, text: line, matches });
+    }
+  }
+  return out;
+}
+
+function BlockHeader({
+  block,
+  summaryText,
+  toneClass,
+  onToggle,
+}: {
+  block: Block;
+  summaryText: string;
+  toneClass: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent/40"
+    >
+      {block.collapsed ? (
+        <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      ) : (
+        <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      )}
+      <span
+        className="h-2.5 w-2.5 shrink-0 rounded-full"
+        style={{ backgroundColor: block.color }}
+      />
+      <span className="font-medium">{block.label}</span>
+      <span className={`ml-auto font-mono text-xs ${toneClass}`}>
+        {summaryText}
+      </span>
+    </button>
+  );
+}
+
 function BlockBody({
   result,
+  hostId,
+  findData,
   onReviewMismatch,
 }: {
   result: ExecResult;
+  hostId: number;
+  findData: FindData | null;
   onReviewMismatch: (stored: string, presented: PresentedKey) => void;
 }) {
   switch (result.status) {
     case "completed":
       return (
         <div className="space-y-2 font-mono text-xs">
-          {result.stdout && (
-            <pre className="whitespace-pre-wrap break-words">{result.stdout}</pre>
-          )}
-          {result.stderr && (
-            <pre className="whitespace-pre-wrap break-words text-red-400/90">
-              {result.stderr}
-            </pre>
-          )}
+          {(["stdout", "stderr"] as const).map((stream) => {
+            const text = result[stream];
+            if (!text) return null;
+            const lineMap = findData?.byRef.get(`${hostId}:${stream}`);
+            return (
+              <pre
+                key={stream}
+                className={`whitespace-pre-wrap break-words ${stream === "stderr" ? "text-red-400/90" : ""}`}
+              >
+                {lineMap ? (
+                  <HighlightedText
+                    text={text}
+                    lineMap={lineMap}
+                    activeHit={
+                      findData?.activeHit?.hostId === hostId &&
+                      findData.activeHit.stream === stream
+                        ? findData.activeHit
+                        : null
+                    }
+                  />
+                ) : (
+                  text
+                )}
+              </pre>
+            );
+          })}
           {!result.stdout && !result.stderr && (
             <p className="text-muted-foreground">(no output)</p>
           )}
           {result.timed_out && (
-            <p className="text-red-400">
-              [TIMEOUT — partial output above]
-            </p>
+            <p className="text-red-400">[TIMEOUT — partial output above]</p>
           )}
         </div>
       );
@@ -489,4 +752,87 @@ function BlockBody({
         </p>
       );
   }
+}
+
+/** Whole multi-line text with `<mark>` highlights from a line→matches map. */
+function HighlightedText({
+  text,
+  lineMap,
+  activeHit,
+}: {
+  text: string;
+  lineMap: Map<number, LineMatch[]>;
+  activeHit: FindHit | null;
+}) {
+  const lines = text.split("\n");
+  return (
+    <>
+      {lines.map((line, i) => {
+        const matches = lineMap.get(i);
+        const suffix = i < lines.length - 1 ? "\n" : "";
+        if (!matches) {
+          return (
+            <span key={i}>
+              {line}
+              {suffix}
+            </span>
+          );
+        }
+        return (
+          <span key={i}>
+            <HighlightedLine
+              text={line}
+              matches={matches}
+              activeRange={
+                activeHit && activeHit.line === i
+                  ? { start: activeHit.start, end: activeHit.end }
+                  : null
+              }
+            />
+            {suffix}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+function HighlightedLine({
+  text,
+  matches,
+  activeRange,
+}: {
+  text: string;
+  matches: LineMatch[];
+  activeRange: { start: number; end: number } | null;
+}) {
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  matches.forEach((m, idx) => {
+    if (m.start > cursor) parts.push(text.slice(cursor, m.start));
+    const isActive =
+      activeRange !== null &&
+      activeRange.start === m.start &&
+      activeRange.end === m.end;
+    parts.push(
+      <mark
+        key={idx}
+        ref={
+          isActive
+            ? (el) => el?.scrollIntoView({ block: "center" })
+            : undefined
+        }
+        className={
+          isActive
+            ? "rounded-sm bg-amber-400 text-black"
+            : "rounded-sm bg-amber-400/30 text-inherit"
+        }
+      >
+        {text.slice(m.start, m.end)}
+      </mark>,
+    );
+    cursor = m.end;
+  });
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return <>{parts}</>;
 }
