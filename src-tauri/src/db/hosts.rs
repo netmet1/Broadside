@@ -30,6 +30,8 @@ pub struct Host {
     pub notes: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub auth_method: Option<String>,
+    pub key_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -55,8 +57,13 @@ fn from_row(row: &Row) -> rusqlite::Result<Host> {
         notes: row.get(7)?,
         created_at: row.get(8)?,
         updated_at: row.get(9)?,
+        auth_method: row.get(10)?,
+        key_path: row.get(11)?,
     })
 }
+
+const SELECT_COLS: &str =
+    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path";
 
 fn validate(input: &HostInput) -> AppResult<()> {
     if input.label.trim().is_empty() {
@@ -88,10 +95,10 @@ fn is_hex_color(s: &str) -> bool {
 }
 
 pub fn list_all(conn: &Connection) -> AppResult<Vec<Host>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at
-         FROM hosts ORDER BY label COLLATE NOCASE ASC",
-    )?;
+    let sql = format!(
+        "SELECT {SELECT_COLS} FROM hosts ORDER BY label COLLATE NOCASE ASC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], from_row)?;
     let mut out = Vec::new();
     for r in rows {
@@ -101,13 +108,28 @@ pub fn list_all(conn: &Connection) -> AppResult<Vec<Host>> {
 }
 
 pub fn get(conn: &Connection, id: i64) -> AppResult<Host> {
-    let mut stmt = conn.prepare(
-        "SELECT id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at
-         FROM hosts WHERE id = ?1",
-    )?;
+    let sql = format!("SELECT {SELECT_COLS} FROM hosts WHERE id = ?1");
+    let mut stmt = conn.prepare(&sql)?;
     stmt.query_row(params![id], from_row)
         .optional()?
         .ok_or(AppError::HostNotFound(id))
+}
+
+pub fn set_auth_method(
+    conn: &Connection,
+    id: i64,
+    auth_method: Option<&str>,
+    key_path: Option<&str>,
+) -> AppResult<()> {
+    let now = Utc::now().to_rfc3339();
+    let affected = conn.execute(
+        "UPDATE hosts SET auth_method = ?1, key_path = ?2, updated_at = ?3 WHERE id = ?4",
+        params![auth_method, key_path, now, id],
+    )?;
+    if affected == 0 {
+        return Err(AppError::HostNotFound(id));
+    }
+    Ok(())
 }
 
 pub fn create(conn: &Connection, input: HostInput) -> AppResult<Host> {
