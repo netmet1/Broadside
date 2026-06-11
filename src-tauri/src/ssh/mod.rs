@@ -8,6 +8,8 @@ use serde::Serialize;
 
 use crate::error::{AppError, AppResult};
 
+pub mod exec;
+
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -40,6 +42,26 @@ pub enum ProbeResult {
     NoCredentials,
 }
 
+/// Connection attempt outcomes short of an authenticated session. Shared by
+/// probe (test connection) and exec (broadcast) so both report key/auth
+/// trouble identically.
+#[derive(Debug, Clone)]
+pub enum ConnectFailure {
+    UnknownKey {
+        key: PresentedKey,
+    },
+    KeyMismatch {
+        stored_fingerprint: String,
+        presented: PresentedKey,
+    },
+    AuthFailed {
+        message: String,
+    },
+    Unreachable {
+        message: String,
+    },
+}
+
 pub enum AuthMethod {
     Password(String),
     Key {
@@ -48,7 +70,7 @@ pub enum AuthMethod {
     },
 }
 
-struct TofuHandler {
+pub(crate) struct TofuHandler {
     /// Fingerprints we already trust for this endpoint (one per key type).
     trusted_fingerprints: Vec<String>,
     /// Records what the server actually presented.
@@ -65,9 +87,7 @@ impl client::Handler for TofuHandler {
         let fingerprint = server_public_key.fingerprint(HashAlg::Sha256).to_string();
         let presented = PresentedKey {
             key_type: server_public_key.algorithm().to_string(),
-            public_key: server_public_key
-                .to_openssh()
-                .unwrap_or_default(),
+            public_key: server_public_key.to_openssh().unwrap_or_default(),
             fingerprint_sha256: fingerprint.clone(),
         };
         *self.seen.lock().unwrap() = Some(presented);
@@ -75,8 +95,86 @@ impl client::Handler for TofuHandler {
     }
 }
 
+/// TOFU-verified connect + authenticate. `Ok(Err(_))` are expected outcomes
+/// (unknown key, wrong password, host down); `Err(_)` are our own failures.
+pub(crate) async fn connect_and_auth(
+    hostname: &str,
+    port: u16,
+    username: &str,
+    trusted_fingerprints: Vec<String>,
+    auth: AuthMethod,
+) -> AppResult<Result<Handle<TofuHandler>, ConnectFailure>> {
+    let seen: Arc<Mutex<Option<PresentedKey>>> = Arc::new(Mutex::new(None));
+    let handler = TofuHandler {
+        trusted_fingerprints: trusted_fingerprints.clone(),
+        seen: seen.clone(),
+    };
+    let config = Arc::new(client::Config::default());
+
+    let connect = client::connect(config, (hostname, port), handler);
+    let mut handle = match tokio::time::timeout(CONNECT_TIMEOUT, connect).await {
+        Err(_) => {
+            return Ok(Err(ConnectFailure::Unreachable {
+                message: format!("connection timed out after {}s", CONNECT_TIMEOUT.as_secs()),
+            }))
+        }
+        Ok(Err(russh::Error::UnknownKey)) => {
+            // Handler rejected the key; classify from what it recorded.
+            let presented = seen.lock().unwrap().clone();
+            return Ok(Err(match presented {
+                Some(p) if trusted_fingerprints.is_empty() => {
+                    ConnectFailure::UnknownKey { key: p }
+                }
+                Some(p) => ConnectFailure::KeyMismatch {
+                    stored_fingerprint: trusted_fingerprints.join(", "),
+                    presented: p,
+                },
+                // Rejected before the handler saw a key — shouldn't happen.
+                None => ConnectFailure::Unreachable {
+                    message: "server key rejected before capture".into(),
+                },
+            }));
+        }
+        Ok(Err(e)) => {
+            return Ok(Err(ConnectFailure::Unreachable {
+                message: e.to_string(),
+            }))
+        }
+        Ok(Ok(h)) => h,
+    };
+
+    let auth_result =
+        tokio::time::timeout(AUTH_TIMEOUT, authenticate(&mut handle, username, auth)).await;
+
+    match auth_result {
+        Err(_) => {
+            let _ = handle
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
+            Ok(Err(ConnectFailure::AuthFailed {
+                message: format!("authentication timed out after {}s", AUTH_TIMEOUT.as_secs()),
+            }))
+        }
+        Ok(Err(e)) => {
+            let _ = handle
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
+            Err(e)
+        }
+        Ok(Ok(AuthResult::Success)) => Ok(Ok(handle)),
+        Ok(Ok(AuthResult::Failure { .. })) => {
+            let _ = handle
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
+            Ok(Err(ConnectFailure::AuthFailed {
+                message: "server rejected the credentials".into(),
+            }))
+        }
+    }
+}
+
 /// Connects to hostname:port, runs TOFU key verification against
-/// `trusted_fingerprint`, and (when the key checks out) attempts auth.
+/// `trusted_fingerprints`, and (when the key checks out) attempts auth.
 pub async fn probe(
     hostname: &str,
     port: u16,
@@ -85,69 +183,34 @@ pub async fn probe(
     auth: AuthMethod,
 ) -> AppResult<ProbeResult> {
     let started = Instant::now();
-    let seen: Arc<Mutex<Option<PresentedKey>>> = Arc::new(Mutex::new(None));
-    let handler = TofuHandler {
-        trusted_fingerprints: trusted_fingerprints.clone(),
-        seen: seen.clone(),
-    };
-    let config = Arc::new(client::Config::default());
-
-    let connect =
-        client::connect(config, (hostname, port), handler);
-    let mut handle = match tokio::time::timeout(CONNECT_TIMEOUT, connect).await {
-        Err(_) => {
-            return Ok(ProbeResult::Unreachable {
-                message: format!("connection timed out after {}s", CONNECT_TIMEOUT.as_secs()),
+    match connect_and_auth(hostname, port, username, trusted_fingerprints, auth).await? {
+        Ok(handle) => {
+            let _ = handle
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
+            Ok(ProbeResult::Ok {
+                latency_ms: started.elapsed().as_millis() as u64,
             })
         }
-        Ok(Err(russh::Error::UnknownKey)) => {
-            // Handler rejected the key; classify from what it recorded.
-            let presented = seen.lock().unwrap().clone();
-            return Ok(match presented {
-                Some(p) if trusted_fingerprints.is_empty() => {
-                    ProbeResult::UnknownKey { key: p }
-                }
-                Some(p) => ProbeResult::KeyMismatch {
-                    stored_fingerprint: trusted_fingerprints.join(", "),
-                    presented: p,
-                },
-                // Rejected before the handler saw a key — shouldn't happen.
-                None => ProbeResult::Unreachable {
-                    message: "server key rejected before capture".into(),
-                },
-            });
+        Err(failure) => Ok(failure.into()),
+    }
+}
+
+impl From<ConnectFailure> for ProbeResult {
+    fn from(f: ConnectFailure) -> Self {
+        match f {
+            ConnectFailure::UnknownKey { key } => ProbeResult::UnknownKey { key },
+            ConnectFailure::KeyMismatch {
+                stored_fingerprint,
+                presented,
+            } => ProbeResult::KeyMismatch {
+                stored_fingerprint,
+                presented,
+            },
+            ConnectFailure::AuthFailed { message } => ProbeResult::AuthFailed { message },
+            ConnectFailure::Unreachable { message } => ProbeResult::Unreachable { message },
         }
-        Ok(Err(e)) => {
-            return Ok(ProbeResult::Unreachable {
-                message: e.to_string(),
-            })
-        }
-        Ok(Ok(h)) => h,
-    };
-
-    let auth_result = tokio::time::timeout(
-        AUTH_TIMEOUT,
-        authenticate(&mut handle, username, auth),
-    )
-    .await;
-
-    let outcome = match auth_result {
-        Err(_) => Ok(ProbeResult::AuthFailed {
-            message: format!("authentication timed out after {}s", AUTH_TIMEOUT.as_secs()),
-        }),
-        Ok(Err(e)) => Err(e),
-        Ok(Ok(AuthResult::Success)) => Ok(ProbeResult::Ok {
-            latency_ms: started.elapsed().as_millis() as u64,
-        }),
-        Ok(Ok(AuthResult::Failure { .. })) => Ok(ProbeResult::AuthFailed {
-            message: "server rejected the credentials".into(),
-        }),
-    };
-
-    let _ = handle
-        .disconnect(russh::Disconnect::ByApplication, "", "en")
-        .await;
-    outcome
+    }
 }
 
 async fn authenticate(

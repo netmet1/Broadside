@@ -60,6 +60,9 @@ const MIGRATIONS: &[&str] = &[
         last_seen           TEXT NOT NULL,
         UNIQUE (hostname, port, key_type)
     );",
+    // 4: sudo password presence flag (PR#4, D-026). The secret itself lives
+    // in the credential store; this flag only drives UI affordances.
+    "ALTER TABLE hosts ADD COLUMN has_sudo_password INTEGER NOT NULL DEFAULT 0;",
 ];
 
 fn bootstrap(conn: &Connection) -> AppResult<()> {

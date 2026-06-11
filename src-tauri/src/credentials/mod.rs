@@ -72,7 +72,9 @@ impl CredentialState {
     pub fn apply_auth(&self, host_id: i64, auth: &AuthInput) -> AppResult<()> {
         let mut backend = self.inner.lock().unwrap();
         ensure_unlocked(&backend)?;
-        clear_locked(&mut backend, host_id)?;
+        // Clear only the auth secrets — the sudo password (D-026) survives
+        // auth-method changes and is managed via set_sudo_password.
+        clear_auth_locked(&mut backend, host_id)?;
         match auth {
             AuthInput::Password { value } => set_locked(&mut backend, &password_key(host_id), value)?,
             AuthInput::Key {
@@ -90,6 +92,27 @@ impl CredentialState {
 
     pub fn get_passphrase(&self, host_id: i64) -> AppResult<Option<String>> {
         self.get(&passphrase_key(host_id))
+    }
+
+    pub fn get_sudo_password(&self, host_id: i64) -> AppResult<Option<String>> {
+        self.get(&sudo_password_key(host_id))
+    }
+
+    /// Sets or clears the per-host sudo password (D-026). Independent of
+    /// `apply_auth` because the sudo password outlives auth-method changes.
+    pub fn set_sudo_password(&self, host_id: i64, value: Option<&str>) -> AppResult<()> {
+        let mut backend = self.inner.lock().unwrap();
+        ensure_unlocked(&backend)?;
+        match value {
+            Some(v) => set_locked(&mut backend, &sudo_password_key(host_id), v),
+            None => match &mut *backend {
+                Backend::Keyring => {
+                    let _ = keyring_store::delete(&sudo_password_key(host_id));
+                    Ok(())
+                }
+                Backend::File(fs) => fs.delete_prefix(&sudo_password_key(host_id)),
+            },
+        }
     }
 
     fn get(&self, key: &str) -> AppResult<Option<String>> {
@@ -128,9 +151,24 @@ fn clear_locked(backend: &mut Backend, host_id: i64) -> AppResult<()> {
         Backend::Keyring => {
             let _ = keyring_store::delete(&password_key(host_id));
             let _ = keyring_store::delete(&passphrase_key(host_id));
+            let _ = keyring_store::delete(&sudo_password_key(host_id));
             Ok(())
         }
         Backend::File(fs) => fs.delete_prefix(&host_prefix(host_id)),
+    }
+}
+
+fn clear_auth_locked(backend: &mut Backend, host_id: i64) -> AppResult<()> {
+    match backend {
+        Backend::Keyring => {
+            let _ = keyring_store::delete(&password_key(host_id));
+            let _ = keyring_store::delete(&passphrase_key(host_id));
+            Ok(())
+        }
+        Backend::File(fs) => {
+            fs.delete_prefix(&password_key(host_id))?;
+            fs.delete_prefix(&passphrase_key(host_id))
+        }
     }
 }
 
@@ -144,4 +182,8 @@ fn password_key(host_id: i64) -> String {
 
 fn passphrase_key(host_id: i64) -> String {
     format!("host:{host_id}:passphrase")
+}
+
+fn sudo_password_key(host_id: i64) -> String {
+    format!("host:{host_id}:sudo_password")
 }

@@ -124,6 +124,52 @@ fn unlock_persists_across_reopens() {
 }
 
 #[test]
+fn sudo_password_round_trip() {
+    let (s, _d) = make_file_store();
+    s.unlock("master").unwrap();
+    s.set_sudo_password(3, Some("sudopw")).unwrap();
+    assert_eq!(s.get_sudo_password(3).unwrap().as_deref(), Some("sudopw"));
+    s.set_sudo_password(3, None).unwrap();
+    assert_eq!(s.get_sudo_password(3).unwrap(), None);
+}
+
+#[test]
+fn sudo_password_survives_auth_change() {
+    let (s, _d) = make_file_store();
+    s.unlock("master").unwrap();
+    s.set_sudo_password(8, Some("sudopw")).unwrap();
+    s.apply_auth(
+        8,
+        &AuthInput::Password {
+            value: "loginpw".into(),
+        },
+    )
+    .unwrap();
+    s.apply_auth(
+        8,
+        &AuthInput::Key {
+            path: "/k".into(),
+            passphrase: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        s.get_sudo_password(8).unwrap().as_deref(),
+        Some("sudopw"),
+        "sudo password must survive auth-method changes (D-026)"
+    );
+}
+
+#[test]
+fn clear_host_removes_sudo_password() {
+    let (s, _d) = make_file_store();
+    s.unlock("master").unwrap();
+    s.set_sudo_password(9, Some("sudopw")).unwrap();
+    s.clear_host(9).unwrap();
+    assert_eq!(s.get_sudo_password(9).unwrap(), None);
+}
+
+#[test]
 fn switching_auth_method_clears_old_secret() {
     let (s, _d) = make_file_store();
     s.unlock("master").unwrap();

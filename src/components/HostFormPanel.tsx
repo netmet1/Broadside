@@ -25,6 +25,8 @@ import {
   createHost,
   errorMessage,
   setHostCredentials,
+  setSudoPassword,
+  setSudoSameAsLogin,
   updateHost,
 } from "@/lib/tauri/hosts";
 import { PALETTE } from "@/lib/palette";
@@ -92,6 +94,8 @@ const formSchema = z.object({
   password: z.string(),
   keyPath: z.string(),
   keyPassphrase: z.string(),
+  sudoPassword: z.string(),
+  sudoSameAsLogin: z.boolean(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -109,6 +113,8 @@ function emptyValues(defaultColor: string): FormValues {
     password: "",
     keyPath: "",
     keyPassphrase: "",
+    sudoPassword: "",
+    sudoSameAsLogin: false,
   };
 }
 
@@ -124,6 +130,11 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
   const [editingCredentials, setEditingCredentials] = useState(!isEdit);
   const [showPassword, setShowPassword] = useState(false);
   const [showKeyPassphrase, setShowKeyPassphrase] = useState(false);
+  const [showSudoPassword, setShowSudoPassword] = useState(false);
+  /** Only meaningful when the host already has a sudo password stored. */
+  const [sudoAction, setSudoAction] = useState<"keep" | "replace" | "remove">(
+    "keep",
+  );
 
   const {
     register,
@@ -143,6 +154,8 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
     setEditingCredentials(!host);
     setShowPassword(false);
     setShowKeyPassphrase(false);
+    setShowSudoPassword(false);
+    setSudoAction("keep");
     if (host) {
       reset({
         label: host.label,
@@ -157,6 +170,8 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
         password: "",
         keyPath: host.key_path ?? "",
         keyPassphrase: "",
+        sudoPassword: "",
+        sudoSameAsLogin: false,
       });
     } else {
       reset(emptyValues(defaultColor));
@@ -185,6 +200,15 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
 
   const selectedColor = watch("color");
   const authMethod = watch("authMethod");
+  const sudoSameAsLogin = watch("sudoSameAsLogin");
+
+  const hasSudo = host?.has_sudo_password ?? false;
+  // Whether the effective auth method is password (so "same as SSH
+  // password" makes sense): the value being edited, or the stored one.
+  const passwordAuthEffective = editingCredentials
+    ? authMethod === "password"
+    : host?.auth_method === "password";
+  const sudoEditing = !hasSudo || sudoAction === "replace";
 
   const onSubmit = handleSubmit(async (data) => {
     if (editingCredentials) {
@@ -196,6 +220,15 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
         toast.error("Key file path is required");
         return;
       }
+    }
+    if (
+      hasSudo &&
+      sudoAction === "replace" &&
+      !data.sudoSameAsLogin &&
+      data.sudoPassword.length === 0
+    ) {
+      toast.error("Sudo password is required (or choose Keep existing)");
+      return;
     }
 
     const input: HostInput = {
@@ -230,6 +263,16 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
               data.keyPassphrase.length === 0 ? null : data.keyPassphrase,
           };
           await setHostCredentials(saved.id, auth);
+        }
+      }
+
+      if (hasSudo && sudoAction === "remove") {
+        await setSudoPassword(saved.id, null);
+      } else if (sudoEditing) {
+        if (data.sudoSameAsLogin && passwordAuthEffective) {
+          await setSudoSameAsLogin(saved.id);
+        } else if (data.sudoPassword.length > 0) {
+          await setSudoPassword(saved.id, data.sudoPassword);
         }
       }
 
@@ -538,6 +581,99 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
                     </div>
                   </div>
                 </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-8 max-w-4xl pt-5">
+          <div className="mb-3 flex items-center justify-between">
+            <Label className="text-sm font-semibold">
+              Sudo password{" "}
+              <span className="text-xs font-normal text-muted-foreground">
+                (optional — used to auto-answer sudo prompts in broadcasts)
+              </span>
+            </Label>
+            {hasSudo && sudoAction === "keep" && (
+              <div className="flex gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSudoAction("replace")}
+                >
+                  Replace sudo password...
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setSudoAction("remove")}
+                >
+                  Remove
+                </Button>
+              </div>
+            )}
+            {hasSudo && sudoAction !== "keep" && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setSudoAction("keep")}
+              >
+                Keep existing
+              </Button>
+            )}
+          </div>
+
+          {hasSudo && sudoAction === "keep" && (
+            <p className="text-xs font-medium text-emerald-400">
+              Sudo password is stored
+            </p>
+          )}
+          {hasSudo && sudoAction === "remove" && (
+            <p className="text-xs font-medium text-amber-400">
+              Sudo password will be removed on save
+            </p>
+          )}
+          {sudoEditing && (
+            <div className="grid max-w-md gap-2">
+              <div className="relative">
+                <Input
+                  id="sudoPassword"
+                  type={showSudoPassword ? "text" : "password"}
+                  {...register("sudoPassword")}
+                  disabled={sudoSameAsLogin && passwordAuthEffective}
+                  className="pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSudoPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                  aria-label={
+                    showSudoPassword
+                      ? "Hide sudo password"
+                      : "Show sudo password"
+                  }
+                >
+                  {showSudoPassword ? (
+                    <EyeOffIcon className="h-4 w-4" />
+                  ) : (
+                    <EyeIcon className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+              {passwordAuthEffective && (
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    {...register("sudoSameAsLogin")}
+                  />
+                  Same as SSH password
+                </label>
               )}
             </div>
           )}

@@ -13,6 +13,7 @@ export type Host = {
   updated_at: string;
   auth_method: string | null;
   key_path: string | null;
+  has_sudo_password: boolean;
 };
 
 export type HostInput = {
@@ -39,7 +40,8 @@ export type AppErrorPayload = {
     | "credentials_locked"
     | "credentials"
     | "serde"
-    | "ssh";
+    | "ssh"
+    | "destructive_blocked";
   message: string;
 };
 
@@ -72,6 +74,19 @@ export function setHostCredentials(
 
 export function clearHostCredentials(host_id: number): Promise<void> {
   return invoke<void>("clear_host_credentials", { hostId: host_id });
+}
+
+/** Sets (string) or clears (null) the host's sudo password (D-026). */
+export function setSudoPassword(
+  hostId: number,
+  value: string | null,
+): Promise<void> {
+  return invoke<void>("set_sudo_password", { hostId, value });
+}
+
+/** Backend-side copy of the stored SSH password into the sudo slot. */
+export function setSudoSameAsLogin(hostId: number): Promise<void> {
+  return invoke<void>("set_sudo_same_as_login", { hostId });
 }
 
 export function isCredentialsUnlocked(): Promise<boolean> {
