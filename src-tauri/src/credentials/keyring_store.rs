@@ -25,6 +25,16 @@ pub fn set(key: &str, value: &str) -> AppResult<()> {
     Ok(())
 }
 
+pub fn get(key: &str) -> AppResult<Option<String>> {
+    let entry = Entry::new(SERVICE, key)
+        .map_err(|e| AppError::Credentials(format!("keyring entry: {e}")))?;
+    match entry.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(AppError::Credentials(format!("keyring get: {e}"))),
+    }
+}
+
 pub fn delete(key: &str) -> AppResult<()> {
     let entry = Entry::new(SERVICE, key)
         .map_err(|e| AppError::Credentials(format!("keyring entry: {e}")))?;

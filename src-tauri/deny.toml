@@ -14,6 +14,15 @@ all-features = false
 version = 2
 yanked = "warn"
 unmaintained = "workspace"
+ignore = [
+    # Marvin Attack timing side channel in the `rsa` crate (no fixed release
+    # exists). Pulled in by russh's `rsa` feature for RSA public-key auth.
+    # Exploitation requires an attacker to time many RSA private-key
+    # operations — a server-under-load scenario, not a desktop SSH client
+    # making occasional auth signatures. Mirror of src-tauri/.cargo/audit.toml;
+    # revisit at beta hardening or when rsa ships a constant-time fix (D-037).
+    "RUSTSEC-2023-0071",
+]
 
 [licenses]
 version = 2
