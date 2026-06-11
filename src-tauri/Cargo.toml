@@ -39,6 +39,7 @@ age = "0.11"
 # default-features off to swap aws-lc-rs (needs CMake/NASM on Windows) for ring
 russh = { version = "0.61", default-features = false, features = ["flate2", "ring", "rsa"] }
 tokio = { version = "1", features = ["time"] }
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"

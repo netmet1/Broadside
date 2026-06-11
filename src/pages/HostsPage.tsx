@@ -4,6 +4,7 @@ import {
   PencilIcon,
   PlugZapIcon,
   PlusIcon,
+  TerminalIcon,
   Trash2Icon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,7 +26,11 @@ import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
 import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 import { nextColor } from "@/lib/palette";
 
-export function HostsPage() {
+export function HostsPage({
+  onOpenTerminal,
+}: {
+  onOpenTerminal: (host: Host) => void;
+}) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -159,7 +164,7 @@ export function HostsPage() {
               <TableHead className="w-20">Port</TableHead>
               <TableHead>Username</TableHead>
               <TableHead>Flavor</TableHead>
-              <TableHead className="w-32 text-right">Actions</TableHead>
+              <TableHead className="w-40 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -193,6 +198,14 @@ export function HostsPage() {
                     {h.linux_flavor ?? "—"}
                   </TableCell>
                   <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => onOpenTerminal(h)}
+                      aria-label="Open terminal"
+                    >
+                      <TerminalIcon />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon-sm"
