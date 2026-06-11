@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import {
+  Loader2Icon,
+  PencilIcon,
+  PlugZapIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -13,7 +19,10 @@ import {
 } from "@/components/ui/table";
 import { HostFormPanel } from "@/components/HostFormPanel";
 import { DeleteHostDialog } from "@/components/DeleteHostDialog";
+import { TofuKeyDialog } from "@/components/TofuKeyDialog";
+import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
+import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 import { nextColor } from "@/lib/palette";
 
 export function HostsPage() {
@@ -23,6 +32,15 @@ export function HostsPage() {
   const [editing, setEditing] = useState<Host | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState<Host | null>(null);
+  const [testingId, setTestingId] = useState<number | null>(null);
+  const [tofu, setTofu] = useState<{ host: Host; key: PresentedKey } | null>(
+    null,
+  );
+  const [mismatch, setMismatch] = useState<{
+    host: Host;
+    stored: string;
+    presented: PresentedKey;
+  } | null>(null);
 
   const defaultColor = useMemo(
     () => nextColor(hosts.map((h) => h.color)),
@@ -64,6 +82,43 @@ export function HostsPage() {
     refresh();
   };
 
+  const runTest = useCallback(async (host: Host) => {
+    setTestingId(host.id);
+    try {
+      const result = await testConnection(host.id);
+      switch (result.status) {
+        case "ok":
+          toast.success(`${host.label}: connected (${result.latency_ms}ms)`);
+          break;
+        case "unknown_key":
+          setTofu({ host, key: result.key });
+          break;
+        case "key_mismatch":
+          setMismatch({
+            host,
+            stored: result.stored_fingerprint,
+            presented: result.presented,
+          });
+          break;
+        case "auth_failed":
+          toast.error(`${host.label}: authentication failed — ${result.message}`);
+          break;
+        case "unreachable":
+          toast.error(`${host.label}: unreachable — ${result.message}`);
+          break;
+        case "no_credentials":
+          toast.warning(
+            `${host.label}: no credentials stored. Edit the host to add them.`,
+          );
+          break;
+      }
+    } catch (e) {
+      toast.error(`${host.label}: ${errorMessage(e)}`);
+    } finally {
+      setTestingId(null);
+    }
+  }, []);
+
   if (formOpen) {
     return (
       <HostFormPanel
@@ -104,7 +159,7 @@ export function HostsPage() {
               <TableHead className="w-20">Port</TableHead>
               <TableHead>Username</TableHead>
               <TableHead>Flavor</TableHead>
-              <TableHead className="w-24 text-right">Actions</TableHead>
+              <TableHead className="w-32 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -141,6 +196,19 @@ export function HostsPage() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
+                      onClick={() => runTest(h)}
+                      disabled={testingId !== null}
+                      aria-label="Test connection"
+                    >
+                      {testingId === h.id ? (
+                        <Loader2Icon className="animate-spin" />
+                      ) : (
+                        <PlugZapIcon />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
                       onClick={() => openEdit(h)}
                       aria-label="Edit"
                     >
@@ -171,6 +239,23 @@ export function HostsPage() {
         onOpenChange={setDeleteOpen}
         host={deleting}
         onDeleted={refresh}
+      />
+
+      <TofuKeyDialog
+        open={tofu !== null}
+        onOpenChange={(open) => !open && setTofu(null)}
+        host={tofu?.host ?? null}
+        presentedKey={tofu?.key ?? null}
+        onTrusted={runTest}
+      />
+
+      <KeyMismatchDialog
+        open={mismatch !== null}
+        onOpenChange={(open) => !open && setMismatch(null)}
+        host={mismatch?.host ?? null}
+        storedFingerprint={mismatch?.stored ?? null}
+        presented={mismatch?.presented ?? null}
+        onTrusted={runTest}
       />
     </div>
   );

@@ -38,7 +38,8 @@ export type AppErrorPayload = {
     | "state"
     | "credentials_locked"
     | "credentials"
-    | "serde";
+    | "serde"
+    | "ssh";
   message: string;
 };
 

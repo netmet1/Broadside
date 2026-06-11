@@ -56,6 +56,12 @@ impl FileStore {
         Ok(true)
     }
 
+    pub fn get(&self, key: &str) -> AppResult<Option<String>> {
+        let state_guard = self.state.lock().unwrap();
+        let state = state_guard.as_ref().ok_or(AppError::CredentialsLocked)?;
+        Ok(state.secrets.get(key).cloned())
+    }
+
     pub fn set(&self, key: &str, value: &str) -> AppResult<()> {
         let mut state_guard = self.state.lock().unwrap();
         let state = state_guard.as_mut().ok_or(AppError::CredentialsLocked)?;

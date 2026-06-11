@@ -84,6 +84,23 @@ impl CredentialState {
         Ok(())
     }
 
+    pub fn get_password(&self, host_id: i64) -> AppResult<Option<String>> {
+        self.get(&password_key(host_id))
+    }
+
+    pub fn get_passphrase(&self, host_id: i64) -> AppResult<Option<String>> {
+        self.get(&passphrase_key(host_id))
+    }
+
+    fn get(&self, key: &str) -> AppResult<Option<String>> {
+        let backend = self.inner.lock().unwrap();
+        ensure_unlocked(&backend)?;
+        match &*backend {
+            Backend::Keyring => keyring_store::get(key),
+            Backend::File(fs) => fs.get(key),
+        }
+    }
+
     pub fn clear_host(&self, host_id: i64) -> AppResult<()> {
         let mut backend = self.inner.lock().unwrap();
         ensure_unlocked(&backend)?;

@@ -1,8 +1,11 @@
-mod commands;
-mod credentials;
-mod db;
-mod error;
+// Public so the integration test crate (tests/) can drive the ssh + db
+// layers directly against docker fixtures.
+pub mod commands;
+pub mod credentials;
+pub mod db;
+pub mod error;
 mod licensing;
+pub mod ssh;
 
 use tauri::Manager;
 
@@ -38,6 +41,9 @@ pub fn run() {
             commands::credentials::is_credentials_unlocked,
             commands::credentials::requires_master_password,
             commands::credentials::unlock_credentials,
+            commands::ssh::test_connection,
+            commands::ssh::trust_host_key,
+            commands::ssh::remove_host_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

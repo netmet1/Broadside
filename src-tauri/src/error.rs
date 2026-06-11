@@ -19,6 +19,8 @@ pub enum AppError {
     Credentials(String),
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
+    #[error("ssh error: {0}")]
+    Ssh(String),
 }
 
 impl Serialize for AppError {
@@ -37,6 +39,7 @@ impl Serialize for AppError {
             AppError::CredentialsLocked => "credentials_locked",
             AppError::Credentials(_) => "credentials",
             AppError::Serde(_) => "serde",
+            AppError::Ssh(_) => "ssh",
         };
         s.serialize_field("kind", kind)?;
         s.serialize_field("message", &self.to_string())?;
