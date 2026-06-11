@@ -7,6 +7,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use super::ssh::{auth_for_host, with_db};
+use crate::audit::{AuditEvent, AuditState};
 use crate::credentials::CredentialState;
 use crate::db::host_keys;
 use crate::db::hosts as host_repo;
@@ -52,6 +53,7 @@ pub async fn broadcast_command(
     app: AppHandle,
     state: State<'_, DbState>,
     cred_state: State<'_, CredentialState>,
+    audit: State<'_, AuditState>,
 ) -> AppResult<Vec<HostExecReport>> {
     if host_ids.is_empty() {
         return Err(AppError::InvalidInput("no hosts selected".into()));
@@ -114,6 +116,16 @@ pub async fn broadcast_command(
             host,
         });
     }
+
+    // Audit the dispatch (D-011), enriched with guard info on destructive
+    // sends (D-014). Failures must never block the broadcast itself.
+    let _ = audit.append(&AuditEvent::BroadcastSend {
+        command: command.clone(),
+        host_labels: jobs.iter().map(|j| j.host.label.clone()).collect(),
+        timeout_secs: timeout.as_secs(),
+        matched_rules: hits.iter().map(|h| h.rule_id.clone()).collect(),
+        confirmed: confirmed == Some(true),
+    });
 
     let mut handles = Vec::with_capacity(jobs.len());
     for job in jobs {

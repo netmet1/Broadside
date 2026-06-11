@@ -1,14 +1,20 @@
 import { type ReactNode } from "react";
-import { RadioTowerIcon, ServerIcon, TerminalIcon } from "lucide-react";
+import {
+  RadioTowerIcon,
+  ScrollTextIcon,
+  ServerIcon,
+  TerminalIcon,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type Page = "hosts" | "broadcast" | "terminals";
+export type Page = "hosts" | "broadcast" | "terminals" | "logs";
 
 const NAV_ITEMS: { page: Page; label: string; icon: typeof ServerIcon }[] = [
   { page: "hosts", label: "Hosts", icon: ServerIcon },
   { page: "broadcast", label: "Broadcast", icon: RadioTowerIcon },
   { page: "terminals", label: "Terminals", icon: TerminalIcon },
+  { page: "logs", label: "Logs", icon: ScrollTextIcon },
 ];
 
 export function AppShell({

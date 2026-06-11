@@ -1,5 +1,6 @@
 use tauri::State;
 
+use crate::audit::{AuditEvent, AuditState};
 use crate::credentials::CredentialState;
 use crate::db::host_keys::{self, HostKey};
 use crate::db::hosts as host_repo;
@@ -93,6 +94,7 @@ pub fn trust_host_key(
     public_key: String,
     fingerprint_sha256: String,
     state: State<'_, DbState>,
+    audit: State<'_, AuditState>,
 ) -> AppResult<()> {
     with_db(&state, |conn| {
         host_keys::remove(conn, &hostname, port)?;
@@ -104,7 +106,15 @@ pub fn trust_host_key(
             &public_key,
             &fingerprint_sha256,
         )
-    })
+    })?;
+    // Trust decisions are audit-worthy (D-034); failures never block trust.
+    let _ = audit.append(&AuditEvent::KeyTrusted {
+        hostname,
+        port,
+        key_type,
+        fingerprint_sha256,
+    });
+    Ok(())
 }
 
 #[tauri::command]
