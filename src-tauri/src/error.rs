@@ -21,6 +21,8 @@ pub enum AppError {
     Serde(#[from] serde_json::Error),
     #[error("ssh error: {0}")]
     Ssh(String),
+    #[error("destructive command requires confirmation (rules: {0})")]
+    DestructiveBlocked(String),
 }
 
 impl Serialize for AppError {
@@ -40,6 +42,7 @@ impl Serialize for AppError {
             AppError::Credentials(_) => "credentials",
             AppError::Serde(_) => "serde",
             AppError::Ssh(_) => "ssh",
+            AppError::DestructiveBlocked(_) => "destructive_blocked",
         };
         s.serialize_field("kind", kind)?;
         s.serialize_field("message", &self.to_string())?;

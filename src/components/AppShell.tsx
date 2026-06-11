@@ -1,7 +1,24 @@
 import { type ReactNode } from "react";
-import { ServerIcon } from "lucide-react";
+import { RadioTowerIcon, ServerIcon } from "lucide-react";
 
-export function AppShell({ children }: { children: ReactNode }) {
+import { cn } from "@/lib/utils";
+
+export type Page = "hosts" | "broadcast";
+
+const NAV_ITEMS: { page: Page; label: string; icon: typeof ServerIcon }[] = [
+  { page: "hosts", label: "Hosts", icon: ServerIcon },
+  { page: "broadcast", label: "Broadcast", icon: RadioTowerIcon },
+];
+
+export function AppShell({
+  active,
+  onNavigate,
+  children,
+}: {
+  active: Page;
+  onNavigate: (page: Page) => void;
+  children: ReactNode;
+}) {
   return (
     <div className="dark min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
@@ -12,14 +29,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
             <span className="ml-2 text-xs text-muted-foreground">v0.1a</span>
           </div>
-          <nav className="p-2">
-            <a
-              href="#hosts"
-              className="flex items-center gap-2 rounded-md bg-sidebar-accent px-3 py-2 text-sm font-medium text-sidebar-accent-foreground"
-            >
-              <ServerIcon className="h-4 w-4" />
-              Hosts
-            </a>
+          <nav className="space-y-1 p-2">
+            {NAV_ITEMS.map(({ page, label, icon: Icon }) => (
+              <button
+                key={page}
+                type="button"
+                onClick={() => onNavigate(page)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium",
+                  active === page
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
           </nav>
         </aside>
         <main className="flex-1 overflow-auto">{children}</main>

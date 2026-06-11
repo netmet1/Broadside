@@ -4,6 +4,7 @@ pub mod commands;
 pub mod credentials;
 pub mod db;
 pub mod error;
+pub mod guard;
 mod licensing;
 pub mod ssh;
 
@@ -44,6 +45,10 @@ pub fn run() {
             commands::ssh::test_connection,
             commands::ssh::trust_host_key,
             commands::ssh::remove_host_key,
+            commands::credentials::set_sudo_password,
+            commands::credentials::set_sudo_same_as_login,
+            commands::broadcast::check_destructive,
+            commands::broadcast::broadcast_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

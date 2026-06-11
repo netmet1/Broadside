@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
-import { AppShell } from "@/components/AppShell";
+import { AppShell, type Page } from "@/components/AppShell";
 import { HostsPage } from "@/pages/HostsPage";
+import { BroadcastPage } from "@/pages/BroadcastPage";
 import { UnlockDialog } from "@/components/UnlockDialog";
 import { Toaster } from "@/components/ui/sonner";
 import {
@@ -10,6 +11,7 @@ import {
 } from "@/lib/tauri/hosts";
 
 function App() {
+  const [page, setPage] = useState<Page>("hosts");
   const [unlockOpen, setUnlockOpen] = useState(false);
 
   useEffect(() => {
@@ -27,8 +29,8 @@ function App() {
   }, []);
 
   return (
-    <AppShell>
-      <HostsPage />
+    <AppShell active={page} onNavigate={setPage}>
+      {page === "hosts" ? <HostsPage /> : <BroadcastPage />}
       <UnlockDialog
         open={unlockOpen}
         onOpenChange={setUnlockOpen}
