@@ -36,10 +36,13 @@ import {
   type Matcher,
   type SearchOptions,
 } from "@/lib/search";
+import { HighlightedLine, HighlightedText } from "@/components/Highlight";
+import { SaveSessionDialog } from "@/components/SaveSessionDialog";
+import type { OtlogLine } from "@/lib/tauri/logs";
 
 const DEFAULT_TIMEOUT_SECS = 30;
 
-type Block = HostExecReport & { collapsed: boolean };
+type Block = HostExecReport & { collapsed: boolean; receivedAt: string };
 
 type StreamRef = { hostId: number; stream: "stdout" | "stderr" };
 
@@ -63,6 +66,7 @@ export function BroadcastPage() {
     stored: string;
     presented: PresentedKey;
   } | null>(null);
+  const [saveOpen, setSaveOpen] = useState(false);
 
   // Search (D-015): Ctrl+F find, Ctrl+Shift+F filter.
   const [searchMode, setSearchMode] = useState<SearchMode | null>(null);
@@ -104,7 +108,7 @@ export function BroadcastPage() {
       setBlocks((prev) => [
         // A retry replaces the host's previous block.
         ...prev.filter((b) => b.host_id !== report.host_id),
-        { ...report, collapsed: false },
+        { ...report, collapsed: false, receivedAt: new Date().toISOString() },
       ]);
     });
     return () => {
@@ -316,6 +320,29 @@ export function BroadcastPage() {
     .map((id) => hostsById.get(id)?.label ?? `#${id}`)
     .join(", ");
 
+  /** Current output as .otlog lines (D-010): per output line, plus a status
+   * line per host so failures are part of the record. */
+  const buildOtlogLines = useCallback((): OtlogLine[] => {
+    const out: OtlogLine[] = [];
+    for (const block of blocks) {
+      out.push({
+        ts: block.receivedAt,
+        host: block.label,
+        stream: "status",
+        data: statusSummary(block.result).text,
+      });
+      if (block.result.status !== "completed") continue;
+      for (const stream of ["stdout", "stderr"] as const) {
+        const text = block.result[stream];
+        if (!text) continue;
+        for (const line of text.split("\n")) {
+          out.push({ ts: block.receivedAt, host: block.label, stream, data: line });
+        }
+      }
+    }
+    return out;
+  }, [blocks]);
+
   const activeHit =
     searchMode === "find" && scan && scan.hits.length > 0
       ? scan.hits[Math.min(activeHitIdx, scan.hits.length - 1)]
@@ -384,6 +411,17 @@ export function BroadcastPage() {
             onNavigate={navigate}
             onClose={closeSearch}
           />
+        )}
+        {blocks.length > 0 && !running && (
+          <div className="flex justify-end border-b border-border/30 px-3 py-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSaveOpen(true)}
+            >
+              Save session…
+            </Button>
+          </div>
         )}
         <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
           {blocks.length === 0 && pendingHosts.size === 0 && (
@@ -488,6 +526,12 @@ export function BroadcastPage() {
         storedFingerprint={mismatch?.stored ?? null}
         presented={mismatch?.presented ?? null}
         onTrusted={(host) => retryHosts([host.id])}
+      />
+
+      <SaveSessionDialog
+        open={saveOpen}
+        onOpenChange={setSaveOpen}
+        buildLines={buildOtlogLines}
       />
     </div>
   );
@@ -695,10 +739,19 @@ function BlockBody({
                   <HighlightedText
                     text={text}
                     lineMap={lineMap}
-                    activeHit={
+                    activeLine={
                       findData?.activeHit?.hostId === hostId &&
                       findData.activeHit.stream === stream
-                        ? findData.activeHit
+                        ? findData.activeHit.line
+                        : null
+                    }
+                    activeRange={
+                      findData?.activeHit?.hostId === hostId &&
+                      findData.activeHit.stream === stream
+                        ? {
+                            start: findData.activeHit.start,
+                            end: findData.activeHit.end,
+                          }
                         : null
                     }
                   />
@@ -754,85 +807,3 @@ function BlockBody({
   }
 }
 
-/** Whole multi-line text with `<mark>` highlights from a line→matches map. */
-function HighlightedText({
-  text,
-  lineMap,
-  activeHit,
-}: {
-  text: string;
-  lineMap: Map<number, LineMatch[]>;
-  activeHit: FindHit | null;
-}) {
-  const lines = text.split("\n");
-  return (
-    <>
-      {lines.map((line, i) => {
-        const matches = lineMap.get(i);
-        const suffix = i < lines.length - 1 ? "\n" : "";
-        if (!matches) {
-          return (
-            <span key={i}>
-              {line}
-              {suffix}
-            </span>
-          );
-        }
-        return (
-          <span key={i}>
-            <HighlightedLine
-              text={line}
-              matches={matches}
-              activeRange={
-                activeHit && activeHit.line === i
-                  ? { start: activeHit.start, end: activeHit.end }
-                  : null
-              }
-            />
-            {suffix}
-          </span>
-        );
-      })}
-    </>
-  );
-}
-
-function HighlightedLine({
-  text,
-  matches,
-  activeRange,
-}: {
-  text: string;
-  matches: LineMatch[];
-  activeRange: { start: number; end: number } | null;
-}) {
-  const parts: React.ReactNode[] = [];
-  let cursor = 0;
-  matches.forEach((m, idx) => {
-    if (m.start > cursor) parts.push(text.slice(cursor, m.start));
-    const isActive =
-      activeRange !== null &&
-      activeRange.start === m.start &&
-      activeRange.end === m.end;
-    parts.push(
-      <mark
-        key={idx}
-        ref={
-          isActive
-            ? (el) => el?.scrollIntoView({ block: "center" })
-            : undefined
-        }
-        className={
-          isActive
-            ? "rounded-sm bg-amber-400 text-black"
-            : "rounded-sm bg-amber-400/30 text-inherit"
-        }
-      >
-        {text.slice(m.start, m.end)}
-      </mark>,
-    );
-    cursor = m.end;
-  });
-  if (cursor < text.length) parts.push(text.slice(cursor));
-  return <>{parts}</>;
-}

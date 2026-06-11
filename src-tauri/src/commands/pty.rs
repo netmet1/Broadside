@@ -1,6 +1,7 @@
 use tauri::{AppHandle, State};
 
 use super::ssh::{auth_for_host, with_db};
+use crate::audit::{AuditEvent, AuditState};
 use crate::credentials::CredentialState;
 use crate::db::host_keys;
 use crate::db::hosts as host_repo;
@@ -21,6 +22,7 @@ pub async fn pty_open(
     state: State<'_, DbState>,
     cred_state: State<'_, CredentialState>,
     pty_state: State<'_, PtyState>,
+    audit: State<'_, AuditState>,
 ) -> AppResult<PtyOpenResult> {
     let (host, keys) = with_db(&state, |conn| {
         let host = host_repo::get(conn, host_id)?;
@@ -32,7 +34,7 @@ pub async fn pty_open(
         None => return Ok(PtyOpenResult::NoCredentials),
     };
     let fingerprints = keys.iter().map(|k| k.fingerprint_sha256.clone()).collect();
-    pty::open(
+    let result = pty::open(
         app,
         &pty_state,
         session_id,
@@ -44,7 +46,15 @@ pub async fn pty_open(
         cols.clamp(2, 1000),
         rows.clamp(2, 1000),
     )
-    .await
+    .await?;
+    if matches!(result, PtyOpenResult::Opened) {
+        let _ = audit.append(&AuditEvent::PtyOpened {
+            host_label: host.label,
+            hostname: host.hostname,
+            port: host.port,
+        });
+    }
+    Ok(result)
 }
 
 #[tauri::command]

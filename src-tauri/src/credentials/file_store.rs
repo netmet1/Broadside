@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use age::secrecy::{ExposeSecret, SecretString};
 
+use crate::crypto::{decrypt, encrypt};
 use crate::error::{AppError, AppResult};
 
 pub struct FileStore {
@@ -42,7 +42,8 @@ impl FileStore {
             let encrypted = fs::read(&self.path)?;
             match decrypt(&encrypted, passphrase) {
                 Ok(plaintext) => serde_json::from_slice::<HashMap<String, String>>(&plaintext)?,
-                Err(AppError::Credentials(_)) => return Ok(false),
+                // Wrong passphrase (or corrupt file) — not an internal error.
+                Err(AppError::Crypto(_)) => return Ok(false),
                 Err(e) => return Err(e),
             }
         } else {
@@ -84,34 +85,4 @@ fn persist(path: &PathBuf, state: &UnlockedState) -> AppResult<()> {
     fs::write(&tmp, &encrypted)?;
     fs::rename(&tmp, path)?;
     Ok(())
-}
-
-fn encrypt(plaintext: &[u8], passphrase: &str) -> AppResult<Vec<u8>> {
-    let encryptor =
-        age::Encryptor::with_user_passphrase(SecretString::from(passphrase.to_string()));
-    let mut output = vec![];
-    let mut writer = encryptor
-        .wrap_output(&mut output)
-        .map_err(|e| AppError::Credentials(format!("age encrypt init: {e}")))?;
-    writer
-        .write_all(plaintext)
-        .map_err(|e| AppError::Credentials(format!("age write: {e}")))?;
-    writer
-        .finish()
-        .map_err(|e| AppError::Credentials(format!("age finish: {e}")))?;
-    Ok(output)
-}
-
-fn decrypt(encrypted: &[u8], passphrase: &str) -> AppResult<Vec<u8>> {
-    let decryptor = age::Decryptor::new(encrypted)
-        .map_err(|e| AppError::Credentials(format!("age decryptor: {e}")))?;
-    let identity = age::scrypt::Identity::new(SecretString::from(passphrase.to_string()));
-    let mut reader = decryptor
-        .decrypt(std::iter::once(&identity as &dyn age::Identity))
-        .map_err(|e| AppError::Credentials(format!("age decrypt: {e}")))?;
-    let mut output = vec![];
-    reader
-        .read_to_end(&mut output)
-        .map_err(|e| AppError::Credentials(format!("age read: {e}")))?;
-    Ok(output)
 }
