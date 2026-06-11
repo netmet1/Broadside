@@ -3,6 +3,7 @@ use std::sync::MutexGuard;
 use rusqlite::Connection;
 use tauri::State;
 
+use crate::credentials::CredentialState;
 use crate::db::hosts::{self as host_repo, Host, HostInput};
 use crate::db::DbState;
 use crate::error::{AppError, AppResult};
@@ -39,7 +40,18 @@ pub fn update_host(id: i64, input: HostInput, state: State<'_, DbState>) -> AppR
 }
 
 #[tauri::command]
-pub fn delete_host(id: i64, state: State<'_, DbState>) -> AppResult<()> {
+pub fn delete_host(
+    id: i64,
+    state: State<'_, DbState>,
+    cred_state: State<'_, CredentialState>,
+) -> AppResult<()> {
+    let auth_method = {
+        let conn = lock(&state)?;
+        host_repo::get(&conn, id)?.auth_method
+    };
+    if auth_method.is_some() {
+        cred_state.clear_host(id)?;
+    }
     let conn = lock(&state)?;
     host_repo::delete(&conn, id)
 }

@@ -13,6 +13,12 @@ pub enum AppError {
     InvalidInput(String),
     #[error("app state error: {0}")]
     State(String),
+    #[error("credentials locked: master password required")]
+    CredentialsLocked,
+    #[error("credentials error: {0}")]
+    Credentials(String),
+    #[error("serde error: {0}")]
+    Serde(#[from] serde_json::Error),
 }
 
 impl Serialize for AppError {
@@ -28,6 +34,9 @@ impl Serialize for AppError {
             AppError::HostNotFound(_) => "host_not_found",
             AppError::InvalidInput(_) => "invalid_input",
             AppError::State(_) => "state",
+            AppError::CredentialsLocked => "credentials_locked",
+            AppError::Credentials(_) => "credentials",
+            AppError::Serde(_) => "serde",
         };
         s.serialize_field("kind", kind)?;
         s.serialize_field("message", &self.to_string())?;
