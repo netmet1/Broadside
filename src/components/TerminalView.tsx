@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
 
 import { Button } from "@/components/ui/button";
@@ -14,11 +21,28 @@ import {
   type PtyOpenResult,
 } from "@/lib/tauri/pty";
 import { errorMessage } from "@/lib/tauri/hosts";
+import type { SearchOptions } from "@/lib/search";
 
 export type ConnectionGate = Extract<
   PtyOpenResult,
   { status: "unknown_key" } | { status: "key_mismatch" }
 >;
+
+/** Imperative search surface for the Terminals page's Find bar (D-015 —
+ * PTY tabs are Find-only). */
+export type TerminalSearchHandle = {
+  findNext: (pattern: string, options: SearchOptions, incremental: boolean) => void;
+  findPrevious: (pattern: string, options: SearchOptions) => void;
+  clearSearch: () => void;
+  focusTerminal: () => void;
+};
+
+const SEARCH_DECORATIONS = {
+  matchBackground: "#f59e0b4d",
+  matchOverviewRuler: "#f59e0b4d",
+  activeMatchBackground: "#f59e0b",
+  activeMatchColorOverviewRuler: "#f59e0b",
+};
 
 type Phase =
   | { kind: "connecting" }
@@ -36,21 +60,36 @@ type Props = {
   retryNonce: number;
   onGate: (sessionId: string, gate: ConnectionGate) => void;
   onClosed: (sessionId: string) => void;
+  /** Ctrl+F pressed while the terminal has focus. */
+  onSearchRequest: () => void;
+  /** Live match feedback from the search addon. */
+  onSearchResults: (resultIndex: number, resultCount: number) => void;
 };
 
 /** One xterm.js pane bound to one backend PTY session. Stays mounted (and
  * connected) while hidden so sessions survive page/tab switches. */
-export function TerminalView({
-  sessionId,
-  hostId,
-  visible,
-  retryNonce,
-  onGate,
-  onClosed,
-}: Props) {
+export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
+  function TerminalView(
+    {
+      sessionId,
+      hostId,
+      visible,
+      retryNonce,
+      onGate,
+      onClosed,
+      onSearchRequest,
+      onSearchResults,
+    }: Props,
+    searchHandleRef,
+  ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchRef = useRef<SearchAddon | null>(null);
+  const onSearchRequestRef = useRef(onSearchRequest);
+  onSearchRequestRef.current = onSearchRequest;
+  const onSearchResultsRef = useRef(onSearchResults);
+  onSearchResultsRef.current = onSearchResults;
   const phaseRef = useRef<Phase>({ kind: "connecting" });
   const [phase, setPhaseState] = useState<Phase>({ kind: "connecting" });
   const setPhase = (p: Phase) => {
@@ -73,9 +112,29 @@ export function TerminalView({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    const search = new SearchAddon();
+    term.loadAddon(search);
     if (containerRef.current) term.open(containerRef.current);
     termRef.current = term;
     fitRef.current = fit;
+    searchRef.current = search;
+
+    const resultsSub = search.onDidChangeResults(({ resultIndex, resultCount }) => {
+      onSearchResultsRef.current(resultIndex, resultCount);
+    });
+
+    // Ctrl+F opens the Find bar instead of sending ^F to the remote shell.
+    term.attachCustomKeyEventHandler((e) => {
+      if (
+        e.type === "keydown" &&
+        e.ctrlKey &&
+        (e.key === "f" || e.key === "F")
+      ) {
+        onSearchRequestRef.current();
+        return false;
+      }
+      return true;
+    });
 
     const dataSub = term.onData((data) => {
       ptyWrite(sessionId, data).catch(() => {
@@ -108,6 +167,7 @@ export function TerminalView({
 
     return () => {
       dataSub.dispose();
+      resultsSub.dispose();
       resizeSub.dispose();
       observer.disconnect();
       unlistenData.then((fn) => fn());
@@ -115,8 +175,30 @@ export function TerminalView({
       term.dispose();
       ptyClose(sessionId).catch(() => {});
     };
-     
+
   }, [sessionId]);
+
+  useImperativeHandle(searchHandleRef, () => ({
+    findNext: (pattern, options, incremental) => {
+      searchRef.current?.findNext(pattern, {
+        regex: options.regex,
+        caseSensitive: options.caseSensitive,
+        wholeWord: options.wholeWord,
+        incremental,
+        decorations: SEARCH_DECORATIONS,
+      });
+    },
+    findPrevious: (pattern, options) => {
+      searchRef.current?.findPrevious(pattern, {
+        regex: options.regex,
+        caseSensitive: options.caseSensitive,
+        wholeWord: options.wholeWord,
+        decorations: SEARCH_DECORATIONS,
+      });
+    },
+    clearSearch: () => searchRef.current?.clearDecorations(),
+    focusTerminal: () => termRef.current?.focus(),
+  }));
 
   // Connect (and reconnect after a TOFU gate is resolved).
   useEffect(() => {
@@ -235,4 +317,4 @@ export function TerminalView({
       )}
     </div>
   );
-}
+});

@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { XIcon } from "lucide-react";
 
 import {
   TerminalView,
   type ConnectionGate,
+  type TerminalSearchHandle,
 } from "@/components/TerminalView";
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
+import { SearchBar } from "@/components/SearchBar";
 import { ptyClose } from "@/lib/tauri/pty";
 import type { Host } from "@/lib/tauri/hosts";
+import type { SearchOptions } from "@/lib/search";
 import { cn } from "@/lib/utils";
 
 export type TermSession = {
@@ -36,6 +39,84 @@ export function TerminalsPage({
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
     new Map(),
   );
+
+  // PTY Find (D-015 — Find only; filtering live interactive output is
+  // incoherent).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<{
+    pattern: string;
+    options: SearchOptions;
+  } | null>(null);
+  const [searchResults, setSearchResults] = useState<{
+    index: number;
+    count: number;
+  } | null>(null);
+  const searchHandles = useRef<Map<string, TerminalSearchHandle>>(new Map());
+
+  const activeHandle = useCallback(
+    () => (activeId !== null ? searchHandles.current.get(activeId) : undefined),
+    [activeId],
+  );
+
+  // Ctrl+F while the Terminals page is visible. Presses with the terminal
+  // focused arrive via onSearchRequest instead (xterm swallows them).
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && (e.key === "f" || e.key === "F") && !e.shiftKey) {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visible]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery(null);
+    setSearchResults(null);
+    activeHandle()?.clearSearch();
+    activeHandle()?.focusTerminal();
+  }, [activeHandle]);
+
+  // Switching tabs while searching: re-run the query against the new pane.
+  useEffect(() => {
+    if (!searchOpen || !searchQuery) return;
+    setSearchResults(null);
+    if (searchQuery.pattern) {
+      activeHandle()?.findNext(searchQuery.pattern, searchQuery.options, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
+
+  const handleQueryChange = (pattern: string, options: SearchOptions) => {
+    setSearchQuery({ pattern, options });
+    if (pattern) {
+      activeHandle()?.findNext(pattern, options, true);
+    } else {
+      activeHandle()?.clearSearch();
+      setSearchResults(null);
+    }
+  };
+
+  const handleNavigate = (direction: 1 | -1) => {
+    if (!searchQuery?.pattern) return;
+    if (direction === 1) {
+      activeHandle()?.findNext(searchQuery.pattern, searchQuery.options, false);
+    } else {
+      activeHandle()?.findPrevious(searchQuery.pattern, searchQuery.options);
+    }
+  };
+
+  const searchStatus = (() => {
+    if (!searchQuery?.pattern || !searchResults) return "";
+    if (searchResults.count === 0) return "No matches";
+    // resultIndex is -1 when the count exceeds the addon's highlight limit.
+    return searchResults.index >= 0
+      ? `${searchResults.index + 1}/${searchResults.count} matches`
+      : `${searchResults.count} matches`;
+  })();
 
   const handleGate = (sessionId: string, gate: ConnectionGate) => {
     setGates((prev) => new Map(prev).set(sessionId, gate));
@@ -117,6 +198,18 @@ export function TerminalsPage({
         )}
       </div>
 
+      {searchOpen && (
+        <SearchBar
+          modes={["find"]}
+          mode="find"
+          onModeChange={() => {}}
+          status={searchStatus}
+          onQueryChange={handleQueryChange}
+          onNavigate={handleNavigate}
+          onClose={closeSearch}
+        />
+      )}
+
       <div className="relative min-h-0 flex-1 bg-[#0a0a0a] p-2">
         {sessions.map((s) => (
           <div
@@ -127,12 +220,23 @@ export function TerminalsPage({
             )}
           >
             <TerminalView
+              ref={(handle) => {
+                if (handle) {
+                  searchHandles.current.set(s.id, handle);
+                } else {
+                  searchHandles.current.delete(s.id);
+                }
+              }}
               sessionId={s.id}
               hostId={s.host.id}
               visible={visible && s.id === activeId}
               retryNonce={retryNonces.get(s.id) ?? 0}
               onGate={handleGate}
               onClosed={closeSession}
+              onSearchRequest={() => setSearchOpen(true)}
+              onSearchResults={(index, count) =>
+                setSearchResults({ index, count })
+              }
             />
           </div>
         ))}
