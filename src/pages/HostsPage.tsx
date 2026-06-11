@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { HostFormDialog } from "@/components/HostFormDialog";
+import { HostFormPanel } from "@/components/HostFormPanel";
 import { DeleteHostDialog } from "@/components/DeleteHostDialog";
 import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
 import { nextColor } from "@/lib/palette";
@@ -59,9 +59,29 @@ export function HostsPage() {
     setDeleteOpen(true);
   };
 
+  const handleSaved = () => {
+    setFormOpen(false);
+    refresh();
+  };
+
+  if (formOpen) {
+    return (
+      <HostFormPanel
+        host={editing}
+        defaultColor={defaultColor}
+        onCancel={() => setFormOpen(false)}
+        onSaved={handleSaved}
+      />
+    );
+  }
+
+  const countLabel = loading
+    ? ""
+    : `Showing ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"}`;
+
   return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
+    <div className="flex h-full min-h-screen flex-col gap-4 p-6">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-xl font-semibold tracking-tight">Hosts</h1>
           <p className="text-sm text-muted-foreground">
@@ -74,7 +94,7 @@ export function HostsPage() {
         </Button>
       </div>
 
-      <div className="rounded-lg border border-border bg-card">
+      <div className="min-h-0 flex-1 overflow-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -142,13 +162,10 @@ export function HostsPage() {
         </Table>
       </div>
 
-      <HostFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        host={editing}
-        defaultColor={defaultColor}
-        onSaved={refresh}
-      />
+      <div className="flex justify-end text-xs text-muted-foreground">
+        {countLabel}
+      </div>
+
       <DeleteHostDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
