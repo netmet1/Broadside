@@ -29,6 +29,8 @@ pub fn run() {
             let cred_state = credentials::CredentialState::new(app_data_dir);
             app.manage(cred_state);
 
+            app.manage(ssh::pty::PtyState::default());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -49,6 +51,10 @@ pub fn run() {
             commands::credentials::set_sudo_same_as_login,
             commands::broadcast::check_destructive,
             commands::broadcast::broadcast_command,
+            commands::pty::pty_open,
+            commands::pty::pty_write,
+            commands::pty::pty_resize,
+            commands::pty::pty_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
