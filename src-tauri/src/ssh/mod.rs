@@ -9,6 +9,7 @@ use serde::Serialize;
 use crate::error::{AppError, AppResult};
 
 pub mod exec;
+pub mod pty;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);

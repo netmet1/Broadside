@@ -1,22 +1,25 @@
 import { type ReactNode } from "react";
-import { RadioTowerIcon, ServerIcon } from "lucide-react";
+import { RadioTowerIcon, ServerIcon, TerminalIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type Page = "hosts" | "broadcast";
+export type Page = "hosts" | "broadcast" | "terminals";
 
 const NAV_ITEMS: { page: Page; label: string; icon: typeof ServerIcon }[] = [
   { page: "hosts", label: "Hosts", icon: ServerIcon },
   { page: "broadcast", label: "Broadcast", icon: RadioTowerIcon },
+  { page: "terminals", label: "Terminals", icon: TerminalIcon },
 ];
 
 export function AppShell({
   active,
   onNavigate,
+  terminalCount,
   children,
 }: {
   active: Page;
   onNavigate: (page: Page) => void;
+  terminalCount: number;
   children: ReactNode;
 }) {
   return (
@@ -44,6 +47,11 @@ export function AppShell({
               >
                 <Icon className="h-4 w-4" />
                 {label}
+                {page === "terminals" && terminalCount > 0 && (
+                  <span className="ml-auto rounded-full bg-sidebar-accent px-1.5 text-xs text-sidebar-accent-foreground">
+                    {terminalCount}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
