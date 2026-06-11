@@ -32,6 +32,7 @@ pub struct Host {
     pub updated_at: String,
     pub auth_method: Option<String>,
     pub key_path: Option<String>,
+    pub has_sudo_password: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -59,11 +60,12 @@ fn from_row(row: &Row) -> rusqlite::Result<Host> {
         updated_at: row.get(9)?,
         auth_method: row.get(10)?,
         key_path: row.get(11)?,
+        has_sudo_password: row.get::<_, i64>(12)? != 0,
     })
 }
 
 const SELECT_COLS: &str =
-    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path";
+    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path, has_sudo_password";
 
 fn validate(input: &HostInput) -> AppResult<()> {
     if input.label.trim().is_empty() {
@@ -125,6 +127,18 @@ pub fn set_auth_method(
     let affected = conn.execute(
         "UPDATE hosts SET auth_method = ?1, key_path = ?2, updated_at = ?3 WHERE id = ?4",
         params![auth_method, key_path, now, id],
+    )?;
+    if affected == 0 {
+        return Err(AppError::HostNotFound(id));
+    }
+    Ok(())
+}
+
+pub fn set_has_sudo_password(conn: &Connection, id: i64, value: bool) -> AppResult<()> {
+    let now = Utc::now().to_rfc3339();
+    let affected = conn.execute(
+        "UPDATE hosts SET has_sudo_password = ?1, updated_at = ?2 WHERE id = ?3",
+        params![value as i64, now, id],
     )?;
     if affected == 0 {
         return Err(AppError::HostNotFound(id));

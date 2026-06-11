@@ -130,6 +130,17 @@
 }
 
 @layer utilities {
+  /* Smooth composer caret (D-009): blink + eased horizontal travel. The
+     native caret is hidden on the composer input only. */
+  @keyframes caret-blink {
+    0%, 55% { opacity: 1; }
+    56%, 100% { opacity: 0; }
+  }
+  .composer-caret {
+    animation: caret-blink 1.1s steps(1) infinite;
+    transition: left 80ms ease-out;
+  }
+
   html[data-form-overlay="true"] aside {
     filter: blur(4px);
     pointer-events: none;

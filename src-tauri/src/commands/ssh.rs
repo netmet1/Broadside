@@ -7,7 +7,7 @@ use crate::db::DbState;
 use crate::error::{AppError, AppResult};
 use crate::ssh::{self, AuthMethod, ProbeResult};
 
-fn with_db<T>(
+pub(crate) fn with_db<T>(
     state: &State<'_, DbState>,
     f: impl FnOnce(&rusqlite::Connection) -> AppResult<T>,
 ) -> AppResult<T> {
@@ -16,6 +16,25 @@ fn with_db<T>(
         .lock()
         .map_err(|_| AppError::State("db mutex poisoned".into()))?;
     f(&conn)
+}
+
+/// Builds the auth method for a host from its stored credentials, or None
+/// when no usable credentials exist.
+pub(crate) fn auth_for_host(
+    host: &host_repo::Host,
+    cred_state: &CredentialState,
+) -> AppResult<Option<AuthMethod>> {
+    Ok(match host.auth_method.as_deref() {
+        Some("password") => cred_state.get_password(host.id)?.map(AuthMethod::Password),
+        Some("key") => match &host.key_path {
+            Some(path) => Some(AuthMethod::Key {
+                path: path.clone(),
+                passphrase: cred_state.get_passphrase(host.id)?,
+            }),
+            None => None,
+        },
+        _ => None,
+    })
 }
 
 #[tauri::command]
@@ -32,19 +51,9 @@ pub async fn test_connection(
         Ok((host, keys))
     })?;
 
-    let auth = match host.auth_method.as_deref() {
-        Some("password") => match cred_state.get_password(host_id)? {
-            Some(p) => AuthMethod::Password(p),
-            None => return Ok(ProbeResult::NoCredentials),
-        },
-        Some("key") => match &host.key_path {
-            Some(path) => AuthMethod::Key {
-                path: path.clone(),
-                passphrase: cred_state.get_passphrase(host_id)?,
-            },
-            None => return Ok(ProbeResult::NoCredentials),
-        },
-        _ => return Ok(ProbeResult::NoCredentials),
+    let auth = match auth_for_host(&host, &cred_state)? {
+        Some(a) => a,
+        None => return Ok(ProbeResult::NoCredentials),
     };
 
     let fingerprints: Vec<String> = trusted
