@@ -34,7 +34,7 @@ serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
-keyring = "3"
+keyring = { version = "3", features = ["windows-native"] }
 age = "0.11"
 # default-features off to swap aws-lc-rs (needs CMake/NASM on Windows) for ring
 russh = { version = "0.61", default-features = false, features = ["flate2", "ring", "rsa"] }
