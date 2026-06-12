@@ -3,6 +3,7 @@
 //! sudo password piping (D-026) — the operator is interactive.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use base64::engine::general_purpose::STANDARD as B64;
@@ -95,11 +96,19 @@ enum SessionCmd {
     Close,
 }
 
-/// Live sessions, keyed by the frontend-supplied session id. Each value is
-/// the command channel into that session's task. Clone-cheap (shared map) so
-/// the session task can deregister itself.
+/// One registered session: the command channel into its task, plus the epoch
+/// stamped at registration so a task can tell whether the map entry is still
+/// its own (a later open with the same id replaces the entry — see
+/// `remove_if_current`).
+struct SessionEntry {
+    epoch: u64,
+    tx: mpsc::Sender<SessionCmd>,
+}
+
+/// Live sessions, keyed by the frontend-supplied session id. Clone-cheap
+/// (shared map) so the session task can deregister itself.
 #[derive(Default, Clone)]
-pub struct PtyState(Arc<Mutex<HashMap<String, mpsc::Sender<SessionCmd>>>>);
+pub struct PtyState(Arc<Mutex<HashMap<String, SessionEntry>>>, Arc<AtomicU64>);
 
 impl PtyState {
     fn sender(&self, session_id: &str) -> AppResult<mpsc::Sender<SessionCmd>> {
@@ -107,16 +116,35 @@ impl PtyState {
             .lock()
             .unwrap()
             .get(session_id)
-            .cloned()
+            .map(|e| e.tx.clone())
             .ok_or_else(|| AppError::Ssh(format!("no such pty session: {session_id}")))
     }
 
-    fn insert(&self, session_id: String, tx: mpsc::Sender<SessionCmd>) {
-        self.0.lock().unwrap().insert(session_id, tx);
+    /// Registers (or replaces) the session and returns its epoch. Replacing
+    /// drops the old entry's sender, which shuts down the old task.
+    fn insert(&self, session_id: String, tx: mpsc::Sender<SessionCmd>) -> u64 {
+        let epoch = self.1.fetch_add(1, Ordering::Relaxed);
+        self.0
+            .lock()
+            .unwrap()
+            .insert(session_id, SessionEntry { epoch, tx });
+        epoch
     }
 
-    fn remove(&self, session_id: &str) {
-        self.0.lock().unwrap().remove(session_id);
+    /// Deregisters the session only if the entry still belongs to the task
+    /// stamped with `epoch`. Returns whether it did — false means the entry
+    /// was already removed (deliberate close) or replaced by a newer open
+    /// with the same id, and the caller must not tear down or report on the
+    /// replacement's behalf.
+    fn remove_if_current(&self, session_id: &str, epoch: u64) -> bool {
+        let mut map = self.0.lock().unwrap();
+        match map.get(session_id) {
+            Some(entry) if entry.epoch == epoch => {
+                map.remove(session_id);
+                true
+            }
+            _ => false,
+        }
     }
 
     pub fn write(&self, session_id: &str, data: &[u8]) -> AppResult<()> {
@@ -132,11 +160,12 @@ impl PtyState {
     }
 
     pub fn close(&self, session_id: &str) -> AppResult<()> {
-        // Best effort: the session may already be gone.
-        if let Ok(tx) = self.sender(session_id) {
-            let _ = tx.try_send(SessionCmd::Close);
+        // Best effort: the session may already be gone. Removing the entry
+        // first means the task's own remove_if_current comes back false, so
+        // a deliberate close never emits a pty:closed event.
+        if let Some(entry) = self.0.lock().unwrap().remove(session_id) {
+            let _ = entry.tx.try_send(SessionCmd::Close);
         }
-        self.remove(session_id);
         Ok(())
     }
 }
@@ -178,7 +207,7 @@ pub async fn open<E: PtyEvents>(
         .map_err(|e| AppError::Ssh(format!("shell request: {e}")))?;
 
     let (tx, mut rx) = mpsc::channel::<SessionCmd>(64);
-    state.insert(session_id.clone(), tx);
+    let epoch = state.insert(session_id.clone(), tx);
     let state = state.clone();
 
     tauri::async_runtime::spawn(async move {
@@ -223,13 +252,17 @@ pub async fn open<E: PtyEvents>(
             .disconnect(russh::Disconnect::ByApplication, "", "en")
             .await;
         // Drop our map entry so later writes fail fast instead of queueing
-        // into a dead task.
-        state.remove(&session_id);
-        events.closed(PtyClosed {
-            session_id: session_id.clone(),
-            exit_code,
-            message,
-        });
+        // into a dead task — but only if the entry is still OURS. A second
+        // open with the same session id replaces the entry; the replaced
+        // task must not deregister its successor or report a close the UI
+        // would misattribute to the live session.
+        if state.remove_if_current(&session_id, epoch) {
+            events.closed(PtyClosed {
+                session_id: session_id.clone(),
+                exit_code,
+                message,
+            });
+        }
     });
 
     Ok(PtyOpenResult::Opened)

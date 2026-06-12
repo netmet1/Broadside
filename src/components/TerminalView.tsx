@@ -155,7 +155,13 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     });
     const unlistenClosed = onPtyClosed((closed) => {
       if (closed.session_id !== sessionId) return;
-      if (phaseRef.current.kind === "open") {
+      // Accept the close during "connecting" too — a shell can die in the
+      // gap before the open invoke resolves, and swallowing the event here
+      // would leave a live-looking but dead terminal.
+      if (
+        phaseRef.current.kind === "open" ||
+        phaseRef.current.kind === "connecting"
+      ) {
         const detail =
           closed.message ??
           (closed.exit_code !== null
@@ -219,8 +225,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         if (cancelled) return;
         switch (result.status) {
           case "opened":
-            setPhase({ kind: "open" });
-            term.focus();
+            // A pty:closed for this session may have raced ahead of the
+            // open result — don't resurrect a dead session.
+            if (phaseRef.current.kind !== "closed") {
+              setPhase({ kind: "open" });
+              term.focus();
+            }
             break;
           case "unknown_key":
           case "key_mismatch":
