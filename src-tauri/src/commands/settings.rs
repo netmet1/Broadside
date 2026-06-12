@@ -14,6 +14,32 @@ const KEY_LOCAL_PROBE: &str = "local_probe";
 const KEY_MAX_SESSIONS: &str = "max_concurrent_sessions";
 const KEY_DEFAULT_TIMEOUT: &str = "default_timeout_secs";
 const KEY_HELP_HINTS: &str = "help_hints_enabled";
+const KEY_SHORTCUTS: &str = "shortcut_commands";
+const KEY_TERMINAL_FONT_FAMILY: &str = "terminal_font_family";
+const KEY_TERMINAL_FONT_SIZE: &str = "terminal_font_size";
+const KEY_APP_FONT_SIZE: &str = "app_font_size";
+
+pub const DEFAULT_TERMINAL_FONT_FAMILY: &str = "Consolas, 'Cascadia Mono', monospace";
+pub const DEFAULT_TERMINAL_FONT_SIZE: u16 = 13;
+pub const DEFAULT_APP_FONT_SIZE: u16 = 16;
+
+/// Built-in shortcut commands (D-054). Like guard core rules these live in
+/// code and cannot be removed; the UI sorts everything alphabetically.
+pub const CORE_SHORTCUTS: [&str; 6] = [
+    "ls -la",
+    "uptime",
+    "sudo apt update",
+    "sudo apt upgrade",
+    "sudo apt update && sudo apt upgrade",
+    "htop",
+];
+
+/// A user-defined shortcut command (Settings CRUD, D-054).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShortcutCommand {
+    pub id: String,
+    pub command: String,
+}
 
 /// Everything the Settings page needs in one fetch.
 #[derive(Serialize)]
@@ -25,6 +51,11 @@ pub struct AppSettings {
     pub help_hints_enabled: bool,
     pub core_rules: Vec<CoreRuleInfo>,
     pub user_rules: Vec<UserRule>,
+    pub core_shortcuts: Vec<String>,
+    pub user_shortcuts: Vec<ShortcutCommand>,
+    pub terminal_font_family: String,
+    pub terminal_font_size: u16,
+    pub app_font_size: u16,
 }
 
 #[derive(Deserialize)]
@@ -49,6 +80,15 @@ pub(crate) fn load_cached_probe(conn: &rusqlite::Connection) -> AppResult<Option
         .and_then(|json| serde_json::from_str(&json).ok()))
 }
 
+pub(crate) fn load_user_shortcuts(
+    conn: &rusqlite::Connection,
+) -> AppResult<Vec<ShortcutCommand>> {
+    match settings::get(conn, KEY_SHORTCUTS)? {
+        Some(json) => Ok(serde_json::from_str(&json)?),
+        None => Ok(Vec::new()),
+    }
+}
+
 #[tauri::command]
 pub fn get_app_settings(state: State<'_, DbState>) -> AppResult<AppSettings> {
     with_db(&state, |conn| {
@@ -61,8 +101,78 @@ pub fn get_app_settings(state: State<'_, DbState>) -> AppResult<AppSettings> {
             help_hints_enabled: settings::get_bool(conn, KEY_HELP_HINTS, true)?,
             core_rules: guard::core_rule_infos(),
             user_rules: load_user_rules(conn)?,
+            core_shortcuts: CORE_SHORTCUTS.iter().map(|s| s.to_string()).collect(),
+            user_shortcuts: load_user_shortcuts(conn)?,
+            terminal_font_family: settings::get(conn, KEY_TERMINAL_FONT_FAMILY)?
+                .unwrap_or_else(|| DEFAULT_TERMINAL_FONT_FAMILY.to_string()),
+            terminal_font_size: settings::get(conn, KEY_TERMINAL_FONT_SIZE)?
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(DEFAULT_TERMINAL_FONT_SIZE),
+            app_font_size: settings::get(conn, KEY_APP_FONT_SIZE)?
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(DEFAULT_APP_FONT_SIZE),
         })
     })
+}
+
+#[derive(Deserialize)]
+pub struct UiSettingsInput {
+    pub terminal_font_family: String,
+    pub terminal_font_size: u16,
+    pub app_font_size: u16,
+}
+
+/// Appearance settings: terminal font + size, application font size.
+#[tauri::command]
+pub fn set_ui_settings(input: UiSettingsInput, state: State<'_, DbState>) -> AppResult<()> {
+    let family = input.terminal_font_family.trim();
+    let family = if family.is_empty() {
+        DEFAULT_TERMINAL_FONT_FAMILY
+    } else {
+        family
+    };
+    with_db(&state, |conn| {
+        settings::set(conn, KEY_TERMINAL_FONT_FAMILY, family)?;
+        settings::set(
+            conn,
+            KEY_TERMINAL_FONT_SIZE,
+            &input.terminal_font_size.clamp(8, 32).to_string(),
+        )?;
+        settings::set(
+            conn,
+            KEY_APP_FONT_SIZE,
+            &input.app_font_size.clamp(12, 20).to_string(),
+        )
+    })
+}
+
+/// Wholesale replace of the user shortcut list (mirrors save_guard_rules).
+#[tauri::command]
+pub fn save_shortcuts(
+    shortcuts: Vec<ShortcutCommand>,
+    state: State<'_, DbState>,
+) -> AppResult<()> {
+    let mut seen = std::collections::HashSet::new();
+    for s in &shortcuts {
+        if s.id.trim().is_empty() {
+            return Err(crate::error::AppError::InvalidInput(
+                "shortcut id is required".into(),
+            ));
+        }
+        if s.command.trim().is_empty() {
+            return Err(crate::error::AppError::InvalidInput(
+                "shortcut command cannot be empty".into(),
+            ));
+        }
+        if !seen.insert(s.id.clone()) {
+            return Err(crate::error::AppError::InvalidInput(format!(
+                "duplicate shortcut id: {}",
+                s.id
+            )));
+        }
+    }
+    let json = serde_json::to_string(&shortcuts)?;
+    with_db(&state, |conn| settings::set(conn, KEY_SHORTCUTS, &json))
 }
 
 #[tauri::command]

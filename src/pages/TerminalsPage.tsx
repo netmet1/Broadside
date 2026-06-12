@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { XIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   TerminalView,
@@ -9,10 +10,12 @@ import {
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { SearchBar } from "@/components/SearchBar";
-import { ptyClose } from "@/lib/tauri/pty";
-import type { Host } from "@/lib/tauri/hosts";
+import { ShortcutBar } from "@/components/ShortcutBar";
+import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
+import { errorMessage, type Host } from "@/lib/tauri/hosts";
 import type { SearchOptions } from "@/lib/search";
 import { usePageStatus } from "@/lib/status";
+import { useShortcuts } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
 
 export type TermSession = {
@@ -26,6 +29,7 @@ type Props = {
   activeId: string | null;
   visible: boolean;
   onConnectionChange: (sessionId: string, connected: boolean) => void;
+  onManageShortcuts: () => void;
   onActivate: (id: string) => void;
   onCloseSession: (id: string) => void;
 };
@@ -35,9 +39,11 @@ export function TerminalsPage({
   activeId,
   visible,
   onConnectionChange,
+  onManageShortcuts,
   onActivate,
   onCloseSession,
 }: Props) {
+  const shortcuts = useShortcuts(visible);
   usePageStatus(
     `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`,
     visible,
@@ -165,9 +171,20 @@ export function TerminalsPage({
       : null;
   const activeGate = activeGateSession ? gates.get(activeGateSession.id)! : null;
 
+  /** Shortcut Go: type the command into the active terminal and press Enter.
+   * PTY tabs bypass the guard by design (D-014) — the operator is
+   * interactive here, same as if they typed it themselves. */
+  const runShortcut = (cmd: string) => {
+    if (activeId === null) return;
+    ptyWrite(activeId, cmd + "\n").catch((e) => {
+      toast.error(errorMessage(e));
+    });
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-1 overflow-x-auto border-b border-border/50 px-2 pt-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {sessions.map((s) => (
           <div
             key={s.id}
@@ -204,6 +221,15 @@ export function TerminalsPage({
             No open terminals. Open one from a host row on the Hosts page.
           </p>
         )}
+        </div>
+        <div className="shrink-0 pb-1.5">
+          <ShortcutBar
+            shortcuts={shortcuts}
+            disabled={activeId === null}
+            onRun={runShortcut}
+            onManage={onManageShortcuts}
+          />
+        </div>
       </div>
 
       {searchOpen && (

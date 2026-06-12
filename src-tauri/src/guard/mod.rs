@@ -33,6 +33,9 @@ pub struct UserRule {
     pub path_patterns: Vec<String>,
     #[serde(default)]
     pub arg_all_of: Vec<String>,
+    /// Optional longer explanation shown via the help icon in Settings.
+    #[serde(default)]
+    pub help_tip: Option<String>,
     pub enabled: bool,
 }
 
@@ -61,6 +64,7 @@ pub fn validate_user_rule(rule: &UserRule) -> AppResult<()> {
 pub struct CoreRuleInfo {
     pub id: String,
     pub description: String,
+    pub help_tip: String,
 }
 
 pub fn core_rule_infos() -> Vec<CoreRuleInfo> {
@@ -69,6 +73,7 @@ pub fn core_rule_infos() -> Vec<CoreRuleInfo> {
         .map(|r| CoreRuleInfo {
             id: r.id.to_string(),
             description: r.description.to_string(),
+            help_tip: r.help_tip.to_string(),
         })
         .collect()
 }
@@ -77,6 +82,8 @@ pub fn core_rule_infos() -> Vec<CoreRuleInfo> {
 struct Rule {
     id: &'static str,
     description: &'static str,
+    /// Plain-English explanation for the Settings help modal.
+    help_tip: &'static str,
     kinds: Vec<Matcher>,
 }
 
@@ -108,6 +115,10 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "rm-rf",
             description: "Recursive forced delete (rm -rf)",
+            help_tip: "rm -rf permanently deletes the target and everything \
+                under it — no prompt, no trash, no undo. On the wrong path \
+                (or with a stray space) it can erase an entire server in \
+                seconds, multiplied by every host in the broadcast.",
             kinds: vec![Matcher::Spec {
                 commands: &["rm"],
                 required_flags: &["r|R|--recursive", "f|--force"],
@@ -118,6 +129,10 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "dd-device",
             description: "Raw write to a block device (dd of=/dev/…)",
+            help_tip: "dd writing to a /dev block device overwrites raw disk \
+                sectors directly — partition tables, filesystems and data are \
+                destroyed without confirmation. A mistyped of= target can \
+                wipe the system disk while it is running.",
             kinds: vec![Matcher::Spec {
                 commands: &["dd"],
                 required_flags: &[],
@@ -128,6 +143,9 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "mkfs",
             description: "Filesystem creation destroys existing data (mkfs)",
+            help_tip: "mkfs formats a partition or disk into a brand-new \
+                empty filesystem. Anything previously stored there becomes \
+                unrecoverable the moment formatting starts.",
             kinds: vec![Matcher::Spec {
                 commands: &["mkfs*"],
                 required_flags: &[],
@@ -138,6 +156,10 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "partition-tools",
             description: "Partition table modification (fdisk/parted/sfdisk/wipefs on a device)",
+            help_tip: "fdisk, parted, sfdisk and wipefs rewrite partition \
+                tables and filesystem signatures. One wrong operation can \
+                make every filesystem on the disk unreachable — data is \
+                often recoverable only with forensic tools, if at all.",
             kinds: vec![Matcher::Spec {
                 commands: &["fdisk", "parted", "sfdisk", "wipefs"],
                 required_flags: &[],
@@ -148,6 +170,12 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "shutdown",
             description: "Host shutdown or reboot",
+            help_tip: "Matches shutdown, reboot, poweroff, halt, systemctl \
+                poweroff/reboot/halt and init 0/6. Broadcast to many hosts \
+                this takes your whole fleet offline at once — and if a host \
+                doesn't come back up (disk check, boot failure, no \
+                out-of-band access), you've lost it until someone reaches \
+                the console.",
             kinds: vec![
                 Matcher::Spec {
                     commands: &["shutdown", "poweroff", "reboot", "halt"],
@@ -190,6 +218,10 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "truncate-auth-files",
             description: "Truncation of /etc/passwd, /etc/shadow or /etc/sudoers",
+            help_tip: "A truncating > redirect into /etc/passwd, /etc/shadow \
+                or /etc/sudoers empties the file before anything is written. \
+                Losing these files breaks every login and sudo on the host — \
+                often including the session you'd use to fix it.",
             kinds: vec![Matcher::RedirectTruncate {
                 targets: &["/etc/passwd", "/etc/shadow", "/etc/sudoers"],
             }],
@@ -197,6 +229,11 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "recursive-chmod-chown-system",
             description: "Recursive chmod/chown of a system path",
+            help_tip: "Recursive permission or ownership changes on system \
+                roots (/, /etc, /usr, …) break the carefully-set permissions \
+                the OS and its services depend on. Recovery usually means \
+                restoring from backup or reinstalling — there is no command \
+                to put the old permissions back.",
             kinds: vec![Matcher::Spec {
                 commands: &["chmod", "chown"],
                 required_flags: &["R|--recursive"],
@@ -210,6 +247,11 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "fork-bomb",
             description: "Fork bomb",
+            help_tip: "The :(){ :|:& };: pattern defines a function that \
+                spawns itself twice, forever. Process count grows \
+                exponentially until the host exhausts its process table and \
+                stops responding to anything — usually only a hard reboot \
+                recovers it.",
             kinds: vec![Matcher::RawContains {
                 needles: &[":(){ :|:& };:", ":(){:|:&};:"],
             }],
@@ -217,6 +259,10 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "pipe-to-shell",
             description: "Downloaded content piped straight into a shell",
+            help_tip: "curl or wget piped into sh/bash executes whatever the \
+                server returns, sight unseen. If the URL is mistyped, the \
+                site is compromised, or the network injects content, you \
+                just ran an attacker's script — on every selected host.",
             kinds: vec![Matcher::PipeToShell {
                 sources: &["curl", "wget", "fetch"],
                 shells: &["sh", "bash", "zsh", "dash", "ksh"],
@@ -225,6 +271,10 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "crontab-remove",
             description: "Removes the user's entire crontab (crontab -r)",
+            help_tip: "crontab -r deletes the user's entire crontab \
+                immediately — not one entry, all of them, with no \
+                confirmation. Unless you have a backup of the crontab there \
+                is no way to get the schedule back.",
             kinds: vec![Matcher::Spec {
                 commands: &["crontab"],
                 required_flags: &["r"],
@@ -235,6 +285,10 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "firewall-flush",
             description: "Flushes all firewall rules (iptables -F / nft flush ruleset)",
+            help_tip: "iptables -F / nft flush ruleset removes every \
+                firewall rule on the host. Depending on the default policies \
+                this either exposes every open port to the network or cuts \
+                off all traffic — including the SSH session you're using.",
             kinds: vec![
                 Matcher::Spec {
                     commands: &["iptables", "ip6tables"],
@@ -253,6 +307,10 @@ fn core_rules() -> Vec<Rule> {
         Rule {
             id: "account-removal",
             description: "User or group account removal (userdel/groupdel/passwd -d)",
+            help_tip: "userdel and groupdel remove accounts; passwd -d \
+                deletes a user's password outright. Services running under a \
+                removed account break, file ownership goes orphaned, and a \
+                deleted password can mean passwordless login until noticed.",
             kinds: vec![
                 Matcher::Spec {
                     commands: &["userdel", "groupdel"],
