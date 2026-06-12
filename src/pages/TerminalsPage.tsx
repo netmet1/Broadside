@@ -25,6 +25,7 @@ type Props = {
   sessions: TermSession[];
   activeId: string | null;
   visible: boolean;
+  onConnectionChange: (sessionId: string, connected: boolean) => void;
   onActivate: (id: string) => void;
   onCloseSession: (id: string) => void;
 };
@@ -33,6 +34,7 @@ export function TerminalsPage({
   sessions,
   activeId,
   visible,
+  onConnectionChange,
   onActivate,
   onCloseSession,
 }: Props) {
@@ -243,6 +245,7 @@ export function TerminalsPage({
               onSearchResults={(index, count) =>
                 setSearchResults({ index, count })
               }
+              onConnectionChange={onConnectionChange}
             />
           </div>
         ))}

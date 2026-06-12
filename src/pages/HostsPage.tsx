@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  DownloadIcon,
   Loader2Icon,
   PencilIcon,
   PlugZapIcon,
@@ -8,6 +9,7 @@ import {
   Trash2Icon,
   UploadIcon,
 } from "lucide-react";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -24,15 +26,23 @@ import { ImportHostsPanel } from "@/components/ImportHostsPanel";
 import { DeleteHostDialog } from "@/components/DeleteHostDialog";
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
-import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
+import {
+  type Host,
+  errorMessage,
+  exportHosts,
+  listHosts,
+} from "@/lib/tauri/hosts";
 import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 import { nextColor } from "@/lib/palette";
 import { useHint, usePageStatus } from "@/lib/status";
 
 export function HostsPage({
   onOpenTerminal,
+  connectedHostIds,
 }: {
   onOpenTerminal: (host: Host) => void;
+  /** Hosts with at least one live terminal session. */
+  connectedHostIds: Set<number>;
 }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,10 +67,15 @@ export function HostsPage({
   );
   const hint = useHint();
 
+  const connectedCount = useMemo(
+    () => hosts.filter((h) => connectedHostIds.has(h.id)).length,
+    [hosts, connectedHostIds],
+  );
+
   usePageStatus(
     loading
       ? null
-      : `Showing ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"}`,
+      : `Showing ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"} · ${connectedCount} connected`,
     !formOpen && !importOpen,
   );
 
@@ -98,6 +113,21 @@ export function HostsPage({
     setFormOpen(false);
     refresh();
   };
+
+  const runExport = useCallback(async () => {
+    try {
+      const path = await saveDialog({
+        title: "Export hosts to CSV",
+        defaultPath: "hosts.csv",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (typeof path !== "string") return;
+      const count = await exportHosts(path);
+      toast.success(`Exported ${count} ${count === 1 ? "host" : "hosts"}`);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  }, []);
 
   const runTest = useCallback(async (host: Host) => {
     setTestingId(host.id);
@@ -169,6 +199,15 @@ export function HostsPage({
         <div className="flex gap-2">
           <Button
             variant="outline"
+            onClick={runExport}
+            disabled={loading || hosts.length === 0}
+            {...hint("Export all hosts to a CSV file (re-importable)")}
+          >
+            <DownloadIcon />
+            Export hosts…
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => setImportOpen(true)}
             {...hint("Bulk-add hosts from a CSV or Excel file")}
           >
@@ -187,6 +226,7 @@ export function HostsPage({
           <TableHeader>
             <TableRow>
               <TableHead className="w-10" />
+              <TableHead className="w-14 text-xs">Status</TableHead>
               <TableHead>Label</TableHead>
               <TableHead>Hostname</TableHead>
               <TableHead className="w-20">Port</TableHead>
@@ -198,13 +238,13 @@ export function HostsPage({
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
             ) : hosts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
                   No hosts yet. Click <span className="font-medium">Add host</span> to create one.
                 </TableCell>
               </TableRow>
@@ -216,6 +256,23 @@ export function HostsPage({
                       className="block h-3 w-3 rounded-full"
                       style={{ backgroundColor: h.color }}
                       aria-label={h.color}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={`block h-2.5 w-2.5 rounded-full ${
+                        connectedHostIds.has(h.id)
+                          ? "bg-emerald-500"
+                          : "bg-red-500/70"
+                      }`}
+                      title={
+                        connectedHostIds.has(h.id)
+                          ? "Connected — live terminal session"
+                          : "Not connected"
+                      }
+                      aria-label={
+                        connectedHostIds.has(h.id) ? "Connected" : "Not connected"
+                      }
                     />
                   </TableCell>
                   <TableCell className="font-medium">{h.label}</TableCell>

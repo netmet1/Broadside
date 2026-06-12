@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AppShell, type Page } from "@/components/AppShell";
 import { HostsPage } from "@/pages/HostsPage";
@@ -20,6 +20,10 @@ function App() {
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [sessions, setSessions] = useState<TermSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  // Session ids with a live PTY connection (drives Hosts connected dots).
+  const [connectedSessions, setConnectedSessions] = useState<Set<string>>(
+    new Set(),
+  );
 
   useEffect(() => {
     (async () => {
@@ -42,6 +46,22 @@ function App() {
     setPage("terminals");
   }, []);
 
+  const handleConnectionChange = useCallback(
+    (sessionId: string, connected: boolean) => {
+      setConnectedSessions((prev) => {
+        if (prev.has(sessionId) === connected) return prev;
+        const next = new Set(prev);
+        if (connected) {
+          next.add(sessionId);
+        } else {
+          next.delete(sessionId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
   const closeSession = useCallback((id: string) => {
     setSessions((prev) => {
       const idx = prev.findIndex((s) => s.id === id);
@@ -55,6 +75,14 @@ function App() {
     });
   }, []);
 
+  const connectedHostIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const s of sessions) {
+      if (connectedSessions.has(s.id)) ids.add(s.host.id);
+    }
+    return ids;
+  }, [sessions, connectedSessions]);
+
   return (
     <StatusProvider>
       <AppShell
@@ -62,7 +90,12 @@ function App() {
         onNavigate={setPage}
         terminalCount={sessions.length}
       >
-      {page === "hosts" && <HostsPage onOpenTerminal={openTerminal} />}
+      {page === "hosts" && (
+        <HostsPage
+          onOpenTerminal={openTerminal}
+          connectedHostIds={connectedHostIds}
+        />
+      )}
       {page === "broadcast" && <BroadcastPage />}
       {/* Terminals stay mounted so sessions survive navigation. */}
       <div className={page === "terminals" ? "block h-full" : "hidden"}>
@@ -70,6 +103,7 @@ function App() {
           sessions={sessions}
           activeId={activeSessionId}
           visible={page === "terminals"}
+          onConnectionChange={handleConnectionChange}
           onActivate={setActiveSessionId}
           onCloseSession={closeSession}
         />
