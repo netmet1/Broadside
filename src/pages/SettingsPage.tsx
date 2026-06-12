@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
+import { useStatus } from "@/lib/status";
 import {
   type AppSettings,
   type HostLatency,
@@ -36,6 +37,7 @@ function SectionHeading({ title, hint }: { title: string; hint?: string }) {
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const { hintsEnabled, setHintsEnabled } = useStatus();
 
   // Performance section (saved together via Save)
   const [maxSessions, setMaxSessions] = useState("");
@@ -449,6 +451,30 @@ export function SettingsPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Help */}
+      <section className="space-y-3">
+        <SectionHeading
+          title="Help"
+          hint="Contextual hints in the bottom bar while hovering buttons and actions."
+        />
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="accent-primary"
+            checked={hintsEnabled}
+            onChange={async (e) => {
+              const next = e.target.checked;
+              try {
+                await setHintsEnabled(next);
+              } catch (err) {
+                toast.error(errorMessage(err));
+              }
+            }}
+          />
+          Show help hints
+        </label>
       </section>
 
       {/* Audit */}

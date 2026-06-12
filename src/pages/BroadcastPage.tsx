@@ -40,6 +40,7 @@ import {
 import { HighlightedLine, HighlightedText } from "@/components/Highlight";
 import { SaveSessionDialog } from "@/components/SaveSessionDialog";
 import type { OtlogLine } from "@/lib/tauri/logs";
+import { useHint, usePageStatus } from "@/lib/status";
 
 const DEFAULT_TIMEOUT_SECS = 30;
 
@@ -78,6 +79,14 @@ export function BroadcastPage() {
     null,
   );
   const [activeHitIdx, setActiveHitIdx] = useState(0);
+
+  const hint = useHint();
+
+  usePageStatus(
+    hosts.length > 0
+      ? `${selected.size}/${hosts.length} hosts selected`
+      : null,
+  );
 
   const runIdRef = useRef<string>("");
   const lastCommandRef = useRef<string>("");
@@ -366,10 +375,13 @@ export function BroadcastPage() {
   const filterActive = searchMode === "filter" && matcher !== null && searchPattern !== "";
 
   return (
-    <div className="flex h-full min-h-screen">
+    <div className="flex h-full">
       {/* Host selection rail */}
       <div className="flex w-60 shrink-0 flex-col border-r border-border/50">
-        <label className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium">
+        <label
+          className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium"
+          {...hint("Select or deselect every host for this broadcast")}
+        >
           <input
             type="checkbox"
             className="accent-primary"
@@ -433,6 +445,7 @@ export function BroadcastPage() {
               variant="ghost"
               size="sm"
               onClick={() => setSaveOpen(true)}
+              {...hint("Save this broadcast output to a .otlog session file")}
             >
               Save session…
             </Button>
@@ -506,6 +519,7 @@ export function BroadcastPage() {
               parsedTimeout === null
             }
             aria-label="Send"
+            {...hint("Run the command on every selected host")}
           >
             {running ? (
               <Loader2Icon className="animate-spin" />

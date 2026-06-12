@@ -8,6 +8,7 @@ import { LogsPage } from "@/pages/LogsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { UnlockDialog } from "@/components/UnlockDialog";
 import { Toaster } from "@/components/ui/sonner";
+import { StatusProvider } from "@/components/StatusProvider";
 import {
   type Host,
   isCredentialsUnlocked,
@@ -55,11 +56,12 @@ function App() {
   }, []);
 
   return (
-    <AppShell
-      active={page}
-      onNavigate={setPage}
-      terminalCount={sessions.length}
-    >
+    <StatusProvider>
+      <AppShell
+        active={page}
+        onNavigate={setPage}
+        terminalCount={sessions.length}
+      >
       {page === "hosts" && <HostsPage onOpenTerminal={openTerminal} />}
       {page === "broadcast" && <BroadcastPage />}
       {/* Terminals stay mounted so sessions survive navigation. */}
@@ -77,13 +79,14 @@ function App() {
         <LogsPage visible={page === "logs"} />
       </div>
       {page === "settings" && <SettingsPage />}
-      <UnlockDialog
-        open={unlockOpen}
-        onOpenChange={setUnlockOpen}
-        onUnlocked={() => {}}
-      />
-      <Toaster />
-    </AppShell>
+        <UnlockDialog
+          open={unlockOpen}
+          onOpenChange={setUnlockOpen}
+          onUnlocked={() => {}}
+        />
+        <Toaster />
+      </AppShell>
+    </StatusProvider>
   );
 }
 
