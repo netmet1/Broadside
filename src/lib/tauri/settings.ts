@@ -36,6 +36,7 @@ export type AppSettings = {
   /** null = follow the probe suggestion. */
   max_concurrent_sessions: number | null;
   default_timeout_secs: number;
+  help_hints_enabled: boolean;
   core_rules: CoreRuleInfo[];
   user_rules: UserRule[];
 };
@@ -56,6 +57,10 @@ export function setAppSettings(input: {
   default_timeout_secs: number;
 }): Promise<void> {
   return invoke<void>("set_app_settings", { input });
+}
+
+export function setHelpHintsEnabled(enabled: boolean): Promise<void> {
+  return invoke<void>("set_help_hints_enabled", { enabled });
 }
 
 export function saveGuardRules(rules: UserRule[]): Promise<void> {

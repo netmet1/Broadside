@@ -306,7 +306,7 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
         : "No credentials set";
 
   return (
-    <section className="flex h-full min-h-screen flex-col bg-background">
+    <section className="flex h-full flex-col bg-background">
       <header className="px-8 py-5">
         <h1 className="font-heading text-xl font-semibold tracking-tight">
           {isEdit ? "Edit host" : "Add host"}

@@ -152,7 +152,7 @@ export function ImportHostsPanel({
   };
 
   return (
-    <div className="flex h-full min-h-screen flex-col gap-4 p-6">
+    <div className="flex h-full flex-col gap-4 p-6">
       <div>
         <h1 className="font-heading text-xl font-semibold tracking-tight">
           Import hosts

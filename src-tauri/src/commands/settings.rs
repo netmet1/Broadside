@@ -13,6 +13,7 @@ const KEY_GUARD_RULES: &str = "guard_user_rules";
 const KEY_LOCAL_PROBE: &str = "local_probe";
 const KEY_MAX_SESSIONS: &str = "max_concurrent_sessions";
 const KEY_DEFAULT_TIMEOUT: &str = "default_timeout_secs";
+const KEY_HELP_HINTS: &str = "help_hints_enabled";
 
 /// Everything the Settings page needs in one fetch.
 #[derive(Serialize)]
@@ -21,6 +22,7 @@ pub struct AppSettings {
     /// None = follow the probe suggestion.
     pub max_concurrent_sessions: Option<usize>,
     pub default_timeout_secs: u64,
+    pub help_hints_enabled: bool,
     pub core_rules: Vec<CoreRuleInfo>,
     pub user_rules: Vec<UserRule>,
 }
@@ -56,6 +58,7 @@ pub fn get_app_settings(state: State<'_, DbState>) -> AppResult<AppSettings> {
             default_timeout_secs: settings::get(conn, KEY_DEFAULT_TIMEOUT)?
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(30),
+            help_hints_enabled: settings::get_bool(conn, KEY_HELP_HINTS, true)?,
             core_rules: guard::core_rule_infos(),
             user_rules: load_user_rules(conn)?,
         })
@@ -82,6 +85,15 @@ pub fn set_app_settings(
             KEY_DEFAULT_TIMEOUT,
             &input.default_timeout_secs.clamp(1, 3600).to_string(),
         )
+    })
+}
+
+/// Toggle for the bottom-bar help hints; saved immediately on change (same
+/// pattern as the audit toggle).
+#[tauri::command]
+pub fn set_help_hints_enabled(enabled: bool, state: State<'_, DbState>) -> AppResult<()> {
+    with_db(&state, |conn| {
+        settings::set(conn, KEY_HELP_HINTS, if enabled { "true" } else { "false" })
     })
 }
 

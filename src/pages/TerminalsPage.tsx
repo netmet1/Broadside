@@ -12,6 +12,7 @@ import { SearchBar } from "@/components/SearchBar";
 import { ptyClose } from "@/lib/tauri/pty";
 import type { Host } from "@/lib/tauri/hosts";
 import type { SearchOptions } from "@/lib/search";
+import { usePageStatus } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
 export type TermSession = {
@@ -35,6 +36,11 @@ export function TerminalsPage({
   onActivate,
   onCloseSession,
 }: Props) {
+  usePageStatus(
+    `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`,
+    visible,
+  );
+
   const [gates, setGates] = useState<Map<string, ConnectionGate>>(new Map());
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
     new Map(),
@@ -158,7 +164,7 @@ export function TerminalsPage({
   const activeGate = activeGateSession ? gates.get(activeGateSession.id)! : null;
 
   return (
-    <div className="flex h-full min-h-screen flex-col">
+    <div className="flex h-full flex-col">
       <div className="flex items-center gap-1 overflow-x-auto border-b border-border/50 px-2 pt-2">
         {sessions.map((s) => (
           <div

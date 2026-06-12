@@ -77,6 +77,7 @@ pub fn run() {
             commands::audit::set_audit_enabled,
             commands::settings::get_app_settings,
             commands::settings::set_app_settings,
+            commands::settings::set_help_hints_enabled,
             commands::settings::save_guard_rules,
             commands::settings::recalibrate_probe,
             commands::settings::network_probe,
