@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  CircleHelpIcon,
   Loader2Icon,
   LockIcon,
+  PencilIcon,
   PlusIcon,
   RadarIcon,
   RefreshCwIcon,
+  SearchIcon,
   Trash2Icon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -12,18 +15,30 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
-import { useStatus } from "@/lib/status";
+import { useHint, useStatus } from "@/lib/status";
+import { useUiPrefs } from "@/lib/uiPrefs";
 import {
   type AppSettings,
   type HostLatency,
+  type ShortcutCommand,
   type UserRule,
   getAppSettings,
   networkProbe,
   recalibrateProbe,
   saveGuardRules,
+  saveShortcuts,
   setAppSettings,
+  setUiSettings,
 } from "@/lib/tauri/settings";
 
 function SectionHeading({ title, hint }: { title: string; hint?: string }) {
@@ -35,9 +50,38 @@ function SectionHeading({ title, hint }: { title: string; hint?: string }) {
   );
 }
 
-export function SettingsPage() {
+export function SettingsPage({
+  focusSection = null,
+  onFocusConsumed,
+}: {
+  /** Section to scroll to after mount (e.g. "shortcuts" from the
+   * "Manage shortcuts…" entry on Broadcast/Terminals). */
+  focusSection?: string | null;
+  onFocusConsumed?: () => void;
+}) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const { hintsEnabled, setHintsEnabled } = useStatus();
+  const { prefs, apply: applyUiPrefs } = useUiPrefs();
+  const hint = useHint();
+
+  // Section search — filters which settings sections are shown.
+  const [query, setQuery] = useState("");
+  const sectionVisible = useCallback(
+    (title: string) =>
+      query.trim() === "" ||
+      title.toLowerCase().includes(query.trim().toLowerCase()),
+    [query],
+  );
+  const SECTION_TITLES = [
+    "Performance",
+    "Network probe",
+    "Destructive command guard",
+    "Shortcut commands",
+    "Appearance",
+    "Help",
+    "Audit log",
+  ];
+  const anyVisible = SECTION_TITLES.some(sectionVisible);
 
   // Performance section (saved together via Save)
   const [maxSessions, setMaxSessions] = useState("");
@@ -59,6 +103,27 @@ export function SettingsPage() {
   const [ruleFlags, setRuleFlags] = useState("");
   const [rulePaths, setRulePaths] = useState("");
   const [ruleArgs, setRuleArgs] = useState("");
+  const [ruleTip, setRuleTip] = useState("");
+  // Drives the red outline on required fields after a failed submit.
+  const [ruleSubmitAttempted, setRuleSubmitAttempted] = useState(false);
+
+  // Help-tip modal (core + user rules)
+  const [helpRule, setHelpRule] = useState<{ title: string; tip: string } | null>(
+    null,
+  );
+
+  // Shortcut commands (D-054)
+  const [shortcutFormOpen, setShortcutFormOpen] = useState(false);
+  const [shortcutCmd, setShortcutCmd] = useState("");
+  const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
+  const [shortcutSubmitAttempted, setShortcutSubmitAttempted] = useState(false);
+  const shortcutsSectionRef = useRef<HTMLElement>(null);
+
+  // Appearance
+  const [termFontFamily, setTermFontFamily] = useState("");
+  const [termFontSize, setTermFontSize] = useState("13");
+  const [appFontSize, setAppFontSize] = useState("16");
+  const [savingUi, setSavingUi] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -68,6 +133,9 @@ export function SettingsPage() {
         s.max_concurrent_sessions !== null ? String(s.max_concurrent_sessions) : "",
       );
       setDefaultTimeout(String(s.default_timeout_secs));
+      setTermFontFamily(s.terminal_font_family);
+      setTermFontSize(String(s.terminal_font_size));
+      setAppFontSize(String(s.app_font_size));
     } catch (e) {
       toast.error(errorMessage(e));
     }
@@ -82,6 +150,14 @@ export function SettingsPage() {
     load();
   }, [load]);
 
+  // Deep-link scroll (e.g. "Manage shortcuts…" from Broadcast/Terminals).
+  useEffect(() => {
+    if (focusSection === "shortcuts" && settings) {
+      shortcutsSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+      onFocusConsumed?.();
+    }
+  }, [focusSection, settings, onFocusConsumed]);
+
   const parsedMaxSessions = (() => {
     if (maxSessions.trim() === "") return null; // follow suggestion
     const n = Number(maxSessions);
@@ -90,6 +166,14 @@ export function SettingsPage() {
   const parsedTimeout = (() => {
     const n = Number(defaultTimeout);
     return Number.isInteger(n) && n >= 1 && n <= 3600 ? n : undefined;
+  })();
+  const parsedTermFontSize = (() => {
+    const n = Number(termFontSize);
+    return Number.isInteger(n) && n >= 8 && n <= 32 ? n : undefined;
+  })();
+  const parsedAppFontSize = (() => {
+    const n = Number(appFontSize);
+    return Number.isInteger(n) && n >= 12 && n <= 20 ? n : undefined;
   })();
 
   const savePerf = async () => {
@@ -105,6 +189,31 @@ export function SettingsPage() {
       toast.error(errorMessage(e));
     } finally {
       setSavingPerf(false);
+    }
+  };
+
+  const saveAppearance = async () => {
+    if (parsedTermFontSize === undefined || parsedAppFontSize === undefined) {
+      return;
+    }
+    setSavingUi(true);
+    try {
+      await setUiSettings({
+        terminal_font_family: termFontFamily.trim(),
+        terminal_font_size: parsedTermFontSize,
+        app_font_size: parsedAppFontSize,
+      });
+      applyUiPrefs({
+        terminalFontFamily:
+          termFontFamily.trim() || prefs.terminalFontFamily,
+        terminalFontSize: parsedTermFontSize,
+        appFontSize: parsedAppFontSize,
+      });
+      toast.success("Appearance saved");
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setSavingUi(false);
     }
   };
 
@@ -148,8 +257,17 @@ export function SettingsPage() {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
+  const ruleDescMissing = ruleDesc.trim().length === 0;
+  const ruleCommandsMissing = splitList(ruleCommands).length === 0;
+
   const addRule = async () => {
     if (!settings) return;
+    if (ruleDescMissing || ruleCommandsMissing) {
+      setRuleSubmitAttempted(true);
+      toast.error("Description and at least one command are required");
+      return;
+    }
+    const tip = ruleTip.trim();
     const rule: UserRule = {
       id: `user-${crypto.randomUUID().slice(0, 8)}`,
       description: ruleDesc.trim(),
@@ -157,18 +275,17 @@ export function SettingsPage() {
       required_flags: splitList(ruleFlags),
       path_patterns: splitList(rulePaths),
       arg_all_of: splitList(ruleArgs),
+      help_tip: tip.length > 0 ? tip : null,
       enabled: true,
     };
-    if (!rule.description || rule.commands.length === 0) {
-      toast.error("Description and at least one command are required");
-      return;
-    }
     await persistRules([...settings.user_rules, rule]);
     setRuleDesc("");
     setRuleCommands("");
     setRuleFlags("");
     setRulePaths("");
     setRuleArgs("");
+    setRuleTip("");
+    setRuleSubmitAttempted(false);
     setFormOpen(false);
   };
 
@@ -186,13 +303,83 @@ export function SettingsPage() {
     persistRules(settings.user_rules.filter((r) => r.id !== id));
   };
 
+  /** Wholesale-replace persistence for shortcuts (mirrors guard rules). */
+  const persistShortcuts = async (shortcuts: ShortcutCommand[]) => {
+    try {
+      await saveShortcuts(shortcuts);
+      setSettings((prev) => (prev ? { ...prev, user_shortcuts: shortcuts } : prev));
+      return true;
+    } catch (e) {
+      toast.error(errorMessage(e));
+      return false;
+    }
+  };
+
+  const shortcutCmdMissing = shortcutCmd.trim().length === 0;
+
+  const submitShortcut = async () => {
+    if (!settings) return;
+    if (shortcutCmdMissing) {
+      setShortcutSubmitAttempted(true);
+      toast.error("Command is required");
+      return;
+    }
+    const cmd = shortcutCmd.trim();
+    const next = editingShortcutId
+      ? settings.user_shortcuts.map((s) =>
+          s.id === editingShortcutId ? { ...s, command: cmd } : s,
+        )
+      : [
+          ...settings.user_shortcuts,
+          { id: `shortcut-${crypto.randomUUID().slice(0, 8)}`, command: cmd },
+        ];
+    if (await persistShortcuts(next)) {
+      setShortcutCmd("");
+      setEditingShortcutId(null);
+      setShortcutSubmitAttempted(false);
+      setShortcutFormOpen(false);
+    }
+  };
+
+  const editShortcut = (s: ShortcutCommand) => {
+    setEditingShortcutId(s.id);
+    setShortcutCmd(s.command);
+    setShortcutSubmitAttempted(false);
+    setShortcutFormOpen(true);
+  };
+
+  const deleteShortcut = (id: string) => {
+    if (!settings) return;
+    persistShortcuts(settings.user_shortcuts.filter((s) => s.id !== id));
+  };
+
   const probe = settings?.local_probe ?? null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-10 p-6 pb-16">
-      <h1 className="font-heading text-lg font-semibold">Settings</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="font-heading text-lg font-semibold">Settings</h1>
+        <div className="relative w-64">
+          <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search sections…"
+            className="h-8 pl-8 text-sm"
+            aria-label="Search settings sections"
+            {...hint("Filter the settings sections by name")}
+          />
+        </div>
+      </div>
+
+      {!anyVisible && (
+        <p className="text-sm text-muted-foreground">
+          No settings section matches “{query.trim()}”.
+        </p>
+      )}
 
       {/* Performance / probe */}
+      {sectionVisible("Performance") && (
       <section className="space-y-4">
         <SectionHeading
           title="Performance"
@@ -224,7 +411,13 @@ export function SettingsPage() {
               </p>
             )}
           </div>
-          <Button variant="outline" size="sm" onClick={recalibrate} disabled={recalibrating}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={recalibrate}
+            disabled={recalibrating}
+            {...hint("Re-measure this machine's resources for a session-count suggestion")}
+          >
             {recalibrating ? <Loader2Icon className="animate-spin" /> : <RefreshCwIcon />}
             Recalibrate
           </Button>
@@ -274,14 +467,22 @@ export function SettingsPage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* Network probe */}
+      {sectionVisible("Network probe") && (
       <section className="space-y-4">
         <SectionHeading
           title="Network probe"
           hint="TCP connect timing against every configured host, on demand."
         />
-        <Button variant="outline" size="sm" onClick={runNetworkProbe} disabled={probing}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={runNetworkProbe}
+          disabled={probing}
+          {...hint("Measure TCP connect latency to every configured host")}
+        >
           {probing ? <Loader2Icon className="animate-spin" /> : <RadarIcon />}
           Probe all hosts
         </Button>
@@ -308,8 +509,10 @@ export function SettingsPage() {
           </div>
         )}
       </section>
+      )}
 
       {/* Destructive guard rules */}
+      {sectionVisible("Destructive command guard") && (
       <section className="space-y-4">
         <SectionHeading
           title="Destructive command guard"
@@ -341,11 +544,25 @@ export function SettingsPage() {
                     {r.arg_all_of.length > 0 && ` · args: ${r.arg_all_of.join(" ")}`}
                   </p>
                 </div>
+                {r.help_tip && r.help_tip.trim().length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() =>
+                      setHelpRule({ title: r.description, tip: r.help_tip! })
+                    }
+                    aria-label={`Help for rule: ${r.description}`}
+                    {...hint("Why this rule exists and what it protects against")}
+                  >
+                    <CircleHelpIcon className="text-muted-foreground" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => deleteRule(r.id)}
                   aria-label={`Delete rule: ${r.description}`}
+                  {...hint("Delete this rule")}
                 >
                   <Trash2Icon className="text-muted-foreground" />
                 </Button>
@@ -363,6 +580,9 @@ export function SettingsPage() {
                 value={ruleDesc}
                 onChange={(e) => setRuleDesc(e.target.value)}
                 placeholder="e.g. docker prune wipes unused data"
+                className={
+                  ruleSubmitAttempted && ruleDescMissing ? "border-destructive" : ""
+                }
                 autoComplete="off"
               />
             </div>
@@ -373,7 +593,11 @@ export function SettingsPage() {
                 value={ruleCommands}
                 onChange={(e) => setRuleCommands(e.target.value)}
                 placeholder="docker, podman"
-                className="font-mono text-sm"
+                className={`font-mono text-sm ${
+                  ruleSubmitAttempted && ruleCommandsMissing
+                    ? "border-destructive"
+                    : ""
+                }`}
                 autoComplete="off"
               />
               <p className="text-xs text-muted-foreground">
@@ -420,17 +644,39 @@ export function SettingsPage() {
                 Comma-separated; all must be present as arguments.
               </p>
             </div>
+            <div className="grid gap-1">
+              <Label htmlFor="rule-tip">Help tip (optional)</Label>
+              <Input
+                id="rule-tip"
+                value={ruleTip}
+                onChange={(e) => setRuleTip(e.target.value)}
+                placeholder="Longer explanation shown via the rule's help icon"
+                autoComplete="off"
+              />
+            </div>
             <div className="flex gap-2 pt-1">
               <Button size="sm" onClick={addRule}>
                 Add rule
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setFormOpen(false)}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setFormOpen(false);
+                  setRuleSubmitAttempted(false);
+                }}
+              >
                 Cancel
               </Button>
             </div>
           </div>
         ) : (
-          <Button variant="outline" size="sm" onClick={() => setFormOpen(true)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setFormOpen(true)}
+            {...hint("Add your own destructive-command rule")}
+          >
             <PlusIcon />
             Add rule
           </Button>
@@ -446,14 +692,195 @@ export function SettingsPage() {
               className="flex items-center gap-3 rounded-md border border-border/30 px-3 py-1.5 text-sm text-muted-foreground"
             >
               <LockIcon className="h-3.5 w-3.5 shrink-0" />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="h-6 w-6"
+                onClick={() => setHelpRule({ title: r.description, tip: r.help_tip })}
+                aria-label={`Help for core rule: ${r.description}`}
+                {...hint("Why this rule exists and what it protects against")}
+              >
+                <CircleHelpIcon className="h-3.5 w-3.5" />
+              </Button>
               <span className="min-w-0 flex-1 truncate">{r.description}</span>
               <span className="font-mono text-xs">{r.id}</span>
             </div>
           ))}
         </div>
       </section>
+      )}
+
+      {/* Shortcut commands (D-054) */}
+      {sectionVisible("Shortcut commands") && (
+      <section ref={shortcutsSectionRef} className="space-y-4">
+        <SectionHeading
+          title="Shortcut commands"
+          hint="One-click commands for the dropdown on the Broadcast and Terminals pages. Core shortcuts are built in; add, edit or delete your own."
+        />
+
+        {settings && settings.user_shortcuts.length > 0 && (
+          <div className="space-y-1">
+            {settings.user_shortcuts.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center gap-3 rounded-md border border-border/40 px-3 py-2 text-sm"
+              >
+                <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                  {s.command}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => editShortcut(s)}
+                  aria-label={`Edit shortcut: ${s.command}`}
+                  {...hint("Edit this shortcut command")}
+                >
+                  <PencilIcon className="text-muted-foreground" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => deleteShortcut(s.id)}
+                  aria-label={`Delete shortcut: ${s.command}`}
+                  {...hint("Delete this shortcut command")}
+                >
+                  <Trash2Icon className="text-muted-foreground" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {shortcutFormOpen ? (
+          <div className="max-w-md space-y-3 rounded-md border border-border/40 p-4">
+            <div className="grid gap-1">
+              <Label htmlFor="shortcut-cmd">Command</Label>
+              <Input
+                id="shortcut-cmd"
+                value={shortcutCmd}
+                onChange={(e) => setShortcutCmd(e.target.value)}
+                placeholder="df -h"
+                className={`font-mono text-sm ${
+                  shortcutSubmitAttempted && shortcutCmdMissing
+                    ? "border-destructive"
+                    : ""
+                }`}
+                autoComplete="off"
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button size="sm" onClick={submitShortcut}>
+                {editingShortcutId ? "Save shortcut" : "Add shortcut"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShortcutFormOpen(false);
+                  setEditingShortcutId(null);
+                  setShortcutCmd("");
+                  setShortcutSubmitAttempted(false);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShortcutFormOpen(true)}
+            {...hint("Add a shortcut command to the Broadcast/Terminals dropdown")}
+          >
+            <PlusIcon />
+            Add shortcut
+          </Button>
+        )}
+
+        <div className="space-y-1">
+          <p className="pt-2 text-xs font-medium text-muted-foreground">
+            Core shortcuts (built in)
+          </p>
+          {settings?.core_shortcuts.map((cmd) => (
+            <div
+              key={cmd}
+              className="flex items-center gap-3 rounded-md border border-border/30 px-3 py-1.5 text-sm text-muted-foreground"
+            >
+              <LockIcon className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate font-mono text-xs">{cmd}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      )}
+
+      {/* Appearance */}
+      {sectionVisible("Appearance") && (
+      <section className="space-y-4">
+        <SectionHeading
+          title="Appearance"
+          hint="Terminal font applies to the xterm panes; application font size scales the rest of the UI."
+        />
+        <div className="grid max-w-md gap-4">
+          <div className="grid gap-1">
+            <Label htmlFor="term-font">Terminal font</Label>
+            <Input
+              id="term-font"
+              value={termFontFamily}
+              onChange={(e) => setTermFontFamily(e.target.value)}
+              placeholder="Consolas, 'Cascadia Mono', monospace"
+              className="font-mono text-sm"
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              CSS font-family list; the font must be installed on this machine.
+            </p>
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="term-font-size">Terminal font size</Label>
+            <Input
+              id="term-font-size"
+              value={termFontSize}
+              onChange={(e) => setTermFontSize(e.target.value)}
+              className={`w-40 font-mono text-sm ${parsedTermFontSize === undefined ? "border-destructive" : ""}`}
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">8–32 px.</p>
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="app-font-size">Application font size</Label>
+            <Input
+              id="app-font-size"
+              value={appFontSize}
+              onChange={(e) => setAppFontSize(e.target.value)}
+              className={`w-40 font-mono text-sm ${parsedAppFontSize === undefined ? "border-destructive" : ""}`}
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              12–20 px. Scales the whole UI except terminal panes.
+            </p>
+          </div>
+          <div>
+            <Button
+              size="sm"
+              onClick={saveAppearance}
+              disabled={
+                savingUi ||
+                parsedTermFontSize === undefined ||
+                parsedAppFontSize === undefined
+              }
+            >
+              {savingUi && <Loader2Icon className="animate-spin" />}
+              Save
+            </Button>
+          </div>
+        </div>
+      </section>
+      )}
 
       {/* Help */}
+      {sectionVisible("Help") && (
       <section className="space-y-3">
         <SectionHeading
           title="Help"
@@ -476,8 +903,10 @@ export function SettingsPage() {
           Show help hints
         </label>
       </section>
+      )}
 
       {/* Audit */}
+      {sectionVisible("Audit log") && (
       <section className="space-y-3">
         <SectionHeading
           title="Audit log"
@@ -502,6 +931,23 @@ export function SettingsPage() {
           Audit logging enabled
         </label>
       </section>
+      )}
+
+      {/* Rule help-tip modal — the Dialog overlay blurs the window behind it. */}
+      <Dialog
+        open={helpRule !== null}
+        onOpenChange={(open) => !open && setHelpRule(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{helpRule?.title}</DialogTitle>
+            <DialogDescription className="whitespace-pre-wrap pt-1">
+              {helpRule?.tip}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter showCloseButton />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

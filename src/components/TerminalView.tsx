@@ -23,6 +23,7 @@ import {
 } from "@/lib/tauri/pty";
 import { errorMessage } from "@/lib/tauri/hosts";
 import type { SearchOptions } from "@/lib/search";
+import { useUiPrefs } from "@/lib/uiPrefs";
 
 export type ConnectionGate = Extract<
   PtyOpenResult,
@@ -97,6 +98,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   onSearchResultsRef.current = onSearchResults;
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
+  const { prefs } = useUiPrefs();
+  // Read once at terminal creation; live changes are applied by the
+  // prefs effect below without recreating the terminal.
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
   const phaseRef = useRef<Phase>({ kind: "connecting" });
   const [phase, setPhaseState] = useState<Phase>({ kind: "connecting" });
   const setPhase = useCallback(
@@ -111,8 +117,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // Create the terminal once.
   useEffect(() => {
     const term = new Terminal({
-      fontFamily: "Consolas, 'Cascadia Mono', monospace",
-      fontSize: 13,
+      fontFamily: prefsRef.current.terminalFontFamily,
+      fontSize: prefsRef.current.terminalFontSize,
       cursorBlink: true,
       theme: {
         background: "#0a0a0a",
@@ -271,6 +277,20 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, hostId, retryNonce]);
+
+  // Apply appearance-setting changes to the live terminal.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    if (
+      term.options.fontFamily !== prefs.terminalFontFamily ||
+      term.options.fontSize !== prefs.terminalFontSize
+    ) {
+      term.options.fontFamily = prefs.terminalFontFamily;
+      term.options.fontSize = prefs.terminalFontSize;
+      if (containerRef.current?.offsetParent) fitRef.current?.fit();
+    }
+  }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
 
   // Refit + focus when this pane becomes visible.
   useEffect(() => {

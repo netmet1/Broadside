@@ -9,6 +9,7 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { UnlockDialog } from "@/components/UnlockDialog";
 import { Toaster } from "@/components/ui/sonner";
 import { StatusProvider } from "@/components/StatusProvider";
+import { UiPrefsProvider } from "@/components/UiPrefsProvider";
 import {
   type Host,
   isCredentialsUnlocked,
@@ -24,6 +25,8 @@ function App() {
   const [connectedSessions, setConnectedSessions] = useState<Set<string>>(
     new Set(),
   );
+  // Set when "Manage shortcuts…" is picked — Settings scrolls there on open.
+  const [settingsFocus, setSettingsFocus] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -75,6 +78,11 @@ function App() {
     });
   }, []);
 
+  const openShortcutSettings = useCallback(() => {
+    setSettingsFocus("shortcuts");
+    setPage("settings");
+  }, []);
+
   const connectedHostIds = useMemo(() => {
     const ids = new Set<number>();
     for (const s of sessions) {
@@ -85,6 +93,7 @@ function App() {
 
   return (
     <StatusProvider>
+      <UiPrefsProvider>
       <AppShell
         active={page}
         onNavigate={setPage}
@@ -99,7 +108,10 @@ function App() {
       {/* Broadcast stays mounted so output and host selection survive
           navigation (work-queue: "output history" persistence). */}
       <div className={page === "broadcast" ? "block h-full" : "hidden"}>
-        <BroadcastPage visible={page === "broadcast"} />
+        <BroadcastPage
+          visible={page === "broadcast"}
+          onManageShortcuts={openShortcutSettings}
+        />
       </div>
       {/* Terminals stay mounted so sessions survive navigation. */}
       <div className={page === "terminals" ? "block h-full" : "hidden"}>
@@ -110,13 +122,19 @@ function App() {
           onConnectionChange={handleConnectionChange}
           onActivate={setActiveSessionId}
           onCloseSession={closeSession}
+          onManageShortcuts={openShortcutSettings}
         />
       </div>
       {/* Logs stay mounted so a loaded session survives navigation. */}
       <div className={page === "logs" ? "block h-full" : "hidden"}>
         <LogsPage visible={page === "logs"} />
       </div>
-      {page === "settings" && <SettingsPage />}
+      {page === "settings" && (
+        <SettingsPage
+          focusSection={settingsFocus}
+          onFocusConsumed={() => setSettingsFocus(null)}
+        />
+      )}
         <UnlockDialog
           open={unlockOpen}
           onOpenChange={setUnlockOpen}
@@ -124,6 +142,7 @@ function App() {
         />
         <Toaster />
       </AppShell>
+      </UiPrefsProvider>
     </StatusProvider>
   );
 }
