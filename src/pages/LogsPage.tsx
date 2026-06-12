@@ -275,7 +275,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
   };
 
   return (
-    <div className="flex h-full min-h-screen flex-col">
+    <div className="flex h-full flex-col">
       <div className="flex items-center gap-4 border-b border-border/50 px-4 pt-3">
         {(["session", "audit", "history"] as const).map((t) => (
           <button

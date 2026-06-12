@@ -27,6 +27,7 @@ import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
 import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 import { nextColor } from "@/lib/palette";
+import { useHint, usePageStatus } from "@/lib/status";
 
 export function HostsPage({
   onOpenTerminal,
@@ -53,6 +54,14 @@ export function HostsPage({
   const defaultColor = useMemo(
     () => nextColor(hosts.map((h) => h.color)),
     [hosts],
+  );
+  const hint = useHint();
+
+  usePageStatus(
+    loading
+      ? null
+      : `Showing ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"}`,
+    !formOpen && !importOpen,
   );
 
   const refresh = useCallback(async () => {
@@ -148,12 +157,8 @@ export function HostsPage({
     );
   }
 
-  const countLabel = loading
-    ? ""
-    : `Showing ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"}`;
-
   return (
-    <div className="flex h-full min-h-screen flex-col gap-4 p-6">
+    <div className="flex h-full flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-xl font-semibold tracking-tight">Hosts</h1>
@@ -162,11 +167,15 @@ export function HostsPage({
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
+          <Button
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+            {...hint("Bulk-add hosts from a CSV or Excel file")}
+          >
             <UploadIcon />
             Import hosts…
           </Button>
-          <Button onClick={openAdd}>
+          <Button onClick={openAdd} {...hint("Add a single host through the form")}>
             <PlusIcon />
             Add host
           </Button>
@@ -222,6 +231,7 @@ export function HostsPage({
                       size="icon-sm"
                       onClick={() => onOpenTerminal(h)}
                       aria-label="Open terminal"
+                      {...hint(`Open an interactive terminal tab on ${h.label}`)}
                     >
                       <TerminalIcon />
                     </Button>
@@ -231,6 +241,7 @@ export function HostsPage({
                       onClick={() => runTest(h)}
                       disabled={testingId !== null}
                       aria-label="Test connection"
+                      {...hint(`Test SSH connectivity and host key for ${h.label}`)}
                     >
                       {testingId === h.id ? (
                         <Loader2Icon className="animate-spin" />
@@ -243,6 +254,7 @@ export function HostsPage({
                       size="icon-sm"
                       onClick={() => openEdit(h)}
                       aria-label="Edit"
+                      {...hint(`Edit ${h.label} — connection details and credentials`)}
                     >
                       <PencilIcon />
                     </Button>
@@ -251,6 +263,7 @@ export function HostsPage({
                       size="icon-sm"
                       onClick={() => openDelete(h)}
                       aria-label="Delete"
+                      {...hint(`Delete ${h.label} and its stored credentials`)}
                     >
                       <Trash2Icon />
                     </Button>
@@ -260,10 +273,6 @@ export function HostsPage({
             )}
           </TableBody>
         </Table>
-      </div>
-
-      <div className="flex justify-end text-xs text-muted-foreground">
-        {countLabel}
       </div>
 
       <DeleteHostDialog
