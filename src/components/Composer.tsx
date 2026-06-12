@@ -14,6 +14,8 @@ type Props = {
   onSubmit: () => void;
   disabled?: boolean;
   placeholder?: string;
+  /** Recallable past commands, newest first (Up/Down arrows, shell-style). */
+  history?: string[];
 };
 
 /**
@@ -27,11 +29,16 @@ export function Composer({
   onSubmit,
   disabled,
   placeholder,
+  history,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const mirrorRef = useRef<HTMLSpanElement>(null);
   const [caretLeft, setCaretLeft] = useState(0);
   const [focused, setFocused] = useState(false);
+  // Shell-style history recall: index into `history` while browsing, with
+  // the in-progress draft stashed so Down past the newest entry restores it.
+  const [histIdx, setHistIdx] = useState<number | null>(null);
+  const draftRef = useRef("");
 
   const syncCaret = useCallback(() => {
     const input = inputRef.current;
@@ -74,6 +81,7 @@ export function Composer({
         ref={inputRef}
         value={value}
         onChange={(e) => {
+          setHistIdx(null);
           onChange(e.target.value);
         }}
         onScroll={syncCaret}
@@ -82,7 +90,28 @@ export function Composer({
         onKeyDown={(e) => {
           if (e.key === "Enter" && !disabled) {
             e.preventDefault();
+            setHistIdx(null);
             onSubmit();
+            return;
+          }
+          if (e.key === "ArrowUp" && history && history.length > 0) {
+            e.preventDefault();
+            if (histIdx === null) draftRef.current = value;
+            const next =
+              histIdx === null ? 0 : Math.min(histIdx + 1, history.length - 1);
+            setHistIdx(next);
+            onChange(history[next]);
+            return;
+          }
+          if (e.key === "ArrowDown" && histIdx !== null && history) {
+            e.preventDefault();
+            if (histIdx === 0) {
+              setHistIdx(null);
+              onChange(draftRef.current);
+            } else {
+              setHistIdx(histIdx - 1);
+              onChange(history[histIdx - 1]);
+            }
           }
         }}
         disabled={disabled}

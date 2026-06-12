@@ -7,13 +7,70 @@
 
 pub mod tokenizer;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokenizer::{effective_command, tokenize, Pipeline, Segment, TokenKind};
+
+use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct GuardHit {
     pub rule_id: String,
     pub description: String,
+}
+
+/// A user-added rule (D-014 structured form — no raw regex). Matches with
+/// the same Spec semantics as core rules: command name(s) + optional flag
+/// groups (`short|--long` alternatives, all groups required) + optional
+/// path-prefix patterns + optional exact-arg requirements.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UserRule {
+    pub id: String,
+    pub description: String,
+    pub commands: Vec<String>,
+    #[serde(default)]
+    pub required_flags: Vec<String>,
+    #[serde(default)]
+    pub path_patterns: Vec<String>,
+    #[serde(default)]
+    pub arg_all_of: Vec<String>,
+    pub enabled: bool,
+}
+
+pub fn validate_user_rule(rule: &UserRule) -> AppResult<()> {
+    if rule.id.trim().is_empty() {
+        return Err(AppError::InvalidInput("rule id is required".into()));
+    }
+    if rule.description.trim().is_empty() {
+        return Err(AppError::InvalidInput("rule description is required".into()));
+    }
+    if rule.commands.is_empty() || rule.commands.iter().any(|c| c.trim().is_empty()) {
+        return Err(AppError::InvalidInput(
+            "at least one command name is required".into(),
+        ));
+    }
+    if rule.commands.iter().any(|c| c.contains(char::is_whitespace)) {
+        return Err(AppError::InvalidInput(
+            "command names cannot contain spaces (use flags/args fields)".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Read-only descriptor of a core rule for the Settings UI.
+#[derive(Debug, Clone, Serialize)]
+pub struct CoreRuleInfo {
+    pub id: String,
+    pub description: String,
+}
+
+pub fn core_rule_infos() -> Vec<CoreRuleInfo> {
+    core_rules()
+        .iter()
+        .map(|r| CoreRuleInfo {
+            id: r.id.to_string(),
+            description: r.description.to_string(),
+        })
+        .collect()
 }
 
 /// One core rule. `kinds` is any-of: the rule fires if any matcher fires.
@@ -217,6 +274,11 @@ fn core_rules() -> Vec<Rule> {
 /// Checks a broadcast command against every core rule. Returns all distinct
 /// hits (a compound command can trip several rules).
 pub fn check(command: &str) -> Vec<GuardHit> {
+    check_with_user(command, &[])
+}
+
+/// Core rules plus enabled user rules (D-041).
+pub fn check_with_user(command: &str, user_rules: &[UserRule]) -> Vec<GuardHit> {
     let pipelines = tokenize(command);
     let mut hits = Vec::new();
     for rule in core_rules() {
@@ -224,6 +286,22 @@ pub fn check(command: &str) -> Vec<GuardHit> {
             hits.push(GuardHit {
                 rule_id: rule.id.to_string(),
                 description: rule.description.to_string(),
+            });
+        }
+    }
+    for rule in user_rules.iter().filter(|r| r.enabled) {
+        let commands: Vec<&str> = rule.commands.iter().map(String::as_str).collect();
+        let flags: Vec<&str> = rule.required_flags.iter().map(String::as_str).collect();
+        let paths: Vec<&str> = rule.path_patterns.iter().map(String::as_str).collect();
+        let args: Vec<&str> = rule.arg_all_of.iter().map(String::as_str).collect();
+        let matched = pipelines
+            .iter()
+            .flat_map(|p| &p.segments)
+            .any(|seg| spec_matches(seg, &commands, &flags, &paths, &args));
+        if matched {
+            hits.push(GuardHit {
+                rule_id: rule.id.clone(),
+                description: rule.description.clone(),
             });
         }
     }
