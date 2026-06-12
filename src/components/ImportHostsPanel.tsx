@@ -19,7 +19,7 @@ import {
   importHosts,
   previewImport,
 } from "@/lib/tauri/import";
-import { PALETTE } from "@/lib/palette";
+import { nextColor } from "@/lib/palette";
 import { cn } from "@/lib/utils";
 
 /**
@@ -91,20 +91,18 @@ export function ImportHostsPanel({
     }
   };
 
-  /** Resolve `#auto` colors: next unused palette hue, recycling the palette
-   * round-robin once exhausted (D-025). */
+  /** Resolve `#auto` colors: next unused palette hue, falling back to a
+   * random unused color once the palette is exhausted — auto assignments
+   * never duplicate an in-use color (D-051). Explicit colors pass through. */
   const resolveColors = (ready: RowPreview[]): RowPreview[] => {
-    const used = new Set(existingColors.map((c) => c.toLowerCase()));
-    let autoCount = 0;
+    const used = existingColors.slice();
     return ready.map((r) => {
       if (r.color !== "#auto") {
-        used.add(r.color.toLowerCase());
+        used.push(r.color);
         return r;
       }
-      const free = PALETTE.find((c) => !used.has(c.toLowerCase()));
-      const color = free ?? PALETTE[autoCount % PALETTE.length];
-      autoCount += 1;
-      used.add(color.toLowerCase());
+      const color = nextColor(used);
+      used.push(color);
       return { ...r, color };
     });
   };
