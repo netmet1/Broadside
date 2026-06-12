@@ -23,6 +23,7 @@ pub async fn pty_open(
     cred_state: State<'_, CredentialState>,
     pty_state: State<'_, PtyState>,
     audit: State<'_, AuditState>,
+    errlog: State<'_, crate::errlog::ErrLogState>,
 ) -> AppResult<PtyOpenResult> {
     let (host, keys) = with_db(&state, |conn| {
         let host = host_repo::get(conn, host_id)?;
@@ -47,12 +48,31 @@ pub async fn pty_open(
         rows.clamp(2, 1000),
     )
     .await?;
-    if matches!(result, PtyOpenResult::Opened) {
-        let _ = audit.append(&AuditEvent::PtyOpened {
-            host_label: host.label,
-            hostname: host.hostname,
-            port: host.port,
-        });
+    match &result {
+        PtyOpenResult::Opened => {
+            let _ = audit.append(&AuditEvent::PtyOpened {
+                host_label: host.label,
+                hostname: host.hostname,
+                port: host.port,
+            });
+        }
+        // Failures that toast also persist to the error log (D-055).
+        PtyOpenResult::AuthFailed { message } => errlog.log(
+            "pty_open",
+            Some(&host.label),
+            &format!("authentication failed — {message}"),
+        ),
+        PtyOpenResult::Unreachable { message } => errlog.log(
+            "pty_open",
+            Some(&host.label),
+            &format!("unreachable — {message}"),
+        ),
+        PtyOpenResult::KeyMismatch { .. } => errlog.log(
+            "pty_open",
+            Some(&host.label),
+            "host key mismatch — connection refused",
+        ),
+        _ => {}
     }
     Ok(result)
 }

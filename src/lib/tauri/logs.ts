@@ -44,3 +44,29 @@ export function auditTail(maxLines: number): Promise<string[]> {
 export function setAuditEnabled(enabled: boolean): Promise<void> {
   return invoke<void>("set_audit_enabled", { enabled });
 }
+
+/** One parsed error-log entry (D-055). */
+export type ErrorEntry = {
+  ts: string;
+  source: string;
+  host_label?: string;
+  message: string;
+};
+
+export async function errorLogTail(maxLines: number): Promise<ErrorEntry[]> {
+  const lines = await invoke<string[]>("error_log_tail", { maxLines });
+  const entries: ErrorEntry[] = [];
+  for (const line of lines) {
+    try {
+      entries.push(JSON.parse(line) as ErrorEntry);
+    } catch {
+      // A corrupt line shouldn't hide the rest of the log.
+      entries.push({ ts: "", source: "?", message: line });
+    }
+  }
+  return entries;
+}
+
+export function clearErrorLog(): Promise<number> {
+  return invoke<number>("clear_error_log");
+}

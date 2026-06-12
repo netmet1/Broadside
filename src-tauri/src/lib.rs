@@ -5,6 +5,7 @@ pub mod commands;
 pub mod credentials;
 pub mod crypto;
 pub mod db;
+pub mod errlog;
 pub mod error;
 pub mod export;
 pub mod guard;
@@ -38,6 +39,9 @@ pub fn run() {
                 db::settings::get_bool(&conn, "audit_enabled", true)?
             };
             app.manage(audit::AuditState::new(app_data_dir.clone(), audit_enabled));
+
+            // Rolling error log (D-055): always-on, separate from audit.
+            app.manage(errlog::ErrLogState::new(app_data_dir.clone()));
 
             app.manage(db_state);
 
@@ -78,6 +82,8 @@ pub fn run() {
             commands::audit::audit_info,
             commands::audit::audit_tail,
             commands::audit::set_audit_enabled,
+            commands::errlog::error_log_tail,
+            commands::errlog::clear_error_log,
             commands::settings::get_app_settings,
             commands::settings::set_app_settings,
             commands::settings::set_help_hints_enabled,

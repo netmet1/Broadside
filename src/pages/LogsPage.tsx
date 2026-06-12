@@ -25,10 +25,13 @@ import { errorMessage } from "@/lib/tauri/hosts";
 import {
   auditInfo,
   auditTail,
+  clearErrorLog,
+  errorLogTail,
   loadSession,
   sessionIsEncrypted,
   setAuditEnabled,
   type AuditInfo,
+  type ErrorEntry,
   type OtlogLine,
 } from "@/lib/tauri/logs";
 import {
@@ -45,7 +48,7 @@ import {
 } from "@/lib/search";
 import { cn } from "@/lib/utils";
 
-type Tab = "session" | "audit" | "history";
+type Tab = "session" | "audit" | "history" | "errors";
 
 /** Search state shared by both tabs: scan a flat list of lines. */
 function useLineSearch(lines: { key: string; text: string }[]) {
@@ -149,6 +152,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
   // Command history tab state
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
 
+  // Error log tab state (D-055)
+  const [errorEntries, setErrorEntries] = useState<ErrorEntry[]>([]);
+
   const sessionSearchLines = useMemo(
     () =>
       sessionLines.map((l, i) => ({
@@ -165,16 +171,27 @@ export function LogsPage({ visible }: { visible: boolean }) {
     () => historyEntries.map((e, i) => ({ key: `${i}`, text: e.command })),
     [historyEntries],
   );
+  const errorSearchLines = useMemo(
+    () =>
+      errorEntries.map((e, i) => ({
+        key: `${i}`,
+        text: `${e.source} ${e.host_label ?? ""} ${e.message}`,
+      })),
+    [errorEntries],
+  );
 
   const sessionSearch = useLineSearch(sessionSearchLines);
   const auditSearch = useLineSearch(auditSearchLines);
   const historySearch = useLineSearch(historySearchLines);
+  const errorSearch = useLineSearch(errorSearchLines);
   const search =
     tab === "session"
       ? sessionSearch
       : tab === "audit"
         ? auditSearch
-        : historySearch;
+        : tab === "history"
+          ? historySearch
+          : errorSearch;
 
   // Ctrl+F / Ctrl+Shift+F while this page is visible (D-015).
   useEffect(() => {
@@ -213,6 +230,18 @@ export function LogsPage({ visible }: { visible: boolean }) {
   useEffect(() => {
     if (visible && tab === "history") refreshHistory();
   }, [visible, tab, refreshHistory]);
+
+  const refreshErrors = useCallback(async () => {
+    try {
+      setErrorEntries(await errorLogTail(1000));
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (visible && tab === "errors") refreshErrors();
+  }, [visible, tab, refreshErrors]);
 
   const openSession = async () => {
     try {
@@ -277,7 +306,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-4 border-b border-border/50 px-4 pt-3">
-        {(["session", "audit", "history"] as const).map((t) => (
+        {(["session", "audit", "history", "errors"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -293,7 +322,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
               ? "Session viewer"
               : t === "audit"
                 ? "Audit log"
-                : "Command history"}
+                : t === "history"
+                  ? "Command history"
+                  : "Errors"}
           </button>
         ))}
       </div>
@@ -479,7 +510,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
             )}
           </div>
         </div>
-      ) : (
+      ) : tab === "history" ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-3 px-4 py-2">
             <Button variant="ghost" size="sm" onClick={refreshHistory}>
@@ -544,6 +575,76 @@ export function LogsPage({ visible }: { visible: boolean }) {
                         />
                       ) : (
                         entry.command
+                      )}
+                    </pre>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-3 px-4 py-2">
+            <Button variant="ghost" size="sm" onClick={refreshErrors}>
+              <RefreshCwIcon />
+              Refresh
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={errorEntries.length === 0}
+              onClick={async () => {
+                try {
+                  await clearErrorLog();
+                  setErrorEntries([]);
+                } catch (e) {
+                  toast.error(errorMessage(e));
+                }
+              }}
+            >
+              Clear errors
+            </Button>
+            {errorEntries.length > 0 && (
+              <span className="ml-auto font-mono text-xs text-muted-foreground">
+                {errorEntries.length} {errorEntries.length === 1 ? "error" : "errors"}
+              </span>
+            )}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+            {errorEntries.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No errors recorded. Connection and broadcast failures that
+                show a toast are also kept here for later review.
+              </p>
+            ) : (
+              errorEntries.map((entry, idx) => {
+                const matches = errorSearch.scan?.perLine.get(idx) ?? null;
+                if (errorSearch.filterActive && !matches) return null;
+                const isActiveLine = errorSearch.activeHit?.lineIdx === idx;
+                const display = `${entry.source} ${entry.host_label ?? ""} ${entry.message}`;
+                return (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "flex items-baseline gap-3 py-0.5 font-mono text-xs",
+                      errorSearch.findActive && !matches && "opacity-40",
+                    )}
+                  >
+                    <span className="shrink-0 text-muted-foreground">
+                      {entry.ts ? new Date(entry.ts).toLocaleString() : "—"}
+                    </span>
+                    <pre className="whitespace-pre-wrap break-words text-red-400/90">
+                      {matches && errorSearch.mode !== null ? (
+                        <HighlightedLine
+                          text={display}
+                          matches={matches}
+                          activeRange={
+                            isActiveLine ? errorSearch.activeHit!.match : null
+                          }
+                        />
+                      ) : (
+                        display
                       )}
                     </pre>
                   </div>

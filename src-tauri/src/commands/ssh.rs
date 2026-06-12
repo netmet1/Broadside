@@ -5,6 +5,7 @@ use crate::credentials::CredentialState;
 use crate::db::host_keys::{self, HostKey};
 use crate::db::hosts as host_repo;
 use crate::db::DbState;
+use crate::errlog::ErrLogState;
 use crate::error::{AppError, AppResult};
 use crate::ssh::{self, AuthMethod, ProbeResult};
 
@@ -43,6 +44,7 @@ pub async fn test_connection(
     host_id: i64,
     state: State<'_, DbState>,
     cred_state: State<'_, CredentialState>,
+    errlog: State<'_, ErrLogState>,
 ) -> AppResult<ProbeResult> {
     // Gather everything from db + credential store before any await so no
     // sync guard lives across a suspension point.
@@ -79,6 +81,25 @@ pub async fn test_connection(
             }
             Ok(())
         })?;
+    }
+    // Failures that toast also persist to the error log (D-055).
+    match &result {
+        ProbeResult::AuthFailed { message } => errlog.log(
+            "test_connection",
+            Some(&host.label),
+            &format!("authentication failed — {message}"),
+        ),
+        ProbeResult::Unreachable { message } => errlog.log(
+            "test_connection",
+            Some(&host.label),
+            &format!("unreachable — {message}"),
+        ),
+        ProbeResult::KeyMismatch { .. } => errlog.log(
+            "test_connection",
+            Some(&host.label),
+            "host key mismatch — connection refused",
+        ),
+        _ => {}
     }
     Ok(result)
 }
