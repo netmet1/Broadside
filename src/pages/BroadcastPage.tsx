@@ -51,7 +51,7 @@ type StreamRef = { hostId: number; stream: "stdout" | "stderr" };
 /** One navigable find hit (a single match occurrence). */
 type FindHit = StreamRef & { line: number; start: number; end: number };
 
-export function BroadcastPage() {
+export function BroadcastPage({ visible }: { visible: boolean }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [command, setCommand] = useState("");
@@ -86,6 +86,7 @@ export function BroadcastPage() {
     hosts.length > 0
       ? `${selected.size}/${hosts.length} hosts selected`
       : null,
+    visible,
   );
 
   const runIdRef = useRef<string>("");
@@ -99,14 +100,33 @@ export function BroadcastPage() {
     return map;
   }, [hosts]);
 
+  // Hosts known from the previous refresh — lets us tell "new host" (gets
+  // the selected-by-default treatment) from "existing host the user
+  // deselected" (selection preserved) when re-syncing on page return.
+  const knownHostIds = useRef<Set<number>>(new Set());
+
   useEffect(() => {
+    if (!visible) return;
     listHosts()
       .then((all) => {
         setHosts(all);
-        // Pre-select everything — broadcast-to-all is the common case.
-        setSelected(new Set(all.map((h) => h.id)));
+        setSelected((prev) => {
+          const next = new Set<number>();
+          for (const h of all) {
+            // Pre-select everything new — broadcast-to-all is the common
+            // case; keep the user's choices for hosts they've already seen.
+            if (!knownHostIds.current.has(h.id) || prev.has(h.id)) {
+              next.add(h.id);
+            }
+          }
+          knownHostIds.current = new Set(all.map((h) => h.id));
+          return next;
+        });
       })
       .catch((e) => toast.error(errorMessage(e)));
+  }, [visible]);
+
+  useEffect(() => {
     commandHistory(100)
       .then((entries) => setHistory(entries.map((e) => e.command)))
       .catch(() => {
@@ -145,8 +165,10 @@ export function BroadcastPage() {
     }
   }, [blocks, searchMode]);
 
-  // Keyboard entry points (D-015).
+  // Keyboard entry points (D-015). Only while this page is the visible one —
+  // the component stays mounted in the background after navigation.
   useEffect(() => {
+    if (!visible) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && (e.key === "f" || e.key === "F")) {
         e.preventDefault();
@@ -156,7 +178,7 @@ export function BroadcastPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [visible]);
 
   const closeSearch = useCallback(() => {
     setSearchMode(null);
@@ -375,7 +397,13 @@ export function BroadcastPage() {
   const filterActive = searchMode === "filter" && matcher !== null && searchPattern !== "";
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col">
+      {/* Static reminder of the exec-channel contract (D-002). */}
+      <div className="shrink-0 border-b border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-xs text-amber-300/90">
+        The broadcast channel is exclusively for non-interactive commands that
+        print output and exit.
+      </div>
+      <div className="flex min-h-0 flex-1">
       {/* Host selection rail */}
       <div className="flex w-60 shrink-0 flex-col border-r border-border/50">
         <label
@@ -529,6 +557,7 @@ export function BroadcastPage() {
             Send
           </Button>
         </div>
+      </div>
       </div>
 
       <ConfirmDestructiveDialog
