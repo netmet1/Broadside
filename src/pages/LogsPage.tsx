@@ -126,6 +126,8 @@ function useLineSearch(lines: { key: string; text: string }[]) {
     close,
     status,
     filterActive: mode === "filter" && matcher !== null && pattern !== "",
+    // Find hides nothing (D-015) but dims non-matching rows for contrast.
+    findActive: mode === "find" && matcher !== null && pattern !== "",
   };
 }
 
@@ -382,6 +384,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
                                   line.stream === "stderr" && "text-red-400/90",
                                   line.stream === "status" &&
                                     "text-muted-foreground italic",
+                                  sessionSearch.findActive &&
+                                    !matches &&
+                                    "opacity-40",
                                 )}
                               >
                                 {matches && sessionSearch.mode !== null ? (
@@ -450,7 +455,13 @@ export function LogsPage({ visible }: { visible: boolean }) {
                 if (auditSearch.filterActive && !matches) return null;
                 const isActiveLine = auditSearch.activeHit?.lineIdx === idx;
                 return (
-                  <pre key={idx} className="whitespace-pre-wrap break-words">
+                  <pre
+                    key={idx}
+                    className={cn(
+                      "whitespace-pre-wrap break-words",
+                      auditSearch.findActive && !matches && "opacity-40",
+                    )}
+                  >
                     {matches && auditSearch.mode !== null ? (
                       <HighlightedLine
                         text={text}
@@ -511,7 +522,10 @@ export function LogsPage({ visible }: { visible: boolean }) {
                 return (
                   <div
                     key={entry.id}
-                    className="flex items-baseline gap-3 py-0.5 font-mono text-xs"
+                    className={cn(
+                      "flex items-baseline gap-3 py-0.5 font-mono text-xs",
+                      historySearch.findActive && !matches && "opacity-40",
+                    )}
                   >
                     <span className="shrink-0 text-muted-foreground">
                       {new Date(entry.ts).toLocaleString()}

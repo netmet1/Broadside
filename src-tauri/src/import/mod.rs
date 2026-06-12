@@ -230,7 +230,7 @@ fn validate_row(row: &RawRow) -> RowPreview {
         status: RowStatus::Ready,
         message: None,
     };
-    let mut fail = |preview: &mut RowPreview, msg: String| {
+    let fail = |preview: &mut RowPreview, msg: String| {
         preview.status = RowStatus::Error;
         preview.message = Some(msg);
     };
