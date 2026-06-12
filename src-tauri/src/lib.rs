@@ -84,6 +84,7 @@ pub fn run() {
             commands::audit::set_audit_enabled,
             commands::errlog::error_log_tail,
             commands::errlog::clear_error_log,
+            commands::backup::backup_app_data,
             commands::settings::get_app_settings,
             commands::settings::set_app_settings,
             commands::settings::set_help_hints_enabled,
