@@ -39,8 +39,10 @@ import {
 } from "@/lib/search";
 import { HighlightedLine, HighlightedText } from "@/components/Highlight";
 import { SaveSessionDialog } from "@/components/SaveSessionDialog";
+import { ShortcutBar } from "@/components/ShortcutBar";
 import type { OtlogLine } from "@/lib/tauri/logs";
 import { useHint, usePageStatus } from "@/lib/status";
+import { useShortcuts } from "@/lib/useShortcuts";
 
 const DEFAULT_TIMEOUT_SECS = 30;
 
@@ -51,7 +53,13 @@ type StreamRef = { hostId: number; stream: "stdout" | "stderr" };
 /** One navigable find hit (a single match occurrence). */
 type FindHit = StreamRef & { line: number; start: number; end: number };
 
-export function BroadcastPage({ visible }: { visible: boolean }) {
+export function BroadcastPage({
+  visible,
+  onManageShortcuts,
+}: {
+  visible: boolean;
+  onManageShortcuts: () => void;
+}) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [command, setCommand] = useState("");
@@ -81,6 +89,7 @@ export function BroadcastPage({ visible }: { visible: boolean }) {
   const [activeHitIdx, setActiveHitIdx] = useState(0);
 
   const hint = useHint();
+  const shortcuts = useShortcuts(visible);
 
   usePageStatus(
     hosts.length > 0
@@ -327,25 +336,38 @@ export function BroadcastPage({ visible }: { visible: boolean }) {
     [hostsById, parsedTimeout],
   );
 
-  const send = useCallback(async () => {
-    const cmd = command.trim();
-    if (!cmd || selected.size === 0 || running || parsedTimeout === null) {
-      return;
-    }
-    setBlocks([]);
-    try {
-      const hits = await checkDestructive(cmd);
-      if (hits.length > 0) {
-        setGuardHits(hits);
-        setConfirmOpen(true);
+  const send = useCallback(
+    async (cmdOverride?: string) => {
+      const cmd = (cmdOverride ?? command).trim();
+      if (!cmd || selected.size === 0 || running || parsedTimeout === null) {
         return;
       }
-    } catch (e) {
-      toast.error(errorMessage(e));
-      return;
-    }
-    runBroadcast([...selected], cmd, false);
-  }, [command, selected, running, parsedTimeout, runBroadcast]);
+      setBlocks([]);
+      try {
+        const hits = await checkDestructive(cmd);
+        if (hits.length > 0) {
+          setGuardHits(hits);
+          setConfirmOpen(true);
+          return;
+        }
+      } catch (e) {
+        toast.error(errorMessage(e));
+        return;
+      }
+      runBroadcast([...selected], cmd, false);
+    },
+    [command, selected, running, parsedTimeout, runBroadcast],
+  );
+
+  /** Shortcut Go: show the command in the composer and send it through the
+   * normal path — guard check included. */
+  const runShortcut = useCallback(
+    (cmd: string) => {
+      setCommand(cmd);
+      send(cmd);
+    },
+    [send],
+  );
 
   const retryHosts = useCallback(
     (hostIds: number[]) => {
@@ -452,6 +474,14 @@ export function BroadcastPage({ visible }: { visible: boolean }) {
 
       {/* Output + composer */}
       <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-end border-b border-border/30 px-3 py-1.5">
+          <ShortcutBar
+            shortcuts={shortcuts}
+            disabled={running || selected.size === 0}
+            onRun={runShortcut}
+            onManage={onManageShortcuts}
+          />
+        </div>
         {searchMode !== null && (
           <SearchBar
             modes={["find", "filter"]}
@@ -539,7 +569,7 @@ export function BroadcastPage({ visible }: { visible: boolean }) {
             <span className="text-xs text-muted-foreground">s</span>
           </div>
           <Button
-            onClick={send}
+            onClick={() => send()}
             disabled={
               running ||
               !command.trim() ||

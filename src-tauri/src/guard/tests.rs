@@ -431,6 +431,7 @@ fn user_rule(commands: &[&str], flags: &[&str], enabled: bool) -> UserRule {
         required_flags: flags.iter().map(|s| s.to_string()).collect(),
         path_patterns: vec![],
         arg_all_of: vec![],
+        help_tip: None,
         enabled,
     }
 }
