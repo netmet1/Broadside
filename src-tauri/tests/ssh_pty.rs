@@ -128,6 +128,49 @@ async fn pty_shell_round_trip_and_close() {
     );
 }
 
+/// Two opens with the same session id (the React StrictMode double-mount
+/// shape). The second open replaces the first; the replaced task must die
+/// silently — no closed event, and crucially it must NOT deregister its
+/// successor (the original bug: remove-by-id tore down the live session,
+/// leaving a dead-looking terminal).
+#[tokio::test]
+#[ignore]
+async fn pty_reopen_same_id_replaces_session() {
+    let fx = Fixture::start();
+    let fp = trust(&fx).await;
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let state = PtyState::default();
+
+    for _ in 0..2 {
+        let result = open(
+            ChannelEvents(tx.clone()),
+            &state,
+            "dup-session".into(),
+            "127.0.0.1",
+            fx.port,
+            USER,
+            vec![fp.clone()],
+            AuthMethod::Password(PASSWORD.to_string()),
+            80,
+            24,
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(result, omniterminal_lib::ssh::pty::PtyOpenResult::Opened),
+            "expected Opened, got {result:?}"
+        );
+    }
+
+    // The survivor must still be registered and answering. read_until panics
+    // on any Closed event, which doubles as the no-ghost-close assertion.
+    state
+        .write("dup-session", b"echo alive-$((2+3))\n")
+        .unwrap();
+    let output = read_until(&mut rx, "alive-5", Duration::from_secs(20)).await;
+    assert!(output.contains("alive-5"), "output: {output}");
+}
+
 #[tokio::test]
 #[ignore]
 async fn pty_remote_exit_emits_closed() {
