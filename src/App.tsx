@@ -96,7 +96,11 @@ function App() {
           connectedHostIds={connectedHostIds}
         />
       )}
-      {page === "broadcast" && <BroadcastPage />}
+      {/* Broadcast stays mounted so output and host selection survive
+          navigation (work-queue: "output history" persistence). */}
+      <div className={page === "broadcast" ? "block h-full" : "hidden"}>
+        <BroadcastPage visible={page === "broadcast"} />
+      </div>
       {/* Terminals stay mounted so sessions survive navigation. */}
       <div className={page === "terminals" ? "block h-full" : "hidden"}>
         <TerminalsPage
