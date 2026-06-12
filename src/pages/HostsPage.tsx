@@ -6,6 +6,7 @@ import {
   PlusIcon,
   TerminalIcon,
   Trash2Icon,
+  UploadIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -19,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { HostFormPanel } from "@/components/HostFormPanel";
+import { ImportHostsPanel } from "@/components/ImportHostsPanel";
 import { DeleteHostDialog } from "@/components/DeleteHostDialog";
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
@@ -34,6 +36,7 @@ export function HostsPage({
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<Host | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState<Host | null>(null);
@@ -135,6 +138,16 @@ export function HostsPage({
     );
   }
 
+  if (importOpen) {
+    return (
+      <ImportHostsPanel
+        existingColors={hosts.map((h) => h.color)}
+        onCancel={() => setImportOpen(false)}
+        onImported={refresh}
+      />
+    );
+  }
+
   const countLabel = loading
     ? ""
     : `Showing ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"}`;
@@ -148,10 +161,16 @@ export function HostsPage({
             SSH connection targets. Credentials are managed separately.
           </p>
         </div>
-        <Button onClick={openAdd}>
-          <PlusIcon />
-          Add host
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <UploadIcon />
+            Import hosts…
+          </Button>
+          <Button onClick={openAdd}>
+            <PlusIcon />
+            Add host
+          </Button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">

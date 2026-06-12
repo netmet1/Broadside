@@ -41,7 +41,10 @@ russh = { version = "0.61", default-features = false, features = ["flate2", "rin
 tokio = { version = "1", features = ["time", "sync", "net"] }
 base64 = "0.22"
 sysinfo = "0.39.3"
+csv = "1.4.0"
+calamine = "0.35.0"
 
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net"] }
+zip = { version = "8.6.0", default-features = false }
