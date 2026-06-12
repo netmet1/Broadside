@@ -94,18 +94,33 @@ export function Composer({
             onSubmit();
             return;
           }
+          // History recall wraps in both directions; the stashed draft is a
+          // stop on the cycle (…oldest → draft → newest…).
           if (e.key === "ArrowUp" && history && history.length > 0) {
             e.preventDefault();
-            if (histIdx === null) draftRef.current = value;
-            const next =
-              histIdx === null ? 0 : Math.min(histIdx + 1, history.length - 1);
-            setHistIdx(next);
-            onChange(history[next]);
+            if (histIdx === null) {
+              draftRef.current = value;
+              setHistIdx(0);
+              onChange(history[0]);
+            } else if (histIdx === history.length - 1) {
+              // Past the oldest: wrap back through the draft.
+              setHistIdx(null);
+              onChange(draftRef.current);
+            } else {
+              setHistIdx(histIdx + 1);
+              onChange(history[histIdx + 1]);
+            }
             return;
           }
-          if (e.key === "ArrowDown" && histIdx !== null && history) {
+          if (e.key === "ArrowDown" && history && history.length > 0) {
             e.preventDefault();
-            if (histIdx === 0) {
+            if (histIdx === null) {
+              // From the draft, Down wraps to the oldest entry.
+              draftRef.current = value;
+              setHistIdx(history.length - 1);
+              onChange(history[history.length - 1]);
+            } else if (histIdx === 0) {
+              // Past the newest: restore the draft, completing the cycle.
               setHistIdx(null);
               onChange(draftRef.current);
             } else {
