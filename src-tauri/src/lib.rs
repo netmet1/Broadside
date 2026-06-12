@@ -7,6 +7,7 @@ pub mod crypto;
 pub mod db;
 pub mod error;
 pub mod guard;
+pub mod import;
 mod licensing;
 pub mod probe;
 pub mod session;
@@ -81,6 +82,8 @@ pub fn run() {
             commands::settings::network_probe,
             commands::settings::command_history,
             commands::settings::clear_command_history,
+            commands::import::preview_import,
+            commands::import::import_hosts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
