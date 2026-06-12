@@ -24,6 +24,7 @@ import {
   clearHostCredentials,
   createHost,
   errorMessage,
+  pathIsFile,
   setHostCredentials,
   setSudoPassword,
   setSudoSameAsLogin,
@@ -42,6 +43,21 @@ const FLAVOR_OPTIONS = [
   { value: "suse", label: "SUSE" },
   { value: "other", label: "Other" },
 ];
+
+/** Expand #abc → #aabbcc for the native color input (it requires 6 digits). */
+function expandHex(c: string): string {
+  const short = /^#([0-9a-fA-F]{3})$/.exec(c);
+  if (short) {
+    return (
+      "#" +
+      short[1]
+        .split("")
+        .map((ch) => ch + ch)
+        .join("")
+    );
+  }
+  return /^#[0-9a-fA-F]{6}$/.test(c) ? c : "#3b82f6";
+}
 
 function isValidIPv4(s: string): boolean {
   const parts = s.split(".");
@@ -143,6 +159,7 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
     reset,
     watch,
     setValue,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -216,9 +233,20 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
         toast.error("Password is required");
         return;
       }
-      if (data.authMethod === "key" && data.keyPath.trim().length === 0) {
-        toast.error("Key file path is required");
-        return;
+      if (data.authMethod === "key") {
+        const keyPath = data.keyPath.trim();
+        if (keyPath.length === 0) {
+          toast.error("Key file path is required");
+          return;
+        }
+        // Catch hand-typed paths that don't exist (Browse always yields a
+        // real file) before they're stored and fail at connect time.
+        if (!(await pathIsFile(keyPath))) {
+          setError("keyPath", {
+            message: "File not found — check the path or use Browse",
+          });
+          return;
+        }
       }
     }
     if (
@@ -418,11 +446,28 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
                 placeholder="#3b82f6"
                 className="font-mono text-xs"
               />
-              <span
-                className="h-7 w-7 shrink-0 rounded-md border-2 border-foreground"
-                style={{ backgroundColor: selectedColor }}
-                aria-label={`Current color ${selectedColor}`}
-              />
+              {/* Live preview doubles as a button: clicking it opens the
+                  native color picker. */}
+              <span className="relative h-7 w-7 shrink-0">
+                <span
+                  className="block h-full w-full rounded-md border-2 border-foreground"
+                  style={{ backgroundColor: selectedColor }}
+                  aria-hidden="true"
+                />
+                <input
+                  type="color"
+                  value={expandHex(selectedColor)}
+                  onChange={(e) =>
+                    setValue("color", e.target.value, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    })
+                  }
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  aria-label={`Current color ${selectedColor} — click to open the color picker`}
+                  title="Pick a color"
+                />
+              </span>
             </div>
             <p className="min-h-4 text-xs text-destructive">
               {errors.color?.message ?? ""}
@@ -534,7 +579,7 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
                         id="keyPath"
                         {...register("keyPath")}
                         placeholder="C:\Users\you\.ssh\id_ed25519"
-                        className="font-mono text-xs"
+                        className={`font-mono text-xs ${errors.keyPath ? "border-destructive" : ""}`}
                       />
                       <Button
                         type="button"
@@ -546,6 +591,9 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
                         Browse
                       </Button>
                     </div>
+                    <p className="min-h-4 text-xs text-destructive">
+                      {errors.keyPath?.message ?? ""}
+                    </p>
                   </div>
                   <div className="grid gap-1">
                     <Label htmlFor="keyPassphrase">

@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -64,6 +65,9 @@ type Props = {
   onSearchRequest: () => void;
   /** Live match feedback from the search addon. */
   onSearchResults: (resultIndex: number, resultCount: number) => void;
+  /** Fires whenever this session's live-connection state flips (used for
+   * the Hosts page connected indicators). */
+  onConnectionChange?: (sessionId: string, connected: boolean) => void;
 };
 
 /** One xterm.js pane bound to one backend PTY session. Stays mounted (and
@@ -79,6 +83,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       onClosed,
       onSearchRequest,
       onSearchResults,
+      onConnectionChange,
     }: Props,
     searchHandleRef,
   ) {
@@ -90,12 +95,18 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   onSearchRequestRef.current = onSearchRequest;
   const onSearchResultsRef = useRef(onSearchResults);
   onSearchResultsRef.current = onSearchResults;
+  const onConnectionChangeRef = useRef(onConnectionChange);
+  onConnectionChangeRef.current = onConnectionChange;
   const phaseRef = useRef<Phase>({ kind: "connecting" });
   const [phase, setPhaseState] = useState<Phase>({ kind: "connecting" });
-  const setPhase = (p: Phase) => {
-    phaseRef.current = p;
-    setPhaseState(p);
-  };
+  const setPhase = useCallback(
+    (p: Phase) => {
+      phaseRef.current = p;
+      setPhaseState(p);
+      onConnectionChangeRef.current?.(sessionId, p.kind === "open");
+    },
+    [sessionId],
+  );
 
   // Create the terminal once.
   useEffect(() => {
@@ -180,9 +191,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       unlistenClosed.then((fn) => fn());
       term.dispose();
       ptyClose(sessionId).catch(() => {});
+      onConnectionChangeRef.current?.(sessionId, false);
     };
 
-  }, [sessionId]);
+  }, [sessionId, setPhase]);
 
   useImperativeHandle(searchHandleRef, () => ({
     findNext: (pattern, options, incremental) => {

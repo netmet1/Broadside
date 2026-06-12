@@ -39,6 +39,25 @@ pub fn update_host(id: i64, input: HostInput, state: State<'_, DbState>) -> AppR
     host_repo::update(&conn, id, input)
 }
 
+/// Writes all hosts to a CSV that round-trips through "Import hosts…".
+/// Returns the number of hosts written.
+#[tauri::command]
+pub fn export_hosts(path: String, state: State<'_, DbState>) -> AppResult<usize> {
+    let hosts = {
+        let conn = lock(&state)?;
+        host_repo::list_all(&conn)?
+    };
+    crate::export::write_hosts_csv(&hosts, std::path::Path::new(&path))?;
+    Ok(hosts.len())
+}
+
+/// Whether a local path points at an existing file — used by the host form
+/// to validate a hand-typed private-key path before saving.
+#[tauri::command]
+pub fn path_is_file(path: String) -> bool {
+    std::path::Path::new(&path).is_file()
+}
+
 #[tauri::command]
 pub fn delete_host(
     id: i64,
