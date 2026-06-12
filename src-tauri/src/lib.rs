@@ -8,6 +8,7 @@ pub mod db;
 pub mod error;
 pub mod guard;
 mod licensing;
+pub mod probe;
 pub mod session;
 pub mod ssh;
 
@@ -73,6 +74,13 @@ pub fn run() {
             commands::audit::audit_info,
             commands::audit::audit_tail,
             commands::audit::set_audit_enabled,
+            commands::settings::get_app_settings,
+            commands::settings::set_app_settings,
+            commands::settings::save_guard_rules,
+            commands::settings::recalibrate_probe,
+            commands::settings::network_probe,
+            commands::settings::command_history,
+            commands::settings::clear_command_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

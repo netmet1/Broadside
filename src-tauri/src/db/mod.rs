@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
 
+pub mod history;
 pub mod host_keys;
 pub mod hosts;
 pub mod settings;
@@ -68,6 +69,13 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS settings (
         key    TEXT PRIMARY KEY,
         value  TEXT NOT NULL
+    );",
+    // 6: broadcast command history (PR#8; D-015 search surface)
+    "CREATE TABLE IF NOT EXISTS command_history (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        command     TEXT NOT NULL,
+        host_count  INTEGER NOT NULL,
+        ts          TEXT NOT NULL
     );",
 ];
 

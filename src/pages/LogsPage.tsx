@@ -32,6 +32,11 @@ import {
   type OtlogLine,
 } from "@/lib/tauri/logs";
 import {
+  type HistoryEntry,
+  clearCommandHistory,
+  commandHistory,
+} from "@/lib/tauri/settings";
+import {
   buildMatcher,
   isMatcher,
   matchLine,
@@ -40,7 +45,7 @@ import {
 } from "@/lib/search";
 import { cn } from "@/lib/utils";
 
-type Tab = "session" | "audit";
+type Tab = "session" | "audit" | "history";
 
 /** Search state shared by both tabs: scan a flat list of lines. */
 function useLineSearch(lines: { key: string; text: string }[]) {
@@ -139,6 +144,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
   const [info, setInfo] = useState<AuditInfo | null>(null);
   const [auditLines, setAuditLines] = useState<string[]>([]);
 
+  // Command history tab state
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+
   const sessionSearchLines = useMemo(
     () =>
       sessionLines.map((l, i) => ({
@@ -151,10 +159,20 @@ export function LogsPage({ visible }: { visible: boolean }) {
     () => auditLines.map((text, i) => ({ key: `${i}`, text })),
     [auditLines],
   );
+  const historySearchLines = useMemo(
+    () => historyEntries.map((e, i) => ({ key: `${i}`, text: e.command })),
+    [historyEntries],
+  );
 
   const sessionSearch = useLineSearch(sessionSearchLines);
   const auditSearch = useLineSearch(auditSearchLines);
-  const search = tab === "session" ? sessionSearch : auditSearch;
+  const historySearch = useLineSearch(historySearchLines);
+  const search =
+    tab === "session"
+      ? sessionSearch
+      : tab === "audit"
+        ? auditSearch
+        : historySearch;
 
   // Ctrl+F / Ctrl+Shift+F while this page is visible (D-015).
   useEffect(() => {
@@ -181,6 +199,18 @@ export function LogsPage({ visible }: { visible: boolean }) {
   useEffect(() => {
     if (visible && tab === "audit") refreshAudit();
   }, [visible, tab, refreshAudit]);
+
+  const refreshHistory = useCallback(async () => {
+    try {
+      setHistoryEntries(await commandHistory(1000));
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (visible && tab === "history") refreshHistory();
+  }, [visible, tab, refreshHistory]);
 
   const openSession = async () => {
     try {
@@ -245,7 +275,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
   return (
     <div className="flex h-full min-h-screen flex-col">
       <div className="flex items-center gap-4 border-b border-border/50 px-4 pt-3">
-        {(["session", "audit"] as const).map((t) => (
+        {(["session", "audit", "history"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -257,7 +287,11 @@ export function LogsPage({ visible }: { visible: boolean }) {
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
-            {t === "session" ? "Session viewer" : "Audit log"}
+            {t === "session"
+              ? "Session viewer"
+              : t === "audit"
+                ? "Audit log"
+                : "Command history"}
           </button>
         ))}
       </div>
@@ -375,7 +409,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
             )}
           </div>
         </div>
-      ) : (
+      ) : tab === "audit" ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-3 px-4 py-2">
             <label className="flex cursor-pointer items-center gap-2 text-sm">
@@ -429,6 +463,76 @@ export function LogsPage({ visible }: { visible: boolean }) {
                       text
                     )}
                   </pre>
+                );
+              })
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-3 px-4 py-2">
+            <Button variant="ghost" size="sm" onClick={refreshHistory}>
+              <RefreshCwIcon />
+              Refresh
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={historyEntries.length === 0}
+              onClick={async () => {
+                try {
+                  await clearCommandHistory();
+                  setHistoryEntries([]);
+                } catch (e) {
+                  toast.error(errorMessage(e));
+                }
+              }}
+            >
+              Clear history
+            </Button>
+            {historyEntries.length > 0 && (
+              <span className="ml-auto font-mono text-xs text-muted-foreground">
+                {historyEntries.length}{" "}
+                {historyEntries.length === 1 ? "command" : "commands"}
+              </span>
+            )}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+            {historyEntries.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No commands yet. Broadcast commands are recorded here and
+                recallable in the composer with Up/Down.
+              </p>
+            ) : (
+              historyEntries.map((entry, idx) => {
+                const matches = historySearch.scan?.perLine.get(idx) ?? null;
+                if (historySearch.filterActive && !matches) return null;
+                const isActiveLine = historySearch.activeHit?.lineIdx === idx;
+                return (
+                  <div
+                    key={entry.id}
+                    className="flex items-baseline gap-3 py-0.5 font-mono text-xs"
+                  >
+                    <span className="shrink-0 text-muted-foreground">
+                      {new Date(entry.ts).toLocaleString()}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {entry.host_count}h
+                    </span>
+                    <pre className="whitespace-pre-wrap break-words">
+                      {matches && historySearch.mode !== null ? (
+                        <HighlightedLine
+                          text={entry.command}
+                          matches={matches}
+                          activeRange={
+                            isActiveLine ? historySearch.activeHit!.match : null
+                          }
+                        />
+                      ) : (
+                        entry.command
+                      )}
+                    </pre>
+                  </div>
                 );
               })
             )}

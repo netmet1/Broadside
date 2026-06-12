@@ -1,17 +1,20 @@
 //! Broadcast execution commands (D-002/D-003/D-004) with destructive-command
 //! re-validation (D-014) and sudo auto-elevation (D-026).
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
+use tokio::sync::Semaphore;
 
+use super::settings::{load_cached_probe, load_max_sessions, load_user_rules};
 use super::ssh::{auth_for_host, with_db};
 use crate::audit::{AuditEvent, AuditState};
 use crate::credentials::CredentialState;
 use crate::db::host_keys;
 use crate::db::hosts as host_repo;
-use crate::db::DbState;
+use crate::db::{history, DbState};
 use crate::error::{AppError, AppResult};
 use crate::guard::{self, GuardHit};
 use crate::ssh::exec::{exec, ExecResult};
@@ -36,8 +39,12 @@ pub struct HostExecReport {
 /// Frontend pre-send check for the CONFIRM modal. The same check re-runs
 /// inside `broadcast_command` — this command is UX, that one is the gate.
 #[tauri::command]
-pub fn check_destructive(command: String) -> Vec<GuardHit> {
-    guard::check(&command)
+pub fn check_destructive(
+    command: String,
+    state: State<'_, DbState>,
+) -> AppResult<Vec<GuardHit>> {
+    let user_rules = with_db(&state, |conn| load_user_rules(conn))?;
+    Ok(guard::check_with_user(&command, &user_rules))
 }
 
 /// Runs `command` on every host in `host_ids` concurrently. Each host's
@@ -70,7 +77,8 @@ pub async fn broadcast_command(
     // Defense in depth (D-014): the frontend modal is the UX, this check is
     // the gate. A destructive command without the confirmed flag is refused
     // regardless of what the IPC caller claims.
-    let hits = guard::check(&command);
+    let user_rules = with_db(&state, |conn| load_user_rules(conn))?;
+    let hits = guard::check_with_user(&command, &user_rules);
     if !hits.is_empty() && confirmed != Some(true) {
         let rules: Vec<&str> = hits.iter().map(|h| h.rule_id.as_str()).collect();
         return Err(AppError::DestructiveBlocked(rules.join(", ")));
@@ -126,12 +134,29 @@ pub async fn broadcast_command(
         matched_rules: hits.iter().map(|h| h.rule_id.clone()).collect(),
         confirmed: confirmed == Some(true),
     });
+    // Command history (PR#8); same never-block rule.
+    let _ = with_db(&state, |conn| history::add(conn, &command, host_ids.len()));
+
+    // Concurrency cap: user override, else the cached probe suggestion,
+    // else unbounded-ish. Advisory, not a hard limit (locked design).
+    let max_sessions = with_db(&state, |conn| {
+        Ok(match load_max_sessions(conn)? {
+            Some(n) => n,
+            None => load_cached_probe(conn)?
+                .map(|p| p.suggested_max_sessions)
+                .unwrap_or(512),
+        })
+    })?
+    .max(1);
+    let semaphore = Arc::new(Semaphore::new(max_sessions));
 
     let mut handles = Vec::with_capacity(jobs.len());
     for job in jobs {
         let app = app.clone();
         let run_id = run_id.clone();
+        let semaphore = semaphore.clone();
         handles.push(tauri::async_runtime::spawn(async move {
+            let _permit = semaphore.acquire().await;
             let result = match job.auth {
                 None => ExecResult::NoCredentials,
                 Some(auth) => exec(
