@@ -27,6 +27,7 @@ import {
   onBroadcastResult,
 } from "@/lib/tauri/broadcast";
 import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
+import { commandHistory, getAppSettings } from "@/lib/tauri/settings";
 import type { PresentedKey } from "@/lib/tauri/ssh";
 import {
   buildMatcher,
@@ -67,6 +68,8 @@ export function BroadcastPage() {
     presented: PresentedKey;
   } | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
+  // Up/Down recall in the composer, newest first (persisted via migration 6).
+  const [history, setHistory] = useState<string[]>([]);
 
   // Search (D-015): Ctrl+F find, Ctrl+Shift+F filter.
   const [searchMode, setSearchMode] = useState<SearchMode | null>(null);
@@ -95,6 +98,16 @@ export function BroadcastPage() {
         setSelected(new Set(all.map((h) => h.id)));
       })
       .catch((e) => toast.error(errorMessage(e)));
+    commandHistory(100)
+      .then((entries) => setHistory(entries.map((e) => e.command)))
+      .catch(() => {
+        // Recall is a convenience; the composer works without it.
+      });
+    getAppSettings()
+      .then((s) => setTimeoutSecs(String(s.default_timeout_secs)))
+      .catch(() => {
+        // Keep the built-in 30s default if settings can't load.
+      });
   }, []);
 
   useEffect(() => {
@@ -242,6 +255,8 @@ export function BroadcastPage() {
       runIdRef.current = runId;
       lastCommandRef.current = cmd;
       lastConfirmedRef.current = confirmed;
+      // Mirror the backend's history write (consecutive duplicates collapse).
+      setHistory((prev) => (prev[0] === cmd ? prev : [cmd, ...prev]));
       setRunning(true);
       setPendingHosts(new Set(hostIds));
       try {
@@ -465,6 +480,7 @@ export function BroadcastPage() {
             onChange={setCommand}
             onSubmit={send}
             disabled={running}
+            history={history}
             placeholder={
               selected.size === 0
                 ? "Select at least one host…"

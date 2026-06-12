@@ -1,20 +1,24 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import {
+  InfoIcon,
   RadioTowerIcon,
   ScrollTextIcon,
   ServerIcon,
+  SettingsIcon,
   TerminalIcon,
 } from "lucide-react";
 
+import { AboutDialog } from "@/components/AboutDialog";
 import { cn } from "@/lib/utils";
 
-export type Page = "hosts" | "broadcast" | "terminals" | "logs";
+export type Page = "hosts" | "broadcast" | "terminals" | "logs" | "settings";
 
 const NAV_ITEMS: { page: Page; label: string; icon: typeof ServerIcon }[] = [
   { page: "hosts", label: "Hosts", icon: ServerIcon },
   { page: "broadcast", label: "Broadcast", icon: RadioTowerIcon },
   { page: "terminals", label: "Terminals", icon: TerminalIcon },
   { page: "logs", label: "Logs", icon: ScrollTextIcon },
+  { page: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
 export function AppShell({
@@ -28,10 +32,12 @@ export function AppShell({
   terminalCount: number;
   children: ReactNode;
 }) {
+  const [aboutOpen, setAboutOpen] = useState(false);
+
   return (
     <div className="dark min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
-        <aside className="w-56 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+        <aside className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
           <div className="flex h-14 items-center border-b border-sidebar-border px-4">
             <span className="font-heading text-base font-semibold tracking-tight">
               OmniTerminal
@@ -61,9 +67,20 @@ export function AppShell({
               </button>
             ))}
           </nav>
+          <div className="mt-auto p-2">
+            <button
+              type="button"
+              onClick={() => setAboutOpen(true)}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+            >
+              <InfoIcon className="h-4 w-4" />
+              About
+            </button>
+          </div>
         </aside>
         <main className="flex-1 overflow-auto">{children}</main>
       </div>
+      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </div>
   );
 }

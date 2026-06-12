@@ -421,6 +421,67 @@ fn everyday_commands_clean() {
     }
 }
 
+// ---- user rules (D-041) ----
+
+fn user_rule(commands: &[&str], flags: &[&str], enabled: bool) -> UserRule {
+    UserRule {
+        id: "user-test".into(),
+        description: "user test rule".into(),
+        commands: commands.iter().map(|s| s.to_string()).collect(),
+        required_flags: flags.iter().map(|s| s.to_string()).collect(),
+        path_patterns: vec![],
+        arg_all_of: vec![],
+        enabled,
+    }
+}
+
+#[test]
+fn user_rule_matches_command() {
+    let rules = vec![user_rule(&["docker"], &[], true)];
+    let hits = check_with_user("docker system prune", &rules);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].rule_id, "user-test");
+}
+
+#[test]
+fn disabled_user_rule_ignored() {
+    let rules = vec![user_rule(&["docker"], &[], false)];
+    assert!(check_with_user("docker system prune", &rules).is_empty());
+}
+
+#[test]
+fn user_rule_with_flags() {
+    let rules = vec![user_rule(&["git"], &["f|--force"], true)];
+    assert_eq!(check_with_user("git push --force origin main", &rules).len(), 1);
+    assert!(check_with_user("git push origin main", &rules).is_empty());
+}
+
+#[test]
+fn user_rule_behind_sudo() {
+    let rules = vec![user_rule(&["docker"], &[], true)];
+    assert_eq!(check_with_user("sudo docker system prune", &rules).len(), 1);
+}
+
+#[test]
+fn user_and_core_rules_stack() {
+    let rules = vec![user_rule(&["reboot-helper"], &[], true)];
+    let hits = check_with_user("rm -rf /x && reboot-helper", &rules);
+    assert_eq!(hits.len(), 2);
+}
+
+#[test]
+fn validate_rejects_bad_rules() {
+    let mut r = user_rule(&["ok"], &[], true);
+    assert!(validate_user_rule(&r).is_ok());
+    r.commands = vec![];
+    assert!(validate_user_rule(&r).is_err());
+    r.commands = vec!["two words".into()];
+    assert!(validate_user_rule(&r).is_err());
+    r.commands = vec!["ok".into()];
+    r.description = " ".into();
+    assert!(validate_user_rule(&r).is_err());
+}
+
 // ---- sudo rewrite (D-026) ----
 
 #[test]

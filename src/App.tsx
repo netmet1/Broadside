@@ -5,6 +5,7 @@ import { HostsPage } from "@/pages/HostsPage";
 import { BroadcastPage } from "@/pages/BroadcastPage";
 import { TerminalsPage, type TermSession } from "@/pages/TerminalsPage";
 import { LogsPage } from "@/pages/LogsPage";
+import { SettingsPage } from "@/pages/SettingsPage";
 import { UnlockDialog } from "@/components/UnlockDialog";
 import { Toaster } from "@/components/ui/sonner";
 import {
@@ -75,6 +76,7 @@ function App() {
       <div className={page === "logs" ? "block h-full" : "hidden"}>
         <LogsPage visible={page === "logs"} />
       </div>
+      {page === "settings" && <SettingsPage />}
       <UnlockDialog
         open={unlockOpen}
         onOpenChange={setUnlockOpen}
