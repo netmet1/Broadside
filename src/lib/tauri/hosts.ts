@@ -65,6 +65,16 @@ export function deleteHost(id: number): Promise<void> {
   return invoke<void>("delete_host", { id });
 }
 
+/** Writes all hosts to a CSV (import-compatible columns); returns the count. */
+export function exportHosts(path: string): Promise<number> {
+  return invoke<number>("export_hosts", { path });
+}
+
+/** Whether a local path points at an existing file. */
+export function pathIsFile(path: string): Promise<boolean> {
+  return invoke<boolean>("path_is_file", { path });
+}
+
 export function setHostCredentials(
   host_id: number,
   auth: AuthInput,

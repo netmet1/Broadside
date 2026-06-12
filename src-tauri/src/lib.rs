@@ -6,6 +6,7 @@ pub mod credentials;
 pub mod crypto;
 pub mod db;
 pub mod error;
+pub mod export;
 pub mod guard;
 pub mod import;
 mod licensing;
@@ -53,6 +54,8 @@ pub fn run() {
             commands::hosts::create_host,
             commands::hosts::update_host,
             commands::hosts::delete_host,
+            commands::hosts::export_hosts,
+            commands::hosts::path_is_file,
             commands::credentials::set_host_credentials,
             commands::credentials::clear_host_credentials,
             commands::credentials::is_credentials_unlocked,
