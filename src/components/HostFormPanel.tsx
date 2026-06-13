@@ -9,6 +9,16 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
@@ -137,16 +147,30 @@ function emptyValues(defaultColor: string): FormValues {
 type Props = {
   host: Host | null;
   defaultColor: string;
+  /** All existing hosts — used to warn when a hostname/IP is already in use. */
+  existingHosts: Host[];
   onCancel: () => void;
   onSaved: () => void;
 };
 
-export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) {
+export function HostFormPanel({
+  host,
+  defaultColor,
+  existingHosts,
+  onCancel,
+  onSaved,
+}: Props) {
   const isEdit = host !== null;
   const [editingCredentials, setEditingCredentials] = useState(!isEdit);
   const [showPassword, setShowPassword] = useState(false);
   const [showKeyPassphrase, setShowKeyPassphrase] = useState(false);
   const [showSudoPassword, setShowSudoPassword] = useState(false);
+  // Set when the entered hostname is already used by another host; the confirm
+  // dialog lets the user proceed anyway (allowed by design — D-033) or go back.
+  const [dupConfirm, setDupConfirm] = useState<{
+    data: FormValues;
+    conflictLabel: string;
+  } | null>(null);
   /** Only meaningful when the host already has a sudo password stored. */
   const [sudoAction, setSudoAction] = useState<"keep" | "replace" | "remove">(
     "keep",
@@ -203,17 +227,18 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
     };
   }, []);
 
-  // Escape cancels the form (unless we're mid-submit).
+  // Escape cancels the form (unless we're mid-submit or the duplicate-hostname
+  // confirm dialog is open — there Escape should just close the dialog).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !isSubmitting) {
+      if (e.key === "Escape" && !isSubmitting && !dupConfirm) {
         e.preventDefault();
         onCancel();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isSubmitting, onCancel]);
+  }, [isSubmitting, onCancel, dupConfirm]);
 
   const selectedColor = watch("color");
   const authMethod = watch("authMethod");
@@ -259,6 +284,21 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
       return;
     }
 
+    // Last gate: warn (don't block) if this hostname/IP is already assigned to
+    // another host. The user can proceed (D-033 allows it) or go back and edit.
+    const target = data.hostname.trim().toLowerCase();
+    const conflict = existingHosts.find(
+      (h) => h.id !== host?.id && h.hostname.toLowerCase() === target,
+    );
+    if (conflict) {
+      setDupConfirm({ data, conflictLabel: conflict.label });
+      return;
+    }
+    await performSave(data);
+  });
+
+  /** Persists the host + credentials. Assumes validation already passed. */
+  const performSave = async (data: FormValues) => {
     const input: HostInput = {
       label: data.label.trim(),
       hostname: data.hostname.trim(),
@@ -309,7 +349,7 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
     } catch (e) {
       toast.error(errorMessage(e));
     }
-  });
+  };
 
   const handleBrowseKey = async () => {
     try {
@@ -741,6 +781,46 @@ export function HostFormPanel({ host, defaultColor, onCancel, onSaved }: Props) 
           {isEdit ? "Save changes" : "Create host"}
         </Button>
       </footer>
+
+      <AlertDialog
+        open={dupConfirm !== null}
+        onOpenChange={(open) => {
+          // Closing via overlay/Escape/Cancel returns to the form intact.
+          if (!open) setDupConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hostname already in use</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-mono text-foreground">
+                {dupConfirm?.data.hostname.trim()}
+              </span>{" "}
+              is already assigned to{" "}
+              <span className="font-semibold text-foreground">
+                {dupConfirm?.conflictLabel}
+              </span>
+              . Add this host anyway?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmitting}>
+              Go back
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSubmitting}
+              onClick={async () => {
+                if (!dupConfirm) return;
+                const data = dupConfirm.data;
+                setDupConfirm(null);
+                await performSave(data);
+              }}
+            >
+              Add anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
