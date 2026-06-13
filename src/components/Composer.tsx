@@ -112,8 +112,12 @@ export function Composer({
         aria-hidden
         className="composer-caret pointer-events-none absolute w-[1.5px] bg-primary"
         style={{
-          left: `calc(0.75rem + ${caret.left}px)`,
-          top: `calc(0.5rem + ${caret.top}px)`,
+          // The marker lives inside the mirror, which carries the same px-3/py-2
+          // padding as the textarea, so its offsetLeft/offsetTop already include
+          // that padding — no extra offset here, or the caret drifts by the
+          // padding amount.
+          left: `${caret.left}px`,
+          top: `${caret.top}px`,
           height: `${caret.height}px`,
           display: focused && !disabled ? undefined : "none",
         }}
