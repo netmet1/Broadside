@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { XIcon } from "lucide-react";
+import { TextIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -11,12 +11,33 @@ import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { SearchBar } from "@/components/SearchBar";
 import { ShortcutBar } from "@/components/ShortcutBar";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage, type Host } from "@/lib/tauri/hosts";
 import type { SearchOptions } from "@/lib/search";
-import { usePageStatus } from "@/lib/status";
+import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
+
+const TABS_COMPACT_KEY = "terminal-tabs-compact";
+
+/** Initials of each whitespace-separated word, e.g. "This is a test" → "TIAT".
+ * Used for the compact tab label mode. */
+function labelInitials(label: string): string {
+  const initials = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  return initials || label.slice(0, 2).toUpperCase();
+}
 
 export type TermSession = {
   id: string;
@@ -44,10 +65,24 @@ export function TerminalsPage({
   onCloseSession,
 }: Props) {
   const shortcuts = useShortcuts(visible);
+  const hint = useHint();
   usePageStatus(
     `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`,
     visible,
   );
+
+  // Tab label mode: full label (default) vs color-dot + initials. Persisted
+  // like the sidebar-collapse pref (localStorage, UI-only).
+  const [tabsCompact, setTabsCompact] = useState(
+    () => localStorage.getItem(TABS_COMPACT_KEY) === "1",
+  );
+  const toggleTabsCompact = useCallback(() => {
+    setTabsCompact((prev) => {
+      const next = !prev;
+      localStorage.setItem(TABS_COMPACT_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
 
   const [gates, setGates] = useState<Map<string, ConnectionGate>>(new Map());
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
@@ -183,6 +218,59 @@ export function TerminalsPage({
 
   return (
     <div className="flex h-full flex-col">
+      {/* Controls line: tab-label toggle (left) + shortcut bar + a session
+          picker for jumping between many open tabs (right). */}
+      <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
+        <Button
+          size="sm"
+          variant={tabsCompact ? "secondary" : "outline"}
+          onClick={toggleTabsCompact}
+          aria-pressed={tabsCompact}
+          {...hint(
+            tabsCompact
+              ? "Tabs show the color dot + initials. Click for full labels."
+              : "Tabs show the color dot + full label. Click for dot + initials.",
+          )}
+        >
+          <TextIcon />
+          {tabsCompact ? "Initials" : "Full labels"}
+        </Button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <ShortcutBar
+            shortcuts={shortcuts}
+            disabled={activeId === null}
+            onRun={runShortcut}
+            onManage={onManageShortcuts}
+          />
+          {sessions.length > 0 && (
+            <Select value={activeId ?? ""} onValueChange={(v) => onActivate(v)}>
+              <SelectTrigger
+                size="sm"
+                className="w-48"
+                aria-label="Jump to session"
+                {...hint("Jump to an open terminal session")}
+              >
+                <SelectValue placeholder="Go to session…" />
+              </SelectTrigger>
+              <SelectContent>
+                {sessions.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: s.host.color }}
+                      />
+                      <span className="truncate">{s.host.label}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      </div>
+
+      {/* Tab strip on its own line below the controls. */}
       <div className="flex items-center gap-1 overflow-x-auto border-b border-border/50 px-2 pt-2">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {sessions.map((s) => (
@@ -197,12 +285,17 @@ export function TerminalsPage({
             onClick={() => onActivate(s.id)}
             role="tab"
             aria-selected={s.id === activeId}
+            title={tabsCompact ? s.host.label : undefined}
           >
             <span
               className="h-2 w-2 shrink-0 rounded-full"
               style={{ backgroundColor: s.host.color }}
             />
-            <span className="max-w-40 truncate">{s.host.label}</span>
+            {tabsCompact ? (
+              <span className="font-mono">{labelInitials(s.host.label)}</span>
+            ) : (
+              <span className="max-w-40 truncate">{s.host.label}</span>
+            )}
             <button
               type="button"
               className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
@@ -221,14 +314,6 @@ export function TerminalsPage({
             No open terminals. Open one from a host row on the Hosts page.
           </p>
         )}
-        </div>
-        <div className="shrink-0 pb-1.5">
-          <ShortcutBar
-            shortcuts={shortcuts}
-            disabled={activeId === null}
-            onRun={runShortcut}
-            onManage={onManageShortcuts}
-          />
         </div>
       </div>
 
