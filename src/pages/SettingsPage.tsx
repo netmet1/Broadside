@@ -18,6 +18,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -51,6 +58,11 @@ function SectionHeading({ title, hint }: { title: string; hint?: string }) {
       {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
+}
+
+/** Stable DOM id for a settings section, used by the jump-to dropdown. */
+function sectionDomId(title: string): string {
+  return "settings-sec-" + title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
 export function SettingsPage({
@@ -87,6 +99,21 @@ export function SettingsPage({
   ];
   const anyVisible = SECTION_TITLES.some(sectionVisible);
 
+  // Jump-to-section dropdown: picking a section clears any search filter (so
+  // the target is mounted) and smooth-scrolls to it — no button needed.
+  const [pendingScroll, setPendingScroll] = useState<string | null>(null);
+  const goToSection = useCallback((title: string) => {
+    setQuery("");
+    setPendingScroll(title);
+  }, []);
+  useEffect(() => {
+    if (!pendingScroll) return;
+    document
+      .getElementById(sectionDomId(pendingScroll))
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setPendingScroll(null);
+  }, [pendingScroll]);
+
   // Performance section (saved together via Save)
   const [maxSessions, setMaxSessions] = useState("");
   const [defaultTimeout, setDefaultTimeout] = useState("30");
@@ -110,6 +137,8 @@ export function SettingsPage({
   const [ruleTip, setRuleTip] = useState("");
   // Drives the red outline on required fields after a failed submit.
   const [ruleSubmitAttempted, setRuleSubmitAttempted] = useState(false);
+  // Backend rejection message shown inline in the form (keeps it open).
+  const [ruleError, setRuleError] = useState<string | null>(null);
 
   // Help-tip modal (core + user rules)
   const [helpRule, setHelpRule] = useState<{ title: string; tip: string } | null>(
@@ -249,13 +278,16 @@ export function SettingsPage({
     }
   };
 
-  /** Wholesale-replace persistence — the backend validates each rule. */
-  const persistRules = async (rules: UserRule[]) => {
+  /** Wholesale-replace persistence — the backend validates each rule.
+   * Returns whether the save succeeded; the caller decides what to do with a
+   * failure (the add-rule form keeps itself open so input isn't lost). */
+  const persistRules = async (rules: UserRule[]): Promise<string | null> => {
     try {
       await saveGuardRules(rules);
       setSettings((prev) => (prev ? { ...prev, user_rules: rules } : prev));
+      return null;
     } catch (e) {
-      toast.error(errorMessage(e));
+      return errorMessage(e);
     }
   };
 
@@ -266,27 +298,40 @@ export function SettingsPage({
       .filter((s) => s.length > 0);
 
   const ruleDescMissing = ruleDesc.trim().length === 0;
-  const ruleCommandsMissing = splitList(ruleCommands).length === 0;
+  const ruleCommandTokens = splitList(ruleCommands);
+  const ruleCommandsMissing = ruleCommandTokens.length === 0;
+  // The backend rejects command names containing whitespace; catch it here so
+  // the field can be highlighted instead of the save failing with a toast.
+  const ruleCommandsHaveSpace = ruleCommandTokens.some((c) => /\s/.test(c));
+  const ruleCommandsInvalid = ruleCommandsMissing || ruleCommandsHaveSpace;
 
   const addRule = async () => {
     if (!settings) return;
-    if (ruleDescMissing || ruleCommandsMissing) {
+    // Invalid input keeps the form open with everything intact and the
+    // offending field(s) highlighted — no reset, no disappearing form.
+    if (ruleDescMissing || ruleCommandsInvalid) {
       setRuleSubmitAttempted(true);
-      toast.error("Description and at least one command are required");
+      setRuleError(null);
       return;
     }
     const tip = ruleTip.trim();
     const rule: UserRule = {
       id: `user-${crypto.randomUUID().slice(0, 8)}`,
       description: ruleDesc.trim(),
-      commands: splitList(ruleCommands),
+      commands: ruleCommandTokens,
       required_flags: splitList(ruleFlags),
       path_patterns: splitList(rulePaths),
       arg_all_of: splitList(ruleArgs),
       help_tip: tip.length > 0 ? tip : null,
       enabled: true,
     };
-    await persistRules([...settings.user_rules, rule]);
+    const err = await persistRules([...settings.user_rules, rule]);
+    if (err) {
+      // Backend rejected it — keep the form open so the user can fix it.
+      setRuleError(err);
+      setRuleSubmitAttempted(true);
+      return;
+    }
     setRuleDesc("");
     setRuleCommands("");
     setRuleFlags("");
@@ -294,21 +339,24 @@ export function SettingsPage({
     setRuleArgs("");
     setRuleTip("");
     setRuleSubmitAttempted(false);
+    setRuleError(null);
     setFormOpen(false);
   };
 
-  const toggleRule = (id: string) => {
+  const toggleRule = async (id: string) => {
     if (!settings) return;
-    persistRules(
+    const err = await persistRules(
       settings.user_rules.map((r) =>
         r.id === id ? { ...r, enabled: !r.enabled } : r,
       ),
     );
+    if (err) toast.error(err);
   };
 
-  const deleteRule = (id: string) => {
+  const deleteRule = async (id: string) => {
     if (!settings) return;
-    persistRules(settings.user_rules.filter((r) => r.id !== id));
+    const err = await persistRules(settings.user_rules.filter((r) => r.id !== id));
+    if (err) toast.error(err);
   };
 
   /** Wholesale-replace persistence for shortcuts (mirrors guard rules). */
@@ -389,16 +437,35 @@ export function SettingsPage({
     <div className="mx-auto max-w-3xl space-y-10 p-6 pb-16">
       <div className="flex items-center justify-between gap-4">
         <h1 className="font-heading text-lg font-semibold">Settings</h1>
-        <div className="relative w-64">
-          <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search sections…"
-            className="h-8 pl-8 text-sm"
-            aria-label="Search settings sections"
-            {...hint("Filter the settings sections by name")}
-          />
+        <div className="flex items-center gap-2">
+          <Select value="" onValueChange={goToSection}>
+            <SelectTrigger
+              size="sm"
+              className="w-44"
+              aria-label="Jump to section"
+              {...hint("Jump straight to a settings section")}
+            >
+              <SelectValue placeholder="Jump to…" />
+            </SelectTrigger>
+            <SelectContent>
+              {SECTION_TITLES.map((title) => (
+                <SelectItem key={title} value={title} className="text-sm">
+                  {title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="relative w-64">
+            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search sections…"
+              className="h-8 pl-8 text-sm"
+              aria-label="Search settings sections"
+              {...hint("Filter the settings sections by name")}
+            />
+          </div>
         </div>
       </div>
 
@@ -410,7 +477,7 @@ export function SettingsPage({
 
       {/* Performance / probe */}
       {sectionVisible("Performance") && (
-      <section className="space-y-4">
+      <section id={sectionDomId("Performance")} className="space-y-4">
         <SectionHeading
           title="Performance"
           hint="The local probe suggests a concurrency ceiling from this machine's resources. Suggestions are advisory — your override wins."
@@ -501,7 +568,7 @@ export function SettingsPage({
 
       {/* Network probe */}
       {sectionVisible("Network probe") && (
-      <section className="space-y-4">
+      <section id={sectionDomId("Network probe")} className="space-y-4">
         <SectionHeading
           title="Network probe"
           hint="TCP connect timing against every configured host, on demand."
@@ -543,7 +610,7 @@ export function SettingsPage({
 
       {/* Destructive guard rules */}
       {sectionVisible("Destructive command guard") && (
-      <section className="space-y-4">
+      <section id={sectionDomId("Destructive command guard")} className="space-y-4">
         <SectionHeading
           title="Destructive command guard"
           hint="Broadcasts matching a rule require typed CONFIRM before they run. Core rules are built in and cannot be removed in v0.1a; your own rules can be toggled or deleted."
@@ -615,6 +682,11 @@ export function SettingsPage({
                 }
                 autoComplete="off"
               />
+              {ruleSubmitAttempted && ruleDescMissing && (
+                <p className="text-xs text-destructive">
+                  Description is required.
+                </p>
+              )}
             </div>
             <div className="grid gap-1">
               <Label htmlFor="rule-commands">Command names</Label>
@@ -624,15 +696,27 @@ export function SettingsPage({
                 onChange={(e) => setRuleCommands(e.target.value)}
                 placeholder="docker, podman"
                 className={`font-mono text-sm ${
-                  ruleSubmitAttempted && ruleCommandsMissing
+                  ruleSubmitAttempted && ruleCommandsInvalid
                     ? "border-destructive"
                     : ""
                 }`}
                 autoComplete="off"
               />
-              <p className="text-xs text-muted-foreground">
-                Comma-separated. The rule fires when any of these is the command.
-              </p>
+              {ruleSubmitAttempted && ruleCommandsMissing ? (
+                <p className="text-xs text-destructive">
+                  At least one command is required.
+                </p>
+              ) : ruleSubmitAttempted && ruleCommandsHaveSpace ? (
+                <p className="text-xs text-destructive">
+                  Command names can't contain spaces — separate multiple
+                  commands with commas.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Comma-separated. The rule fires when any of these is the
+                  command.
+                </p>
+              )}
             </div>
             <div className="grid gap-1">
               <Label htmlFor="rule-flags">Required flags (optional)</Label>
@@ -684,6 +768,11 @@ export function SettingsPage({
                 autoComplete="off"
               />
             </div>
+            {ruleError && (
+              <p className="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+                {ruleError}
+              </p>
+            )}
             <div className="flex gap-2 pt-1">
               <Button size="sm" onClick={addRule}>
                 Add rule
@@ -694,6 +783,7 @@ export function SettingsPage({
                 onClick={() => {
                   setFormOpen(false);
                   setRuleSubmitAttempted(false);
+                  setRuleError(null);
                 }}
               >
                 Cancel
@@ -704,7 +794,11 @@ export function SettingsPage({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setFormOpen(true)}
+            onClick={() => {
+              setRuleSubmitAttempted(false);
+              setRuleError(null);
+              setFormOpen(true);
+            }}
             {...hint("Add your own destructive-command rule")}
           >
             <PlusIcon />
@@ -742,7 +836,11 @@ export function SettingsPage({
 
       {/* Shortcut commands (D-054) */}
       {sectionVisible("Shortcut commands") && (
-      <section ref={shortcutsSectionRef} className="space-y-4">
+      <section
+        ref={shortcutsSectionRef}
+        id={sectionDomId("Shortcut commands")}
+        className="space-y-4"
+      >
         <SectionHeading
           title="Shortcut commands"
           hint="One-click commands for the dropdown on the Broadcast and Terminals pages. Core shortcuts are built in; add, edit or delete your own."
@@ -847,7 +945,7 @@ export function SettingsPage({
 
       {/* Appearance */}
       {sectionVisible("Appearance") && (
-      <section className="space-y-4">
+      <section id={sectionDomId("Appearance")} className="space-y-4">
         <SectionHeading
           title="Appearance"
           hint="Terminal font applies to the xterm panes; application font size scales the rest of the UI."
@@ -911,7 +1009,7 @@ export function SettingsPage({
 
       {/* Backup */}
       {sectionVisible("Backup") && (
-      <section className="space-y-3">
+      <section id={sectionDomId("Backup")} className="space-y-3">
         <SectionHeading
           title="Backup"
           hint="Snapshots the database — hosts, settings, trusted host keys and command history — into a folder you pick. Credentials are never included; they stay in Windows Credential Manager."
@@ -940,7 +1038,7 @@ export function SettingsPage({
 
       {/* Help */}
       {sectionVisible("Help") && (
-      <section className="space-y-3">
+      <section id={sectionDomId("Help")} className="space-y-3">
         <SectionHeading
           title="Help"
           hint="Contextual hints in the bottom bar while hovering buttons and actions."
@@ -966,7 +1064,7 @@ export function SettingsPage({
 
       {/* Audit */}
       {sectionVisible("Audit log") && (
-      <section className="space-y-3">
+      <section id={sectionDomId("Audit log")} className="space-y-3">
         <SectionHeading
           title="Audit log"
           hint="Rolling record of broadcasts, key-trust decisions, PTY opens and session saves. Also toggleable on the Logs page."
