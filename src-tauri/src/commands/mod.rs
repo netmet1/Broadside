@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod broadcast;
 pub mod credentials;
+pub mod errlog;
 pub mod hosts;
 pub mod import;
 pub mod pty;
