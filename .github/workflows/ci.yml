@@ -1,10 +1,15 @@
 name: CI
 
+# While the repo is PRIVATE, PR validation runs locally via scripts/ci.ps1
+# (decision D-060) to save Windows-runner minutes and keep the loop fast.
+# This workflow stays as a clean-room backstop on every push to main, plus an
+# on-demand run via the Actions "Run workflow" button (workflow_dispatch).
+# AT PUBLIC FLIP: restore the `pull_request: branches: [main]` trigger and
+# enable branch protection with required checks (D-021/D-023).
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   rust:
