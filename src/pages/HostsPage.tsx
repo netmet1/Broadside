@@ -45,6 +45,7 @@ type SortKey = "label" | "status" | "hostname" | "port" | "username" | "flavor";
 /** Column layout for the hosts table. Resizable columns get a drag handle and
  * their width persists in localStorage (across tab switches and restarts). */
 const COLS: { id: string; w: number; resizable: boolean }[] = [
+  { id: "select", w: 40, resizable: false },
   { id: "swatch", w: 40, resizable: false },
   { id: "label", w: 180, resizable: true },
   { id: "status", w: 64, resizable: false },
@@ -93,10 +94,13 @@ function SortHeader({
 
 export function HostsPage({
   onOpenTerminal,
+  onOpenTerminals,
   onTerminateHost,
   connectedHostIds,
 }: {
   onOpenTerminal: (host: Host) => void;
+  /** Open terminal tabs for several hosts at once (multi-select). */
+  onOpenTerminals: (hosts: Host[]) => void;
   /** Terminate every live terminal session for this host. */
   onTerminateHost: (hostId: number) => void;
   /** Hosts with at least one live terminal session. */
@@ -220,6 +224,29 @@ export function HostsPage({
       return a.label.localeCompare(b.label);
     });
   }, [hosts, sort, connectedHostIds]);
+
+  // Multi-select for the "Multi-terminal" action.
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const toggleSelected = (id: number) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allDisplayedSelected =
+    sortedHosts.length > 0 && sortedHosts.every((h) => selectedIds.has(h.id));
+  const someSelected = selectedIds.size > 0 && !allDisplayedSelected;
+  const toggleSelectAll = () =>
+    setSelectedIds(
+      allDisplayedSelected ? new Set() : new Set(sortedHosts.map((h) => h.id)),
+    );
+  const openSelectedTerminals = () => {
+    const chosen = hosts.filter((h) => selectedIds.has(h.id));
+    if (chosen.length === 0) return;
+    onOpenTerminals(chosen);
+    setSelectedIds(new Set());
+  };
 
   usePageStatus(
     loading
@@ -352,6 +379,15 @@ export function HostsPage({
         <div className="flex gap-2">
           <Button
             variant="outline"
+            onClick={openSelectedTerminals}
+            disabled={selectedIds.size === 0}
+            {...hint("Open a terminal tab for every selected host at once")}
+          >
+            <TerminalIcon />
+            Multi-terminal{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+          </Button>
+          <Button
+            variant="outline"
             onClick={runExport}
             disabled={loading || hosts.length === 0}
             {...hint("Export all hosts to a CSV or Excel (.xlsx) file (re-importable)")}
@@ -383,6 +419,20 @@ export function HostsPage({
           </colgroup>
           <TableHeader>
             <TableRow>
+              <TableHead className="text-center">
+                <input
+                  type="checkbox"
+                  className="accent-primary align-middle"
+                  checked={allDisplayedSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someSelected;
+                  }}
+                  onChange={toggleSelectAll}
+                  disabled={loading || hosts.length === 0}
+                  aria-label="Select all hosts"
+                  {...hint("Select or deselect every host (for Multi-terminal)")}
+                />
+              </TableHead>
               <TableHead />
               <TableHead className="relative">
                 <SortHeader label="Label" sortKey="label" sort={sort} onSort={toggleSort} />
@@ -413,19 +463,31 @@ export function HostsPage({
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-sm text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
             ) : hosts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-sm text-muted-foreground">
                   No hosts yet. Click <span className="font-medium">Add host</span> to create one.
                 </TableCell>
               </TableRow>
             ) : (
               sortedHosts.map((h) => (
-                <TableRow key={h.id}>
+                <TableRow
+                  key={h.id}
+                  data-state={selectedIds.has(h.id) ? "selected" : undefined}
+                >
+                  <TableCell className="text-center">
+                    <input
+                      type="checkbox"
+                      className="accent-primary align-middle"
+                      checked={selectedIds.has(h.id)}
+                      onChange={() => toggleSelected(h.id)}
+                      aria-label={`Select ${h.label}`}
+                    />
+                  </TableCell>
                   <TableCell>
                     <span
                       className="block h-3 w-3 rounded-full"

@@ -50,6 +50,18 @@ function App() {
     setPage("terminals");
   }, []);
 
+  /** Open a terminal tab for every host at once (Hosts multi-select). */
+  const openTerminals = useCallback((hostsToOpen: Host[]) => {
+    if (hostsToOpen.length === 0) return;
+    const newSessions: TermSession[] = hostsToOpen.map((host) => ({
+      id: crypto.randomUUID(),
+      host,
+    }));
+    setSessions((prev) => [...prev, ...newSessions]);
+    setActiveSessionId(newSessions[0].id);
+    setPage("terminals");
+  }, []);
+
   const handleConnectionChange = useCallback(
     (sessionId: string, connected: boolean) => {
       setConnectedSessions((prev) => {
@@ -120,6 +132,7 @@ function App() {
       {page === "hosts" && (
         <HostsPage
           onOpenTerminal={openTerminal}
+          onOpenTerminals={openTerminals}
           onTerminateHost={terminateHost}
           connectedHostIds={connectedHostIds}
         />
