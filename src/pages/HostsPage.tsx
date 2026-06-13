@@ -392,20 +392,32 @@ export function HostsPage({
                     >
                       <TerminalIcon />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => onTerminateHost(h.id)}
-                      disabled={!connectedHostIds.has(h.id)}
-                      aria-label="Terminate session"
+                    {/* Wrapped in a span so the help tip (and native title)
+                        still fire on hover when the button is disabled —
+                        disabled buttons don't emit mouse events. */}
+                    <span
+                      className="inline-flex"
+                      title={
+                        connectedHostIds.has(h.id)
+                          ? `Terminate the live terminal session(s) on ${h.label}`
+                          : `${h.label} has no live terminal session to terminate`
+                      }
                       {...hint(
                         connectedHostIds.has(h.id)
                           ? `Terminate the live terminal session(s) on ${h.label}`
                           : `${h.label} has no live terminal session to terminate`,
                       )}
                     >
-                      <UnplugIcon />
-                    </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onTerminateHost(h.id)}
+                        disabled={!connectedHostIds.has(h.id)}
+                        aria-label="Terminate session"
+                      >
+                        <UnplugIcon />
+                      </Button>
+                    </span>
                     <Button
                       variant="ghost"
                       size="icon-sm"
