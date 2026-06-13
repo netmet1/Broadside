@@ -23,11 +23,17 @@ import {
   type GuardHit,
   type HostExecReport,
   broadcastCommand,
+  broadcastHistoryClear,
+  broadcastHistoryList,
   checkDestructive,
   onBroadcastResult,
 } from "@/lib/tauri/broadcast";
 import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
-import { commandHistory, getAppSettings } from "@/lib/tauri/settings";
+import {
+  clearCommandHistory,
+  commandHistory,
+  getAppSettings,
+} from "@/lib/tauri/settings";
 import type { PresentedKey } from "@/lib/tauri/ssh";
 import {
   buildMatcher,
@@ -45,13 +51,34 @@ import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 
 const DEFAULT_TIMEOUT_SECS = 30;
+/** How many past runs to reload on mount (matches the backend cap). */
+const HISTORY_RUNS = 200;
 
 type Block = HostExecReport & { collapsed: boolean; receivedAt: string };
 
-type StreamRef = { hostId: number; stream: "stdout" | "stderr" };
+/** One broadcast run: a command sent to N hosts, plus the per-host result
+ * blocks (completion order) and the set still pending. Runs append over time
+ * and persist across restarts (D-059). */
+type RunGroup = {
+  runId: string;
+  command: string;
+  ts: string;
+  blocks: Block[];
+  pending: Set<number>;
+};
+
+/** Stable per-block key — a host can appear in many runs, so host_id alone is
+ * not unique across the appended history. */
+const blockKeyOf = (runId: string, hostId: number) => `${runId}:${hostId}`;
 
 /** One navigable find hit (a single match occurrence). */
-type FindHit = StreamRef & { line: number; start: number; end: number };
+type FindHit = {
+  key: string;
+  stream: "stdout" | "stderr";
+  line: number;
+  start: number;
+  end: number;
+};
 
 export function BroadcastPage({
   visible,
@@ -65,8 +92,8 @@ export function BroadcastPage({
   const [command, setCommand] = useState("");
   const [timeoutSecs, setTimeoutSecs] = useState(String(DEFAULT_TIMEOUT_SECS));
   const [running, setRunning] = useState(false);
-  const [blocks, setBlocks] = useState<Block[]>([]);
-  const [pendingHosts, setPendingHosts] = useState<Set<number>>(new Set());
+  // All runs, oldest first (newest appended at the bottom).
+  const [runs, setRuns] = useState<RunGroup[]>([]);
   const [guardHits, setGuardHits] = useState<GuardHit[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [tofuEntries, setTofuEntries] = useState<UnknownKeyEntry[]>([]);
@@ -146,21 +173,52 @@ export function BroadcastPage({
       .catch(() => {
         // Keep the built-in 30s default if settings can't load.
       });
+    // Reload persisted result history so output survives restarts (D-059).
+    broadcastHistoryList(HISTORY_RUNS)
+      .then((stored) =>
+        setRuns(
+          stored.map((r) => ({
+            runId: r.run_id,
+            command: r.command,
+            ts: r.ts,
+            pending: new Set<number>(),
+            blocks: r.results.map((res) => ({
+              run_id: r.run_id,
+              host_id: res.host_id,
+              label: res.label,
+              color: res.color,
+              result: res.result,
+              // Reloaded history starts collapsed so the page isn't a wall.
+              collapsed: true,
+              receivedAt: r.ts,
+            })),
+          })),
+        ),
+      )
+      .catch(() => {
+        // History is best-effort; the page works without it.
+      });
   }, []);
 
   useEffect(() => {
     const unlisten = onBroadcastResult((report) => {
-      if (report.run_id !== runIdRef.current) return;
-      setPendingHosts((prev) => {
-        const next = new Set(prev);
-        next.delete(report.host_id);
-        return next;
-      });
-      setBlocks((prev) => [
-        // A retry replaces the host's previous block.
-        ...prev.filter((b) => b.host_id !== report.host_id),
-        { ...report, collapsed: false, receivedAt: new Date().toISOString() },
-      ]);
+      setRuns((prev) =>
+        prev.map((r) => {
+          if (r.runId !== report.run_id) return r;
+          const pending = new Set(r.pending);
+          pending.delete(report.host_id);
+          // A retry replaces the host's previous block within this run.
+          const blocks = [
+            ...r.blocks.filter((b) => b.host_id !== report.host_id),
+            {
+              ...report,
+              collapsed: false,
+              receivedAt: new Date().toISOString(),
+            },
+          ];
+          return { ...r, pending, blocks };
+        }),
+      );
     });
     return () => {
       unlisten.then((fn) => fn());
@@ -172,7 +230,7 @@ export function BroadcastPage({
     if (searchMode === null) {
       outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
     }
-  }, [blocks, searchMode]);
+  }, [runs, searchMode]);
 
   // Keyboard entry points (D-015). Only while this page is the visible one —
   // the component stays mounted in the background after navigation.
@@ -205,38 +263,42 @@ export function BroadcastPage({
   );
   const matcher = isMatcher(matcherOrError) ? matcherOrError : null;
 
-  /** Per-stream line matches for every completed block, in display order. */
+  /** Per-stream line matches for every completed block across all runs, in
+   * display order. Keyed by `${runId}:${hostId}:${stream}`. */
   const scan = useMemo(() => {
     if (!matcher) return null;
     const byRef = new Map<string, Map<number, LineMatch[]>>();
     const hits: FindHit[] = [];
-    const hostsWithMatches = new Set<number>();
+    const blocksWithMatches = new Set<string>();
     let total = 0;
-    for (const block of blocks) {
-      if (block.result.status !== "completed") continue;
-      for (const stream of ["stdout", "stderr"] as const) {
-        const text = block.result[stream];
-        if (!text) continue;
-        const lines = text.split("\n");
-        const lineMap = new Map<number, LineMatch[]>();
-        for (let i = 0; i < lines.length; i++) {
-          const matches = matchLine(matcher, lines[i]);
-          if (matches.length > 0) {
-            lineMap.set(i, matches);
-            hostsWithMatches.add(block.host_id);
-            total += matches.length;
-            for (const m of matches) {
-              hits.push({ hostId: block.host_id, stream, line: i, ...m });
+    for (const run of runs) {
+      for (const block of run.blocks) {
+        if (block.result.status !== "completed") continue;
+        const key = blockKeyOf(run.runId, block.host_id);
+        for (const stream of ["stdout", "stderr"] as const) {
+          const text = block.result[stream];
+          if (!text) continue;
+          const lines = text.split("\n");
+          const lineMap = new Map<number, LineMatch[]>();
+          for (let i = 0; i < lines.length; i++) {
+            const matches = matchLine(matcher, lines[i]);
+            if (matches.length > 0) {
+              lineMap.set(i, matches);
+              blocksWithMatches.add(key);
+              total += matches.length;
+              for (const m of matches) {
+                hits.push({ key, stream, line: i, ...m });
+              }
             }
           }
-        }
-        if (lineMap.size > 0) {
-          byRef.set(`${block.host_id}:${stream}`, lineMap);
+          if (lineMap.size > 0) {
+            byRef.set(`${key}:${stream}`, lineMap);
+          }
         }
       }
     }
-    return { byRef, hits, total, hostCount: hostsWithMatches.size };
-  }, [matcher, blocks]);
+    return { byRef, hits, total, hostCount: blocksWithMatches.size };
+  }, [matcher, runs]);
 
   const navigate = useCallback(
     (direction: 1 | -1) => {
@@ -258,7 +320,7 @@ export function BroadcastPage({
     }
     if (!scan || searchPattern === "") return { text: "", tone: "normal" as const };
     if (scan.total === 0) return { text: "No matches", tone: "normal" as const };
-    const base = `${scan.total} ${scan.total === 1 ? "match" : "matches"} in ${scan.hostCount} ${scan.hostCount === 1 ? "host" : "hosts"}`;
+    const base = `${scan.total} ${scan.total === 1 ? "match" : "matches"} in ${scan.hostCount} ${scan.hostCount === 1 ? "block" : "blocks"}`;
     return {
       text:
         searchMode === "find"
@@ -298,7 +360,17 @@ export function BroadcastPage({
       // Mirror the backend's history write (consecutive duplicates collapse).
       setHistory((prev) => (prev[0] === cmd ? prev : [cmd, ...prev]));
       setRunning(true);
-      setPendingHosts(new Set(hostIds));
+      // Append a new run; previous runs stay (appending history, D-059).
+      setRuns((prev) => [
+        ...prev,
+        {
+          runId,
+          command: cmd,
+          ts: new Date().toISOString(),
+          blocks: [],
+          pending: new Set(hostIds),
+        },
+      ]);
       try {
         const reports = await broadcastCommand({
           runId,
@@ -328,7 +400,11 @@ export function BroadcastPage({
         }
       } catch (e) {
         toast.error(errorMessage(e));
-        setPendingHosts(new Set());
+        setRuns((prev) =>
+          prev.map((r) =>
+            r.runId === runId ? { ...r, pending: new Set() } : r,
+          ),
+        );
       } finally {
         setRunning(false);
       }
@@ -342,7 +418,6 @@ export function BroadcastPage({
       if (!cmd || selected.size === 0 || running || parsedTimeout === null) {
         return;
       }
-      setBlocks([]);
       try {
         const hits = await checkDestructive(cmd);
         if (hits.length > 0) {
@@ -376,40 +451,75 @@ export function BroadcastPage({
     [runBroadcast],
   );
 
-  const toggleCollapsed = (hostId: number) => {
-    setBlocks((prev) =>
-      prev.map((b) =>
-        b.host_id === hostId ? { ...b, collapsed: !b.collapsed } : b,
+  const toggleCollapsed = (runId: string, hostId: number) => {
+    setRuns((prev) =>
+      prev.map((r) =>
+        r.runId !== runId
+          ? r
+          : {
+              ...r,
+              blocks: r.blocks.map((b) =>
+                b.host_id === hostId ? { ...b, collapsed: !b.collapsed } : b,
+              ),
+            },
       ),
     );
   };
 
-  const waitingLabels = [...pendingHosts]
-    .map((id) => hostsById.get(id)?.label ?? `#${id}`)
-    .join(", ");
+  /** Clears the persistent result history (this session and on disk). */
+  const clearResults = useCallback(async () => {
+    try {
+      await broadcastHistoryClear();
+    } catch (e) {
+      toast.error(errorMessage(e));
+      return;
+    }
+    setRuns([]);
+    toast.success("Broadcast results cleared");
+  }, []);
+
+  /** Clears the Up/Down command recall history. */
+  const clearCmdHistory = useCallback(async () => {
+    try {
+      await clearCommandHistory();
+      setHistory([]);
+      toast.success("Command history cleared");
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  }, []);
+
+  const activeRun = runs.find((r) => r.pending.size > 0);
+  const waitingLabels = activeRun
+    ? [...activeRun.pending]
+        .map((id) => hostsById.get(id)?.label ?? `#${id}`)
+        .join(", ")
+    : "";
 
   /** Current output as .otlog lines (D-010): per output line, plus a status
    * line per host so failures are part of the record. */
   const buildOtlogLines = useCallback((): OtlogLine[] => {
     const out: OtlogLine[] = [];
-    for (const block of blocks) {
-      out.push({
-        ts: block.receivedAt,
-        host: block.label,
-        stream: "status",
-        data: statusSummary(block.result).text,
-      });
-      if (block.result.status !== "completed") continue;
-      for (const stream of ["stdout", "stderr"] as const) {
-        const text = block.result[stream];
-        if (!text) continue;
-        for (const line of text.split("\n")) {
-          out.push({ ts: block.receivedAt, host: block.label, stream, data: line });
+    for (const run of runs) {
+      for (const block of run.blocks) {
+        out.push({
+          ts: block.receivedAt,
+          host: block.label,
+          stream: "status",
+          data: statusSummary(block.result).text,
+        });
+        if (block.result.status !== "completed") continue;
+        for (const stream of ["stdout", "stderr"] as const) {
+          const text = block.result[stream];
+          if (!text) continue;
+          for (const line of text.split("\n")) {
+            out.push({ ts: block.receivedAt, host: block.label, stream, data: line });
+          }
         }
       }
     }
     return out;
-  }, [blocks]);
+  }, [runs]);
 
   const activeHit =
     searchMode === "find" && scan && scan.hits.length > 0
@@ -417,6 +527,7 @@ export function BroadcastPage({
       : null;
 
   const filterActive = searchMode === "filter" && matcher !== null && searchPattern !== "";
+  const hasOutput = runs.length > 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -429,7 +540,7 @@ export function BroadcastPage({
       {/* Host selection rail */}
       <div className="flex w-60 shrink-0 flex-col border-r border-border/50">
         <label
-          className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium"
+          className="flex shrink-0 cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium"
           {...hint("Select or deselect every host for this broadcast")}
         >
           <input
@@ -470,6 +581,29 @@ export function BroadcastPage({
             </p>
           )}
         </div>
+        {/* Bottom-pinned clear actions — stay visible while the host list
+            above scrolls (work queue 2026-06-13). */}
+        <div className="shrink-0 space-y-1 border-t border-border/50 p-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={clearResults}
+            disabled={!hasOutput}
+            {...hint("Clear all saved broadcast results (also clears the persisted history)")}
+          >
+            Clear results
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={clearCmdHistory}
+            {...hint("Clear the Up/Down command recall history")}
+          >
+            Clear command history
+          </Button>
+        </div>
       </div>
 
       {/* Output + composer */}
@@ -497,7 +631,7 @@ export function BroadcastPage({
             onClose={closeSearch}
           />
         )}
-        {blocks.length > 0 && !running && (
+        {hasOutput && !running && (
           <div className="flex justify-end border-b border-border/30 px-3 py-1.5">
             <Button
               variant="ghost"
@@ -510,42 +644,57 @@ export function BroadcastPage({
           </div>
         )}
         <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
-          {blocks.length === 0 && pendingHosts.size === 0 && (
+          {!hasOutput && (
             <p className="py-8 text-center text-sm text-muted-foreground">
               Select hosts, type a command, press Enter.
             </p>
           )}
-          <div className="space-y-3">
-            {blocks.map((block) => (
-              <OutputBlock
-                key={block.host_id}
-                block={block}
-                findData={
-                  searchMode === "find" && scan
-                    ? {
-                        byRef: scan.byRef,
-                        activeHit,
-                      }
-                    : null
-                }
-                filterMatcher={filterActive ? matcher : null}
-                onToggle={() => toggleCollapsed(block.host_id)}
-                onReviewMismatch={(stored, presented) => {
-                  const host = hostsById.get(block.host_id);
-                  if (host) setMismatch({ host, stored, presented });
-                }}
-              />
+          <div className="space-y-5">
+            {runs.map((run) => (
+              <div key={run.runId} className="space-y-2">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="shrink-0 tabular-nums">
+                    {formatRunTime(run.ts)}
+                  </span>
+                  <code className="truncate rounded bg-muted/40 px-1.5 py-0.5 font-mono text-foreground/80">
+                    {run.command}
+                  </code>
+                </div>
+                <div className="space-y-3">
+                  {run.blocks.map((block) => {
+                    const key = blockKeyOf(run.runId, block.host_id);
+                    return (
+                      <OutputBlock
+                        key={key}
+                        block={block}
+                        blockKey={key}
+                        findData={
+                          searchMode === "find" && scan
+                            ? { byRef: scan.byRef, activeHit }
+                            : null
+                        }
+                        filterMatcher={filterActive ? matcher : null}
+                        onToggle={() => toggleCollapsed(run.runId, block.host_id)}
+                        onReviewMismatch={(stored, presented) => {
+                          const host = hostsById.get(block.host_id);
+                          if (host) setMismatch({ host, stored, presented });
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+                {run.pending.size > 0 && (
+                  <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+                    <Loader2Icon className="h-3.5 w-3.5 animate-spin" />
+                    Waiting on {run.pending.size}: {waitingLabels}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
-          {pendingHosts.size > 0 && (
-            <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
-              <Loader2Icon className="h-3.5 w-3.5 animate-spin" />
-              Waiting on {pendingHosts.size}: {waitingLabels}
-            </div>
-          )}
         </div>
 
-        <div className="flex items-center gap-2 border-t border-border/50 p-3">
+        <div className="flex items-end gap-2 border-t border-border/50 p-3">
           <Composer
             value={command}
             onChange={setCommand}
@@ -565,6 +714,7 @@ export function BroadcastPage({
               disabled={running}
               aria-label="Timeout in seconds"
               className={`h-10 w-16 text-center font-mono text-sm ${parsedTimeout === null ? "border-destructive" : ""}`}
+              {...hint("Per-command timeout in seconds (1–3600). Partial output is kept if it elapses.")}
             />
             <span className="text-xs text-muted-foreground">s</span>
           </div>
@@ -577,6 +727,7 @@ export function BroadcastPage({
               parsedTimeout === null
             }
             aria-label="Send"
+            className="h-10"
             {...hint("Run the command on every selected host")}
           >
             {running ? (
@@ -626,6 +777,14 @@ export function BroadcastPage({
   );
 }
 
+/** Short local time for a run header (HH:MM:SS). */
+function formatRunTime(ts: string): string {
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime())
+    ? ts
+    : d.toLocaleTimeString(undefined, { hour12: false });
+}
+
 function statusSummary(result: ExecResult): {
   text: string;
   tone: "ok" | "warn" | "error";
@@ -664,12 +823,14 @@ type FindData = {
 
 function OutputBlock({
   block,
+  blockKey,
   findData,
   filterMatcher,
   onToggle,
   onReviewMismatch,
 }: {
   block: Block;
+  blockKey: string;
   findData: FindData | null;
   filterMatcher: Matcher | null;
   onToggle: () => void;
@@ -739,7 +900,7 @@ function OutputBlock({
         <div className="px-3 pb-3">
           <BlockBody
             result={result}
-            hostId={block.host_id}
+            blockKey={blockKey}
             findData={findData}
             onReviewMismatch={onReviewMismatch}
           />
@@ -802,12 +963,12 @@ function BlockHeader({
 
 function BlockBody({
   result,
-  hostId,
+  blockKey,
   findData,
   onReviewMismatch,
 }: {
   result: ExecResult;
-  hostId: number;
+  blockKey: string;
   findData: FindData | null;
   onReviewMismatch: (stored: string, presented: PresentedKey) => void;
 }) {
@@ -818,7 +979,10 @@ function BlockBody({
           {(["stdout", "stderr"] as const).map((stream) => {
             const text = result[stream];
             if (!text) return null;
-            const lineMap = findData?.byRef.get(`${hostId}:${stream}`);
+            const lineMap = findData?.byRef.get(`${blockKey}:${stream}`);
+            const activeHere =
+              findData?.activeHit?.key === blockKey &&
+              findData.activeHit.stream === stream;
             return (
               <pre
                 key={stream}
@@ -828,18 +992,12 @@ function BlockBody({
                   <HighlightedText
                     text={text}
                     lineMap={lineMap}
-                    activeLine={
-                      findData?.activeHit?.hostId === hostId &&
-                      findData.activeHit.stream === stream
-                        ? findData.activeHit.line
-                        : null
-                    }
+                    activeLine={activeHere ? findData!.activeHit!.line : null}
                     activeRange={
-                      findData?.activeHit?.hostId === hostId &&
-                      findData.activeHit.stream === stream
+                      activeHere
                         ? {
-                            start: findData.activeHit.start,
-                            end: findData.activeHit.end,
+                            start: findData!.activeHit!.start,
+                            end: findData!.activeHit!.end,
                           }
                         : null
                     }
@@ -895,4 +1053,3 @@ function BlockBody({
       );
   }
 }
-
