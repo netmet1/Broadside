@@ -104,3 +104,37 @@ pub fn pty_resize(
 pub fn pty_close(session_id: String, pty_state: State<'_, PtyState>) -> AppResult<()> {
     pty_state.close(&session_id)
 }
+
+/// Records one PTY-broadcast dispatch run for the persistent history (D-059).
+/// Also records the command in the shared recall history so Up/Down works the
+/// same as on the Broadcast tab.
+#[tauri::command]
+pub fn pty_history_add(
+    run_id: String,
+    ts: String,
+    command: String,
+    results: Vec<crate::db::pty_history::DispatchInput>,
+    state: State<'_, DbState>,
+) -> AppResult<()> {
+    with_db(&state, |conn| {
+        crate::db::pty_history::add_run(conn, &run_id, &ts, &command, &results)?;
+        // Never block on the recall-history write (same rule as Broadcast).
+        let _ = crate::db::history::add(conn, &command, results.len());
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn pty_history_list(
+    max_runs: usize,
+    state: State<'_, DbState>,
+) -> AppResult<Vec<crate::db::pty_history::StoredPtyRun>> {
+    with_db(&state, |conn| {
+        crate::db::pty_history::list(conn, max_runs.clamp(1, 1000))
+    })
+}
+
+#[tauri::command]
+pub fn pty_history_clear(state: State<'_, DbState>) -> AppResult<usize> {
+    with_db(&state, |conn| crate::db::pty_history::clear(conn))
+}
