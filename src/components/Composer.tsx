@@ -16,12 +16,18 @@ type Props = {
   placeholder?: string;
   /** Recallable past commands, newest first (Up/Down arrows, shell-style). */
   history?: string[];
+  /** Max visible lines before the textarea scrolls instead of growing. */
+  maxRows?: number;
 };
 
 /**
- * Broadcast command input with the smooth animated caret (D-009 — composer
- * only). The native caret is hidden; a mirror span measures the text up to
- * the selection point and an animated bar caret eases to that position.
+ * Broadcast command input. Behaves like the Claude Code prompt box: it wraps
+ * long input and auto-grows its height (up to `maxRows`) instead of scrolling
+ * the text out of view. Enter submits; Shift+Enter inserts a newline.
+ *
+ * Keeps the smooth animated caret (D-009 — composer only): the native caret is
+ * hidden and a mirror element measures the caret's x/y (including wrapped
+ * lines) so an animated bar eases to that position.
  */
 export function Composer({
   value,
@@ -30,27 +36,51 @@ export function Composer({
   disabled,
   placeholder,
   history,
+  maxRows = 8,
 }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const mirrorRef = useRef<HTMLSpanElement>(null);
-  const [caretLeft, setCaretLeft] = useState(0);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
+  const markerRef = useRef<HTMLSpanElement>(null);
+  const [caret, setCaret] = useState({ left: 0, top: 0, height: 20 });
   const [focused, setFocused] = useState(false);
   // Shell-style history recall: index into `history` while browsing, with
   // the in-progress draft stashed so Down past the newest entry restores it.
   const [histIdx, setHistIdx] = useState<number | null>(null);
   const draftRef = useRef("");
 
+  // Grow the textarea to fit its content, capped at maxRows.
+  const resize = useCallback(() => {
+    const ta = inputRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+    const maxHeight = lineHeight * maxRows + 16; // + vertical padding
+    ta.style.height = `${Math.min(ta.scrollHeight, maxHeight)}px`;
+    ta.style.overflowY = ta.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [maxRows]);
+
   const syncCaret = useCallback(() => {
     const input = inputRef.current;
     const mirror = mirrorRef.current;
-    if (!input || !mirror) return;
+    const marker = markerRef.current;
+    if (!input || !mirror || !marker) return;
     const caretIndex = input.selectionStart ?? value.length;
+    // Mirror the text up to the caret, then read the marker's box; this places
+    // the caret correctly even across soft-wrapped lines.
     mirror.textContent = value.slice(0, caretIndex);
-    const textWidth = mirror.getBoundingClientRect().width;
-    setCaretLeft(textWidth - input.scrollLeft);
+    mirror.appendChild(marker);
+    const lineHeight = parseFloat(getComputedStyle(input).lineHeight) || 20;
+    setCaret({
+      left: marker.offsetLeft - input.scrollLeft,
+      top: marker.offsetTop - input.scrollTop,
+      height: lineHeight,
+    });
   }, [value]);
 
-  useLayoutEffect(syncCaret, [syncCaret]);
+  useLayoutEffect(() => {
+    resize();
+    syncCaret();
+  }, [resize, syncCaret]);
 
   useEffect(() => {
     // selectionchange fires on the document for arrow keys / click moves.
@@ -61,25 +91,46 @@ export function Composer({
     return () => document.removeEventListener("selectionchange", handler);
   }, [syncCaret]);
 
+  // True when the caret sits on the first / last visual-logical line, used to
+  // decide whether Up/Down recalls history or just moves between lines.
+  const caretOnFirstLine = () => {
+    const input = inputRef.current;
+    if (!input) return true;
+    const idx = input.selectionStart ?? 0;
+    return !value.slice(0, idx).includes("\n");
+  };
+  const caretOnLastLine = () => {
+    const input = inputRef.current;
+    if (!input) return true;
+    const idx = input.selectionEnd ?? value.length;
+    return !value.slice(idx).includes("\n");
+  };
+
   return (
-    <div className="relative min-w-0 flex-1 overflow-hidden">
+    <div className="relative min-w-0 flex-1">
       <span
         aria-hidden
-        className="composer-caret pointer-events-none absolute top-1/2 h-5 w-[1.5px] -translate-y-1/2 bg-primary"
+        className="composer-caret pointer-events-none absolute w-[1.5px] bg-primary"
         style={{
-          left: `calc(0.75rem + ${caretLeft}px)`,
+          left: `calc(0.75rem + ${caret.left}px)`,
+          top: `calc(0.5rem + ${caret.top}px)`,
+          height: `${caret.height}px`,
           display: focused && !disabled ? undefined : "none",
         }}
       />
-      {/* Mirror for caret measurement — identical font to the input. */}
-      <span
+      {/* Mirror for caret measurement — must match the textarea's box model
+          (font, padding, width, wrapping) so wrapped lines line up. */}
+      <div
         ref={mirrorRef}
         aria-hidden
-        className="invisible absolute left-0 top-0 whitespace-pre font-mono text-sm"
-      />
-      <input
+        className="invisible absolute left-0 top-0 w-full whitespace-pre-wrap break-words px-3 py-2 font-mono text-sm"
+      >
+        <span ref={markerRef} className="inline-block w-0" />
+      </div>
+      <textarea
         ref={inputRef}
         value={value}
+        rows={1}
         onChange={(e) => {
           setHistIdx(null);
           onChange(e.target.value);
@@ -88,22 +139,27 @@ export function Composer({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !disabled) {
+          if (e.key === "Enter" && !e.shiftKey && !disabled) {
             e.preventDefault();
             setHistIdx(null);
             onSubmit();
             return;
           }
           // History recall wraps in both directions; the stashed draft is a
-          // stop on the cycle (…oldest → draft → newest…).
-          if (e.key === "ArrowUp" && history && history.length > 0) {
+          // stop on the cycle (…oldest → draft → newest…). Only triggers at
+          // the first/last line so multi-line editing keeps normal caret moves.
+          if (
+            e.key === "ArrowUp" &&
+            history &&
+            history.length > 0 &&
+            caretOnFirstLine()
+          ) {
             e.preventDefault();
             if (histIdx === null) {
               draftRef.current = value;
               setHistIdx(0);
               onChange(history[0]);
             } else if (histIdx === history.length - 1) {
-              // Past the oldest: wrap back through the draft.
               setHistIdx(null);
               onChange(draftRef.current);
             } else {
@@ -112,15 +168,18 @@ export function Composer({
             }
             return;
           }
-          if (e.key === "ArrowDown" && history && history.length > 0) {
+          if (
+            e.key === "ArrowDown" &&
+            history &&
+            history.length > 0 &&
+            caretOnLastLine()
+          ) {
             e.preventDefault();
             if (histIdx === null) {
-              // From the draft, Down wraps to the oldest entry.
               draftRef.current = value;
               setHistIdx(history.length - 1);
               onChange(history[history.length - 1]);
             } else if (histIdx === 0) {
-              // Past the newest: restore the draft, completing the cycle.
               setHistIdx(null);
               onChange(draftRef.current);
             } else {
@@ -136,7 +195,7 @@ export function Composer({
         autoCapitalize="off"
         spellCheck={false}
         className={cn(
-          "h-10 w-full rounded-md border border-input bg-transparent px-3 font-mono text-sm shadow-xs outline-none transition-colors",
+          "block max-h-[12rem] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 font-mono text-sm leading-5 shadow-xs outline-none transition-colors",
           "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
           "disabled:cursor-not-allowed disabled:opacity-50",
           "[caret-color:transparent]",

@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
 
+pub mod broadcast_history;
 pub mod history;
 pub mod host_keys;
 pub mod hosts;
@@ -76,6 +77,20 @@ const MIGRATIONS: &[&str] = &[
         command     TEXT NOT NULL,
         host_count  INTEGER NOT NULL,
         ts          TEXT NOT NULL
+    );",
+    // 7: persistent broadcast RESULT history (2026-06-13 work queue, D-059).
+    // One row per host-result; rows of a run share run_id/ts/command. `result`
+    // is the ExecResult serialized as JSON so the frontend renders it the same
+    // as a live result block.
+    "CREATE TABLE IF NOT EXISTS broadcast_results (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id    TEXT NOT NULL,
+        ts        TEXT NOT NULL,
+        command   TEXT NOT NULL,
+        host_id   INTEGER NOT NULL,
+        label     TEXT NOT NULL,
+        color     TEXT NOT NULL,
+        result    TEXT NOT NULL
     );",
 ];
 

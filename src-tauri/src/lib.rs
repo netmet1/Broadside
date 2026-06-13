@@ -72,6 +72,8 @@ pub fn run() {
             commands::credentials::set_sudo_same_as_login,
             commands::broadcast::check_destructive,
             commands::broadcast::broadcast_command,
+            commands::broadcast::broadcast_history_list,
+            commands::broadcast::broadcast_history_clear,
             commands::pty::pty_open,
             commands::pty::pty_write,
             commands::pty::pty_resize,
