@@ -39,15 +39,24 @@ pub fn update_host(id: i64, input: HostInput, state: State<'_, DbState>) -> AppR
     host_repo::update(&conn, id, input)
 }
 
-/// Writes all hosts to a CSV that round-trips through "Import hosts…".
-/// Returns the number of hosts written.
+/// Writes all hosts to a CSV or `.xlsx` file (chosen by the path's extension)
+/// that round-trips through "Import hosts…". Returns the number written.
 #[tauri::command]
 pub fn export_hosts(path: String, state: State<'_, DbState>) -> AppResult<usize> {
     let hosts = {
         let conn = lock(&state)?;
         host_repo::list_all(&conn)?
     };
-    crate::export::write_hosts_csv(&hosts, std::path::Path::new(&path))?;
+    let p = std::path::Path::new(&path);
+    let is_xlsx = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("xlsx"));
+    if is_xlsx {
+        crate::export::write_hosts_xlsx(&hosts, p)?;
+    } else {
+        crate::export::write_hosts_csv(&hosts, p)?;
+    }
     Ok(hosts.len())
 }
 

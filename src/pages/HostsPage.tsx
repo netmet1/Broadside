@@ -7,6 +7,7 @@ import {
   PlusIcon,
   TerminalIcon,
   Trash2Icon,
+  UnplugIcon,
   UploadIcon,
 } from "lucide-react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -38,9 +39,12 @@ import { useHint, usePageStatus } from "@/lib/status";
 
 export function HostsPage({
   onOpenTerminal,
+  onTerminateHost,
   connectedHostIds,
 }: {
   onOpenTerminal: (host: Host) => void;
+  /** Terminate every live terminal session for this host. */
+  onTerminateHost: (hostId: number) => void;
   /** Hosts with at least one live terminal session. */
   connectedHostIds: Set<number>;
 }) {
@@ -117,9 +121,12 @@ export function HostsPage({
   const runExport = useCallback(async () => {
     try {
       const path = await saveDialog({
-        title: "Export hosts to CSV",
+        title: "Export hosts",
         defaultPath: "hosts.csv",
-        filters: [{ name: "CSV", extensions: ["csv"] }],
+        filters: [
+          { name: "CSV", extensions: ["csv"] },
+          { name: "Excel workbook", extensions: ["xlsx"] },
+        ],
       });
       if (typeof path !== "string") return;
       const count = await exportHosts(path);
@@ -201,7 +208,7 @@ export function HostsPage({
             variant="outline"
             onClick={runExport}
             disabled={loading || hosts.length === 0}
-            {...hint("Export all hosts to a CSV file (re-importable)")}
+            {...hint("Export all hosts to a CSV or Excel (.xlsx) file (re-importable)")}
           >
             <DownloadIcon />
             Export hosts…
@@ -226,13 +233,13 @@ export function HostsPage({
           <TableHeader>
             <TableRow>
               <TableHead className="w-10" />
-              <TableHead className="w-14 text-xs">Status</TableHead>
               <TableHead>Label</TableHead>
+              <TableHead className="w-14 text-xs">Status</TableHead>
               <TableHead>Hostname</TableHead>
               <TableHead className="w-20">Port</TableHead>
               <TableHead>Username</TableHead>
               <TableHead>Flavor</TableHead>
-              <TableHead className="w-40 text-right">Actions</TableHead>
+              <TableHead className="w-48 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -258,6 +265,7 @@ export function HostsPage({
                       aria-label={h.color}
                     />
                   </TableCell>
+                  <TableCell className="font-medium">{h.label}</TableCell>
                   <TableCell>
                     <span
                       className={`block h-2.5 w-2.5 rounded-full ${
@@ -275,7 +283,6 @@ export function HostsPage({
                       }
                     />
                   </TableCell>
-                  <TableCell className="font-medium">{h.label}</TableCell>
                   <TableCell className="font-mono text-xs">{h.hostname}</TableCell>
                   <TableCell className="font-mono text-xs">{h.port}</TableCell>
                   <TableCell className="font-mono text-xs">{h.username}</TableCell>
@@ -291,6 +298,20 @@ export function HostsPage({
                       {...hint(`Open an interactive terminal tab on ${h.label}`)}
                     >
                       <TerminalIcon />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => onTerminateHost(h.id)}
+                      disabled={!connectedHostIds.has(h.id)}
+                      aria-label="Terminate session"
+                      {...hint(
+                        connectedHostIds.has(h.id)
+                          ? `Terminate the live terminal session(s) on ${h.label}`
+                          : `${h.label} has no live terminal session to terminate`,
+                      )}
+                    >
+                      <UnplugIcon />
                     </Button>
                     <Button
                       variant="ghost"
