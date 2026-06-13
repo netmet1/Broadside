@@ -56,7 +56,17 @@ pub async fn test_connection(
 
     let auth = match auth_for_host(&host, &cred_state)? {
         Some(a) => a,
-        None => return Ok(ProbeResult::NoCredentials),
+        None => {
+            // A missing credential is an operator-visible failure too (D-055
+            // amendment, 2026-06-13): the toast appears, so the error log must
+            // record it like the other failure modes.
+            errlog.log(
+                "test_connection",
+                Some(&host.label),
+                "no credentials stored",
+            );
+            return Ok(ProbeResult::NoCredentials);
+        }
     };
 
     let fingerprints: Vec<String> = trusted

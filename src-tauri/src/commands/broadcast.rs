@@ -198,6 +198,15 @@ pub async fn broadcast_command(
                         &format!("unreachable — {message}"),
                     );
                 }
+                // D-055 amendment (2026-06-13): a host skipped for missing
+                // credentials is a logged failure, not a silent no-op.
+                ExecResult::NoCredentials => {
+                    app.state::<crate::errlog::ErrLogState>().log(
+                        "broadcast",
+                        Some(&report.label),
+                        "no credentials stored",
+                    );
+                }
                 _ => {}
             }
             let _ = app.emit(RESULT_EVENT, &report);
