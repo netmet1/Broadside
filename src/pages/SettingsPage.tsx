@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArchiveIcon,
   CircleHelpIcon,
   Loader2Icon,
   LockIcon,
@@ -10,6 +11,7 @@ import {
   SearchIcon,
   Trash2Icon,
 } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -32,6 +34,7 @@ import {
   type HostLatency,
   type ShortcutCommand,
   type UserRule,
+  backupAppData,
   getAppSettings,
   networkProbe,
   recalibrateProbe,
@@ -78,6 +81,7 @@ export function SettingsPage({
     "Destructive command guard",
     "Shortcut commands",
     "Appearance",
+    "Backup",
     "Help",
     "Audit log",
   ];
@@ -124,6 +128,10 @@ export function SettingsPage({
   const [termFontSize, setTermFontSize] = useState("13");
   const [appFontSize, setAppFontSize] = useState("16");
   const [savingUi, setSavingUi] = useState(false);
+
+  // Backup
+  const [backupIncludeCsv, setBackupIncludeCsv] = useState(true);
+  const [backingUp, setBackingUp] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -351,6 +359,28 @@ export function SettingsPage({
   const deleteShortcut = (id: string) => {
     if (!settings) return;
     persistShortcuts(settings.user_shortcuts.filter((s) => s.id !== id));
+  };
+
+  const runBackup = async () => {
+    try {
+      const dir = await openDialog({
+        directory: true,
+        multiple: false,
+        title: "Choose a backup folder",
+      });
+      if (typeof dir !== "string") return;
+      setBackingUp(true);
+      const report = await backupAppData(dir, backupIncludeCsv);
+      toast.success(
+        report.csv_path
+          ? `Backed up database (${report.host_count} hosts) + hosts CSV`
+          : `Backed up database (${report.host_count} hosts)`,
+      );
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBackingUp(false);
+    }
   };
 
   const probe = settings?.local_probe ?? null;
@@ -876,6 +906,35 @@ export function SettingsPage({
             </Button>
           </div>
         </div>
+      </section>
+      )}
+
+      {/* Backup */}
+      {sectionVisible("Backup") && (
+      <section className="space-y-3">
+        <SectionHeading
+          title="Backup"
+          hint="Snapshots the database — hosts, settings, trusted host keys and command history — into a folder you pick. Credentials are never included; they stay in Windows Credential Manager."
+        />
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="accent-primary"
+            checked={backupIncludeCsv}
+            onChange={(e) => setBackupIncludeCsv(e.target.checked)}
+          />
+          Also export hosts to CSV (re-importable without this backup file)
+        </label>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={runBackup}
+          disabled={backingUp}
+          {...hint("Save a timestamped snapshot of settings and hosts to a folder")}
+        >
+          {backingUp ? <Loader2Icon className="animate-spin" /> : <ArchiveIcon />}
+          Back up now…
+        </Button>
       </section>
       )}
 

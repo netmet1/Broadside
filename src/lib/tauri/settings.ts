@@ -109,3 +109,19 @@ export function commandHistory(limit: number): Promise<HistoryEntry[]> {
 export function clearCommandHistory(): Promise<number> {
   return invoke<number>("clear_command_history");
 }
+
+export type BackupReport = {
+  db_path: string;
+  csv_path: string | null;
+  host_count: number;
+};
+
+/** Snapshots the database (hosts, settings, host keys, history) into `dir`,
+ * optionally alongside a re-importable hosts CSV. Credentials are never
+ * included (they live in the OS credential store, D-008). */
+export function backupAppData(
+  dir: string,
+  includeHostsCsv: boolean,
+): Promise<BackupReport> {
+  return invoke<BackupReport>("backup_app_data", { dir, includeHostsCsv });
+}
