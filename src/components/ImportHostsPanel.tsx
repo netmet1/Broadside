@@ -145,7 +145,11 @@ export function ImportHostsPanel({
       case "ready":
         return <span className="text-xs text-emerald-400">ready</span>;
       case "duplicate":
-        return <span className="text-xs text-amber-400">duplicate — skipped</span>;
+        return (
+          <span className="text-xs text-amber-400">
+            {row.message ?? "duplicate — skipped"}
+          </span>
+        );
       case "error":
         return <span className="text-xs text-red-400">{row.message}</span>;
     }

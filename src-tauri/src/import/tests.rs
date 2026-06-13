@@ -308,3 +308,42 @@ fn error_rows_do_not_claim_labels() {
     assert_eq!(out[0].status, RowStatus::Error);
     assert_eq!(out[1].status, RowStatus::Ready);
 }
+
+#[test]
+fn duplicate_hostname_against_db_and_within_file() {
+    let existing_labels = HashSet::new();
+    let mut existing_hostnames = HashSet::new();
+    existing_hostnames.insert("10.0.0.1".to_string());
+    let out = validate_rows_with_hostnames(
+        &existing_labels,
+        &existing_hostnames,
+        vec![
+            raw("a", "10.0.0.1", "root"),         // IP already in the DB
+            raw("b", "10.0.0.2", "root"),         // fine
+            raw("c", "10.0.0.2", "root"),         // IP repeated within the file
+            raw("d", "HOST.example.com", "root"), // fine
+            raw("e", "host.example.com", "root"), // case-insensitive duplicate
+        ],
+    );
+    assert_eq!(out[0].status, RowStatus::Duplicate);
+    assert!(out[0].message.as_ref().unwrap().contains("hostname"));
+    assert_eq!(out[1].status, RowStatus::Ready);
+    assert_eq!(out[2].status, RowStatus::Duplicate);
+    assert_eq!(out[3].status, RowStatus::Ready);
+    assert_eq!(out[4].status, RowStatus::Duplicate);
+}
+
+#[test]
+fn label_only_validate_ignores_duplicate_hostnames() {
+    // The label-only entry point (used by export round-trip etc.) must NOT
+    // dedup hostnames — manual entries may legitimately share an IP (D-033).
+    let out = validate_rows(
+        &no_existing(),
+        vec![
+            raw("a", "10.0.0.9", "root"),
+            raw("b", "10.0.0.9", "root"),
+        ],
+    );
+    assert_eq!(out[0].status, RowStatus::Ready);
+    assert_eq!(out[1].status, RowStatus::Ready);
+}
