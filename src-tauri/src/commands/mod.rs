@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod backup;
 pub mod broadcast;
 pub mod credentials;
 pub mod errlog;
