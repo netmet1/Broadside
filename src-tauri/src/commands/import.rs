@@ -16,13 +16,18 @@ use crate::import::{self, RowPreview};
 #[tauri::command]
 pub fn preview_import(path: String, state: State<'_, DbState>) -> AppResult<Vec<RowPreview>> {
     let rows = import::parse_file(Path::new(&path))?;
-    let existing: HashSet<String> = with_db(&state, |conn| {
-        Ok(host_repo::list_all(conn)?
-            .into_iter()
-            .map(|h| h.label)
-            .collect())
+    let (labels, hostnames): (HashSet<String>, HashSet<String>) = with_db(&state, |conn| {
+        let all = host_repo::list_all(conn)?;
+        let labels = all.iter().map(|h| h.label.clone()).collect();
+        // Lowercased so the dedup is case-insensitive (DNS names) and exact
+        // for IPs. A host's IP/hostname can't be re-imported onto another host.
+        let hostnames = all
+            .iter()
+            .map(|h| h.hostname.to_ascii_lowercase())
+            .collect();
+        Ok((labels, hostnames))
     })?;
-    Ok(import::validate_rows(&existing, rows))
+    Ok(import::validate_rows_with_hostnames(&labels, &hostnames, rows))
 }
 
 #[derive(Debug, Serialize)]

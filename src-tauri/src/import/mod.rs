@@ -196,22 +196,58 @@ fn parse_xlsx(path: &Path) -> AppResult<Vec<RawRow>> {
 /// Validates raw rows against the same rules as the host form (D-025) plus
 /// duplicate-label detection against `existing_labels` and earlier rows.
 pub fn validate_rows(existing_labels: &HashSet<String>, rows: Vec<RawRow>) -> Vec<RowPreview> {
-    let mut seen_in_file: HashSet<String> = HashSet::new();
+    validate_inner(existing_labels, None, rows)
+}
+
+/// Like `validate_rows`, but also rejects rows whose hostname/IP already
+/// belongs to another host — in the DB (`existing_hostnames`, lowercased) or
+/// earlier in the same file. Used by import so one IP can't be assigned to two
+/// hosts (2026-06-13 request). Hostname matching is case-insensitive.
+pub fn validate_rows_with_hostnames(
+    existing_labels: &HashSet<String>,
+    existing_hostnames: &HashSet<String>,
+    rows: Vec<RawRow>,
+) -> Vec<RowPreview> {
+    validate_inner(existing_labels, Some(existing_hostnames), rows)
+}
+
+fn validate_inner(
+    existing_labels: &HashSet<String>,
+    existing_hostnames: Option<&HashSet<String>>,
+    rows: Vec<RawRow>,
+) -> Vec<RowPreview> {
+    let mut seen_labels: HashSet<String> = HashSet::new();
+    let mut seen_hostnames: HashSet<String> = HashSet::new();
     rows.into_iter()
         .map(|row| {
             let preview = validate_row(&row);
             if preview.status != RowStatus::Ready {
                 return preview;
             }
-            if existing_labels.contains(&preview.label)
-                || !seen_in_file.insert(preview.label.clone())
-            {
+            let label = preview.label.clone();
+            if existing_labels.contains(&label) || seen_labels.contains(&label) {
                 return RowPreview {
                     status: RowStatus::Duplicate,
                     message: Some("skipped — duplicate label".into()),
                     ..preview
                 };
             }
+            // Hostname dedup only when the caller opts in (import does).
+            let host_key = preview.hostname.to_ascii_lowercase();
+            if let Some(existing) = existing_hostnames {
+                if existing.contains(&host_key) || seen_hostnames.contains(&host_key) {
+                    return RowPreview {
+                        status: RowStatus::Duplicate,
+                        message: Some(format!(
+                            "skipped — hostname \"{}\" is already assigned to another host",
+                            preview.hostname
+                        )),
+                        ..preview
+                    };
+                }
+                seen_hostnames.insert(host_key);
+            }
+            seen_labels.insert(label);
             preview
         })
         .collect()

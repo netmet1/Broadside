@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  ChevronsUpDownIcon,
   DownloadIcon,
   Loader2Icon,
   PencilIcon,
@@ -36,6 +39,42 @@ import {
 import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 import { nextColor } from "@/lib/palette";
 import { useHint, usePageStatus } from "@/lib/status";
+
+type SortKey = "label" | "status" | "hostname" | "port" | "username" | "flavor";
+
+/** A clickable column header that toggles sorting on `sortKey` and shows the
+ * current direction. */
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: { key: SortKey; dir: "asc" | "desc" } | null;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sort?.key === sortKey;
+  const Icon = !active
+    ? ChevronsUpDownIcon
+    : sort!.dir === "asc"
+      ? ArrowUpIcon
+      : ArrowDownIcon;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className="-mx-1 flex items-center gap-1 rounded px-1 py-0.5 hover:text-foreground"
+      aria-label={`Sort by ${label}`}
+    >
+      {label}
+      <Icon
+        className={`h-3 w-3 ${active ? "text-foreground" : "text-muted-foreground/50"}`}
+      />
+    </button>
+  );
+}
 
 export function HostsPage({
   onOpenTerminal,
@@ -75,6 +114,47 @@ export function HostsPage({
     () => hosts.filter((h) => connectedHostIds.has(h.id)).length,
     [hosts, connectedHostIds],
   );
+
+  // Column sorting. null = the order the backend returned (insertion order).
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" } | null>(
+    null,
+  );
+  const toggleSort = useCallback((key: SortKey) => {
+    setSort((prev) =>
+      prev?.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: "asc" },
+    );
+  }, []);
+
+  const sortedHosts = useMemo(() => {
+    if (!sort) return hosts;
+    const factor = sort.dir === "asc" ? 1 : -1;
+    const valueOf = (h: Host): string | number => {
+      switch (sort.key) {
+        case "label":
+          return h.label.toLowerCase();
+        case "status":
+          return connectedHostIds.has(h.id) ? 0 : 1; // connected first (asc)
+        case "hostname":
+          return h.hostname.toLowerCase();
+        case "port":
+          return h.port;
+        case "username":
+          return h.username.toLowerCase();
+        case "flavor":
+          return (h.linux_flavor ?? "").toLowerCase();
+      }
+    };
+    return [...hosts].sort((a, b) => {
+      const va = valueOf(a);
+      const vb = valueOf(b);
+      if (va < vb) return -1 * factor;
+      if (va > vb) return 1 * factor;
+      // Stable, predictable tiebreak by label.
+      return a.label.localeCompare(b.label);
+    });
+  }, [hosts, sort, connectedHostIds]);
 
   usePageStatus(
     loading
@@ -233,12 +313,24 @@ export function HostsPage({
           <TableHeader>
             <TableRow>
               <TableHead className="w-10" />
-              <TableHead>Label</TableHead>
-              <TableHead className="w-14 text-xs">Status</TableHead>
-              <TableHead>Hostname</TableHead>
-              <TableHead className="w-20">Port</TableHead>
-              <TableHead>Username</TableHead>
-              <TableHead>Flavor</TableHead>
+              <TableHead>
+                <SortHeader label="Label" sortKey="label" sort={sort} onSort={toggleSort} />
+              </TableHead>
+              <TableHead className="w-14 text-xs">
+                <SortHeader label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
+              </TableHead>
+              <TableHead>
+                <SortHeader label="Hostname" sortKey="hostname" sort={sort} onSort={toggleSort} />
+              </TableHead>
+              <TableHead className="w-20">
+                <SortHeader label="Port" sortKey="port" sort={sort} onSort={toggleSort} />
+              </TableHead>
+              <TableHead>
+                <SortHeader label="Username" sortKey="username" sort={sort} onSort={toggleSort} />
+              </TableHead>
+              <TableHead>
+                <SortHeader label="Flavor" sortKey="flavor" sort={sort} onSort={toggleSort} />
+              </TableHead>
               <TableHead className="w-48 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -256,7 +348,7 @@ export function HostsPage({
                 </TableCell>
               </TableRow>
             ) : (
-              hosts.map((h) => (
+              sortedHosts.map((h) => (
                 <TableRow key={h.id}>
                   <TableCell>
                     <span
