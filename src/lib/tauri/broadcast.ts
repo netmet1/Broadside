@@ -63,3 +63,26 @@ export function onBroadcastResult(
     handler(event.payload),
   );
 }
+
+/** One persisted broadcast run (D-059) — results in completion order. */
+export type StoredRun = {
+  run_id: string;
+  ts: string;
+  command: string;
+  results: {
+    host_id: number;
+    label: string;
+    color: string;
+    result: ExecResult;
+  }[];
+};
+
+/** Persisted result history, oldest run first (survives restarts). */
+export function broadcastHistoryList(maxRuns: number): Promise<StoredRun[]> {
+  return invoke<StoredRun[]>("broadcast_history_list", { maxRuns });
+}
+
+/** Clears the persistent broadcast result history. Returns rows removed. */
+export function broadcastHistoryClear(): Promise<number> {
+  return invoke<number>("broadcast_history_clear");
+}

@@ -14,7 +14,7 @@ use crate::audit::{AuditEvent, AuditState};
 use crate::credentials::CredentialState;
 use crate::db::host_keys;
 use crate::db::hosts as host_repo;
-use crate::db::{history, DbState};
+use crate::db::{broadcast_history, history, DbState};
 use crate::error::{AppError, AppResult};
 use crate::guard::{self, GuardHit};
 use crate::ssh::exec::{exec, ExecResult};
@@ -45,6 +45,24 @@ pub fn check_destructive(
 ) -> AppResult<Vec<GuardHit>> {
     let user_rules = with_db(&state, |conn| load_user_rules(conn))?;
     Ok(guard::check_with_user(&command, &user_rules))
+}
+
+/// Persisted broadcast result history (D-059), oldest run first. The Broadcast
+/// page loads this on mount so output survives restarts.
+#[tauri::command]
+pub fn broadcast_history_list(
+    max_runs: usize,
+    state: State<'_, DbState>,
+) -> AppResult<Vec<broadcast_history::StoredRun>> {
+    with_db(&state, |conn| {
+        broadcast_history::list(conn, max_runs.clamp(1, 1000))
+    })
+}
+
+/// Clears the persistent broadcast result history. Returns rows removed.
+#[tauri::command]
+pub fn broadcast_history_clear(state: State<'_, DbState>) -> AppResult<usize> {
+    with_db(&state, |conn| broadcast_history::clear(conn))
 }
 
 /// Runs `command` on every host in `host_ids` concurrently. Each host's
@@ -221,5 +239,22 @@ pub async fn broadcast_command(
             Err(e) => return Err(AppError::State(format!("broadcast task panicked: {e}"))),
         }
     }
+
+    // Persist the run's results so the Broadcast output survives a restart
+    // (D-059). Never block the broadcast itself (same rule as audit/history).
+    let stored: Vec<broadcast_history::HostResultInput> = reports
+        .iter()
+        .map(|r| broadcast_history::HostResultInput {
+            host_id: r.host_id,
+            label: r.label.clone(),
+            color: r.color.clone(),
+            result_json: serde_json::to_string(&r.result).unwrap_or_else(|_| "null".into()),
+        })
+        .collect();
+    let ts = chrono::Utc::now().to_rfc3339();
+    let _ = with_db(&state, |conn| {
+        broadcast_history::add_run(conn, &run_id, &ts, &command, &stored)
+    });
+
     Ok(reports)
 }
