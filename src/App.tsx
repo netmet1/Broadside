@@ -79,6 +79,23 @@ function App() {
     });
   }, []);
 
+  /** Terminate every live terminal session for a host (from the Hosts tab).
+   * Removing the sessions unmounts their TerminalViews, whose cleanup calls
+   * ptyClose — the same teardown path as closing a tab. */
+  const terminateHost = useCallback((hostId: number) => {
+    setSessions((prev) => {
+      const next = prev.filter((s) => s.host.id !== hostId);
+      if (next.length === prev.length) return prev;
+      setActiveSessionId((current) => {
+        if (current && !next.some((s) => s.id === current)) {
+          return next.length ? next[next.length - 1].id : null;
+        }
+        return current;
+      });
+      return next;
+    });
+  }, []);
+
   const openShortcutSettings = useCallback(() => {
     setSettingsFocus("shortcuts");
     setPage("settings");
@@ -103,6 +120,7 @@ function App() {
       {page === "hosts" && (
         <HostsPage
           onOpenTerminal={openTerminal}
+          onTerminateHost={terminateHost}
           connectedHostIds={connectedHostIds}
         />
       )}

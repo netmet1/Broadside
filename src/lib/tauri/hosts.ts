@@ -65,7 +65,8 @@ export function deleteHost(id: number): Promise<void> {
   return invoke<void>("delete_host", { id });
 }
 
-/** Writes all hosts to a CSV (import-compatible columns); returns the count. */
+/** Writes all hosts to a CSV or .xlsx file (chosen by the path extension,
+ * import-compatible columns); returns the count. */
 export function exportHosts(path: string): Promise<number> {
   return invoke<number>("export_hosts", { path });
 }
