@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Semaphore;
 
 use super::settings::{load_cached_probe, load_max_sessions, load_user_rules};
@@ -181,6 +181,25 @@ pub async fn broadcast_command(
                 color: job.host.color,
                 result,
             };
+            // Per-host failures persist to the error log (D-055); never
+            // blocks the broadcast.
+            match &report.result {
+                ExecResult::AuthFailed { message } => {
+                    app.state::<crate::errlog::ErrLogState>().log(
+                        "broadcast",
+                        Some(&report.label),
+                        &format!("authentication failed — {message}"),
+                    );
+                }
+                ExecResult::Unreachable { message } => {
+                    app.state::<crate::errlog::ErrLogState>().log(
+                        "broadcast",
+                        Some(&report.label),
+                        &format!("unreachable — {message}"),
+                    );
+                }
+                _ => {}
+            }
             let _ = app.emit(RESULT_EVENT, &report);
             report
         }));
