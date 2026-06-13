@@ -123,13 +123,17 @@ export function Composer({
         }}
       />
       {/* Mirror for caret measurement — must match the textarea's box model
-          (font, padding, width, wrapping) so wrapped lines line up. */}
+          (font, padding, width, wrapping, line-height) so wrapped lines line
+          up. The marker is a full line-height, top-aligned, zero-width box: a
+          zero-height marker baseline-aligns and reports an offsetTop near the
+          line's baseline, which dropped the caret below an empty input until
+          text was typed. */}
       <div
         ref={mirrorRef}
         aria-hidden
-        className="invisible absolute left-0 top-0 w-full whitespace-pre-wrap break-words px-3 py-2 font-mono text-sm"
+        className="invisible absolute left-0 top-0 w-full whitespace-pre-wrap break-words px-3 py-2 font-mono text-sm leading-5"
       >
-        <span ref={markerRef} className="inline-block w-0" />
+        <span ref={markerRef} className="inline-block h-5 w-0 align-top" />
       </div>
       <textarea
         ref={inputRef}
