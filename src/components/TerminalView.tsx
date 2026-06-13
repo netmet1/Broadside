@@ -204,23 +204,42 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
 
   useImperativeHandle(searchHandleRef, () => ({
     findNext: (pattern, options, incremental) => {
-      searchRef.current?.findNext(pattern, {
-        regex: options.regex,
-        caseSensitive: options.caseSensitive,
-        wholeWord: options.wholeWord,
-        incremental,
-        decorations: SEARCH_DECORATIONS,
-      });
+      // The xterm search addon can throw on some inputs (smoke test 7.2:
+      // the throw white-screened the app). Contain it here so a bad search
+      // is a no-op, and log the stack for diagnosis rather than crashing.
+      try {
+        searchRef.current?.findNext(pattern, {
+          regex: options.regex,
+          caseSensitive: options.caseSensitive,
+          wholeWord: options.wholeWord,
+          incremental,
+          decorations: SEARCH_DECORATIONS,
+        });
+      } catch (err) {
+        console.error("[TerminalView] search findNext failed", err);
+        onSearchResultsRef.current(-1, 0);
+      }
     },
     findPrevious: (pattern, options) => {
-      searchRef.current?.findPrevious(pattern, {
-        regex: options.regex,
-        caseSensitive: options.caseSensitive,
-        wholeWord: options.wholeWord,
-        decorations: SEARCH_DECORATIONS,
-      });
+      try {
+        searchRef.current?.findPrevious(pattern, {
+          regex: options.regex,
+          caseSensitive: options.caseSensitive,
+          wholeWord: options.wholeWord,
+          decorations: SEARCH_DECORATIONS,
+        });
+      } catch (err) {
+        console.error("[TerminalView] search findPrevious failed", err);
+        onSearchResultsRef.current(-1, 0);
+      }
     },
-    clearSearch: () => searchRef.current?.clearDecorations(),
+    clearSearch: () => {
+      try {
+        searchRef.current?.clearDecorations();
+      } catch (err) {
+        console.error("[TerminalView] clearDecorations failed", err);
+      }
+    },
     focusTerminal: () => termRef.current?.focus(),
   }));
 
