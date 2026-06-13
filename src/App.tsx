@@ -132,12 +132,16 @@ function App() {
           onManageShortcuts={openShortcutSettings}
         />
       </div>
-      {page === "ptybroadcast" && (
+      {/* PTY Broadcast stays mounted so host selection and dispatch history
+          survive tab switches (work queue 2026-06-13). */}
+      <div className={page === "ptybroadcast" ? "block h-full" : "hidden"}>
         <PtyBroadcastPage
+          visible={page === "ptybroadcast"}
           sessions={sessions}
           connectedSessions={connectedSessions}
+          onManageShortcuts={openShortcutSettings}
         />
-      )}
+      </div>
       {/* Terminals stay mounted so sessions survive navigation. */}
       <div className={page === "terminals" ? "block h-full" : "hidden"}>
         <TerminalsPage
