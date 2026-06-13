@@ -42,6 +42,21 @@ import { useHint, usePageStatus } from "@/lib/status";
 
 type SortKey = "label" | "status" | "hostname" | "port" | "username" | "flavor";
 
+/** Column layout for the hosts table. Resizable columns get a drag handle and
+ * their width persists in localStorage (across tab switches and restarts). */
+const COLS: { id: string; w: number; resizable: boolean }[] = [
+  { id: "swatch", w: 40, resizable: false },
+  { id: "label", w: 180, resizable: true },
+  { id: "status", w: 64, resizable: false },
+  { id: "hostname", w: 220, resizable: true },
+  { id: "port", w: 90, resizable: true },
+  { id: "username", w: 150, resizable: true },
+  { id: "flavor", w: 130, resizable: true },
+  { id: "actions", w: 210, resizable: false },
+];
+const COL_WIDTHS_KEY = "hosts-col-widths";
+const MIN_COL_W = 56;
+
 /** A clickable column header that toggles sorting on `sortKey` and shows the
  * current direction. */
 function SortHeader({
@@ -113,6 +128,56 @@ export function HostsPage({
   const connectedCount = useMemo(
     () => hosts.filter((h) => connectedHostIds.has(h.id)).length,
     [hosts, connectedHostIds],
+  );
+
+  // Persisted column widths (drag-to-resize). Survives tab switches + restart.
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    const defaults = Object.fromEntries(COLS.map((c) => [c.id, c.w]));
+    try {
+      const saved = JSON.parse(localStorage.getItem(COL_WIDTHS_KEY) ?? "{}");
+      return { ...defaults, ...saved };
+    } catch {
+      return defaults;
+    }
+  });
+  const tableWidth = COLS.reduce((sum, c) => sum + (colWidths[c.id] ?? c.w), 0);
+  const startResize = useCallback(
+    (id: string, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startW = colWidths[id];
+      const onMove = (me: MouseEvent) => {
+        const w = Math.max(MIN_COL_W, startW + me.clientX - startX);
+        setColWidths((prev) => ({ ...prev, [id]: w }));
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        setColWidths((prev) => {
+          localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(prev));
+          return prev;
+        });
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [colWidths],
+  );
+
+  /** A thin drag strip on a column header's right edge. Returns JSX (not a
+   * component) so it isn't remounted each render. */
+  const resizeHandle = (id: string) => (
+    <span
+      onMouseDown={(e) => startResize(id, e)}
+      className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize bg-transparent hover:bg-primary/40"
+      aria-hidden
+      title="Drag to resize column"
+    />
   );
 
   // Column sorting. null = the order the backend returned (insertion order).
@@ -310,29 +375,39 @@ export function HostsPage({
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        <Table>
+        <Table style={{ tableLayout: "fixed", width: tableWidth }}>
+          <colgroup>
+            {COLS.map((c) => (
+              <col key={c.id} style={{ width: colWidths[c.id] ?? c.w }} />
+            ))}
+          </colgroup>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10" />
-              <TableHead>
+              <TableHead />
+              <TableHead className="relative">
                 <SortHeader label="Label" sortKey="label" sort={sort} onSort={toggleSort} />
+                {resizeHandle("label")}
               </TableHead>
-              <TableHead className="w-14 text-xs">
+              <TableHead className="text-xs">
                 <SortHeader label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
               </TableHead>
-              <TableHead>
+              <TableHead className="relative">
                 <SortHeader label="Hostname" sortKey="hostname" sort={sort} onSort={toggleSort} />
+                {resizeHandle("hostname")}
               </TableHead>
-              <TableHead className="w-20">
+              <TableHead className="relative">
                 <SortHeader label="Port" sortKey="port" sort={sort} onSort={toggleSort} />
+                {resizeHandle("port")}
               </TableHead>
-              <TableHead>
+              <TableHead className="relative">
                 <SortHeader label="Username" sortKey="username" sort={sort} onSort={toggleSort} />
+                {resizeHandle("username")}
               </TableHead>
-              <TableHead>
+              <TableHead className="relative">
                 <SortHeader label="Flavor" sortKey="flavor" sort={sort} onSort={toggleSort} />
+                {resizeHandle("flavor")}
               </TableHead>
-              <TableHead className="w-48 text-right">Actions</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -358,7 +433,9 @@ export function HostsPage({
                       aria-label={h.color}
                     />
                   </TableCell>
-                  <TableCell className="font-medium">{h.label}</TableCell>
+                  <TableCell className="truncate font-medium" title={h.label}>
+                    {h.label}
+                  </TableCell>
                   <TableCell>
                     <span
                       className={`block h-2.5 w-2.5 rounded-full ${
@@ -376,10 +453,14 @@ export function HostsPage({
                       }
                     />
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{h.hostname}</TableCell>
-                  <TableCell className="font-mono text-xs">{h.port}</TableCell>
-                  <TableCell className="font-mono text-xs">{h.username}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
+                  <TableCell className="truncate font-mono text-xs" title={h.hostname}>
+                    {h.hostname}
+                  </TableCell>
+                  <TableCell className="truncate font-mono text-xs">{h.port}</TableCell>
+                  <TableCell className="truncate font-mono text-xs" title={h.username}>
+                    {h.username}
+                  </TableCell>
+                  <TableCell className="truncate text-xs text-muted-foreground">
                     {h.linux_flavor ?? "—"}
                   </TableCell>
                   <TableCell className="text-right">
