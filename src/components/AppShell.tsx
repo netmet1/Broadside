@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 import {
+  CastIcon,
   InfoIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -15,7 +16,13 @@ import { StatusBar } from "@/components/StatusBar";
 import { useHint, useStatus } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
-export type Page = "hosts" | "broadcast" | "terminals" | "logs" | "settings";
+export type Page =
+  | "hosts"
+  | "broadcast"
+  | "ptybroadcast"
+  | "terminals"
+  | "logs"
+  | "settings";
 
 const NAV_ITEMS: {
   page: Page;
@@ -34,6 +41,12 @@ const NAV_ITEMS: {
     label: "Broadcast",
     icon: RadioTowerIcon,
     hint: "Send one command to many hosts at once",
+  },
+  {
+    page: "ptybroadcast",
+    label: "PTY Broadcast",
+    icon: CastIcon,
+    hint: "Type one command into every open terminal session",
   },
   {
     page: "terminals",

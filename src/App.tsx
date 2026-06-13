@@ -4,6 +4,7 @@ import { AppShell, type Page } from "@/components/AppShell";
 import { HostsPage } from "@/pages/HostsPage";
 import { BroadcastPage } from "@/pages/BroadcastPage";
 import { TerminalsPage, type TermSession } from "@/pages/TerminalsPage";
+import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { UnlockDialog } from "@/components/UnlockDialog";
@@ -113,6 +114,12 @@ function App() {
           onManageShortcuts={openShortcutSettings}
         />
       </div>
+      {page === "ptybroadcast" && (
+        <PtyBroadcastPage
+          sessions={sessions}
+          connectedSessions={connectedSessions}
+        />
+      )}
       {/* Terminals stay mounted so sessions survive navigation. */}
       <div className={page === "terminals" ? "block h-full" : "hidden"}>
         <TerminalsPage
