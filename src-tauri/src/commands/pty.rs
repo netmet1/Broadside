@@ -32,7 +32,11 @@ pub async fn pty_open(
     })?;
     let auth = match auth_for_host(&host, &cred_state)? {
         Some(a) => a,
-        None => return Ok(PtyOpenResult::NoCredentials),
+        None => {
+            // D-055 amendment (2026-06-13): no-credentials is a logged failure.
+            errlog.log("pty_open", Some(&host.label), "no credentials stored");
+            return Ok(PtyOpenResult::NoCredentials);
+        }
     };
     let fingerprints = keys.iter().map(|k| k.fingerprint_sha256.clone()).collect();
     let result = pty::open(
