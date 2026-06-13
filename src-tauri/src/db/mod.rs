@@ -9,6 +9,7 @@ pub mod broadcast_history;
 pub mod history;
 pub mod host_keys;
 pub mod hosts;
+pub mod pty_history;
 pub mod settings;
 
 pub struct DbState(pub Mutex<Connection>);
@@ -91,6 +92,19 @@ const MIGRATIONS: &[&str] = &[
         label     TEXT NOT NULL,
         color     TEXT NOT NULL,
         result    TEXT NOT NULL
+    );",
+    // 8: persistent PTY-broadcast DISPATCH history (D-059). Records which
+    // command was typed into which sessions and whether the write dispatched;
+    // the actual output lives in the terminal tabs, not here.
+    "CREATE TABLE IF NOT EXISTS pty_dispatch_results (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id    TEXT NOT NULL,
+        ts        TEXT NOT NULL,
+        command   TEXT NOT NULL,
+        label     TEXT NOT NULL,
+        color     TEXT NOT NULL,
+        ok        INTEGER NOT NULL,
+        message   TEXT
     );",
 ];
 

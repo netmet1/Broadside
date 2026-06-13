@@ -66,3 +66,44 @@ export function onPtyClosed(
 ): Promise<UnlistenFn> {
   return listen<PtyClosed>("pty:closed", (event) => handler(event.payload));
 }
+
+/** One persisted PTY-broadcast dispatch (D-059). */
+export type StoredPtyDispatch = {
+  label: string;
+  color: string;
+  ok: boolean;
+  message: string | null;
+};
+
+export type StoredPtyRun = {
+  run_id: string;
+  ts: string;
+  command: string;
+  results: StoredPtyDispatch[];
+};
+
+/** Persists one PTY-broadcast dispatch run (also records the command in the
+ * shared recall history). */
+export function ptyHistoryAdd(args: {
+  runId: string;
+  ts: string;
+  command: string;
+  results: StoredPtyDispatch[];
+}): Promise<void> {
+  return invoke<void>("pty_history_add", {
+    runId: args.runId,
+    ts: args.ts,
+    command: args.command,
+    results: args.results,
+  });
+}
+
+/** Persisted PTY dispatch history, oldest run first (survives restarts). */
+export function ptyHistoryList(maxRuns: number): Promise<StoredPtyRun[]> {
+  return invoke<StoredPtyRun[]>("pty_history_list", { maxRuns });
+}
+
+/** Clears the persistent PTY dispatch history. Returns rows removed. */
+export function ptyHistoryClear(): Promise<number> {
+  return invoke<number>("pty_history_clear");
+}
