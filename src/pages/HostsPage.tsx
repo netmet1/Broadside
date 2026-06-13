@@ -258,6 +258,7 @@ export function HostsPage({
       <HostFormPanel
         host={editing}
         defaultColor={defaultColor}
+        existingHosts={hosts}
         onCancel={() => setFormOpen(false)}
         onSaved={handleSaved}
       />
