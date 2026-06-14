@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import {
   CastIcon,
   InfoIcon,
+  LayersIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   RadioTowerIcon,
@@ -21,6 +22,7 @@ export type Page =
   | "broadcast"
   | "ptybroadcast"
   | "terminals"
+  | "omniterminal"
   | "logs"
   | "settings";
 
@@ -53,6 +55,12 @@ const NAV_ITEMS: {
     label: "Terminals",
     icon: TerminalIcon,
     hint: "Interactive terminal sessions, one tab per host",
+  },
+  {
+    page: "omniterminal",
+    label: "OmniTerminal",
+    icon: LayersIcon,
+    hint: "Run a command across all terminals and see every host's output, color-tinted (needs 2+ open)",
   },
   {
     page: "logs",

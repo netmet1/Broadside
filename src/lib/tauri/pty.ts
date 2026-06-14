@@ -67,6 +67,29 @@ export function onPtyClosed(
   return listen<PtyClosed>("pty:closed", (event) => handler(event.payload));
 }
 
+/** Why a block isn't mirrored as text (D-061). `normal` blocks carry output
+ * lines; the others are full-screen/redrawing TUI apps shown as a notice. */
+export type BlockInteractivity = "normal" | "alt_screen" | "redraw";
+
+/** One completed command on a session, for the OmniTerminal aggregate view
+ * (D-061). Emitted when the command finishes (OSC 133 `D`) or on session close. */
+export type PtyBlock = {
+  session_id: string;
+  /** Command text captured from the shell, when known. */
+  command: string | null;
+  /** Output lines (plain text). Empty when interactive. */
+  lines: string[];
+  /** Exit status, when the shell reported one. */
+  exit_code: number | null;
+  interactivity: BlockInteractivity;
+};
+
+export function onPtyBlock(
+  handler: (block: PtyBlock) => void,
+): Promise<UnlistenFn> {
+  return listen<PtyBlock>("pty:block", (event) => handler(event.payload));
+}
+
 /** One persisted PTY-broadcast dispatch (D-059). */
 export type StoredPtyDispatch = {
   label: string;
