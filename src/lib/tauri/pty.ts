@@ -99,8 +99,10 @@ export function omniLogCommand(
   return invoke<void>("omni_log_command", { command, hosts });
 }
 
-/** One persisted PTY-broadcast dispatch (D-059). */
+/** One persisted PTY-broadcast dispatch (D-059). `host_id` resolves the live
+ * colour (D-061 sub-4); null for rows saved before it existed. */
 export type StoredPtyDispatch = {
+  host_id: number | null;
   label: string;
   color: string;
   ok: boolean;

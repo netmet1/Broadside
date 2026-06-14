@@ -14,6 +14,9 @@ const MAX_RUNS: i64 = 200;
 /// One session-target's dispatch outcome, as stored/replayed.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct DispatchInput {
+    /// Host id for live colour resolution (D-061 sub-4); None for old clients.
+    #[serde(default)]
+    pub host_id: Option<i64>,
     pub label: String,
     pub color: String,
     pub ok: bool,
@@ -22,6 +25,7 @@ pub struct DispatchInput {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct StoredDispatch {
+    pub host_id: Option<i64>,
     pub label: String,
     pub color: String,
     pub ok: bool,
@@ -47,9 +51,9 @@ pub fn add_run(
     for r in results {
         conn.execute(
             "INSERT INTO pty_dispatch_results
-               (run_id, ts, command, label, color, ok, message)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![run_id, ts, command, r.label, r.color, r.ok as i64, r.message],
+               (run_id, ts, command, host_id, label, color, ok, message)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![run_id, ts, command, r.host_id, r.label, r.color, r.ok as i64, r.message],
         )?;
     }
     conn.execute(
@@ -65,7 +69,7 @@ pub fn add_run(
 /// Most recent `max_runs` runs, oldest-first.
 pub fn list(conn: &Connection, max_runs: usize) -> AppResult<Vec<StoredPtyRun>> {
     let mut stmt = conn.prepare(
-        "SELECT run_id, ts, command, label, color, ok, message
+        "SELECT run_id, ts, command, host_id, label, color, ok, message
          FROM pty_dispatch_results
          WHERE run_id IN (
             SELECT run_id FROM pty_dispatch_results
@@ -78,17 +82,19 @@ pub fn list(conn: &Connection, max_runs: usize) -> AppResult<Vec<StoredPtyRun>> 
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
             row.get::<_, String>(2)?,
-            row.get::<_, String>(3)?,
+            row.get::<_, Option<i64>>(3)?,
             row.get::<_, String>(4)?,
-            row.get::<_, i64>(5)? != 0,
-            row.get::<_, Option<String>>(6)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, i64>(6)? != 0,
+            row.get::<_, Option<String>>(7)?,
         ))
     })?;
 
     let mut runs: Vec<StoredPtyRun> = Vec::new();
     for r in rows {
-        let (run_id, ts, command, label, color, ok, message) = r?;
+        let (run_id, ts, command, host_id, label, color, ok, message) = r?;
         let d = StoredDispatch {
+            host_id,
             label,
             color,
             ok,
@@ -118,6 +124,7 @@ mod tests {
 
     fn ok(label: &str) -> DispatchInput {
         DispatchInput {
+            host_id: Some(1),
             label: label.into(),
             color: "#3b82f6".into(),
             ok: true,
@@ -135,6 +142,7 @@ mod tests {
             "t2",
             "ls",
             &[DispatchInput {
+                host_id: Some(2),
                 label: "c".into(),
                 color: "#f00".into(),
                 ok: false,

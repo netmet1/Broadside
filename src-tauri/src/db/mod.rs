@@ -113,6 +113,10 @@ const MIGRATIONS: &[&str] = &[
     // NULL on both and render by host_count only.
     "ALTER TABLE command_history ADD COLUMN hosts_json TEXT;
      ALTER TABLE command_history ADD COLUMN source TEXT;",
+    // 10: PTY-broadcast dispatch host_id (D-061 sub-4) so its results tint by
+    // the host's *live* colour, like broadcast_results already does. Nullable —
+    // rows predating this fall back to the stored colour snapshot.
+    "ALTER TABLE pty_dispatch_results ADD COLUMN host_id INTEGER;",
 ];
 
 fn bootstrap(conn: &Connection) -> AppResult<()> {

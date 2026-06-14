@@ -7,7 +7,7 @@ import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
-import { errorMessage } from "@/lib/tauri/hosts";
+import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import {
   omniLogCommand,
   onPtyBlock,
@@ -62,6 +62,9 @@ export function OmniTerminalPage({
   const [mirrorTyped, setMirrorTyped] = useState(
     () => localStorage.getItem(MIRROR_KEY) === "1",
   );
+  // Live host lookup so blocks tint by the host's current colour (D-061
+  // sub-4), refreshed when the page is shown.
+  const [hostsById, setHostsById] = useState<Map<number, Host>>(new Map());
   const hint = useHint();
   const shortcuts = useShortcuts(visible);
   const outputRef = useRef<HTMLDivElement>(null);
@@ -137,6 +140,14 @@ export function OmniTerminalPage({
       .then((entries) => setHistory(entries.map((e) => e.command)))
       .catch(() => {});
   }, []);
+
+  // Refresh live host colours each time the page is shown.
+  useEffect(() => {
+    if (!visible) return;
+    listHosts()
+      .then((hs) => setHostsById(new Map(hs.map((h) => [h.id, h] as const))))
+      .catch(() => {});
+  }, [visible]);
 
   useEffect(() => {
     outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
@@ -260,8 +271,13 @@ export function OmniTerminalPage({
           <div className="space-y-3">
             {blocks.map((b) => {
               const sess = sessionsById.get(b.session_id);
-              const color = sess?.host.color ?? b.colorSnapshot;
-              const label = sess?.host.label ?? b.labelSnapshot;
+              // Live colour by host id (D-061 sub-4): live host → open session
+              // snapshot → block snapshot, in that order.
+              const live = sess ? hostsById.get(sess.host.id) : undefined;
+              const color =
+                live?.color ?? sess?.host.color ?? b.colorSnapshot;
+              const label =
+                live?.label ?? sess?.host.label ?? b.labelSnapshot;
               return (
                 <OmniBlock
                   key={b.key}
