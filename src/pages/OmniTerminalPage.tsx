@@ -287,6 +287,7 @@ export function OmniTerminalPage({
                   ts={b.ts}
                   lines={b.lines}
                   exitCode={b.exit_code}
+                  durationMs={b.duration_ms}
                   interactivity={b.interactivity}
                 />
               );
@@ -354,6 +355,7 @@ function OmniBlock({
   ts,
   lines,
   exitCode,
+  durationMs,
   interactivity,
 }: {
   color: string;
@@ -362,6 +364,7 @@ function OmniBlock({
   ts: string;
   lines: string[];
   exitCode: number | null;
+  durationMs: number | null;
   interactivity: BlockInteractivity;
 }) {
   const interactive = interactivity !== "normal";
@@ -383,19 +386,16 @@ function OmniBlock({
             {command}
           </code>
         )}
-        {!interactive && exitCode !== null && (
-          <span
-            className={
-              exitCode === 0
-                ? "ml-auto shrink-0 tabular-nums text-emerald-400"
-                : "ml-auto shrink-0 tabular-nums text-red-400"
-            }
-          >
-            exit {exitCode}
-          </span>
-        )}
-        <span className="shrink-0 tabular-nums text-muted-foreground">
-          {formatTime(ts)}
+        <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums text-muted-foreground">
+          {!interactive && exitCode !== null && (
+            <span className={exitCode === 0 ? "text-emerald-400" : "text-red-400"}>
+              exit {exitCode}
+            </span>
+          )}
+          {!interactive && durationMs !== null && (
+            <span>{formatDuration(durationMs)}</span>
+          )}
+          <span>{formatTime(ts)}</span>
         </span>
       </div>
       {interactive ? (
@@ -415,6 +415,15 @@ function OmniBlock({
       )}
     </div>
   );
+}
+
+/** Human-friendly command duration: `840ms` / `3.2s` / `1m 4s`. */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s % 60)}s`;
 }
 
 /** Short local time (HH:MM:SS) for a block header. */
