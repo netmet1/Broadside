@@ -1,0 +1,474 @@
+//! VT stream interpretation for the OmniTerminal aggregate view (D-061).
+//!
+//! Each live PTY session is a full interactive VT byte stream — cursor moves,
+//! colours, prompt redraws, echoed keystrokes. You cannot pour N of those into
+//! one pane and get something readable. This module feeds one session's bytes
+//! through a [`vte`] parser plus a minimal screen model and emits **completion-
+//! delimited command blocks**: OmniTerminal stays quiet while a command runs,
+//! then drops the whole block in, in completion order (the Broadcast-tab shape,
+//! D-003, but driven through the live shells).
+//!
+//! Command boundaries come from OSC 133 shell-integration markers (D-061
+//! Option B) the session's shell is set up to emit on connect:
+//!   - `OSC 133 ; A`            prompt start
+//!   - `OSC 133 ; B`            command start (user input begins)
+//!   - `OSC 133 ; C`            command output begins
+//!   - `OSC 133 ; D [; <exit>]` command finished (optional exit code)
+//!
+//! Full-screen / redrawing apps (vi, less, htop, top, tmux, watch, …) must NOT
+//! be mirrored — their output is screen-painting garbage. Detection is
+//! **behaviour-based, never a program-name list** (D-061): the alternate-screen
+//! escape every full-screen app emits, plus a heuristic for main-screen
+//! redrawers (`watch`, some `top` builds, spinners) that don't use it.
+
+use serde::Serialize;
+use vte::{Params, Parser, Perform};
+
+/// Min cursor-repositioning events before the redraw heuristic can fire — keeps
+/// ordinary commands (which emit a few) from being misflagged.
+const REDRAW_MIN: u32 = 8;
+/// Redraw events must outnumber committed lines by this factor to count as an
+/// in-place redrawer rather than normal scrolling output.
+const REDRAW_RATIO: usize = 3;
+
+/// Why a block is (or isn't) mirrored as text.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Interactivity {
+    /// Ordinary command — mirror its output lines.
+    #[default]
+    Normal,
+    /// Switched to the alternate screen (vi, less, htop, tmux, man, …).
+    AltScreen,
+    /// Heavy in-place redraw on the main screen (watch, some top builds, spinners).
+    Redraw,
+}
+
+impl Interactivity {
+    /// True when the block should show the "interactive — not mirrored" notice
+    /// instead of its captured output.
+    pub fn is_interactive(&self) -> bool {
+        !matches!(self, Interactivity::Normal)
+    }
+}
+
+/// A completed command, ready to render as one color-tinted block in
+/// OmniTerminal.
+#[derive(Debug, Clone, Serialize)]
+pub struct CommandBlock {
+    /// The command text, when known (captured between OSC 133 `B` and `C`).
+    pub command: Option<String>,
+    /// Committed output lines, plain text (escape sequences stripped). Empty
+    /// for interactive blocks — the UI shows the notice instead.
+    pub lines: Vec<String>,
+    /// Exit status from `OSC 133 ; D ; <code>`, when the shell reported one.
+    pub exit_code: Option<i32>,
+    /// Whether/why this block is interactive (don't mirror its output).
+    pub interactivity: Interactivity,
+}
+
+/// vte performer + minimal screen model for one session. Builds the current
+/// line cell-by-cell so carriage-return overwrites (progress bars) collapse to
+/// their final text, accumulates lines into the active command block, and
+/// finalises a [`CommandBlock`] on each `OSC 133 ; D`.
+#[derive(Default)]
+struct Performer {
+    /// Current line under construction, one char per cell, so `\r`/`\b`
+    /// overwrites land in place rather than appending.
+    cells: Vec<char>,
+    /// Cursor column within `cells`.
+    col: usize,
+    /// Between `B` and `C`: echoed keystrokes are the command, not output.
+    capturing_cmd: bool,
+    /// Captured command text.
+    command: String,
+    /// Between `C` and `D`: printed text is the command's output.
+    in_output: bool,
+    /// Committed output lines for the active block.
+    lines: Vec<String>,
+    /// Interactivity verdict for the active block.
+    interactivity: Interactivity,
+    /// Cursor-repositioning / erase events seen during the active block.
+    redraws: u32,
+    /// Completed blocks, drained by the owning [`OmniParser`].
+    out: Vec<CommandBlock>,
+}
+
+impl Performer {
+    /// Commits the current line into the active block's output (if any) and
+    /// resets the line buffer.
+    fn commit_line(&mut self) {
+        let text: String = self.cells.iter().collect();
+        if self.in_output {
+            self.lines.push(text.trim_end().to_string());
+        }
+        self.cells.clear();
+        self.col = 0;
+    }
+
+    fn on_prompt_start(&mut self) {
+        // A fresh prompt means the previous command is over. If output was
+        // still open (shell emitted A but not D, or the user hit Ctrl-C),
+        // flush what we have so the block isn't lost.
+        if self.in_output {
+            self.end_output(None);
+        }
+        self.capturing_cmd = false;
+        self.command.clear();
+    }
+
+    fn start_cmd_capture(&mut self) {
+        self.capturing_cmd = true;
+        self.command.clear();
+    }
+
+    fn start_output(&mut self) {
+        self.capturing_cmd = false;
+        self.in_output = true;
+        self.cells.clear();
+        self.col = 0;
+        self.lines.clear();
+        self.interactivity = Interactivity::Normal;
+        self.redraws = 0;
+    }
+
+    fn end_output(&mut self, exit_code: Option<i32>) {
+        if !self.cells.is_empty() {
+            self.commit_line();
+        }
+        // Main-screen redrawers that never touched the alternate screen: lots
+        // of cursor repositioning, few real lines.
+        if self.interactivity == Interactivity::Normal
+            && self.redraws >= REDRAW_MIN
+            && (self.redraws as usize) > self.lines.len().saturating_mul(REDRAW_RATIO)
+        {
+            self.interactivity = Interactivity::Redraw;
+        }
+        let command = {
+            let c = self.command.trim();
+            (!c.is_empty()).then(|| c.to_string())
+        };
+        let lines = if self.interactivity.is_interactive() {
+            Vec::new()
+        } else {
+            std::mem::take(&mut self.lines)
+        };
+        self.out.push(CommandBlock {
+            command,
+            lines,
+            exit_code,
+            interactivity: self.interactivity.clone(),
+        });
+        // Reset for the next command.
+        self.in_output = false;
+        self.cells.clear();
+        self.col = 0;
+        self.lines.clear();
+        self.command.clear();
+        self.interactivity = Interactivity::Normal;
+        self.redraws = 0;
+    }
+}
+
+impl Perform for Performer {
+    fn print(&mut self, c: char) {
+        if self.capturing_cmd {
+            self.command.push(c);
+            return;
+        }
+        if self.col < self.cells.len() {
+            self.cells[self.col] = c;
+        } else {
+            while self.cells.len() < self.col {
+                self.cells.push(' ');
+            }
+            self.cells.push(c);
+        }
+        self.col += 1;
+    }
+
+    fn execute(&mut self, byte: u8) {
+        if self.capturing_cmd {
+            // The command echo ends at OSC C; ignore its control bytes.
+            return;
+        }
+        match byte {
+            b'\n' => self.commit_line(),
+            b'\r' => self.col = 0,
+            0x08 => self.col = self.col.saturating_sub(1), // backspace
+            b'\t' => {
+                let next = ((self.col / 8) + 1) * 8;
+                while self.col < next {
+                    self.print(' ');
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
+        if params.is_empty() || params[0] != b"133".as_slice() {
+            return;
+        }
+        match params.get(1).copied() {
+            Some(b"A") => self.on_prompt_start(),
+            Some(b"B") => self.start_cmd_capture(),
+            Some(b"C") => self.start_output(),
+            Some(b"D") => {
+                let code = params
+                    .get(2)
+                    .and_then(|b| std::str::from_utf8(b).ok())
+                    .and_then(|s| s.trim().parse::<i32>().ok());
+                if self.in_output {
+                    self.end_output(code);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
+        if !self.in_output {
+            return;
+        }
+        // Private DEC modes: ESC [ ? <n> h|l — the alternate-screen toggle.
+        if intermediates.first() == Some(&b'?') {
+            let first = params
+                .iter()
+                .next()
+                .and_then(|p| p.first().copied())
+                .unwrap_or(0);
+            if action == 'h' && matches!(first, 1049 | 47 | 1047) {
+                self.interactivity = Interactivity::AltScreen;
+            }
+            return;
+        }
+        // Cursor repositioning + screen/line erase feed the redraw heuristic.
+        if matches!(action, 'H' | 'f' | 'A' | 'B' | 'd' | 'J' | 'K') {
+            self.redraws = self.redraws.saturating_add(1);
+        }
+    }
+}
+
+/// One session's VT interpreter. Feed it the raw PTY bytes; collect completed
+/// [`CommandBlock`]s.
+pub struct OmniParser {
+    parser: Parser,
+    perf: Performer,
+}
+
+impl Default for OmniParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OmniParser {
+    pub fn new() -> Self {
+        Self {
+            parser: Parser::new(),
+            perf: Performer::default(),
+        }
+    }
+
+    /// Feeds raw bytes and returns any blocks that completed within them.
+    pub fn feed(&mut self, bytes: &[u8]) -> Vec<CommandBlock> {
+        // vte 0.13 advances one byte at a time.
+        for &b in bytes {
+            self.parser.advance(&mut self.perf, b);
+        }
+        std::mem::take(&mut self.perf.out)
+    }
+
+    /// Force-finalises an in-progress block (timeout fallback for shells
+    /// without integration, or session close). Returns the flushed block, if
+    /// output was open.
+    pub fn flush(&mut self) -> Option<CommandBlock> {
+        if self.perf.in_output {
+            self.perf.end_output(None);
+            return self.perf.out.pop();
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Builds an `OSC 133 ; <args>` sequence (BEL-terminated).
+    fn osc(args: &str) -> Vec<u8> {
+        let mut v = vec![0x1b, b']'];
+        v.extend_from_slice(b"133;");
+        v.extend_from_slice(args.as_bytes());
+        v.push(0x07);
+        v
+    }
+
+    /// Feeds a list of byte chunks and returns all completed blocks.
+    fn run(chunks: &[&[u8]]) -> Vec<CommandBlock> {
+        let mut p = OmniParser::new();
+        let mut blocks = Vec::new();
+        for c in chunks {
+            blocks.extend(p.feed(c));
+        }
+        blocks
+    }
+
+    #[test]
+    fn simple_command_block() {
+        let blocks = run(&[
+            &osc("A"),
+            &osc("B"),
+            b"uptime",
+            &osc("C"),
+            b"14:02 up 9 days\r\n",
+            &osc("D;0"),
+        ]);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].command.as_deref(), Some("uptime"));
+        assert_eq!(blocks[0].lines, vec!["14:02 up 9 days"]);
+        assert_eq!(blocks[0].exit_code, Some(0));
+        assert_eq!(blocks[0].interactivity, Interactivity::Normal);
+    }
+
+    #[test]
+    fn nonzero_exit_code_captured() {
+        let blocks = run(&[&osc("C"), b"boom\r\n", &osc("D;1")]);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].exit_code, Some(1));
+    }
+
+    #[test]
+    fn exit_code_optional() {
+        let blocks = run(&[&osc("C"), b"ok\r\n", &osc("D")]);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].exit_code, None);
+        assert_eq!(blocks[0].lines, vec!["ok"]);
+    }
+
+    #[test]
+    fn carriage_return_overwrites_collapse() {
+        // A progress bar that rewrites the line in place should commit only the
+        // final text.
+        let blocks = run(&[
+            &osc("C"),
+            b"progress 10%\rprogress 100%\r\n",
+            &osc("D;0"),
+        ]);
+        assert_eq!(blocks[0].lines, vec!["progress 100%"]);
+    }
+
+    #[test]
+    fn multiple_output_lines() {
+        let blocks = run(&[&osc("C"), b"a\r\nb\r\nc\r\n", &osc("D;0")]);
+        assert_eq!(blocks[0].lines, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn partial_last_line_committed() {
+        // Output with no trailing newline before D still commits the line.
+        let blocks = run(&[&osc("C"), b"no newline", &osc("D;0")]);
+        assert_eq!(blocks[0].lines, vec!["no newline"]);
+    }
+
+    #[test]
+    fn alt_screen_marks_interactive_and_drops_output() {
+        // vi/less/htop switch to the alternate screen; we must not mirror the
+        // screen-painting garbage.
+        let mut seq = osc("C");
+        seq.extend_from_slice(b"\x1b[?1049h"); // enter alt screen
+        seq.extend_from_slice(b"\x1b[2J\x1b[H garbage repaint ");
+        seq.extend_from_slice(b"\x1b[?1049l"); // leave alt screen
+        let blocks = run(&[&seq, &osc("D;0")]);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].interactivity, Interactivity::AltScreen);
+        assert!(blocks[0].lines.is_empty());
+    }
+
+    #[test]
+    fn old_style_alt_screen_47_detected() {
+        let mut seq = osc("C");
+        seq.extend_from_slice(b"\x1b[?47h painting \x1b[?47l");
+        let blocks = run(&[&seq, &osc("D;0")]);
+        assert_eq!(blocks[0].interactivity, Interactivity::AltScreen);
+    }
+
+    #[test]
+    fn redraw_heuristic_flags_main_screen_redrawer() {
+        // A `watch`-style app that clears + repositions on the main screen many
+        // times with almost no committed lines.
+        let mut seq = osc("C");
+        for _ in 0..12 {
+            seq.extend_from_slice(b"\x1b[H\x1b[2Jstatus\r");
+        }
+        seq.extend_from_slice(b"\r\n");
+        let blocks = run(&[&seq, &osc("D;0")]);
+        assert_eq!(blocks[0].interactivity, Interactivity::Redraw);
+        assert!(blocks[0].lines.is_empty());
+    }
+
+    #[test]
+    fn ordinary_output_with_a_few_escapes_stays_normal() {
+        // Colourful but normal output (a couple of SGR/erase) must not trip the
+        // redraw heuristic.
+        let blocks = run(&[
+            &osc("C"),
+            b"\x1b[32mline one\x1b[0m\r\n\x1b[Kline two\r\n",
+            &osc("D;0"),
+        ]);
+        assert_eq!(blocks[0].interactivity, Interactivity::Normal);
+        assert_eq!(blocks[0].lines, vec!["line one", "line two"]);
+    }
+
+    #[test]
+    fn new_prompt_flushes_dangling_block() {
+        // Ctrl-C: output opened, never got a D, then a fresh prompt (A) arrives.
+        let blocks = run(&[
+            &osc("A"),
+            &osc("B"),
+            b"sleep 100",
+            &osc("C"),
+            b"partial output\r\n",
+            &osc("A"), // next prompt — flushes the previous block
+        ]);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].command.as_deref(), Some("sleep 100"));
+        assert_eq!(blocks[0].lines, vec!["partial output"]);
+        assert_eq!(blocks[0].exit_code, None);
+    }
+
+    #[test]
+    fn flush_finalises_in_progress_block() {
+        let mut p = OmniParser::new();
+        assert!(p.feed(&osc("C")).is_empty());
+        assert!(p.feed(b"still running\r\n").is_empty());
+        let flushed = p.flush().expect("a block should flush");
+        assert_eq!(flushed.lines, vec!["still running"]);
+        // Nothing left to flush.
+        assert!(p.flush().is_none());
+    }
+
+    #[test]
+    fn no_markers_yields_no_blocks() {
+        // Shell without integration: bytes flow but nothing is delimited until
+        // a flush (timeout fallback handles those sessions).
+        let blocks = run(&[b"random output with no osc 133\r\n"]);
+        assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn command_with_arguments_captured() {
+        let blocks = run(&[
+            &osc("B"),
+            b"systemctl status nginx",
+            &osc("C"),
+            b"active (running)\r\n",
+            &osc("D;0"),
+        ]);
+        assert_eq!(
+            blocks[0].command.as_deref(),
+            Some("systemctl status nginx")
+        );
+    }
+}
