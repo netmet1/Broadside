@@ -54,11 +54,17 @@ export type AppSettings = {
   app_font_size: number;
 };
 
+/** A host a command targeted (D-061 sub-4). `id` resolves the live colour;
+ * `label` is the snapshot fallback. `id` is null for sources without it. */
+export type HistoryHost = { id: number | null; label: string };
+
 export type HistoryEntry = {
   id: number;
   command: string;
   host_count: number;
   ts: string;
+  hosts: HistoryHost[];
+  source: string | null;
 };
 
 export function getAppSettings(): Promise<AppSettings> {

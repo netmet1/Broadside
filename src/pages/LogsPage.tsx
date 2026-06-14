@@ -21,7 +21,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { SearchBar, type SearchMode } from "@/components/SearchBar";
 import { HighlightedLine } from "@/components/Highlight";
-import { errorMessage } from "@/lib/tauri/hosts";
+import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import {
   auditInfo,
   auditTail,
@@ -36,6 +36,7 @@ import {
 } from "@/lib/tauri/logs";
 import {
   type HistoryEntry,
+  type HistoryHost,
   clearCommandHistory,
   commandHistory,
 } from "@/lib/tauri/settings";
@@ -49,6 +50,60 @@ import {
 import { cn } from "@/lib/utils";
 
 type Tab = "session" | "audit" | "history" | "errors";
+
+/** Colour for a host we can't resolve live (deleted, or a source without ids). */
+const HOST_UNKNOWN_COLOR = "#6b7280";
+const MAX_HISTORY_HOSTS = 8;
+
+/** The target hosts of a command-history entry, colour-tinted live by id
+ * (D-061 sub-4). OmniTerminal entries read `OmniTerminal <hosts> <command>`;
+ * colour/label come from the current host (grey + snapshot label if gone). */
+function HistoryHosts({
+  entry,
+  hostsById,
+}: {
+  entry: HistoryEntry;
+  hostsById: Map<number, Host>;
+}) {
+  const isOmni = entry.source === "omniterminal";
+  if (entry.hosts.length === 0) {
+    return (
+      <span className="shrink-0 text-muted-foreground">
+        {isOmni && <span className="text-foreground/70">OmniTerminal </span>}
+        {entry.host_count}h
+      </span>
+    );
+  }
+  const shown = entry.hosts.slice(0, MAX_HISTORY_HOSTS);
+  const extra = entry.hosts.length - shown.length;
+  const tint = (h: HistoryHost) => {
+    const live = h.id != null ? hostsById.get(h.id) : undefined;
+    return {
+      color: live?.color ?? HOST_UNKNOWN_COLOR,
+      label: live?.label ?? h.label,
+    };
+  };
+  return (
+    <span className="inline-flex shrink-0 items-baseline gap-1 overflow-hidden">
+      {isOmni && <span className="shrink-0 text-foreground/70">OmniTerminal</span>}
+      {shown.map((h, i) => {
+        const { color, label } = tint(h);
+        return (
+          <span
+            key={i}
+            className="max-w-24 truncate"
+            style={{ color }}
+            title={label}
+          >
+            {label}
+            {i < shown.length - 1 ? "," : ""}
+          </span>
+        );
+      })}
+      {extra > 0 && <span className="text-muted-foreground">+{extra}</span>}
+    </span>
+  );
+}
 
 /** Search state shared by both tabs: scan a flat list of lines. */
 function useLineSearch(lines: { key: string; text: string }[]) {
@@ -151,6 +206,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
 
   // Command history tab state
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  // Live host lookup for colour-tinting history entries (D-061 sub-4):
+  // colour/label resolve by id at render, so a recolour/rename shows on refresh.
+  const [hostsById, setHostsById] = useState<Map<number, Host>>(new Map());
 
   // Error log tab state (D-055)
   const [errorEntries, setErrorEntries] = useState<ErrorEntry[]>([]);
@@ -222,6 +280,10 @@ export function LogsPage({ visible }: { visible: boolean }) {
   const refreshHistory = useCallback(async () => {
     try {
       setHistoryEntries(await commandHistory(1000));
+      // Reload hosts too so a colour/rename change since last view shows.
+      setHostsById(
+        new Map((await listHosts()).map((h) => [h.id, h] as const)),
+      );
     } catch (e) {
       toast.error(errorMessage(e));
     }
@@ -561,9 +623,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
                     <span className="shrink-0 text-muted-foreground">
                       {new Date(entry.ts).toLocaleString()}
                     </span>
-                    <span className="shrink-0 text-muted-foreground">
-                      {entry.host_count}h
-                    </span>
+                    <HistoryHosts entry={entry} hostsById={hostsById} />
                     <pre className="whitespace-pre-wrap break-words">
                       {matches && historySearch.mode !== null ? (
                         <HighlightedLine
