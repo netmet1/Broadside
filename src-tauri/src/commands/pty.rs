@@ -116,13 +116,12 @@ pub fn pty_history_add(
     results: Vec<crate::db::pty_history::DispatchInput>,
     state: State<'_, DbState>,
 ) -> AppResult<()> {
-    // Record the targeted sessions for the history view's tinting (D-061
-    // sub-4). PTY broadcast doesn't carry host ids yet, so id is None and
-    // these render by label (no live colour) until a later PR adds host_id.
+    // Record the targeted sessions for the history view's tinting (D-061 sub-4),
+    // with host ids so they tint by the host's live colour.
     let hist_hosts: Vec<crate::db::history::HistoryHost> = results
         .iter()
         .map(|r| crate::db::history::HistoryHost {
-            id: None,
+            id: r.host_id,
             label: r.label.clone(),
         })
         .collect();
