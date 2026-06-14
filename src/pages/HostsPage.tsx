@@ -40,7 +40,14 @@ import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 import { nextColor } from "@/lib/palette";
 import { useHint, usePageStatus } from "@/lib/status";
 
-type SortKey = "label" | "status" | "hostname" | "port" | "username" | "flavor";
+type SortKey =
+  | "label"
+  | "status"
+  | "hostname"
+  | "port"
+  | "username"
+  | "tag"
+  | "flavor";
 
 /** Column layout for the hosts table. Resizable columns get a drag handle and
  * their width persists in localStorage (across tab switches and restarts). */
@@ -52,6 +59,7 @@ const COLS: { id: string; w: number; resizable: boolean }[] = [
   { id: "hostname", w: 220, resizable: true },
   { id: "port", w: 90, resizable: true },
   { id: "username", w: 150, resizable: true },
+  { id: "tag", w: 120, resizable: true },
   { id: "flavor", w: 130, resizable: true },
   { id: "actions", w: 210, resizable: false },
 ];
@@ -211,6 +219,8 @@ export function HostsPage({
           return h.port;
         case "username":
           return h.username.toLowerCase();
+        case "tag":
+          return (h.tag ?? "").toLowerCase();
         case "flavor":
           return (h.linux_flavor ?? "").toLowerCase();
       }
@@ -454,6 +464,10 @@ export function HostsPage({
                 {resizeHandle("username")}
               </TableHead>
               <TableHead className="relative">
+                <SortHeader label="Tag" sortKey="tag" sort={sort} onSort={toggleSort} />
+                {resizeHandle("tag")}
+              </TableHead>
+              <TableHead className="relative">
                 <SortHeader label="Flavor" sortKey="flavor" sort={sort} onSort={toggleSort} />
                 {resizeHandle("flavor")}
               </TableHead>
@@ -463,13 +477,13 @@ export function HostsPage({
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={10} className="text-center text-sm text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
             ) : hosts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={10} className="text-center text-sm text-muted-foreground">
                   No hosts yet. Click <span className="font-medium">Add host</span> to create one.
                 </TableCell>
               </TableRow>
@@ -521,6 +535,9 @@ export function HostsPage({
                   <TableCell className="truncate font-mono text-xs">{h.port}</TableCell>
                   <TableCell className="truncate font-mono text-xs" title={h.username}>
                     {h.username}
+                  </TableCell>
+                  <TableCell className="truncate text-xs" title={h.tag ?? undefined}>
+                    {h.tag ?? "—"}
                   </TableCell>
                   <TableCell className="truncate text-xs text-muted-foreground">
                     {h.linux_flavor ?? "—"}

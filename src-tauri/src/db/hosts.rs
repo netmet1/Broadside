@@ -33,6 +33,8 @@ pub struct Host {
     pub auth_method: Option<String>,
     pub key_path: Option<String>,
     pub has_sudo_password: bool,
+    /// Optional free-text grouping tag (migration 12).
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,6 +44,7 @@ pub struct HostInput {
     pub port: u16,
     pub username: String,
     pub color: String,
+    pub tag: Option<String>,
     pub linux_flavor: Option<String>,
     pub notes: Option<String>,
 }
@@ -61,11 +64,12 @@ fn from_row(row: &Row) -> rusqlite::Result<Host> {
         auth_method: row.get(10)?,
         key_path: row.get(11)?,
         has_sudo_password: row.get::<_, i64>(12)? != 0,
+        tag: row.get(13)?,
     })
 }
 
 const SELECT_COLS: &str =
-    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path, has_sudo_password";
+    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path, has_sudo_password, tag";
 
 fn validate(input: &HostInput) -> AppResult<()> {
     if input.label.trim().is_empty() {
@@ -151,8 +155,8 @@ pub fn create(conn: &Connection, input: HostInput) -> AppResult<Host> {
     let now = Utc::now().to_rfc3339();
     let label = input.label.trim();
     conn.execute(
-        "INSERT INTO hosts (label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+        "INSERT INTO hosts (label, hostname, port, username, color, linux_flavor, notes, tag, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
         params![
             label,
             input.hostname.trim(),
@@ -161,6 +165,7 @@ pub fn create(conn: &Connection, input: HostInput) -> AppResult<Host> {
             input.color,
             input.linux_flavor,
             input.notes,
+            input.tag,
             now,
         ],
     )
@@ -177,8 +182,8 @@ pub fn update(conn: &Connection, id: i64, input: HostInput) -> AppResult<Host> {
         .execute(
             "UPDATE hosts
             SET label = ?1, hostname = ?2, port = ?3, username = ?4, color = ?5,
-                linux_flavor = ?6, notes = ?7, updated_at = ?8
-          WHERE id = ?9",
+                linux_flavor = ?6, notes = ?7, tag = ?8, updated_at = ?9
+          WHERE id = ?10",
             params![
                 label,
                 input.hostname.trim(),
@@ -187,6 +192,7 @@ pub fn update(conn: &Connection, id: i64, input: HostInput) -> AppResult<Host> {
                 input.color,
                 input.linux_flavor,
                 input.notes,
+                input.tag,
                 now,
                 id,
             ],
@@ -218,6 +224,7 @@ mod tests {
             port: 22,
             username: "root".into(),
             color: "#3366ff".into(),
+            tag: None,
             linux_flavor: Some("ubuntu".into()),
             notes: None,
         }
@@ -249,6 +256,26 @@ mod tests {
         let conn = open_in_memory().unwrap();
         let err = get(&conn, 9999).unwrap_err();
         assert!(matches!(err, AppError::HostNotFound(9999)));
+    }
+
+    #[test]
+    fn tag_round_trips_and_updates() {
+        let conn = open_in_memory().unwrap();
+        let mut input = sample();
+        input.tag = Some("prod".into());
+        let created = create(&conn, input).unwrap();
+        assert_eq!(created.tag.as_deref(), Some("prod"));
+
+        let mut edit = sample();
+        edit.tag = Some("staging".into());
+        let updated = update(&conn, created.id, edit).unwrap();
+        assert_eq!(updated.tag.as_deref(), Some("staging"));
+
+        // Clearing the tag back to None works.
+        let mut cleared = sample();
+        cleared.tag = None;
+        let updated = update(&conn, created.id, cleared).unwrap();
+        assert_eq!(updated.tag, None);
     }
 
     #[test]
