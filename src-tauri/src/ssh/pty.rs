@@ -18,6 +18,8 @@ use crate::error::{AppError, AppResult};
 
 pub const DATA_EVENT: &str = "pty:data";
 pub const CLOSED_EVENT: &str = "pty:closed";
+/// Completed command blocks for the OmniTerminal aggregate view (D-061).
+pub const BLOCK_EVENT: &str = "pty:block";
 
 const TERM: &str = "xterm-256color";
 
@@ -35,11 +37,23 @@ pub struct PtyClosed {
     pub message: Option<String>,
 }
 
+/// A completed command block for one session, fed to the OmniTerminal view
+/// (D-061). The block fields are flattened in so the frontend payload is
+/// `{ session_id, command, lines, exit_code, interactivity }`.
+#[derive(Debug, Clone, Serialize)]
+pub struct PtyBlock {
+    pub session_id: String,
+    #[serde(flatten)]
+    pub block: crate::omni::CommandBlock,
+}
+
 /// Where session output goes. The app implements this with Tauri events;
 /// integration tests implement it with a channel.
 pub trait PtyEvents: Send + Sync + 'static {
     fn data(&self, payload: PtyData);
     fn closed(&self, payload: PtyClosed);
+    /// A command finished — its completion-delimited block (D-061).
+    fn block(&self, payload: PtyBlock);
 }
 
 impl PtyEvents for tauri::AppHandle {
@@ -48,6 +62,9 @@ impl PtyEvents for tauri::AppHandle {
     }
     fn closed(&self, payload: PtyClosed) {
         let _ = self.emit(CLOSED_EVENT, &payload);
+    }
+    fn block(&self, payload: PtyBlock) {
+        let _ = self.emit(BLOCK_EVENT, &payload);
     }
 }
 
@@ -206,6 +223,12 @@ pub async fn open<E: PtyEvents>(
         .await
         .map_err(|e| AppError::Ssh(format!("shell request: {e}")))?;
 
+    // Install OSC 133 shell integration so the OmniTerminal aggregate view can
+    // delimit commands and detect TUI apps (D-061). Harmless on shells that
+    // don't match (POSIX sh / fish) — the snippet falls through to a no-op.
+    let integration = crate::omni::shell_integration_command();
+    let _ = channel.data(integration.as_bytes()).await;
+
     let (tx, mut rx) = mpsc::channel::<SessionCmd>(64);
     let epoch = state.insert(session_id.clone(), tx);
     let state = state.clone();
@@ -213,16 +236,32 @@ pub async fn open<E: PtyEvents>(
     tauri::async_runtime::spawn(async move {
         let mut exit_code: Option<u32> = None;
         let mut message: Option<String> = None;
+        // Per-session VT interpreter feeding the OmniTerminal block stream
+        // (D-061). The raw `pty:data` stream below is unchanged — the live
+        // terminal pane still renders every byte; this is a parallel feed.
+        let mut omni = crate::omni::OmniParser::new();
         loop {
             tokio::select! {
                 msg = channel.wait() => match msg {
                     Some(ChannelMsg::Data { ref data }) => {
+                        for block in omni.feed(&data[..]) {
+                            events.block(PtyBlock {
+                                session_id: session_id.clone(),
+                                block,
+                            });
+                        }
                         events.data(PtyData {
                             session_id: session_id.clone(),
                             data_b64: B64.encode(data),
                         });
                     }
                     Some(ChannelMsg::ExtendedData { ref data, .. }) => {
+                        for block in omni.feed(&data[..]) {
+                            events.block(PtyBlock {
+                                session_id: session_id.clone(),
+                                block,
+                            });
+                        }
                         events.data(PtyData {
                             session_id: session_id.clone(),
                             data_b64: B64.encode(data),
@@ -257,6 +296,15 @@ pub async fn open<E: PtyEvents>(
         // task must not deregister its successor or report a close the UI
         // would misattribute to the live session.
         if state.remove_if_current(&session_id, epoch) {
+            // Flush a dangling block (a command still running when the shell
+            // died, or a shell without OSC 133 integration) so its output
+            // isn't lost from the OmniTerminal view.
+            if let Some(block) = omni.flush() {
+                events.block(PtyBlock {
+                    session_id: session_id.clone(),
+                    block,
+                });
+            }
             events.closed(PtyClosed {
                 session_id: session_id.clone(),
                 exit_code,

@@ -250,6 +250,33 @@ impl Perform for Performer {
     }
 }
 
+/// One-time shell setup, sent over the PTY right after the shell opens, that
+/// makes the remote shell emit the OSC 133 markers this module parses (D-061
+/// Option B). It detects the shell at runtime and installs the right prompt
+/// hooks; bash and zsh are fully supported, other shells (POSIX sh / ash / dash
+/// / fish) fall through to a no-op and rely on the [`OmniParser::flush`]
+/// fallback — so this line is always safe to send to any shell.
+///
+/// Why it's shaped this way:
+/// - One single line (`;`-joined) so it's a single command — the hooks it
+///   installs take effect on the *next* prompt, never around this setup line.
+/// - Octal escapes (`\033`/`\007`) not `\e` — portable across every `printf`.
+/// - PROMPT_COMMAND is **prepended** (not clobbered) and `__omni_precmd` reads
+///   `$?` first, so a user's existing PROMPT_COMMAND can't corrupt the exit
+///   code we report.
+/// - The bash branch's `$'...'`-free / the zsh branch's `$(...)`-deferred forms
+///   mean a POSIX shell can *parse* the whole `if/elif/fi` without error even
+///   though it executes neither branch.
+///
+/// Markers: `A` prompt-start, `B` prompt-end, `C` output-start, `D;<exit>` done.
+pub const SHELL_INTEGRATION: &str = r#"if [ -n "$BASH_VERSION" ]; then __omni_first=1; __omni_pe=1; __omni_precmd() { local s=$?; [ -n "$__omni_first" ] && __omni_first= || printf '\033]133;D;%s\007' "$s"; __omni_pe=; printf '\033]133;A\007'; }; __omni_preexec() { [ -n "$__omni_pe" ] && return; __omni_pe=1; printf '\033]133;C\007'; }; PROMPT_COMMAND="__omni_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"; trap __omni_preexec DEBUG; PS1="$PS1"'\[\033]133;B\007\]'; elif [ -n "$ZSH_VERSION" ]; then autoload -Uz add-zsh-hook; __omni_precmd() { printf '\033]133;D;%s\007\033]133;A\007' "$?"; }; __omni_preexec() { printf '\033]133;C\007'; }; add-zsh-hook precmd __omni_precmd; add-zsh-hook preexec __omni_preexec; PS1="$PS1%{$(printf '\033]133;B\007')%}"; fi"#;
+
+/// The integration line ready to write to a PTY (newline-terminated, so the
+/// remote shell executes it).
+pub fn shell_integration_command() -> String {
+    format!("{SHELL_INTEGRATION}\n")
+}
+
 /// One session's VT interpreter. Feed it the raw PTY bytes; collect completed
 /// [`CommandBlock`]s.
 pub struct OmniParser {
@@ -470,5 +497,32 @@ mod tests {
             blocks[0].command.as_deref(),
             Some("systemctl status nginx")
         );
+    }
+
+    #[test]
+    fn integration_snippet_has_all_markers_and_both_shells() {
+        let s = SHELL_INTEGRATION;
+        // All four OSC 133 markers are emitted somewhere.
+        for m in ["133;A", "133;C", "133;B", "133;D"] {
+            assert!(s.contains(m), "integration missing {m}");
+        }
+        // Both supported shells are branched on, POSIX falls through.
+        assert!(s.contains("BASH_VERSION"));
+        assert!(s.contains("ZSH_VERSION"));
+        assert!(s.contains("PROMPT_COMMAND"));
+        assert!(s.contains("add-zsh-hook"));
+        // Octal escapes (portable printf), not \e.
+        assert!(s.contains(r"\033") && s.contains(r"\007"));
+        // Single line so the hooks install around the next prompt, not this one.
+        assert!(!s.contains('\n'));
+        // PROMPT_COMMAND is prepended, never clobbered.
+        assert!(s.contains(r#"PROMPT_COMMAND="__omni_precmd${PROMPT_COMMAND:+"#));
+    }
+
+    #[test]
+    fn integration_command_is_newline_terminated() {
+        let c = shell_integration_command();
+        assert!(c.ends_with('\n'));
+        assert_eq!(c.trim_end_matches('\n'), SHELL_INTEGRATION);
     }
 }
