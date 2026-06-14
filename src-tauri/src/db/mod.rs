@@ -106,6 +106,13 @@ const MIGRATIONS: &[&str] = &[
         ok        INTEGER NOT NULL,
         message   TEXT
     );",
+    // 9: command_history host references + source (D-061 sub-4). hosts_json is
+    // a JSON array of {id, label}; id is null for sources that don't track it
+    // yet (PTY broadcast until a later PR). source is one of
+    // "broadcast" | "ptybroadcast" | "omniterminal". Rows predating this stay
+    // NULL on both and render by host_count only.
+    "ALTER TABLE command_history ADD COLUMN hosts_json TEXT;
+     ALTER TABLE command_history ADD COLUMN source TEXT;",
 ];
 
 fn bootstrap(conn: &Connection) -> AppResult<()> {

@@ -82,6 +82,7 @@ pub fn run() {
             commands::pty::pty_history_add,
             commands::pty::pty_history_list,
             commands::pty::pty_history_clear,
+            commands::pty::omni_log_command,
             commands::session::save_session,
             commands::session::session_is_encrypted,
             commands::session::load_session,

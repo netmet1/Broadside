@@ -116,11 +116,35 @@ pub fn pty_history_add(
     results: Vec<crate::db::pty_history::DispatchInput>,
     state: State<'_, DbState>,
 ) -> AppResult<()> {
+    // Record the targeted sessions for the history view's tinting (D-061
+    // sub-4). PTY broadcast doesn't carry host ids yet, so id is None and
+    // these render by label (no live colour) until a later PR adds host_id.
+    let hist_hosts: Vec<crate::db::history::HistoryHost> = results
+        .iter()
+        .map(|r| crate::db::history::HistoryHost {
+            id: None,
+            label: r.label.clone(),
+        })
+        .collect();
     with_db(&state, |conn| {
         crate::db::pty_history::add_run(conn, &run_id, &ts, &command, &results)?;
         // Never block on the recall-history write (same rule as Broadcast).
-        let _ = crate::db::history::add(conn, &command, results.len());
+        let _ = crate::db::history::add(conn, &command, &hist_hosts, "ptybroadcast");
         Ok(())
+    })
+}
+
+/// Records an OmniTerminal dispatch in the shared command history (D-061
+/// sub-4). Rendered as `OmniTerminal <hosts> <command>` with the hosts tinted
+/// by their live colour. Never blocks the dispatch (best-effort).
+#[tauri::command]
+pub fn omni_log_command(
+    command: String,
+    hosts: Vec<crate::db::history::HistoryHost>,
+    state: State<'_, DbState>,
+) -> AppResult<()> {
+    with_db(&state, |conn| {
+        crate::db::history::add(conn, &command, &hosts, "omniterminal")
     })
 }
 
