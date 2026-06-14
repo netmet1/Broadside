@@ -9,6 +9,7 @@ pub mod broadcast_history;
 pub mod history;
 pub mod host_keys;
 pub mod hosts;
+pub mod omni_history;
 pub mod pty_history;
 pub mod settings;
 
@@ -117,6 +118,21 @@ const MIGRATIONS: &[&str] = &[
     // the host's *live* colour, like broadcast_results already does. Nullable —
     // rows predating this fall back to the stored colour snapshot.
     "ALTER TABLE pty_dispatch_results ADD COLUMN host_id INTEGER;",
+    // 11: persistent OmniTerminal block log (D-061 follow-up) so the aggregate
+    // view survives restarts (it otherwise lived only in frontend memory). One
+    // row per displayed block; host_id resolves the live colour, label is the
+    // snapshot fallback, lines is a JSON array.
+    "CREATE TABLE IF NOT EXISTS omni_blocks (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts            TEXT NOT NULL,
+        host_id       INTEGER,
+        label         TEXT NOT NULL,
+        command       TEXT,
+        lines         TEXT NOT NULL,
+        exit_code     INTEGER,
+        duration_ms   INTEGER,
+        interactivity TEXT NOT NULL
+    );",
 ];
 
 fn bootstrap(conn: &Connection) -> AppResult<()> {

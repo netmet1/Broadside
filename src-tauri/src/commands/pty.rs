@@ -147,6 +147,33 @@ pub fn omni_log_command(
     })
 }
 
+/// Persists one displayed OmniTerminal block so the aggregate view survives
+/// restarts (D-061 follow-up).
+#[tauri::command]
+pub fn omni_blocks_add(
+    block: crate::db::omni_history::OmniBlockInput,
+    state: State<'_, DbState>,
+) -> AppResult<()> {
+    with_db(&state, |conn| crate::db::omni_history::add(conn, &block))
+}
+
+/// The persisted OmniTerminal block log, oldest first.
+#[tauri::command]
+pub fn omni_blocks_list(
+    limit: usize,
+    state: State<'_, DbState>,
+) -> AppResult<Vec<crate::db::omni_history::StoredOmniBlock>> {
+    with_db(&state, |conn| {
+        crate::db::omni_history::list(conn, limit.clamp(1, 5000))
+    })
+}
+
+/// Clears the persisted OmniTerminal block log. Returns rows removed.
+#[tauri::command]
+pub fn omni_blocks_clear(state: State<'_, DbState>) -> AppResult<usize> {
+    with_db(&state, |conn| crate::db::omni_history::clear(conn))
+}
+
 #[tauri::command]
 pub fn pty_history_list(
     max_runs: usize,

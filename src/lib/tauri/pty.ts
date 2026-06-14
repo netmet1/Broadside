@@ -101,6 +101,36 @@ export function omniLogCommand(
   return invoke<void>("omni_log_command", { command, hosts });
 }
 
+/** One persisted OmniTerminal block (survives restarts). `host_id` resolves the
+ * live colour; `label` is the snapshot fallback. */
+export type StoredOmniBlock = {
+  id: number;
+  ts: string;
+  host_id: number | null;
+  label: string;
+  command: string | null;
+  lines: string[];
+  exit_code: number | null;
+  duration_ms: number | null;
+  interactivity: BlockInteractivity;
+};
+
+export type OmniBlockInput = Omit<StoredOmniBlock, "id">;
+
+export function omniBlocksAdd(block: OmniBlockInput): Promise<void> {
+  return invoke<void>("omni_blocks_add", { block });
+}
+
+/** The persisted OmniTerminal block log, oldest first. */
+export function omniBlocksList(limit: number): Promise<StoredOmniBlock[]> {
+  return invoke<StoredOmniBlock[]>("omni_blocks_list", { limit });
+}
+
+/** Clears the persisted OmniTerminal block log. Returns rows removed. */
+export function omniBlocksClear(): Promise<number> {
+  return invoke<number>("omni_blocks_clear");
+}
+
 /** One persisted PTY-broadcast dispatch (D-059). `host_id` resolves the live
  * colour (D-061 sub-4); null for rows saved before it existed. */
 export type StoredPtyDispatch = {
