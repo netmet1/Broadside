@@ -152,8 +152,18 @@ pub async fn broadcast_command(
         matched_rules: hits.iter().map(|h| h.rule_id.clone()).collect(),
         confirmed: confirmed == Some(true),
     });
-    // Command history (PR#8); same never-block rule.
-    let _ = with_db(&state, |conn| history::add(conn, &command, host_ids.len()));
+    // Command history (PR#8); same never-block rule. Records the targeted hosts
+    // (id + label) for colour-tinting in the history view (D-061 sub-4).
+    let hist_hosts: Vec<history::HistoryHost> = jobs
+        .iter()
+        .map(|j| history::HistoryHost {
+            id: Some(j.host.id),
+            label: j.host.label.clone(),
+        })
+        .collect();
+    let _ = with_db(&state, |conn| {
+        history::add(conn, &command, &hist_hosts, "broadcast")
+    });
 
     // Concurrency cap: user override, else the cached probe suggestion,
     // else unbounded-ish. Advisory, not a hard limit (locked design).

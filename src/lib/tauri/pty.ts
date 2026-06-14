@@ -90,6 +90,15 @@ export function onPtyBlock(
   return listen<PtyBlock>("pty:block", (event) => handler(event.payload));
 }
 
+/** Records an OmniTerminal dispatch in the shared command history, rendered as
+ * `OmniTerminal <hosts> <command>` with the hosts tinted live (D-061 sub-4). */
+export function omniLogCommand(
+  command: string,
+  hosts: { id: number | null; label: string }[],
+): Promise<void> {
+  return invoke<void>("omni_log_command", { command, hosts });
+}
+
 /** One persisted PTY-broadcast dispatch (D-059). */
 export type StoredPtyDispatch = {
   label: string;

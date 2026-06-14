@@ -9,6 +9,7 @@ import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
+  omniLogCommand,
   onPtyBlock,
   ptyWrite,
   type BlockInteractivity,
@@ -154,6 +155,12 @@ export function OmniTerminalPage({
       setSending(true);
       setHistory((prev) => (prev[0] === cmd ? prev : [cmd, ...prev]));
       const targets = sessions.filter((s) => connectedSessions.has(s.id));
+      // Log to the shared command history as `OmniTerminal <hosts> <command>`,
+      // tinted live by host (D-061 sub-4). Best-effort — never blocks dispatch.
+      omniLogCommand(
+        cmd,
+        targets.map((s) => ({ id: s.host.id, label: s.host.label })),
+      ).catch(() => {});
       for (const s of targets) {
         const queue = pendingDispatched.current.get(s.id) ?? [];
         queue.push(cmd);
