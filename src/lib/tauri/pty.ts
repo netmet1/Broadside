@@ -81,6 +81,8 @@ export type PtyBlock = {
   lines: string[];
   /** Exit status, when the shell reported one. */
   exit_code: number | null;
+  /** How long the command ran (ms), output-start to done. */
+  duration_ms: number | null;
   interactivity: BlockInteractivity;
 };
 
