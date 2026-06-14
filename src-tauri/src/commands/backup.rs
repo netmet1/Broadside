@@ -93,6 +93,7 @@ mod tests {
                 port: 22,
                 username: "ops".into(),
                 color: "#3b82f6".into(),
+                tag: None,
                 linux_flavor: None,
                 notes: None,
             },

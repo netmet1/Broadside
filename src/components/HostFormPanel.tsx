@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -114,6 +114,7 @@ const formSchema = z.object({
   port: z.number().int().min(1, "1-65535").max(65535, "1-65535"),
   username: z.string().trim().min(1, "Required"),
   color: z.string().regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "Hex color like #3b82f6"),
+  tag: z.string(),
   linux_flavor: z.string(),
   notes: z.string(),
   authMethod: z.enum(["none", "password", "key"]),
@@ -133,6 +134,7 @@ function emptyValues(defaultColor: string): FormValues {
     port: 22,
     username: "",
     color: defaultColor,
+    tag: "",
     linux_flavor: "__none__",
     notes: "",
     authMethod: "none",
@@ -190,6 +192,20 @@ export function HostFormPanel({
     defaultValues: emptyValues(defaultColor),
   });
 
+  // Distinct tags already in use, for the form's autocomplete (so you don't
+  // have to remember what you typed before).
+  const tagSuggestions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          existingHosts
+            .map((h) => h.tag?.trim())
+            .filter((t): t is string => !!t),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
+    [existingHosts],
+  );
+
   // Reset form whenever the host being edited changes (or we open in add mode).
   useEffect(() => {
     setEditingCredentials(!host);
@@ -204,6 +220,7 @@ export function HostFormPanel({
         port: host.port,
         username: host.username,
         color: host.color,
+        tag: host.tag ?? "",
         linux_flavor: host.linux_flavor ?? "__none__",
         notes: host.notes ?? "",
         authMethod:
@@ -305,6 +322,7 @@ export function HostFormPanel({
       port: data.port,
       username: data.username.trim(),
       color: data.color,
+      tag: data.tag.trim() === "" ? null : data.tag.trim(),
       linux_flavor:
         data.linux_flavor === "__none__" ? null : data.linux_flavor,
       notes: data.notes.trim() === "" ? null : data.notes.trim(),
@@ -432,6 +450,25 @@ export function HostFormPanel({
                 {errors.port?.message ?? ""}
               </p>
             </div>
+          </div>
+
+          <div className="grid gap-1">
+            <Label htmlFor="tag">Tag</Label>
+            <Input
+              id="tag"
+              list="host-tag-suggestions"
+              autoComplete="off"
+              {...register("tag")}
+              placeholder="e.g. prod, db, us-east"
+            />
+            <datalist id="host-tag-suggestions">
+              {tagSuggestions.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
+            <p className="min-h-4 text-xs text-muted-foreground">
+              Optional — group hosts for sorting.
+            </p>
           </div>
 
           <div className="grid gap-1">
