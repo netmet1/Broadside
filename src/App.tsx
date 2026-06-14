@@ -5,6 +5,7 @@ import { HostsPage } from "@/pages/HostsPage";
 import { BroadcastPage } from "@/pages/BroadcastPage";
 import { TerminalsPage, type TermSession } from "@/pages/TerminalsPage";
 import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
+import { OmniTerminalPage } from "@/pages/OmniTerminalPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { UnlockDialog } from "@/components/UnlockDialog";
@@ -164,6 +165,16 @@ function App() {
           onConnectionChange={handleConnectionChange}
           onActivate={setActiveSessionId}
           onCloseSession={closeSession}
+          onManageShortcuts={openShortcutSettings}
+        />
+      </div>
+      {/* OmniTerminal stays mounted so its aggregated block log survives tab
+          switches (it subscribes to every session's pty:block stream). */}
+      <div className={page === "omniterminal" ? "block h-full" : "hidden"}>
+        <OmniTerminalPage
+          visible={page === "omniterminal"}
+          sessions={sessions}
+          connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}
         />
       </div>
