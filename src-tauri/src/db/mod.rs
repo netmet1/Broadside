@@ -133,6 +133,10 @@ const MIGRATIONS: &[&str] = &[
         duration_ms   INTEGER,
         interactivity TEXT NOT NULL
     );",
+    // 12: host grouping tag (user request) — optional free-text label for
+    // grouping/sorting hosts in the table; autocompleted in the form from tags
+    // already in use. Surfaces before linux_flavor in the UI.
+    "ALTER TABLE hosts ADD COLUMN tag TEXT;",
 ];
 
 fn bootstrap(conn: &Connection) -> AppResult<()> {

@@ -7,6 +7,8 @@ export type Host = {
   port: number;
   username: string;
   color: string;
+  /** Optional free-text grouping tag (for table sorting). */
+  tag: string | null;
   linux_flavor: string | null;
   notes: string | null;
   created_at: string;
@@ -22,6 +24,7 @@ export type HostInput = {
   port: number;
   username: string;
   color: string;
+  tag: string | null;
   linux_flavor: string | null;
   notes: string | null;
 };
