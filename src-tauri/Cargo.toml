@@ -45,6 +45,10 @@ csv = "1.4.0"
 calamine = "0.35.0"
 # Hosts export to .xlsx (D-058). Pure-Rust, no C deps; mirrors the CSV columns.
 rust_xlsxwriter = "0.95.0"
+# OmniTerminal VT stream interpreter (D-061): turns raw PTY bytes into
+# completion-delimited command blocks + TUI detection. Alacritty's parser core
+# (chosen over alacritty_terminal for its small, stable API). Pure-Rust, MIT/Apache.
+vte = "0.13"
 
 [dev-dependencies]
 tempfile = "3"

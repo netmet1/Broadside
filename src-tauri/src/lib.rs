@@ -11,6 +11,7 @@ pub mod export;
 pub mod guard;
 pub mod import;
 mod licensing;
+pub mod omni;
 pub mod probe;
 pub mod session;
 pub mod ssh;
