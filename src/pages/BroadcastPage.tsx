@@ -663,10 +663,16 @@ export function BroadcastPage({
                 <div className="space-y-3">
                   {run.blocks.map((block) => {
                     const key = blockKeyOf(run.runId, block.host_id);
+                    // Tint by the host's live colour/label (D-061 sub-4); fall
+                    // back to the stored snapshot if the host is gone.
+                    const live = hostsById.get(block.host_id);
+                    const tinted = live
+                      ? { ...block, color: live.color, label: live.label }
+                      : block;
                     return (
                       <OutputBlock
                         key={key}
-                        block={block}
+                        block={tinted}
                         blockKey={key}
                         findData={
                           searchMode === "find" && scan

@@ -7,7 +7,7 @@ import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
-import { errorMessage } from "@/lib/tauri/hosts";
+import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import {
   ptyHistoryAdd,
   ptyHistoryClear,
@@ -22,6 +22,7 @@ import type { TermSession } from "@/pages/TerminalsPage";
 const HISTORY_RUNS = 200;
 
 type DispatchResult = {
+  host_id: number | null;
   label: string;
   color: string;
   ok: boolean;
@@ -62,6 +63,9 @@ export function PtyBroadcastPage({
   const [history, setHistory] = useState<string[]>([]);
   const [guardHits, setGuardHits] = useState<GuardHit[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Live host lookup so dispatch rows tint by the host's current colour
+  // (D-061 sub-4), reloaded when the page is shown.
+  const [hostsById, setHostsById] = useState<Map<number, Host>>(new Map());
   const hint = useHint();
   const shortcuts = useShortcuts(visible);
   const outputRef = useRef<HTMLDivElement>(null);
@@ -106,6 +110,14 @@ export function PtyBroadcastPage({
     outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
   }, [runs]);
 
+  // Refresh the live host colours each time the page is shown.
+  useEffect(() => {
+    if (!visible) return;
+    listHosts()
+      .then((hs) => setHostsById(new Map(hs.map((h) => [h.id, h] as const))))
+      .catch(() => {});
+  }, [visible]);
+
   usePageStatus(
     sessions.length > 0
       ? `${selected.size}/${sessions.length} sessions selected`
@@ -138,6 +150,7 @@ export function PtyBroadcastPage({
       for (const s of targets) {
         if (!connectedSessions.has(s.id)) {
           out.push({
+            host_id: s.host.id,
             label: s.host.label,
             color: s.host.color,
             ok: false,
@@ -148,6 +161,7 @@ export function PtyBroadcastPage({
         try {
           await ptyWrite(s.id, cmd + "\n");
           out.push({
+            host_id: s.host.id,
             label: s.host.label,
             color: s.host.color,
             ok: true,
@@ -155,6 +169,7 @@ export function PtyBroadcastPage({
           });
         } catch (e) {
           out.push({
+            host_id: s.host.id,
             label: s.host.label,
             color: s.host.color,
             ok: false,
@@ -343,28 +358,39 @@ export function PtyBroadcastPage({
                       </code>
                     </div>
                     <div className="space-y-1">
-                      {run.results.map((r, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center gap-2 rounded-md border border-border/40 px-3 py-1.5 text-sm"
-                        >
-                          {r.ok ? (
-                            <CheckIcon className="h-4 w-4 shrink-0 text-emerald-400" />
-                          ) : (
-                            <XIcon className="h-4 w-4 shrink-0 text-red-400" />
-                          )}
-                          <span
-                            className="h-2.5 w-2.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: r.color }}
-                          />
-                          <span className="min-w-0 truncate font-medium">
-                            {r.label}
-                          </span>
-                          <span className="ml-auto font-mono text-xs text-muted-foreground">
-                            {r.ok ? "sent — see Terminals tab" : r.message}
-                          </span>
-                        </div>
-                      ))}
+                      {run.results.map((r, i) => {
+                        // Resolve the host's live colour/label by id (D-061
+                        // sub-4); fall back to the stored snapshot if the host
+                        // is gone or the row predates host_id.
+                        const live =
+                          r.host_id != null
+                            ? hostsById.get(r.host_id)
+                            : undefined;
+                        const color = live?.color ?? r.color;
+                        const label = live?.label ?? r.label;
+                        return (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 rounded-md border border-border/40 px-3 py-1.5 text-sm"
+                          >
+                            {r.ok ? (
+                              <CheckIcon className="h-4 w-4 shrink-0 text-emerald-400" />
+                            ) : (
+                              <XIcon className="h-4 w-4 shrink-0 text-red-400" />
+                            )}
+                            <span
+                              className="h-2.5 w-2.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="min-w-0 truncate font-medium">
+                              {label}
+                            </span>
+                            <span className="ml-auto font-mono text-xs text-muted-foreground">
+                              {r.ok ? "sent — see Terminals tab" : r.message}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
