@@ -21,6 +21,8 @@
 //! escape every full-screen app emits, plus a heuristic for main-screen
 //! redrawers (`watch`, some `top` builds, spinners) that don't use it.
 
+use std::time::Instant;
+
 use serde::Serialize;
 use vte::{Params, Parser, Perform};
 
@@ -63,6 +65,8 @@ pub struct CommandBlock {
     pub lines: Vec<String>,
     /// Exit status from `OSC 133 ; D ; <code>`, when the shell reported one.
     pub exit_code: Option<i32>,
+    /// How long the command ran (output-start to done), in milliseconds.
+    pub duration_ms: Option<u64>,
     /// Whether/why this block is interactive (don't mirror its output).
     pub interactivity: Interactivity,
 }
@@ -88,6 +92,8 @@ struct Performer {
     lines: Vec<String>,
     /// Interactivity verdict for the active block.
     interactivity: Interactivity,
+    /// When the active command's output began (for the duration badge).
+    started: Option<Instant>,
     /// Cursor-repositioning / erase events seen during the active block.
     redraws: u32,
     /// Completed blocks, drained by the owning [`OmniParser`].
@@ -129,6 +135,7 @@ impl Performer {
         self.col = 0;
         self.lines.clear();
         self.interactivity = Interactivity::Normal;
+        self.started = Some(Instant::now());
         self.redraws = 0;
     }
 
@@ -153,10 +160,12 @@ impl Performer {
         } else {
             std::mem::take(&mut self.lines)
         };
+        let duration_ms = self.started.take().map(|s| s.elapsed().as_millis() as u64);
         self.out.push(CommandBlock {
             command,
             lines,
             exit_code,
+            duration_ms,
             interactivity: self.interactivity.clone(),
         });
         // Reset for the next command.
@@ -357,6 +366,8 @@ mod tests {
         assert_eq!(blocks[0].lines, vec!["14:02 up 9 days"]);
         assert_eq!(blocks[0].exit_code, Some(0));
         assert_eq!(blocks[0].interactivity, Interactivity::Normal);
+        // A completed command carries a duration (output-start to done).
+        assert!(blocks[0].duration_ms.is_some());
     }
 
     #[test]
