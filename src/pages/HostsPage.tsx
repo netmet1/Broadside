@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -207,14 +207,45 @@ export function HostsPage({
     [colWidths],
   );
 
+  // Double-click a divider to auto-size the column to its widest cell (H14).
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const measureCanvas = useRef<HTMLCanvasElement | null>(null);
+  const autoSizeColumn = useCallback((id: string) => {
+    const colIndex = COLS.findIndex((c) => c.id === id);
+    const container = tableScrollRef.current;
+    if (colIndex < 0 || !container) return;
+    const canvas =
+      measureCanvas.current ??
+      (measureCanvas.current = document.createElement("canvas"));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    let max = 0;
+    container.querySelectorAll<HTMLTableRowElement>("tr").forEach((tr) => {
+      const cell = tr.children[colIndex] as HTMLElement | undefined;
+      const text = cell?.textContent ?? "";
+      if (!cell || !text) return;
+      const cs = getComputedStyle(cell);
+      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      max = Math.max(max, ctx.measureText(text).width);
+    });
+    // + cell padding (px-2 each side) + a little slack for the sort arrow.
+    const width = Math.max(MIN_COL_W, Math.ceil(max) + 28);
+    setColWidths((prev) => {
+      const next = { ...prev, [id]: width };
+      localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   /** A thin drag strip on a column header's right edge. Returns JSX (not a
    * component) so it isn't remounted each render. */
   const resizeHandle = (id: string) => (
     <span
       onMouseDown={(e) => startResize(id, e)}
+      onDoubleClick={() => autoSizeColumn(id)}
       className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize bg-transparent hover:bg-primary/40"
       aria-hidden
-      title="Drag to resize column"
+      title="Drag to resize · double-click to fit"
     />
   );
 
@@ -502,7 +533,10 @@ export function HostsPage({
       {/* Neutralize the shadcn Table's own overflow wrapper so THIS div is the
           single scroll container for both axes — gives a viewport-pinned
           horizontal scrollbar and lets the header stick on vertical scroll. */}
-      <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible">
+      <div
+        ref={tableScrollRef}
+        className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible"
+      >
         <Table style={{ tableLayout: "fixed", width: tableWidth }}>
           <colgroup>
             {COLS.map((c) => (
