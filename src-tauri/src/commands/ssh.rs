@@ -62,6 +62,7 @@ pub async fn test_connection(
             // record it like the other failure modes.
             errlog.log(
                 "test_connection",
+                Some(host.id),
                 Some(&host.label),
                 "no credentials stored",
             );
@@ -96,16 +97,19 @@ pub async fn test_connection(
     match &result {
         ProbeResult::AuthFailed { message } => errlog.log(
             "test_connection",
+            Some(host.id),
             Some(&host.label),
             &format!("authentication failed — {message}"),
         ),
         ProbeResult::Unreachable { message } => errlog.log(
             "test_connection",
+            Some(host.id),
             Some(&host.label),
             &format!("unreachable — {message}"),
         ),
         ProbeResult::KeyMismatch { .. } => errlog.log(
             "test_connection",
+            Some(host.id),
             Some(&host.label),
             "host key mismatch — connection refused",
         ),
