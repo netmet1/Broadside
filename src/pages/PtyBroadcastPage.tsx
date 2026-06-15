@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, Loader2Icon, SendIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -8,6 +8,7 @@ import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog"
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
+import { RAIL_SORT_OPTIONS, sortForRail } from "@/lib/railSort";
 import {
   ptyHistoryAdd,
   ptyHistoryClear,
@@ -240,6 +241,13 @@ export function PtyBroadcastPage({
     }
   }, []);
 
+  // Rail sort order (P3). Component stays mounted so this survives tab switches.
+  const [railSort, setRailSort] = useState("az");
+  const railSessions = useMemo(
+    () => sortForRail(sessions, (s) => s.host, railSort),
+    [sessions, railSort],
+  );
+
   const hasOutput = runs.length > 0;
 
   return (
@@ -267,8 +275,23 @@ export function PtyBroadcastPage({
               {selected.size}/{sessions.length}
             </span>
           </label>
+          {/* Sort-by dropdown for the session list (P3). */}
+          <div className="shrink-0 px-3 pb-2">
+            <select
+              value={railSort}
+              onChange={(e) => setRailSort(e.target.value)}
+              aria-label="Sort sessions"
+              className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-muted-foreground outline-none focus-visible:border-ring"
+            >
+              {RAIL_SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  Sort: {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-            {sessions.map((s) => (
+            {railSessions.map((s) => (
               <label
                 key={s.id}
                 className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
@@ -446,10 +469,13 @@ export function PtyBroadcastPage({
   );
 }
 
-/** Short local time for a run header (HH:MM:SS). */
+/** Run-header timestamp as `YYYY-MM-DD HH:MM:SS UTC` (B4). */
 function formatRunTime(ts: string): string {
   const d = new Date(ts);
-  return Number.isNaN(d.getTime())
-    ? ts
-    : d.toLocaleTimeString(undefined, { hour12: false });
+  if (Number.isNaN(d.getTime())) return ts;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ` +
+    `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`
+  );
 }
