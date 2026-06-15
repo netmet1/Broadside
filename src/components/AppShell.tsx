@@ -39,6 +39,12 @@ const NAV_ITEMS: {
     hint: "Manage SSH connection targets and credentials",
   },
   {
+    page: "terminals",
+    label: "Terminals",
+    icon: TerminalIcon,
+    hint: "Interactive terminal sessions, one tab per host",
+  },
+  {
     page: "broadcast",
     label: "Broadcast",
     icon: RadioTowerIcon,
@@ -49,12 +55,6 @@ const NAV_ITEMS: {
     label: "PTY Broadcast",
     icon: CastIcon,
     hint: "Type one command into every open terminal session",
-  },
-  {
-    page: "terminals",
-    label: "Terminals",
-    icon: TerminalIcon,
-    hint: "Interactive terminal sessions, one tab per host",
   },
   {
     page: "omniterminal",
