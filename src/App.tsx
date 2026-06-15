@@ -122,6 +122,13 @@ function App() {
     return ids;
   }, [sessions, connectedSessions]);
 
+  // Hosts with at least one open terminal tab (connected or not) — drives the
+  // "already open" guard rails on the Hosts page (H7/H8).
+  const openHostIds = useMemo(
+    () => new Set(sessions.map((s) => s.host.id)),
+    [sessions],
+  );
+
   return (
     <StatusProvider>
       <UiPrefsProvider>
@@ -136,6 +143,7 @@ function App() {
           onOpenTerminals={openTerminals}
           onTerminateHost={terminateHost}
           connectedHostIds={connectedHostIds}
+          openHostIds={openHostIds}
         />
       )}
       {/* Broadcast stays mounted so output and host selection survive
