@@ -10,6 +10,7 @@ export type RowPreview = {
   username: string;
   /** Hex color, or the literal "#auto" for app-side palette picking. */
   color: string;
+  tag: string | null;
   linux_flavor: string | null;
   notes: string | null;
   status: RowStatus;
@@ -22,6 +23,7 @@ export type ImportHostInput = {
   port: number;
   username: string;
   color: string;
+  tag: string | null;
   linux_flavor: string | null;
   notes: string | null;
 };

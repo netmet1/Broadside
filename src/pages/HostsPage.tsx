@@ -69,6 +69,16 @@ const MIN_COL_W = 56;
 // resets on app restart (sessionStorage clears when the window closes).
 const SORT_STORAGE_KEY = "hosts-sort";
 
+/** Local-time `YYYYMMDD-HHMMSS` stamp for default export filenames (H6). */
+function dtStamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` +
+    `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+  );
+}
+
 /** A clickable column header that toggles sorting on `sortKey` and shows the
  * current direction. */
 function SortHeader({
@@ -319,7 +329,7 @@ export function HostsPage({
     try {
       const path = await saveDialog({
         title: "Export hosts",
-        defaultPath: "hosts.csv",
+        defaultPath: `${dtStamp()}-omniterminal-hosts.csv`,
         filters: [
           { name: "CSV", extensions: ["csv"] },
           { name: "Excel workbook", extensions: ["xlsx"] },

@@ -7,12 +7,13 @@ use std::path::Path;
 use crate::db::hosts::Host;
 use crate::error::{AppError, AppResult};
 
-pub const EXPORT_HEADERS: [&str; 7] = [
+pub const EXPORT_HEADERS: [&str; 8] = [
     "label",
     "hostname",
     "port",
     "username",
     "color",
+    "tag",
     "linux_flavor",
     "notes",
 ];
@@ -45,6 +46,7 @@ pub fn write_hosts_xlsx(hosts: &[Host], path: &Path) -> AppResult<()> {
             &h.port.to_string(),
             h.username.as_str(),
             h.color.as_str(),
+            h.tag.as_deref().unwrap_or(""),
             h.linux_flavor.as_deref().unwrap_or(""),
             h.notes.as_deref().unwrap_or(""),
         ];
@@ -72,6 +74,7 @@ pub fn write_hosts_csv(hosts: &[Host], path: &Path) -> AppResult<()> {
             &h.port.to_string(),
             h.username.as_str(),
             h.color.as_str(),
+            h.tag.as_deref().unwrap_or(""),
             h.linux_flavor.as_deref().unwrap_or(""),
             h.notes.as_deref().unwrap_or(""),
         ])
@@ -115,14 +118,14 @@ mod tests {
         let mut lines = text.lines();
         assert_eq!(
             lines.next().unwrap(),
-            "label,hostname,port,username,color,linux_flavor,notes"
+            "label,hostname,port,username,color,tag,linux_flavor,notes"
         );
         assert_eq!(
             lines.next().unwrap(),
-            "web-01,10.0.0.1,22,ops,#3b82f6,ubuntu,primary"
+            "web-01,10.0.0.1,22,ops,#3b82f6,,ubuntu,primary"
         );
         // Empty optionals export as empty cells, not literal "None".
-        assert_eq!(lines.next().unwrap(), "web-02,10.0.0.1,22,ops,#3b82f6,ubuntu,");
+        assert_eq!(lines.next().unwrap(), "web-02,10.0.0.1,22,ops,#3b82f6,,ubuntu,");
         assert_eq!(lines.next(), None);
     }
 

@@ -310,27 +310,38 @@ fn error_rows_do_not_claim_labels() {
 }
 
 #[test]
-fn duplicate_hostname_against_db_and_within_file() {
+fn duplicate_endpoint_tuple_against_db_and_within_file() {
+    // A duplicate is the same (hostname, port, username) endpoint; differing
+    // port OR username is a distinct host (H5).
     let existing_labels = HashSet::new();
-    let mut existing_hostnames = HashSet::new();
-    existing_hostnames.insert("10.0.0.1".to_string());
-    let out = validate_rows_with_hostnames(
+    let mut existing = HashSet::new();
+    existing.insert(endpoint_key("10.0.0.1", 22, "root"));
+    let row = |label: &str, host: &str, user: &str, port: &str| {
+        let mut r = raw(label, host, user);
+        r.port = port.into();
+        r
+    };
+    let out = validate_rows_with_endpoints(
         &existing_labels,
-        &existing_hostnames,
+        &existing,
         vec![
-            raw("a", "10.0.0.1", "root"),         // IP already in the DB
-            raw("b", "10.0.0.2", "root"),         // fine
-            raw("c", "10.0.0.2", "root"),         // IP repeated within the file
-            raw("d", "HOST.example.com", "root"), // fine
-            raw("e", "host.example.com", "root"), // case-insensitive duplicate
+            row("a", "10.0.0.1", "root", "22"), // same endpoint as DB -> dup
+            row("b", "10.0.0.1", "root", "2222"), // same host, diff port -> ok
+            row("c", "10.0.0.1", "deploy", "22"), // same host+port, diff user -> ok
+            row("d", "10.0.0.2", "root", ""),   // distinct -> ok (port defaults to 22)
+            row("e", "10.0.0.2", "root", ""),   // repeat of d within the file -> dup
+            row("f", "HOST.example.com", "root", "22"), // ok
+            row("g", "host.example.com", "root", "22"), // case-insensitive host dup of f
         ],
     );
     assert_eq!(out[0].status, RowStatus::Duplicate);
-    assert!(out[0].message.as_ref().unwrap().contains("hostname"));
+    assert!(out[0].message.as_ref().unwrap().contains("already exists"));
     assert_eq!(out[1].status, RowStatus::Ready);
-    assert_eq!(out[2].status, RowStatus::Duplicate);
+    assert_eq!(out[2].status, RowStatus::Ready);
     assert_eq!(out[3].status, RowStatus::Ready);
     assert_eq!(out[4].status, RowStatus::Duplicate);
+    assert_eq!(out[5].status, RowStatus::Ready);
+    assert_eq!(out[6].status, RowStatus::Duplicate);
 }
 
 #[test]
