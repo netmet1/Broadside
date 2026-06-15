@@ -89,12 +89,12 @@ function SortHeader({
     <button
       type="button"
       onClick={() => onSort(sortKey)}
-      className="-mx-1 flex items-center gap-1 rounded px-1 py-0.5 hover:text-foreground"
+      className="-mx-1 flex min-w-0 max-w-full items-center gap-2 rounded px-1 py-0.5 hover:text-foreground"
       aria-label={`Sort by ${label}`}
     >
-      {label}
+      <span className="truncate">{label}</span>
       <Icon
-        className={`h-3 w-3 ${active ? "text-foreground" : "text-muted-foreground/50"}`}
+        className={`h-3 w-3 shrink-0 ${active ? "text-foreground" : "text-muted-foreground/50"}`}
       />
     </button>
   );
@@ -358,6 +358,7 @@ export function HostsPage({
   if (formOpen) {
     return (
       <HostFormPanel
+        key={editing?.id ?? "new"}
         host={editing}
         defaultColor={defaultColor}
         existingHosts={hosts}
