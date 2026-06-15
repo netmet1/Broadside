@@ -72,3 +72,28 @@ export async function errorLogTail(maxLines: number): Promise<ErrorEntry[]> {
 export function clearErrorLog(): Promise<number> {
   return invoke<number>("clear_error_log");
 }
+
+/** Copies the audit log to `dest` (LG3). Returns bytes written. */
+export function exportAuditLog(dest: string): Promise<number> {
+  return invoke<number>("export_audit_log", { dest });
+}
+
+/** Copies the error log to `dest` (LG4). Returns bytes written. */
+export function exportErrorLog(dest: string): Promise<number> {
+  return invoke<number>("export_error_log", { dest });
+}
+
+/** Loads an exported error-log (.jsonl) file as parsed entries (LG5). */
+export async function loadErrorLogFile(path: string): Promise<ErrorEntry[]> {
+  const lines = await invoke<string[]>("read_log_lines", { path });
+  const entries: ErrorEntry[] = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      entries.push(JSON.parse(line) as ErrorEntry);
+    } catch {
+      entries.push({ ts: "", source: "?", message: line });
+    }
+  }
+  return entries;
+}
