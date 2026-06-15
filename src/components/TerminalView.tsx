@@ -10,6 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
+import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +39,20 @@ export type TerminalSearchHandle = {
   clearSearch: () => void;
   focusTerminal: () => void;
 };
+
+/** xterm colours pulled from the theme-aware CSS variables (S1) so the terminal
+ * matches the app theme and the pane container. */
+function readTerminalTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) =>
+    cs.getPropertyValue(name).trim() || fallback;
+  return {
+    background: v("--terminal-bg", "#0a0a0a"),
+    foreground: v("--terminal-fg", "#e5e5e5"),
+    cursor: v("--terminal-cursor", "#e5e5e5"),
+    selectionBackground: v("--terminal-selection", "#3b82f680"),
+  };
+}
 
 type Phase =
   | { kind: "connecting" }
@@ -92,6 +107,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
   const { prefs } = useUiPrefs();
+  const { resolvedTheme } = useTheme();
   // Read once at terminal creation; live changes are applied by the
   // prefs effect below without recreating the terminal.
   const prefsRef = useRef(prefs);
@@ -113,12 +129,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       fontFamily: prefsRef.current.terminalFontFamily,
       fontSize: prefsRef.current.terminalFontSize,
       cursorBlink: true,
-      theme: {
-        background: "#0a0a0a",
-        foreground: "#e5e5e5",
-        cursor: "#e5e5e5",
-        selectionBackground: "#3b82f680",
-      },
+      theme: readTerminalTheme(),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -307,6 +318,13 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       if (containerRef.current?.offsetParent) fitRef.current?.fit();
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
+
+  // Re-theme the live terminal when the app theme changes (S1). The CSS vars
+  // recompute from the html class, so re-reading them gives the new colours.
+  useEffect(() => {
+    const term = termRef.current;
+    if (term) term.options.theme = readTerminalTheme();
+  }, [resolvedTheme]);
 
   // Refit + focus when this pane becomes visible.
   useEffect(() => {

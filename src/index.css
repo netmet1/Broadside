@@ -84,6 +84,14 @@
     --sidebar-ring: oklch(0.708 0 0);
     /* Status bar sits a shade off the main background so it reads as chrome. */
     --statusbar: oklch(0.97 0 0);
+    /* Terminal pane colours (xterm + the pane container) — light theme. */
+    --terminal-bg: #ffffff;
+    --terminal-fg: #1f2328;
+    --terminal-cursor: #1f2328;
+    --terminal-selection: #3b82f640;
+    /* Scrollbar thumb (theme-aware). */
+    --scrollbar-thumb: oklch(0 0 0 / 22%);
+    --scrollbar-thumb-hover: oklch(0 0 0 / 35%);
 }
 
 .dark {
@@ -120,6 +128,13 @@
     --sidebar-ring: oklch(0.556 0 0);
     /* A tiny bit lighter than the 0.145 background (user-requested). */
     --statusbar: oklch(0.185 0 0);
+    /* Terminal pane colours — dark theme (the original look). */
+    --terminal-bg: #0a0a0a;
+    --terminal-fg: #e5e5e5;
+    --terminal-cursor: #e5e5e5;
+    --terminal-selection: #3b82f680;
+    --scrollbar-thumb: oklch(1 0 0 / 18%);
+    --scrollbar-thumb-hover: oklch(1 0 0 / 30%);
 }
 
 @layer base {
@@ -159,10 +174,10 @@
     display: none;
   }
 
-  /* Custom narrow scrollbars throughout the app. */
+  /* Custom narrow scrollbars throughout the app (theme-aware). */
   * {
     scrollbar-width: thin;
-    scrollbar-color: oklch(1 0 0 / 18%) transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
   *::-webkit-scrollbar {
     width: 8px;
@@ -172,10 +187,10 @@
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
-    background-color: oklch(1 0 0 / 18%);
+    background-color: var(--scrollbar-thumb);
     border-radius: 4px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background-color: oklch(1 0 0 / 30%);
+    background-color: var(--scrollbar-thumb-hover);
   }
 }

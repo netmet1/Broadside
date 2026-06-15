@@ -141,7 +141,7 @@ export function AppShell({
   };
 
   return (
-    <div className="dark flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <div className="flex min-h-0 flex-1">
         <aside
           className={cn(

@@ -351,7 +351,7 @@ export function TerminalsPage({
         />
       )}
 
-      <div className="relative min-h-0 flex-1 bg-[#0a0a0a] p-2">
+      <div className="relative min-h-0 flex-1 bg-[var(--terminal-bg)] p-2">
         {sessions.map((s) => (
           <div
             key={s.id}
