@@ -4,7 +4,7 @@ use tauri::State;
 use super::ssh::with_db;
 use crate::audit::AuditState;
 use crate::db::{settings, DbState};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 #[derive(Serialize)]
 pub struct AuditInfo {
@@ -28,6 +28,16 @@ pub fn audit_tail(
     audit: State<'_, AuditState>,
 ) -> AppResult<Vec<String>> {
     audit.tail(max_lines.clamp(1, 10_000))
+}
+
+/// Copies the audit log to `dest` for forensics/sharing (LG3). Returns bytes.
+#[tauri::command]
+pub fn export_audit_log(dest: String, audit: State<'_, AuditState>) -> AppResult<u64> {
+    let src = audit.path();
+    if !src.exists() {
+        return Err(AppError::InvalidInput("no audit log to export yet".into()));
+    }
+    Ok(std::fs::copy(&src, &dest)?)
 }
 
 /// Toggles the rolling audit log (D-011) and persists the choice.
