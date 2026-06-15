@@ -423,7 +423,7 @@ export function HostFormPanel({
         onSubmit={onSubmit}
         className="flex-1 overflow-auto px-8 py-6"
       >
-        <div className="grid max-w-4xl grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2">
+        <div className="grid max-w-4xl grid-cols-1 gap-x-8 gap-y-4 rounded-xl border border-border/50 bg-muted/20 p-5 md:grid-cols-2">
           <div className="grid gap-1">
             <Label htmlFor="label">Label</Label>
             <Input id="label" {...register("label")} placeholder="web-01" autoFocus />
@@ -572,7 +572,7 @@ export function HostFormPanel({
           </div>
         </div>
 
-        <div className="mt-8 max-w-4xl pt-5">
+        <div className="mt-6 max-w-4xl rounded-xl border border-border/50 bg-muted/20 p-5">
           <div className="mb-3 flex items-center justify-between">
             <Label className="text-sm font-semibold">Credentials</Label>
             {isEdit && !editingCredentials && (
@@ -718,6 +718,10 @@ export function HostFormPanel({
                         )}
                       </button>
                     </div>
+                    {/* Empty error placeholder so this cell matches the Key
+                        file cell's height — otherwise the 2-col grid stretches
+                        this cell and the input drifts down (H13). */}
+                    <p className="min-h-4 text-xs" aria-hidden="true">&nbsp;</p>
                   </div>
                 </div>
               )}
@@ -725,7 +729,7 @@ export function HostFormPanel({
           )}
         </div>
 
-        <div className="mt-8 max-w-4xl pt-5">
+        <div className="mt-6 max-w-4xl rounded-xl border border-border/50 bg-muted/20 p-5">
           <div className="mb-3 flex items-center justify-between">
             <Label className="text-sm font-semibold">
               Sudo password{" "}
