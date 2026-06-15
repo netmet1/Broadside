@@ -29,6 +29,7 @@ import {
   onBroadcastResult,
 } from "@/lib/tauri/broadcast";
 import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
+import { RAIL_SORT_OPTIONS, sortForRail } from "@/lib/railSort";
 import {
   clearCommandHistory,
   commandHistory,
@@ -330,6 +331,13 @@ export function BroadcastPage({
     };
   })();
 
+  // Rail sort order (B3). Component stays mounted so this survives tab switches.
+  const [railSort, setRailSort] = useState("az");
+  const railHosts = useMemo(
+    () => sortForRail(hosts, (h) => h, railSort),
+    [hosts, railSort],
+  );
+
   const allSelected = hosts.length > 0 && selected.size === hosts.length;
   const toggleAll = () => {
     setSelected(allSelected ? new Set() : new Set(hosts.map((h) => h.id)));
@@ -556,8 +564,23 @@ export function BroadcastPage({
             {selected.size}/{hosts.length}
           </span>
         </label>
+        {/* Sort-by dropdown for the host list (B3). */}
+        <div className="shrink-0 px-3 pb-2">
+          <select
+            value={railSort}
+            onChange={(e) => setRailSort(e.target.value)}
+            aria-label="Sort hosts"
+            className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-muted-foreground outline-none focus-visible:border-ring"
+          >
+            {RAIL_SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                Sort: {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          {hosts.map((h) => (
+          {railHosts.map((h) => (
             <label
               key={h.id}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
@@ -786,12 +809,15 @@ export function BroadcastPage({
   );
 }
 
-/** Short local time for a run header (HH:MM:SS). */
+/** Run-header timestamp as `YYYY-MM-DD HH:MM:SS UTC` (B4). */
 function formatRunTime(ts: string): string {
   const d = new Date(ts);
-  return Number.isNaN(d.getTime())
-    ? ts
-    : d.toLocaleTimeString(undefined, { hour12: false });
+  if (Number.isNaN(d.getTime())) return ts;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ` +
+    `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`
+  );
 }
 
 function statusSummary(result: ExecResult): {
