@@ -18,6 +18,16 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -118,6 +128,7 @@ export function HostsPage({
   onOpenTerminals,
   onTerminateHost,
   connectedHostIds,
+  openHostIds,
 }: {
   onOpenTerminal: (host: Host) => void;
   /** Open terminal tabs for several hosts at once (multi-select). */
@@ -126,6 +137,8 @@ export function HostsPage({
   onTerminateHost: (hostId: number) => void;
   /** Hosts with at least one live terminal session. */
   connectedHostIds: Set<number>;
+  /** Hosts with at least one open terminal tab (for the already-open guards). */
+  openHostIds: Set<number>;
 }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
@@ -276,11 +289,51 @@ export function HostsPage({
     setSelectedIds(
       allDisplayedSelected ? new Set() : new Set(sortedHosts.map((h) => h.id)),
     );
+  // H7: opening a single host that already has a terminal asks first.
+  const [reopenConfirm, setReopenConfirm] = useState<Host | null>(null);
+  const handleOpenTerminal = (host: Host) => {
+    if (openHostIds.has(host.id)) {
+      setReopenConfirm(host);
+    } else {
+      onOpenTerminal(host);
+    }
+  };
+
+  // H8: Multi-terminal warns about the already-open hosts; the user keeps the
+  // ones they want duplicated checked and unchecks the rest.
+  const [multiDup, setMultiDup] = useState<{
+    chosen: Host[];
+    dups: Host[];
+    checked: Set<number>;
+  } | null>(null);
   const openSelectedTerminals = () => {
     const chosen = hosts.filter((h) => selectedIds.has(h.id));
     if (chosen.length === 0) return;
-    onOpenTerminals(chosen);
+    const dups = chosen.filter((h) => openHostIds.has(h.id));
+    if (dups.length === 0) {
+      onOpenTerminals(chosen);
+      setSelectedIds(new Set());
+      return;
+    }
+    setMultiDup({ chosen, dups, checked: new Set(dups.map((h) => h.id)) });
+  };
+  const toggleDup = (id: number) =>
+    setMultiDup((prev) => {
+      if (!prev) return prev;
+      const checked = new Set(prev.checked);
+      if (checked.has(id)) checked.delete(id);
+      else checked.add(id);
+      return { ...prev, checked };
+    });
+  const confirmMulti = () => {
+    if (!multiDup) return;
+    // Open every host that isn't already open, plus the duplicates still checked.
+    const toOpen = multiDup.chosen.filter(
+      (h) => !openHostIds.has(h.id) || multiDup.checked.has(h.id),
+    );
+    if (toOpen.length > 0) onOpenTerminals(toOpen);
     setSelectedIds(new Set());
+    setMultiDup(null);
   };
 
   usePageStatus(
@@ -575,7 +628,7 @@ export function HostsPage({
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      onClick={() => onOpenTerminal(h)}
+                      onClick={() => handleOpenTerminal(h)}
                       aria-label="Open terminal"
                       {...hint(`Open an interactive terminal tab on ${h.label}`)}
                     >
@@ -670,6 +723,78 @@ export function HostsPage({
         presented={mismatch?.presented ?? null}
         onTrusted={runTest}
       />
+
+      {/* H7: opening a single host that already has a terminal asks first. */}
+      <AlertDialog
+        open={reopenConfirm !== null}
+        onOpenChange={(o) => !o && setReopenConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Terminal already open</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold text-foreground">
+                {reopenConfirm?.label}
+              </span>{" "}
+              already has an open terminal tab. Open another one?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (reopenConfirm) onOpenTerminal(reopenConfirm);
+                setReopenConfirm(null);
+              }}
+            >
+              Open another
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* H8: Multi-terminal — pick which already-open hosts to duplicate. */}
+      <AlertDialog
+        open={multiDup !== null}
+        onOpenChange={(o) => !o && setMultiDup(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Some hosts are already open</AlertDialogTitle>
+            <AlertDialogDescription>
+              These already have an open terminal. Keep the ones you want to open
+              a duplicate of checked; uncheck the rest. Other selected hosts open
+              as usual.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-60 space-y-1 overflow-auto py-1">
+            {multiDup?.dups.map((h) => (
+              <label
+                key={h.id}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-primary"
+                  checked={multiDup.checked.has(h.id)}
+                  onChange={() => toggleDup(h.id)}
+                />
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: h.color }}
+                />
+                <span className="min-w-0 truncate">{h.label}</span>
+              </label>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmMulti}>
+              Open terminals
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
