@@ -25,6 +25,7 @@ pub struct RawRow {
     pub username: String,
     pub port: String,
     pub color: String,
+    pub tag: String,
     pub linux_flavor: String,
     pub notes: String,
 }
@@ -49,6 +50,7 @@ pub struct RowPreview {
     pub username: String,
     /// Hex color, or the literal `#auto` for app-side palette picking.
     pub color: String,
+    pub tag: Option<String>,
     pub linux_flavor: Option<String>,
     pub notes: Option<String>,
     pub status: RowStatus,
@@ -62,6 +64,7 @@ struct ColumnMap {
     username: usize,
     port: Option<usize>,
     color: Option<usize>,
+    tag: Option<usize>,
     linux_flavor: Option<usize>,
     notes: Option<usize>,
 }
@@ -86,6 +89,7 @@ impl ColumnMap {
             username: required("username")?,
             port: find("port"),
             color: find("color"),
+            tag: find("tag"),
             linux_flavor: find("linux_flavor"),
             notes: find("notes"),
         })
@@ -104,6 +108,7 @@ impl ColumnMap {
             username: cell(Some(self.username)),
             port: cell(self.port),
             color: cell(self.color),
+            tag: cell(self.tag),
             linux_flavor: cell(self.linux_flavor),
             notes: cell(self.notes),
         }
@@ -193,31 +198,41 @@ fn parse_xlsx(path: &Path) -> AppResult<Vec<RawRow>> {
     Ok(rows)
 }
 
+/// Composite endpoint key for duplicate detection: a host is "the same" only
+/// when hostname (case-insensitive), port AND username all match (H5, 2026-06-15
+/// — supersedes the hostname-only dedup). Username is case-sensitive (Linux
+/// usernames are). Callers build this for existing DB hosts; the importer builds
+/// the same key per row.
+pub fn endpoint_key(hostname: &str, port: u16, username: &str) -> String {
+    format!("{}|{}|{}", hostname.to_ascii_lowercase(), port, username)
+}
+
 /// Validates raw rows against the same rules as the host form (D-025) plus
 /// duplicate-label detection against `existing_labels` and earlier rows.
 pub fn validate_rows(existing_labels: &HashSet<String>, rows: Vec<RawRow>) -> Vec<RowPreview> {
     validate_inner(existing_labels, None, rows)
 }
 
-/// Like `validate_rows`, but also rejects rows whose hostname/IP already
-/// belongs to another host — in the DB (`existing_hostnames`, lowercased) or
-/// earlier in the same file. Used by import so one IP can't be assigned to two
-/// hosts (2026-06-13 request). Hostname matching is case-insensitive.
-pub fn validate_rows_with_hostnames(
+/// Like `validate_rows`, but also rejects rows whose (hostname, port, username)
+/// endpoint already belongs to another host — in the DB (`existing_endpoints`,
+/// keyed via [`endpoint_key`]) or earlier in the same file. Used by import so
+/// the same connection can't be added twice; differing port or username is a
+/// distinct host and imports normally (H5).
+pub fn validate_rows_with_endpoints(
     existing_labels: &HashSet<String>,
-    existing_hostnames: &HashSet<String>,
+    existing_endpoints: &HashSet<String>,
     rows: Vec<RawRow>,
 ) -> Vec<RowPreview> {
-    validate_inner(existing_labels, Some(existing_hostnames), rows)
+    validate_inner(existing_labels, Some(existing_endpoints), rows)
 }
 
 fn validate_inner(
     existing_labels: &HashSet<String>,
-    existing_hostnames: Option<&HashSet<String>>,
+    existing_endpoints: Option<&HashSet<String>>,
     rows: Vec<RawRow>,
 ) -> Vec<RowPreview> {
     let mut seen_labels: HashSet<String> = HashSet::new();
-    let mut seen_hostnames: HashSet<String> = HashSet::new();
+    let mut seen_endpoints: HashSet<String> = HashSet::new();
     rows.into_iter()
         .map(|row| {
             let preview = validate_row(&row);
@@ -232,20 +247,21 @@ fn validate_inner(
                     ..preview
                 };
             }
-            // Hostname dedup only when the caller opts in (import does).
-            let host_key = preview.hostname.to_ascii_lowercase();
-            if let Some(existing) = existing_hostnames {
-                if existing.contains(&host_key) || seen_hostnames.contains(&host_key) {
+            // Endpoint (hostname+port+username) dedup, only when the caller
+            // opts in (import does). Differing port or username = distinct.
+            let key = endpoint_key(&preview.hostname, preview.port, &preview.username);
+            if let Some(existing) = existing_endpoints {
+                if existing.contains(&key) || seen_endpoints.contains(&key) {
                     return RowPreview {
                         status: RowStatus::Duplicate,
                         message: Some(format!(
-                            "skipped — hostname \"{}\" is already assigned to another host",
-                            preview.hostname
+                            "skipped — {}@{}:{} already exists",
+                            preview.username, preview.hostname, preview.port
                         )),
                         ..preview
                     };
                 }
-                seen_hostnames.insert(host_key);
+                seen_endpoints.insert(key);
             }
             seen_labels.insert(label);
             preview
@@ -261,6 +277,7 @@ fn validate_row(row: &RawRow) -> RowPreview {
         port: 22,
         username: row.username.clone(),
         color: row.color.clone(),
+        tag: (!row.tag.is_empty()).then(|| row.tag.clone()),
         linux_flavor: None,
         notes: (!row.notes.is_empty()).then(|| row.notes.clone()),
         status: RowStatus::Ready,
