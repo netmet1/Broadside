@@ -206,6 +206,7 @@ export function PtyBroadcastPage({
         return;
       }
       dispatch(cmd);
+      setCommand(""); // clear the composer after sending (P2)
     },
     [command, selected, sending, dispatch],
   );
@@ -403,7 +404,7 @@ export function PtyBroadcastPage({
               value={command}
               onChange={setCommand}
               onSubmit={send}
-              disabled={sending || sessions.length === 0}
+              disabled={sessions.length === 0}
               history={history}
               placeholder={
                 sessions.length === 0
@@ -436,7 +437,10 @@ export function PtyBroadcastPage({
           .filter((s) => selected.has(s.id))
           .map((s) => s.host.label)
           .sort()}
-        onConfirmed={() => dispatch(command.trim())}
+        onConfirmed={() => {
+          dispatch(command.trim());
+          setCommand("");
+        }}
       />
     </div>
   );
