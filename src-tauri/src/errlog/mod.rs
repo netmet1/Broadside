@@ -25,6 +25,9 @@ const DEFAULT_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub struct ErrorEvent {
     /// Where the failure happened: `test_connection`, `broadcast`, `pty_open`.
     pub source: String,
+    /// Host id for live colour-tinting in the viewer (LG2); None for old rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_id: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host_label: Option<String>,
     pub message: String,
@@ -85,9 +88,16 @@ impl ErrLogState {
     }
 
     /// Convenience used at the failure sites.
-    pub fn log(&self, source: &str, host_label: Option<&str>, message: &str) {
+    pub fn log(
+        &self,
+        source: &str,
+        host_id: Option<i64>,
+        host_label: Option<&str>,
+        message: &str,
+    ) {
         let _ = self.append(&ErrorEvent {
             source: source.to_string(),
+            host_id,
             host_label: host_label.map(|s| s.to_string()),
             message: message.to_string(),
         });
@@ -131,7 +141,12 @@ mod tests {
     fn append_writes_jsonl_with_ts_source_and_label() {
         let dir = TempDir::new().unwrap();
         let log = ErrLogState::new(dir.path().into());
-        log.log("test_connection", Some("web-01"), "unreachable — timed out");
+        log.log(
+            "test_connection",
+            Some(1),
+            Some("web-01"),
+            "unreachable — timed out",
+        );
         let lines = log.tail(10).unwrap();
         assert_eq!(lines.len(), 1);
         let v: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
@@ -145,7 +160,7 @@ mod tests {
     fn label_omitted_when_none() {
         let dir = TempDir::new().unwrap();
         let log = ErrLogState::new(dir.path().into());
-        log.log("broadcast", None, "boom");
+        log.log("broadcast", None, None, "boom");
         let v: serde_json::Value =
             serde_json::from_str(&log.tail(1).unwrap()[0]).unwrap();
         assert!(v.get("host_label").is_none());
@@ -155,7 +170,7 @@ mod tests {
     fn clear_removes_files_and_tail_is_empty() {
         let dir = TempDir::new().unwrap();
         let log = ErrLogState::new(dir.path().into());
-        log.log("pty_open", Some("db-01"), "auth failed");
+        log.log("pty_open", Some(2), Some("db-01"), "auth failed");
         assert_eq!(log.tail(10).unwrap().len(), 1);
         assert_eq!(log.clear().unwrap(), 1);
         assert!(log.tail(10).unwrap().is_empty());
@@ -166,7 +181,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let log = ErrLogState::new(dir.path().into());
         for n in 0..20 {
-            log.log("broadcast", None, &format!("err {n}"));
+            log.log("broadcast", None, None, &format!("err {n}"));
         }
         let lines = log.tail(5).unwrap();
         assert_eq!(lines.len(), 5);

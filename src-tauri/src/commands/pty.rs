@@ -34,7 +34,12 @@ pub async fn pty_open(
         Some(a) => a,
         None => {
             // D-055 amendment (2026-06-13): no-credentials is a logged failure.
-            errlog.log("pty_open", Some(&host.label), "no credentials stored");
+            errlog.log(
+                "pty_open",
+                Some(host.id),
+                Some(&host.label),
+                "no credentials stored",
+            );
             return Ok(PtyOpenResult::NoCredentials);
         }
     };
@@ -63,16 +68,19 @@ pub async fn pty_open(
         // Failures that toast also persist to the error log (D-055).
         PtyOpenResult::AuthFailed { message } => errlog.log(
             "pty_open",
+            Some(host.id),
             Some(&host.label),
             &format!("authentication failed — {message}"),
         ),
         PtyOpenResult::Unreachable { message } => errlog.log(
             "pty_open",
+            Some(host.id),
             Some(&host.label),
             &format!("unreachable — {message}"),
         ),
         PtyOpenResult::KeyMismatch { .. } => errlog.log(
             "pty_open",
+            Some(host.id),
             Some(&host.label),
             "host key mismatch — connection refused",
         ),
