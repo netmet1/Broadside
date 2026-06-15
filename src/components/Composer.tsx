@@ -203,7 +203,10 @@ export function Composer({
         autoCapitalize="off"
         spellCheck={false}
         className={cn(
-          "block max-h-[12rem] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 font-mono text-sm leading-5 shadow-xs outline-none transition-colors",
+          // min-h-10 keeps the empty box a comfortable single line tall so the
+          // smooth caret never pokes out below it before the first command
+          // (B1/P1 — auto-resize can briefly under-measure on mount/font-load).
+          "block min-h-10 max-h-[12rem] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 font-mono text-sm leading-5 shadow-xs outline-none transition-colors",
           "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
           "disabled:cursor-not-allowed disabled:opacity-50",
           "[caret-color:transparent]",

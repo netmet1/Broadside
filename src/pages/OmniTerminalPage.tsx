@@ -447,7 +447,7 @@ export function OmniTerminalPage({
               value={command}
               onChange={setCommand}
               onSubmit={send}
-              disabled={!ready || sending}
+              disabled={!ready}
               history={history}
               placeholder={
                 !ready

@@ -430,6 +430,7 @@ export function BroadcastPage({
         return;
       }
       runBroadcast([...selected], cmd, false);
+      setCommand(""); // clear the composer after sending (B2)
     },
     [command, selected, running, parsedTimeout, runBroadcast],
   );
@@ -705,7 +706,6 @@ export function BroadcastPage({
             value={command}
             onChange={setCommand}
             onSubmit={send}
-            disabled={running}
             history={history}
             placeholder={
               selected.size === 0
@@ -755,7 +755,10 @@ export function BroadcastPage({
         hostLabels={[...selected]
           .map((id) => hostsById.get(id)?.label ?? `#${id}`)
           .sort()}
-        onConfirmed={() => runBroadcast([...selected], command.trim(), true)}
+        onConfirmed={() => {
+          runBroadcast([...selected], command.trim(), true);
+          setCommand("");
+        }}
       />
 
       <BatchTofuDialog
