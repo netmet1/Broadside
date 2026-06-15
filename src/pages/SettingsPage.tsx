@@ -435,7 +435,10 @@ export function SettingsPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-10 p-6 pb-16">
-      <div className="flex items-center justify-between gap-4">
+      {/* Sticky header (S2): the jump-to dropdown + search stay pinned to the
+          top of the tab while the sections scroll. -mx-6/px-6 lets the
+          background span the page padding so content doesn't peek at the edges. */}
+      <div className="sticky top-0 z-20 -mx-6 -mt-6 flex items-center justify-between gap-4 border-b border-border/50 bg-background px-6 py-3">
         <h1 className="font-heading text-lg font-semibold">Settings</h1>
         <div className="flex items-center gap-2">
           <Select value="" onValueChange={goToSection}>
