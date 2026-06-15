@@ -146,6 +146,40 @@ function emptyValues(defaultColor: string): FormValues {
   };
 }
 
+/** Map a stored linux_flavor to a dropdown option value, case-insensitively
+ * (imported values may differ in case); unknown non-empty values fall to
+ * "other" so the field still reflects "has a flavor". */
+function normalizeFlavor(f: string | null): string {
+  if (!f || !f.trim()) return "__none__";
+  const match = FLAVOR_OPTIONS.find(
+    (o) => o.value !== "__none__" && o.value.toLowerCase() === f.trim().toLowerCase(),
+  );
+  return match ? match.value : "other";
+}
+
+/** Initial form values for a host (or a blank form when null). Used as the
+ * form's defaultValues so controlled fields (the flavor Select) populate
+ * correctly on mount — the panel is remounted per host via a React key. */
+function valuesFromHost(host: Host | null, defaultColor: string): FormValues {
+  if (!host) return emptyValues(defaultColor);
+  return {
+    label: host.label,
+    hostname: host.hostname,
+    port: host.port,
+    username: host.username,
+    color: host.color,
+    tag: host.tag ?? "",
+    linux_flavor: normalizeFlavor(host.linux_flavor),
+    notes: host.notes ?? "",
+    authMethod: (host.auth_method as "password" | "key" | null) ?? "none",
+    password: "",
+    keyPath: host.key_path ?? "",
+    keyPassphrase: "",
+    sudoPassword: "",
+    sudoSameAsLogin: false,
+  };
+}
+
 type Props = {
   host: Host | null;
   defaultColor: string;
@@ -189,7 +223,7 @@ export function HostFormPanel({
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: emptyValues(defaultColor),
+    defaultValues: valuesFromHost(host, defaultColor),
   });
 
   // Distinct tags already in use, for the form's autocomplete (so you don't
@@ -213,27 +247,7 @@ export function HostFormPanel({
     setShowKeyPassphrase(false);
     setShowSudoPassword(false);
     setSudoAction("keep");
-    if (host) {
-      reset({
-        label: host.label,
-        hostname: host.hostname,
-        port: host.port,
-        username: host.username,
-        color: host.color,
-        tag: host.tag ?? "",
-        linux_flavor: host.linux_flavor ?? "__none__",
-        notes: host.notes ?? "",
-        authMethod:
-          (host.auth_method as "password" | "key" | null) ?? "none",
-        password: "",
-        keyPath: host.key_path ?? "",
-        keyPassphrase: "",
-        sudoPassword: "",
-        sudoSameAsLogin: false,
-      });
-    } else {
-      reset(emptyValues(defaultColor));
-    }
+    reset(valuesFromHost(host, defaultColor));
   }, [host, defaultColor, reset]);
 
   // Signal AppShell to blur the sidebar while this panel is mounted.
