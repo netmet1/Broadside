@@ -55,6 +55,13 @@ type Tab = "session" | "audit" | "history" | "errors";
 const HOST_UNKNOWN_COLOR = "#6b7280";
 const MAX_HISTORY_HOSTS = 8;
 
+/** Human label for a command's source (LG1). */
+const SOURCE_LABEL: Record<string, string> = {
+  broadcast: "Broadcast",
+  ptybroadcast: "PTY Broadcast",
+  omniterminal: "OmniTerminal",
+};
+
 /** The target hosts of a command-history entry, colour-tinted live by id
  * (D-061 sub-4). OmniTerminal entries read `OmniTerminal <hosts> <command>`;
  * colour/label come from the current host (grey + snapshot label if gone). */
@@ -65,11 +72,13 @@ function HistoryHosts({
   entry: HistoryEntry;
   hostsById: Map<number, Host>;
 }) {
-  const isOmni = entry.source === "omniterminal";
+  const sourceLabel = entry.source ? SOURCE_LABEL[entry.source] : null;
   if (entry.hosts.length === 0) {
     return (
       <span className="shrink-0 text-muted-foreground">
-        {isOmni && <span className="text-foreground/70">OmniTerminal </span>}
+        {sourceLabel && (
+          <span className="text-foreground/70">{sourceLabel} </span>
+        )}
         {entry.host_count}h
       </span>
     );
@@ -85,7 +94,9 @@ function HistoryHosts({
   };
   return (
     <span className="inline-flex shrink-0 items-baseline gap-1 overflow-hidden">
-      {isOmni && <span className="shrink-0 text-foreground/70">OmniTerminal</span>}
+      {sourceLabel && (
+        <span className="shrink-0 text-foreground/70">{sourceLabel}</span>
+      )}
       {shown.map((h, i) => {
         const { color, label } = tint(h);
         return (
@@ -267,7 +278,8 @@ export function LogsPage({ visible }: { visible: boolean }) {
   const refreshAudit = useCallback(async () => {
     try {
       setInfo(await auditInfo());
-      setAuditLines(await auditTail(1000));
+      // Newest first (LG6) — the tail is chronological (oldest first).
+      setAuditLines((await auditTail(1000)).reverse());
     } catch (e) {
       toast.error(errorMessage(e));
     }
@@ -295,7 +307,8 @@ export function LogsPage({ visible }: { visible: boolean }) {
 
   const refreshErrors = useCallback(async () => {
     try {
-      setErrorEntries(await errorLogTail(1000));
+      // Newest first (LG6) — the tail is chronological (oldest first).
+      setErrorEntries((await errorLogTail(1000)).reverse());
     } catch (e) {
       toast.error(errorMessage(e));
     }
