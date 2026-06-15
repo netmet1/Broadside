@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2Icon, SendIcon } from "lucide-react";
+import {
+  Loader2Icon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  SendIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +28,8 @@ import { useShortcuts } from "@/lib/useShortcuts";
 import type { TermSession } from "@/pages/TerminalsPage";
 
 const MIRROR_KEY = "omni-mirror-typed";
+const HEADERS_KEY = "omni-headers";
+const RAIL_COLLAPSED_KEY = "omni-rail-collapsed";
 /** Cap the in-memory block log; the DB keeps up to 1000 (omni_history). */
 const MAX_BLOCKS = 500;
 /** Colour for a host we can't resolve live (deleted, or a reloaded block). */
@@ -70,6 +77,14 @@ export function OmniTerminalPage({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [mirrorTyped, setMirrorTyped] = useState(
     () => localStorage.getItem(MIRROR_KEY) === "1",
+  );
+  // Headers checkbox (O4): persisted, default ON. Off = blocks show output only.
+  const [headers, setHeaders] = useState(
+    () => localStorage.getItem(HEADERS_KEY) !== "0",
+  );
+  // Collapsible selection rail (O1): persisted.
+  const [railCollapsed, setRailCollapsed] = useState(
+    () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
   );
   const [hostsById, setHostsById] = useState<Map<number, Host>>(new Map());
   const hint = useHint();
@@ -239,6 +254,20 @@ export function OmniTerminalPage({
       return next;
     });
   }, []);
+  const toggleHeaders = useCallback(() => {
+    setHeaders((prev) => {
+      const next = !prev;
+      localStorage.setItem(HEADERS_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
+  const toggleRail = useCallback(() => {
+    setRailCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(RAIL_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
 
   const dispatch = useCallback(
     async (cmd: string) => {
@@ -319,66 +348,110 @@ export function OmniTerminalPage({
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        {/* Session selection rail. */}
-        <div className="flex w-60 shrink-0 flex-col border-r border-border/50">
-          <label
-            className="flex shrink-0 cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium"
-            {...hint("Select or deselect every open terminal session")}
-          >
-            <input
-              type="checkbox"
-              className="accent-primary"
-              checked={allSelected}
-              onChange={toggleAll}
-              disabled={sending || sessions.length === 0}
-            />
-            Select all
-            <span className="ml-auto text-xs font-normal text-muted-foreground">
-              {selected.size}/{sessions.length}
-            </span>
-          </label>
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-            {sessions.map((s) => {
-              const isConnected = connectedSessions.has(s.id);
-              return (
+        {/* Session selection rail (collapsible — O1). */}
+        <div
+          className={`flex shrink-0 flex-col border-r border-border/50 ${
+            railCollapsed ? "w-14" : "w-60"
+          }`}
+        >
+          <div className="flex shrink-0 items-center gap-2 px-2 py-2">
+            <button
+              type="button"
+              onClick={toggleRail}
+              className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              aria-label={railCollapsed ? "Expand host rail" : "Collapse host rail"}
+              {...hint(
+                railCollapsed
+                  ? "Expand the host selection rail"
+                  : "Collapse the host selection rail",
+              )}
+            >
+              {railCollapsed ? (
+                <PanelLeftOpenIcon className="h-4 w-4" />
+              ) : (
+                <PanelLeftCloseIcon className="h-4 w-4" />
+              )}
+            </button>
+            {!railCollapsed && (
               <label
-                key={s.id}
-                title={isConnected ? undefined : "Disconnected — reconnect the terminal to dispatch to it"}
-                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                  isConnected
-                    ? "cursor-pointer hover:bg-accent/50"
-                    : "cursor-not-allowed opacity-50"
-                }`}
+                className="flex cursor-pointer items-center gap-2 text-sm font-medium"
+                {...hint("Select or deselect every connected terminal session")}
               >
                 <input
                   type="checkbox"
                   className="accent-primary"
-                  checked={selected.has(s.id)}
-                  onChange={() => toggleSession(s.id)}
-                  disabled={sending || !isConnected}
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  disabled={sending || connectedIds.length === 0}
                 />
-                <span
-                  className="h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{
-                    backgroundColor:
-                      hostsById.get(s.host.id)?.color ?? s.host.color,
-                  }}
-                />
-                <span className="min-w-0 truncate">
-                  {hostsById.get(s.host.id)?.label ?? s.host.label}
+                Select all
+                <span className="ml-auto text-xs font-normal text-muted-foreground">
+                  {selected.size}/{sessions.length}
                 </span>
-                <span
-                  className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
-                    connectedSessions.has(s.id)
-                      ? "bg-emerald-500"
-                      : "bg-red-500/70"
-                  }`}
-                  title={isConnected ? "Connected" : "Not connected"}
-                />
               </label>
+            )}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+            {sessions.map((s) => {
+              const isConnected = connectedSessions.has(s.id);
+              const color = hostsById.get(s.host.id)?.color ?? s.host.color;
+              const label = hostsById.get(s.host.id)?.label ?? s.host.label;
+              if (railCollapsed) {
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => isConnected && toggleSession(s.id)}
+                    disabled={sending || !isConnected}
+                    title={`${label}${isConnected ? "" : " (disconnected)"}`}
+                    className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 ${
+                      isConnected
+                        ? "cursor-pointer hover:bg-accent/50"
+                        : "cursor-not-allowed opacity-50"
+                    } ${selected.has(s.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""}`}
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className="font-mono text-[10px] leading-none">
+                      {wordInitials(label)}
+                    </span>
+                  </button>
+                );
+              }
+              return (
+                <label
+                  key={s.id}
+                  title={isConnected ? undefined : "Disconnected — reconnect the terminal to dispatch to it"}
+                  className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                    isConnected
+                      ? "cursor-pointer hover:bg-accent/50"
+                      : "cursor-not-allowed opacity-50"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={selected.has(s.id)}
+                    onChange={() => toggleSession(s.id)}
+                    disabled={sending || !isConnected}
+                  />
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span className="min-w-0 truncate">{label}</span>
+                  <span
+                    className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
+                      isConnected ? "bg-emerald-500" : "bg-red-500/70"
+                    }`}
+                    title={isConnected ? "Connected" : "Not connected"}
+                  />
+                </label>
               );
             })}
-            {sessions.length === 0 && (
+            {sessions.length === 0 && !railCollapsed && (
               <p className="px-2 py-4 text-xs text-muted-foreground">
                 No open terminal sessions. Open terminals from the Hosts page
                 first.
@@ -404,6 +477,18 @@ export function OmniTerminalPage({
                 onChange={toggleMirror}
               />
               Mirror
+            </label>
+            <label
+              className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
+              {...hint("Provide a hostname header per execution of a command")}
+            >
+              <input
+                type="checkbox"
+                className="accent-primary"
+                checked={headers}
+                onChange={toggleHeaders}
+              />
+              Headers
             </label>
             <div className="ml-auto flex items-center gap-1.5">
               <ShortcutBar
@@ -450,6 +535,7 @@ export function OmniTerminalPage({
                       exitCode={b.exitCode}
                       durationMs={b.durationMs}
                       interactivity={b.interactivity}
+                      showHeader={headers}
                     />
                   );
                 })}
@@ -522,6 +608,7 @@ function OmniBlock({
   exitCode,
   durationMs,
   interactivity,
+  showHeader,
 }: {
   color: string;
   label: string;
@@ -531,6 +618,7 @@ function OmniBlock({
   exitCode: number | null;
   durationMs: number | null;
   interactivity: BlockInteractivity;
+  showHeader: boolean;
 }) {
   const interactive = interactivity !== "normal";
   return (
@@ -538,6 +626,7 @@ function OmniBlock({
       className="rounded-md border border-border/40 pl-3"
       style={{ borderLeftColor: color, borderLeftWidth: 3 }}
     >
+      {showHeader && (
       <div className="flex items-center gap-2 px-2 py-1.5 text-xs">
         <span
           className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -563,8 +652,12 @@ function OmniBlock({
           <span>{formatTime(ts)}</span>
         </span>
       </div>
+      )}
       {interactive ? (
-        <p className="px-2 pb-2 font-mono text-xs italic text-muted-foreground">
+        <p
+          className="px-2 font-mono text-xs italic text-muted-foreground"
+          style={{ paddingTop: showHeader ? undefined : "0.375rem", paddingBottom: "0.5rem" }}
+        >
           {command ? `${command}: ` : ""}
           {NOTICE[interactivity]}
         </p>
@@ -572,7 +665,7 @@ function OmniBlock({
         lines.length > 0 && (
           <pre
             className="overflow-x-auto whitespace-pre-wrap break-words px-2 pb-2 font-mono text-xs"
-            style={{ color }}
+            style={{ color, paddingTop: showHeader ? undefined : "0.375rem" }}
           >
             {lines.join("\n")}
           </pre>
@@ -597,4 +690,14 @@ function formatTime(ts: string): string {
   return Number.isNaN(d.getTime())
     ? ts
     : d.toLocaleTimeString(undefined, { hour12: false });
+}
+
+/** Initials of each whitespace-separated word, for the collapsed rail (O1). */
+function wordInitials(label: string): string {
+  const i = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  return i || label.slice(0, 2).toUpperCase();
 }
