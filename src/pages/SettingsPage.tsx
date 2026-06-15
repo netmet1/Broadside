@@ -35,6 +35,8 @@ import {
 import { errorMessage } from "@/lib/tauri/hosts";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
 import { useHint, useStatus } from "@/lib/status";
+import { useTheme } from "next-themes";
+
 import { useUiPrefs } from "@/lib/uiPrefs";
 import {
   type AppSettings,
@@ -77,6 +79,7 @@ export function SettingsPage({
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const { hintsEnabled, setHintsEnabled } = useStatus();
   const { prefs, apply: applyUiPrefs } = useUiPrefs();
+  const { theme, setTheme } = useTheme();
   const hint = useHint();
 
   // Section search — filters which settings sections are shown.
@@ -951,9 +954,29 @@ export function SettingsPage({
       <section id={sectionDomId("Appearance")} className="space-y-4">
         <SectionHeading
           title="Appearance"
-          hint="Terminal font applies to the xterm panes; application font size scales the rest of the UI."
+          hint="Theme, terminal font (xterm panes) and the application font size."
         />
         <div className="grid max-w-md gap-4">
+          <div className="grid gap-1">
+            <Label>Theme</Label>
+            <div className="flex gap-1.5">
+              {(["light", "dark", "system"] as const).map((t) => (
+                <Button
+                  key={t}
+                  size="sm"
+                  variant={theme === t ? "default" : "outline"}
+                  onClick={() => setTheme(t)}
+                  className="capitalize"
+                >
+                  {t}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Dark is the default. “System” follows your OS setting. Applies
+              instantly; no Save needed.
+            </p>
+          </div>
           <div className="grid gap-1">
             <Label htmlFor="term-font">Terminal font</Label>
             <Input
