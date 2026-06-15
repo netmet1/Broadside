@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -70,6 +70,19 @@ export function TerminalsPage({
     `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`,
     visible,
   );
+
+  // Suffix for duplicate terminals to the same host: the 2nd+ get " 02", " 03",
+  // … so the tabs are distinguishable (T3). The first stays unsuffixed.
+  const tabSuffix = useMemo(() => {
+    const counts = new Map<number, number>();
+    const map = new Map<string, string>();
+    for (const s of sessions) {
+      const n = (counts.get(s.host.id) ?? 0) + 1;
+      counts.set(s.host.id, n);
+      map.set(s.id, n > 1 ? ` ${String(n).padStart(2, "0")}` : "");
+    }
+    return map;
+  }, [sessions]);
 
   // Tab label mode: full label (default) vs color-dot + initials. Persisted
   // like the sidebar-collapse pref (localStorage, UI-only).
@@ -260,7 +273,10 @@ export function TerminalsPage({
                         className="h-2 w-2 shrink-0 rounded-full"
                         style={{ backgroundColor: s.host.color }}
                       />
-                      <span className="truncate">{s.host.label}</span>
+                      <span className="truncate">
+                        {s.host.label}
+                        {tabSuffix.get(s.id)}
+                      </span>
                     </span>
                   </SelectItem>
                 ))}
@@ -285,16 +301,22 @@ export function TerminalsPage({
             onClick={() => onActivate(s.id)}
             role="tab"
             aria-selected={s.id === activeId}
-            title={tabsCompact ? s.host.label : undefined}
+            title={tabsCompact ? `${s.host.label}${tabSuffix.get(s.id)}` : undefined}
           >
             <span
               className="h-2 w-2 shrink-0 rounded-full"
               style={{ backgroundColor: s.host.color }}
             />
             {tabsCompact ? (
-              <span className="font-mono">{labelInitials(s.host.label)}</span>
+              <span className="font-mono">
+                {labelInitials(s.host.label)}
+                {tabSuffix.get(s.id)}
+              </span>
             ) : (
-              <span className="max-w-40 truncate">{s.host.label}</span>
+              <span className="max-w-40 truncate">
+                {s.host.label}
+                {tabSuffix.get(s.id)}
+              </span>
             )}
             <button
               type="button"
