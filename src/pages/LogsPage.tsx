@@ -244,7 +244,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
     () =>
       errorEntries.map((e, i) => ({
         key: `${i}`,
-        text: `${e.source} ${e.host_label ?? ""} ${e.message}`,
+        // host_label is rendered as a separate tinted span (LG2), so it's not
+        // part of the searched/highlighted text here.
+        text: `${e.source} ${e.message}`,
       })),
     [errorEntries],
   );
@@ -309,6 +311,10 @@ export function LogsPage({ visible }: { visible: boolean }) {
     try {
       // Newest first (LG6) — the tail is chronological (oldest first).
       setErrorEntries((await errorLogTail(1000)).reverse());
+      // Hosts for live-by-id tinting of the host label (LG2).
+      setHostsById(
+        new Map((await listHosts()).map((h) => [h.id, h] as const)),
+      );
     } catch (e) {
       toast.error(errorMessage(e));
     }
@@ -695,7 +701,13 @@ export function LogsPage({ visible }: { visible: boolean }) {
                 const matches = errorSearch.scan?.perLine.get(idx) ?? null;
                 if (errorSearch.filterActive && !matches) return null;
                 const isActiveLine = errorSearch.activeHit?.lineIdx === idx;
-                const display = `${entry.source} ${entry.host_label ?? ""} ${entry.message}`;
+                // Tint the host label live-by-id (LG2): current colour/label by
+                // id, grey + snapshot label if the host is gone or predates ids.
+                const live =
+                  entry.host_id != null ? hostsById.get(entry.host_id) : undefined;
+                const tintColor = live?.color ?? HOST_UNKNOWN_COLOR;
+                const tintLabel = live?.label ?? entry.host_label;
+                const display = `${entry.source} ${entry.message}`;
                 return (
                   <div
                     key={idx}
@@ -707,6 +719,15 @@ export function LogsPage({ visible }: { visible: boolean }) {
                     <span className="shrink-0 text-muted-foreground">
                       {entry.ts ? new Date(entry.ts).toLocaleString() : "—"}
                     </span>
+                    {tintLabel && (
+                      <span
+                        className="max-w-32 shrink-0 truncate"
+                        style={{ color: tintColor }}
+                        title={tintLabel}
+                      >
+                        {tintLabel}
+                      </span>
+                    )}
                     <pre className="whitespace-pre-wrap break-words text-red-400/90">
                       {matches && errorSearch.mode !== null ? (
                         <HighlightedLine

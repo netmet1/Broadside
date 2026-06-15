@@ -49,6 +49,8 @@ export function setAuditEnabled(enabled: boolean): Promise<void> {
 export type ErrorEntry = {
   ts: string;
   source: string;
+  /** Host id for live colour-tinting (LG2); absent on older entries. */
+  host_id?: number;
   host_label?: string;
   message: string;
 };

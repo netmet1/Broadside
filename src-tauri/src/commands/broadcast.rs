@@ -215,6 +215,7 @@ pub async fn broadcast_command(
                 ExecResult::AuthFailed { message } => {
                     app.state::<crate::errlog::ErrLogState>().log(
                         "broadcast",
+                        Some(report.host_id),
                         Some(&report.label),
                         &format!("authentication failed — {message}"),
                     );
@@ -222,6 +223,7 @@ pub async fn broadcast_command(
                 ExecResult::Unreachable { message } => {
                     app.state::<crate::errlog::ErrLogState>().log(
                         "broadcast",
+                        Some(report.host_id),
                         Some(&report.label),
                         &format!("unreachable — {message}"),
                     );
@@ -231,6 +233,7 @@ pub async fn broadcast_command(
                 ExecResult::NoCredentials => {
                     app.state::<crate::errlog::ErrLogState>().log(
                         "broadcast",
+                        Some(report.host_id),
                         Some(&report.label),
                         "no credentials stored",
                     );
