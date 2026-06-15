@@ -99,20 +99,24 @@ export function OmniTerminalPage({
     visible,
   );
 
-  // New sessions arrive pre-selected (broadcast-to-all default); sessions the
-  // user unchecked stay unchecked. Persists across tab switches (page stays
-  // mounted), resets on restart.
-  const knownIds = useRef<Set<string>>(new Set());
+  // Selection only ever contains CONNECTED sessions — disconnected ones are
+  // ghosted in the rail and can never be a dispatch target (O5). Newly-connected
+  // sessions are pre-selected (broadcast-to-all default); the user's unchecks
+  // are preserved; a disconnect removes the session from the selection.
+  const knownConnected = useRef<Set<string>>(new Set());
   useEffect(() => {
     setSelected((prev) => {
       const next = new Set<string>();
       for (const s of sessions) {
-        if (!knownIds.current.has(s.id) || prev.has(s.id)) next.add(s.id);
+        if (!connectedSessions.has(s.id)) continue; // ghost: never selectable
+        if (!knownConnected.current.has(s.id) || prev.has(s.id)) next.add(s.id);
       }
-      knownIds.current = new Set(sessions.map((s) => s.id));
+      knownConnected.current = new Set(
+        sessions.filter((s) => connectedSessions.has(s.id)).map((s) => s.id),
+      );
       return next;
     });
-  }, [sessions]);
+  }, [sessions, connectedSessions]);
 
   // Refs so the always-on block listener sees current state without re-subscribing.
   const mirrorRef = useRef(mirrorTyped);
@@ -128,9 +132,13 @@ export function OmniTerminalPage({
     const un = onPtyBlock((blk) => {
       const sess = sessionsByIdRef.current.get(blk.session_id);
       if (!sess) return; // a session we no longer track (closed) — ignore.
+      // A block from a session we dispatched to is "dispatched" (always shown).
+      // Pop FIFO rather than matching exact command text — some shells capture
+      // the command slightly differently, which previously dropped the block
+      // when the mirror toggle was off (O5).
       const queue = pendingDispatched.current.get(blk.session_id);
       let dispatched = false;
-      if (queue && queue.length && queue[0].trim() === (blk.command ?? "").trim()) {
+      if (queue && queue.length > 0) {
         queue.shift();
         dispatched = true;
       }
@@ -211,9 +219,11 @@ export function OmniTerminalPage({
     outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
   }, [blocks]);
 
-  const allSelected = sessions.length > 0 && selected.size === sessions.length;
+  const connectedIds = sessions.filter((s) => connectedSessions.has(s.id));
+  const allSelected =
+    connectedIds.length > 0 && selectedConnectedCount === connectedIds.length;
   const toggleAll = () =>
-    setSelected(allSelected ? new Set() : new Set(sessions.map((s) => s.id)));
+    setSelected(allSelected ? new Set() : new Set(connectedIds.map((s) => s.id)));
   const toggleSession = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -328,17 +338,24 @@ export function OmniTerminalPage({
             </span>
           </label>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-            {sessions.map((s) => (
+            {sessions.map((s) => {
+              const isConnected = connectedSessions.has(s.id);
+              return (
               <label
                 key={s.id}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+                title={isConnected ? undefined : "Disconnected — reconnect the terminal to dispatch to it"}
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                  isConnected
+                    ? "cursor-pointer hover:bg-accent/50"
+                    : "cursor-not-allowed opacity-50"
+                }`}
               >
                 <input
                   type="checkbox"
                   className="accent-primary"
                   checked={selected.has(s.id)}
                   onChange={() => toggleSession(s.id)}
-                  disabled={sending}
+                  disabled={sending || !isConnected}
                 />
                 <span
                   className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -356,12 +373,11 @@ export function OmniTerminalPage({
                       ? "bg-emerald-500"
                       : "bg-red-500/70"
                   }`}
-                  title={
-                    connectedSessions.has(s.id) ? "Connected" : "Not connected"
-                  }
+                  title={isConnected ? "Connected" : "Not connected"}
                 />
               </label>
-            ))}
+              );
+            })}
             {sessions.length === 0 && (
               <p className="px-2 py-4 text-xs text-muted-foreground">
                 No open terminal sessions. Open terminals from the Hosts page
@@ -387,7 +403,7 @@ export function OmniTerminalPage({
                 checked={mirrorTyped}
                 onChange={toggleMirror}
               />
-              Mirror commands typed in terminal tabs
+              Mirror
             </label>
             <div className="ml-auto flex items-center gap-1.5">
               <ShortcutBar
