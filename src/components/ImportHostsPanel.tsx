@@ -119,6 +119,7 @@ export function ImportHostsPanel({
           port: r.port,
           username: r.username,
           color: r.color,
+          tag: r.tag,
           linux_flavor: r.linux_flavor,
           notes: r.notes,
         })),
@@ -166,7 +167,7 @@ export function ImportHostsPanel({
           <span className="font-mono text-xs">label, hostname, username</span>.
           Optional:{" "}
           <span className="font-mono text-xs">
-            port, color, linux_flavor, notes
+            port, color, tag, linux_flavor, notes
           </span>
           . A color of <span className="font-mono text-xs">#auto</span> (or
           empty) picks the next palette hue. Duplicate labels are skipped.
@@ -215,6 +216,7 @@ export function ImportHostsPanel({
                   <TableHead className="w-16">Port</TableHead>
                   <TableHead>Username</TableHead>
                   <TableHead className="w-20">Color</TableHead>
+                  <TableHead>Tag</TableHead>
                   <TableHead>Flavor</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -246,6 +248,7 @@ export function ImportHostsPanel({
                         </span>
                       )}
                     </TableCell>
+                    <TableCell className="text-xs">{r.tag ?? "—"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {r.linux_flavor ?? "—"}
                     </TableCell>

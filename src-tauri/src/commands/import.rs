@@ -16,18 +16,19 @@ use crate::import::{self, RowPreview};
 #[tauri::command]
 pub fn preview_import(path: String, state: State<'_, DbState>) -> AppResult<Vec<RowPreview>> {
     let rows = import::parse_file(Path::new(&path))?;
-    let (labels, hostnames): (HashSet<String>, HashSet<String>) = with_db(&state, |conn| {
+    let (labels, endpoints): (HashSet<String>, HashSet<String>) = with_db(&state, |conn| {
         let all = host_repo::list_all(conn)?;
         let labels = all.iter().map(|h| h.label.clone()).collect();
-        // Lowercased so the dedup is case-insensitive (DNS names) and exact
-        // for IPs. A host's IP/hostname can't be re-imported onto another host.
-        let hostnames = all
+        // A duplicate is the same (hostname, port, username) endpoint — the
+        // same connection can't be imported twice, but differing port or user
+        // is a distinct host (H5).
+        let endpoints = all
             .iter()
-            .map(|h| h.hostname.to_ascii_lowercase())
+            .map(|h| import::endpoint_key(&h.hostname, h.port, &h.username))
             .collect();
-        Ok((labels, hostnames))
+        Ok((labels, endpoints))
     })?;
-    Ok(import::validate_rows_with_hostnames(&labels, &hostnames, rows))
+    Ok(import::validate_rows_with_endpoints(&labels, &endpoints, rows))
 }
 
 #[derive(Debug, Serialize)]
