@@ -39,13 +39,6 @@ export type TerminalSearchHandle = {
   focusTerminal: () => void;
 };
 
-const SEARCH_DECORATIONS = {
-  matchBackground: "#f59e0b4d",
-  matchOverviewRuler: "#f59e0b4d",
-  activeMatchBackground: "#f59e0b",
-  activeMatchColorOverviewRuler: "#f59e0b",
-};
-
 type Phase =
   | { kind: "connecting" }
   | { kind: "open" }
@@ -208,12 +201,17 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // the throw white-screened the app). Contain it here so a bad search
       // is a no-op, and log the stack for diagnosis rather than crashing.
       try {
+        // No `decorations` here on purpose: passing them makes the addon
+        // register overview-ruler match decorations, which throw unless the
+        // terminal has a non-zero overview-ruler width — that throw (swallowed
+        // by this catch since PR #20) is why every search said "No matches"
+        // (T2). Without decorations, findNext still scrolls to + selects the
+        // active match and reports the count via onDidChangeResults.
         searchRef.current?.findNext(pattern, {
           regex: options.regex,
           caseSensitive: options.caseSensitive,
           wholeWord: options.wholeWord,
           incremental,
-          decorations: SEARCH_DECORATIONS,
         });
       } catch (err) {
         console.error("[TerminalView] search findNext failed", err);
@@ -226,7 +224,6 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           regex: options.regex,
           caseSensitive: options.caseSensitive,
           wholeWord: options.wholeWord,
-          decorations: SEARCH_DECORATIONS,
         });
       } catch (err) {
         console.error("[TerminalView] search findPrevious failed", err);
