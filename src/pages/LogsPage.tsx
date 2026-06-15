@@ -6,7 +6,10 @@ import {
   RefreshCwIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import {
+  open as openDialog,
+  save as saveDialog,
+} from "@tauri-apps/plugin-dialog";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +30,9 @@ import {
   auditTail,
   clearErrorLog,
   errorLogTail,
+  exportAuditLog,
+  exportErrorLog,
+  loadErrorLogFile,
   loadSession,
   sessionIsEncrypted,
   setAuditEnabled,
@@ -329,10 +335,27 @@ export function LogsPage({ visible }: { visible: boolean }) {
       const path = await openDialog({
         multiple: false,
         directory: false,
-        title: "Open session file",
-        filters: [{ name: "OmniTerminal session", extensions: ["otlog"] }],
+        title: "Open session or error log",
+        filters: [
+          { name: "Session or error log", extensions: ["otlog", "jsonl"] },
+        ],
       });
       if (typeof path !== "string") return;
+      // Load an exported error log into the session viewer (LG5).
+      if (path.toLowerCase().endsWith(".jsonl")) {
+        const entries = await loadErrorLogFile(path);
+        const lines: OtlogLine[] = entries.map((e) => ({
+          ts: e.ts,
+          host: e.host_label ?? e.source,
+          stream: "stderr",
+          data: `${e.source} — ${e.message}`,
+        }));
+        setSessionLines(lines);
+        setSessionPath(path);
+        setCollapsedHosts(new Set());
+        toast.success(`Loaded ${lines.length} error entries`);
+        return;
+      }
       if (await sessionIsEncrypted(path)) {
         setPendingPath(path);
         setPassphrase("");
@@ -353,6 +376,27 @@ export function LogsPage({ visible }: { visible: boolean }) {
       setCollapsedHosts(new Set());
       setPassphraseOpen(false);
       toast.success(`Loaded ${lines.length} lines`);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+
+  /** Export the audit/error log to a chosen path (LG3/LG4). */
+  const exportLog = async (kind: "audit" | "errors") => {
+    try {
+      const d = new Date();
+      const p = (n: number) => String(n).padStart(2, "0");
+      const stamp =
+        `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` +
+        `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+      const path = await saveDialog({
+        title: kind === "audit" ? "Export audit log" : "Export error log",
+        defaultPath: `${stamp}-omniterminal-${kind}.jsonl`,
+      });
+      if (typeof path !== "string") return;
+      const bytes =
+        kind === "audit" ? await exportAuditLog(path) : await exportErrorLog(path);
+      toast.success(`Exported ${(bytes / 1024).toFixed(1)} KB`);
     } catch (e) {
       toast.error(errorMessage(e));
     }
@@ -428,7 +472,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
           <div className="flex items-center gap-3 px-4 py-2">
             <Button variant="outline" size="sm" onClick={openSession}>
               <FolderOpenIcon />
-              Open session…
+              Open Session or ErrorLog…
             </Button>
             {sessionPath && (
               <span className="truncate font-mono text-xs text-muted-foreground">
@@ -548,6 +592,14 @@ export function LogsPage({ visible }: { visible: boolean }) {
             <Button variant="ghost" size="sm" onClick={refreshAudit}>
               <RefreshCwIcon />
               Refresh
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={auditLines.length === 0}
+              onClick={() => exportLog("audit")}
+            >
+              Export…
             </Button>
             {info && (
               <span className="ml-auto truncate font-mono text-xs text-muted-foreground">
@@ -683,6 +735,14 @@ export function LogsPage({ visible }: { visible: boolean }) {
               }}
             >
               Clear errors
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={errorEntries.length === 0}
+              onClick={() => exportLog("errors")}
+            >
+              Export…
             </Button>
             {errorEntries.length > 0 && (
               <span className="ml-auto font-mono text-xs text-muted-foreground">
