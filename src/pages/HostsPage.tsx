@@ -65,6 +65,9 @@ const COLS: { id: string; w: number; resizable: boolean }[] = [
 ];
 const COL_WIDTHS_KEY = "hosts-col-widths";
 const MIN_COL_W = 56;
+// Sort persists across tab switches (sessionStorage survives remount) but
+// resets on app restart (sessionStorage clears when the window closes).
+const SORT_STORAGE_KEY = "hosts-sort";
 
 /** A clickable column header that toggles sorting on `sortKey` and shows the
  * current direction. */
@@ -193,9 +196,21 @@ export function HostsPage({
   );
 
   // Column sorting. null = the order the backend returned (insertion order).
+  // Restored from sessionStorage so it survives tab switches, not restart.
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" } | null>(
-    null,
+    () => {
+      try {
+        const raw = sessionStorage.getItem(SORT_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    },
   );
+  useEffect(() => {
+    if (sort) sessionStorage.setItem(SORT_STORAGE_KEY, JSON.stringify(sort));
+    else sessionStorage.removeItem(SORT_STORAGE_KEY);
+  }, [sort]);
   const toggleSort = useCallback((key: SortKey) => {
     setSort((prev) =>
       prev?.key === key
@@ -421,14 +436,17 @@ export function HostsPage({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      {/* Neutralize the shadcn Table's own overflow wrapper so THIS div is the
+          single scroll container for both axes — gives a viewport-pinned
+          horizontal scrollbar and lets the header stick on vertical scroll. */}
+      <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible">
         <Table style={{ tableLayout: "fixed", width: tableWidth }}>
           <colgroup>
             {COLS.map((c) => (
               <col key={c.id} style={{ width: colWidths[c.id] ?? c.w }} />
             ))}
           </colgroup>
-          <TableHeader>
+          <TableHeader className="sticky top-0 z-10 bg-background">
             <TableRow>
               <TableHead className="text-center">
                 <input
