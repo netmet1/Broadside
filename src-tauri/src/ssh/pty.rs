@@ -223,12 +223,9 @@ pub async fn open<E: PtyEvents>(
         .await
         .map_err(|e| AppError::Ssh(format!("shell request: {e}")))?;
 
-    // Install OSC 133 shell integration so the OmniTerminal aggregate view can
-    // delimit commands and detect TUI apps (D-061). Harmless on shells that
-    // don't match (POSIX sh / fish) — the snippet falls through to a no-op.
-    let integration = crate::omni::shell_integration_command();
-    let _ = channel.data(integration.as_bytes()).await;
-
+    // OSC 133 shell integration is injected from inside the session task once
+    // the login banner has streamed (so we can capture the real "Last login:"
+    // line before clearing) — see the task below (D-061 / D-063 / T1).
     let (tx, mut rx) = mpsc::channel::<SessionCmd>(64);
     let epoch = state.insert(session_id.clone(), tx);
     let state = state.clone();
@@ -240,22 +237,37 @@ pub async fn open<E: PtyEvents>(
         // (D-061). The raw `pty:data` stream below is unchanged — the live
         // terminal pane still renders every byte; this is a parallel feed.
         let mut omni = crate::omni::OmniParser::new();
+
+        // T1 (D-063): let the login banner stream, capture the real "Last
+        // login:" line, then inject the integration + clear + reprinted MOTD +
+        // re-echoed last-login so the session looks like a fresh login without
+        // the visible setup line. Inject on capture, or after a short timeout
+        // if the host prints no last-login line.
+        let mut setup_sent = false;
+        let mut banner = String::new();
+        let setup_timeout =
+            tokio::time::sleep(std::time::Duration::from_millis(1500));
+        tokio::pin!(setup_timeout);
+
         loop {
             tokio::select! {
                 msg = channel.wait() => match msg {
-                    Some(ChannelMsg::Data { ref data }) => {
-                        for block in omni.feed(&data[..]) {
-                            events.block(PtyBlock {
-                                session_id: session_id.clone(),
-                                block,
-                            });
+                    Some(ChannelMsg::Data { ref data })
+                    | Some(ChannelMsg::ExtendedData { ref data, .. }) => {
+                        if !setup_sent {
+                            banner.push_str(&String::from_utf8_lossy(&data[..]));
+                            let last_login = crate::omni::extract_last_login(&banner);
+                            // Inject once we've captured the last-login line, or
+                            // bail out if the banner is unexpectedly large.
+                            if last_login.is_some() || banner.len() > 8192 {
+                                let setup = crate::omni::shell_setup_command(
+                                    last_login.as_deref(),
+                                );
+                                let _ = channel.data(setup.as_bytes()).await;
+                                setup_sent = true;
+                                banner = String::new();
+                            }
                         }
-                        events.data(PtyData {
-                            session_id: session_id.clone(),
-                            data_b64: B64.encode(data),
-                        });
-                    }
-                    Some(ChannelMsg::ExtendedData { ref data, .. }) => {
                         for block in omni.feed(&data[..]) {
                             events.block(PtyBlock {
                                 session_id: session_id.clone(),
@@ -272,6 +284,12 @@ pub async fn open<E: PtyEvents>(
                     }
                     Some(ChannelMsg::Close) | None => break,
                     Some(_) => {}
+                },
+                _ = &mut setup_timeout, if !setup_sent => {
+                    // No last-login arrived in time — set up without re-echoing it.
+                    let setup = crate::omni::shell_setup_command(None);
+                    let _ = channel.data(setup.as_bytes()).await;
+                    setup_sent = true;
                 },
                 cmd = rx.recv() => match cmd {
                     Some(SessionCmd::Write(data)) => {

@@ -286,6 +286,35 @@ pub fn shell_integration_command() -> String {
     format!("{SHELL_INTEGRATION}\n")
 }
 
+/// The full one-time setup line sent on PTY connect (D-063, T1): installs the
+/// OSC 133 integration, clears the screen, reprints the MOTD, and re-echoes the
+/// real captured `Last login:` line — so the terminal looks like a fresh login
+/// without the visible setup command. It's a single line, so the integration's
+/// preexec guard suppresses any OmniTerminal block for the clear/MOTD/echo.
+pub fn shell_setup_command(last_login: Option<&str>) -> String {
+    let mut cmd = String::from(SHELL_INTEGRATION);
+    cmd.push_str("; clear; cat /run/motd.dynamic /etc/motd 2>/dev/null");
+    if let Some(ll) = last_login {
+        // Single-quote the captured line, escaping any single quotes, so any
+        // content is shell-safe. `\\n` reaches printf literally as `\n`.
+        let safe = ll.replace('\'', r"'\''");
+        cmd.push_str("; printf '%s\\n' '");
+        cmd.push_str(&safe);
+        cmd.push('\'');
+    }
+    cmd.push('\n');
+    cmd
+}
+
+/// Extracts the real, terminated `Last login:` line from the initial login
+/// banner (T1). Returns None until the line is fully received.
+pub fn extract_last_login(banner: &str) -> Option<String> {
+    let idx = banner.find("Last login:")?;
+    let rest = &banner[idx..];
+    let end = rest.find('\n')?; // require a terminated line
+    Some(rest[..end].trim().trim_end_matches('\r').to_string())
+}
+
 /// One session's VT interpreter. Feed it the raw PTY bytes; collect completed
 /// [`CommandBlock`]s.
 pub struct OmniParser {
@@ -535,5 +564,40 @@ mod tests {
         let c = shell_integration_command();
         assert!(c.ends_with('\n'));
         assert_eq!(c.trim_end_matches('\n'), SHELL_INTEGRATION);
+    }
+
+    #[test]
+    fn setup_command_clears_reprints_motd_and_last_login() {
+        let c = shell_setup_command(Some("Last login: Mon Jun 15 from 1.2.3.4"));
+        assert!(c.contains("133;A")); // integration is in there
+        assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
+        assert!(c.contains("printf '%s\\n' 'Last login: Mon Jun 15 from 1.2.3.4'"));
+        assert!(c.ends_with('\n'));
+        // Single line so the preexec guard suppresses any OmniTerminal block.
+        assert!(!c.trim_end_matches('\n').contains('\n'));
+    }
+
+    #[test]
+    fn setup_command_without_last_login_omits_printf() {
+        let c = shell_setup_command(None);
+        assert!(c.contains("clear; cat /run/motd.dynamic"));
+        assert!(!c.contains("printf '%s"));
+    }
+
+    #[test]
+    fn setup_command_escapes_single_quotes() {
+        let c = shell_setup_command(Some("it's here"));
+        assert!(c.contains(r"'it'\''s here'"));
+    }
+
+    #[test]
+    fn extract_last_login_needs_a_terminated_line() {
+        assert_eq!(extract_last_login(""), None);
+        assert_eq!(extract_last_login("Last login: partial"), None); // no newline yet
+        assert_eq!(
+            extract_last_login("banner\r\nLast login: Mon from 1.2.3.4\r\nuser@host:~$ ")
+                .as_deref(),
+            Some("Last login: Mon from 1.2.3.4"),
+        );
     }
 }
