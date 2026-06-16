@@ -58,6 +58,8 @@ const DEFAULT_TIMEOUT_SECS = 30;
 const HISTORY_RUNS = 200;
 /** Persisted collapse state for the host selection rail (mirrors OmniTerminal). */
 const RAIL_COLLAPSED_KEY = "broadcast-rail-collapsed";
+/** Persisted "show per-host output headers" toggle (mirrors OmniTerminal O4). */
+const HEADERS_KEY = "broadcast-headers";
 
 /** Initials of each whitespace-separated word, for the collapsed rail. */
 function wordInitials(label: string): string {
@@ -141,6 +143,17 @@ export function BroadcastPage({
     setRailCollapsed((prev) => {
       const next = !prev;
       localStorage.setItem(RAIL_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
+  // Per-host output headers toggle (O4): default ON; off = output only.
+  const [headers, setHeaders] = useState(
+    () => localStorage.getItem(HEADERS_KEY) !== "0",
+  );
+  const toggleHeaders = useCallback(() => {
+    setHeaders((prev) => {
+      const next = !prev;
+      localStorage.setItem(HEADERS_KEY, next ? "1" : "0");
       return next;
     });
   }, []);
@@ -725,7 +738,19 @@ export function BroadcastPage({
 
       {/* Output + composer */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center justify-end border-b border-border/30 px-3 py-1.5">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/30 px-3 py-1.5">
+          <label
+            className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
+            {...hint("Show the per-host header (label, exit, time) above each result. Off = output only.")}
+          >
+            <input
+              type="checkbox"
+              className="accent-primary"
+              checked={headers}
+              onChange={toggleHeaders}
+            />
+            Headers
+          </label>
           <ShortcutBar
             shortcuts={shortcuts}
             disabled={running || selected.size === 0}
@@ -791,6 +816,7 @@ export function BroadcastPage({
                         key={key}
                         block={tinted}
                         blockKey={key}
+                        showHeader={headers}
                         findData={
                           searchMode === "find" && scan
                             ? { byRef: scan.byRef, activeHit }
@@ -952,6 +978,7 @@ type FindData = {
 function OutputBlock({
   block,
   blockKey,
+  showHeader,
   findData,
   filterMatcher,
   onToggle,
@@ -959,11 +986,19 @@ function OutputBlock({
 }: {
   block: Block;
   blockKey: string;
+  /** When false, hide the per-host header (output only, color-tinted). */
+  showHeader: boolean;
   findData: FindData | null;
   filterMatcher: Matcher | null;
   onToggle: () => void;
   onReviewMismatch: (stored: string, presented: PresentedKey) => void;
 }) {
+  // With headers hidden there's no collapse affordance, so always show output;
+  // a coloured left border keeps each host's block identifiable.
+  const bodyShown = !showHeader || !block.collapsed;
+  const tintBorder = showHeader
+    ? undefined
+    : { borderLeftColor: block.color, borderLeftWidth: 3 };
   const { result } = block;
   const summary = statusSummary(result);
   const toneClass =
@@ -989,14 +1024,19 @@ function OutputBlock({
       );
     }
     return (
-      <div className="overflow-hidden rounded-md border border-border/40">
-        <BlockHeader
-          block={block}
-          summaryText={summary.text}
-          toneClass={toneClass}
-          onToggle={onToggle}
-        />
-        {!block.collapsed && (
+      <div
+        className="overflow-hidden rounded-md border border-border/40"
+        style={tintBorder}
+      >
+        {showHeader && (
+          <BlockHeader
+            block={block}
+            summaryText={summary.text}
+            toneClass={toneClass}
+            onToggle={onToggle}
+          />
+        )}
+        {bodyShown && (
           <div className="px-3 pb-3 font-mono text-xs">
             {matchingLines.map((l, i) => (
               <pre
@@ -1017,14 +1057,19 @@ function OutputBlock({
   }
 
   return (
-    <div className="overflow-hidden rounded-md border border-border/40">
-      <BlockHeader
-        block={block}
-        summaryText={summary.text}
-        toneClass={toneClass}
-        onToggle={onToggle}
-      />
-      {!block.collapsed && (
+    <div
+      className="overflow-hidden rounded-md border border-border/40"
+      style={tintBorder}
+    >
+      {showHeader && (
+        <BlockHeader
+          block={block}
+          summaryText={summary.text}
+          toneClass={toneClass}
+          onToggle={onToggle}
+        />
+      )}
+      {bodyShown && (
         <div className="px-3 pb-3">
           <BlockBody
             result={result}

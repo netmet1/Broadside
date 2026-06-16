@@ -30,6 +30,8 @@ import type { TermSession } from "@/pages/TerminalsPage";
 const HISTORY_RUNS = 200;
 /** Persisted collapse state for the session rail (mirrors OmniTerminal). */
 const RAIL_COLLAPSED_KEY = "pty-broadcast-rail-collapsed";
+/** Persisted "show per-run command header" toggle (mirrors OmniTerminal O4). */
+const HEADERS_KEY = "pty-broadcast-headers";
 
 /** Initials of each whitespace-separated word, for the collapsed rail. */
 function wordInitials(label: string): string {
@@ -98,6 +100,17 @@ export function PtyBroadcastPage({
     setRailCollapsed((prev) => {
       const next = !prev;
       localStorage.setItem(RAIL_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
+  // Per-run command header toggle (O4): default ON; off = result rows only.
+  const [headers, setHeaders] = useState(
+    () => localStorage.getItem(HEADERS_KEY) !== "0",
+  );
+  const toggleHeaders = useCallback(() => {
+    setHeaders((prev) => {
+      const next = !prev;
+      localStorage.setItem(HEADERS_KEY, next ? "1" : "0");
       return next;
     });
   }, []);
@@ -439,7 +452,19 @@ export function PtyBroadcastPage({
 
         {/* Dispatch report + composer */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center justify-end border-b border-border/30 px-3 py-1.5">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/30 px-3 py-1.5">
+            <label
+              className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
+              {...hint("Show the command + time header above each dispatch. Off = result rows only.")}
+            >
+              <input
+                type="checkbox"
+                className="accent-primary"
+                checked={headers}
+                onChange={toggleHeaders}
+              />
+              Headers
+            </label>
             <ShortcutBar
               shortcuts={shortcuts}
               disabled={sending || selected.size === 0}
@@ -458,14 +483,16 @@ export function PtyBroadcastPage({
                 {runs.map((run) => (
                   <div key={run.runId} className="space-y-2">
                     {/* Command-sent header, mirroring the Broadcast tab. */}
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="shrink-0 tabular-nums">
-                        {formatRunTime(run.ts)}
-                      </span>
-                      <code className="truncate rounded bg-muted/40 px-1.5 py-0.5 font-mono text-foreground/80">
-                        {run.command}
-                      </code>
-                    </div>
+                    {headers && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="shrink-0 tabular-nums">
+                          {formatRunTime(run.ts)}
+                        </span>
+                        <code className="truncate rounded bg-muted/40 px-1.5 py-0.5 font-mono text-foreground/80">
+                          {run.command}
+                        </code>
+                      </div>
+                    )}
                     <div className="space-y-1">
                       {run.results.map((r, i) => {
                         // Resolve the host's live colour/label by id (D-061
