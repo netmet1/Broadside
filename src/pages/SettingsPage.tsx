@@ -33,6 +33,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/tauri/hosts";
+import {
+  HIDEABLE_COLUMNS,
+  loadHiddenCols,
+  saveHiddenCols,
+} from "@/lib/hostColumns";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
 import { useHint, useStatus } from "@/lib/status";
 import { useTheme } from "next-themes";
@@ -47,11 +52,22 @@ import {
   getAppSettings,
   networkProbe,
   recalibrateProbe,
+  resetAppSettings,
   saveGuardRules,
   saveShortcuts,
   setAppSettings,
   setUiSettings,
 } from "@/lib/tauri/settings";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function SectionHeading({ title, hint }: { title: string; hint?: string }) {
   return (
@@ -82,6 +98,43 @@ export function SettingsPage({
   const { theme, setTheme } = useTheme();
   const hint = useHint();
 
+  // Host-table column visibility (Appearance). Read by the Hosts tab on mount;
+  // saved immediately on toggle.
+  const [hiddenCols, setHiddenCols] = useState(loadHiddenCols);
+  const toggleColumn = (id: string, visible: boolean) => {
+    setHiddenCols((prev) => {
+      const next = new Set(prev);
+      if (visible) next.delete(id);
+      else next.add(id);
+      saveHiddenCols(next);
+      return next;
+    });
+  };
+
+  // Reset-everything-to-defaults (with a guard rail).
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const resetEverything = async () => {
+    setResetting(true);
+    try {
+      await resetAppSettings();
+    } catch (e) {
+      toast.error(errorMessage(e));
+      setResetting(false);
+      return;
+    }
+    // localStorage/sessionStorage hold only UI prefs in this app (theme, tab
+    // order, sort, column widths, rail/header toggles) — clearing them resets
+    // every persisted preference. Reload so all providers re-init from defaults.
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      // Non-fatal; the DB-side reset already applied.
+    }
+    window.location.reload();
+  };
+
   // Section search — filters which settings sections are shown.
   const [query, setQuery] = useState("");
   const sectionVisible = useCallback(
@@ -99,6 +152,7 @@ export function SettingsPage({
     "Backup",
     "Help",
     "Audit log",
+    "Reset",
   ];
   const anyVisible = SECTION_TITLES.some(sectionVisible);
 
@@ -1015,6 +1069,29 @@ export function SettingsPage({
               12–20 px. Scales the whole UI except terminal panes.
             </p>
           </div>
+          <div className="grid gap-1.5">
+            <Label>Host table columns</Label>
+            <p className="text-xs text-muted-foreground">
+              Hide nice-to-have columns from the Hosts table. Label, hostname
+              and actions always show.
+            </p>
+            <div className="flex flex-wrap gap-x-5 gap-y-1.5 pt-1">
+              {HIDEABLE_COLUMNS.map((col) => (
+                <label
+                  key={col.id}
+                  className="flex cursor-pointer items-center gap-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={!hiddenCols.has(col.id)}
+                    onChange={(e) => toggleColumn(col.id, e.target.checked)}
+                  />
+                  {col.label}
+                </label>
+              ))}
+            </div>
+          </div>
           <div>
             <Button
               size="sm"
@@ -1115,6 +1192,59 @@ export function SettingsPage({
         </label>
       </section>
       )}
+
+      {/* Reset everything to defaults (S) — guard-railed. */}
+      {sectionVisible("Reset") && (
+      <section id={sectionDomId("Reset")} className="space-y-3">
+        <SectionHeading
+          title="Reset"
+          hint="Restore the whole app to its default preferences."
+        />
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => setResetOpen(true)}
+          {...hint("Reset every preference (theme, layout, sorts, timeouts, fonts) to defaults")}
+        >
+          Reset everything to defaults
+        </Button>
+        {/* Bottom banner help tip explaining exactly what reset does. */}
+        <div className="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
+          This resets <strong>preferences only</strong> — theme, sidebar &amp;
+          rail layout, tab order, table column widths &amp; sorting, header
+          toggles, the broadcast timeout, fonts and help hints all go back to
+          their defaults. Your <strong>hosts, credentials, guard rules,
+          shortcuts, command history and logs are kept</strong>. The app
+          reloads to apply.
+        </div>
+      </section>
+      )}
+
+      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset everything to defaults?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every preference returns to its default and the app reloads.
+              Hosts, credentials, guard rules, shortcuts, command history and
+              logs are <strong>not</strong> affected. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={(e) => {
+                e.preventDefault(); // keep the dialog up until reload fires
+                resetEverything();
+              }}
+              disabled={resetting}
+            >
+              Reset everything
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Rule help-tip modal — the Dialog overlay blurs the window behind it. */}
       <Dialog

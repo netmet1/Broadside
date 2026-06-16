@@ -200,4 +200,14 @@
   *::-webkit-scrollbar-thumb:hover {
     background-color: var(--scrollbar-thumb-hover);
   }
+
+  /* Settings sections sit in light rounded cards, matching the host edit form
+     (rounded-xl border-border/50 bg-muted/20 p-5). One rule covers every
+     section via its shared id prefix. */
+  [id^="settings-sec-"] {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background-color: color-mix(in oklab, var(--muted) 20%, transparent);
+    padding: 1.25rem;
+  }
 }

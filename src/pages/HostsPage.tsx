@@ -54,6 +54,7 @@ import {
   listHosts,
 } from "@/lib/tauri/hosts";
 import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
+import { loadHiddenCols } from "@/lib/hostColumns";
 import { nextColor } from "@/lib/palette";
 import { useHint, usePageStatus } from "@/lib/status";
 
@@ -189,7 +190,13 @@ export function HostsPage({
       return defaults;
     }
   });
-  const tableWidth = COLS.reduce((sum, c) => sum + (colWidths[c.id] ?? c.w), 0);
+  // Columns the user hid from Settings → Appearance (read on mount; the Hosts
+  // tab remounts when shown, so it always reflects the latest choice).
+  const [hiddenCols] = useState(loadHiddenCols);
+  const tableWidth = COLS.filter((c) => !hiddenCols.has(c.id)).reduce(
+    (sum, c) => sum + (colWidths[c.id] ?? c.w),
+    0,
+  );
   const startResize = useCallback(
     (id: string, e: React.MouseEvent) => {
       e.preventDefault();
@@ -551,7 +558,11 @@ export function HostsPage({
         <Table style={{ tableLayout: "fixed", width: tableWidth }}>
           <colgroup>
             {COLS.map((c) => (
-              <col key={c.id} style={{ width: colWidths[c.id] ?? c.w }} />
+              <col
+                key={c.id}
+                className={hiddenCols.has(c.id) ? "hidden" : undefined}
+                style={{ width: colWidths[c.id] ?? c.w }}
+              />
             ))}
           </colgroup>
           <TableHeader className="sticky top-0 z-10 bg-background">
@@ -581,7 +592,7 @@ export function HostsPage({
                 />
                 {resizeHandle("label")}
               </TableHead>
-              <TableHead className="text-xs">
+              <TableHead className={hiddenCols.has("status") ? "hidden" : "text-xs"}>
                 <SortHeader
                   label="Status"
                   sortKey="status"
@@ -600,7 +611,7 @@ export function HostsPage({
                 />
                 {resizeHandle("hostname")}
               </TableHead>
-              <TableHead className="relative">
+              <TableHead className={hiddenCols.has("port") ? "hidden" : "relative"}>
                 <SortHeader
                   label="Port"
                   sortKey="port"
@@ -610,7 +621,7 @@ export function HostsPage({
                 />
                 {resizeHandle("port")}
               </TableHead>
-              <TableHead className="relative">
+              <TableHead className={hiddenCols.has("username") ? "hidden" : "relative"}>
                 <SortHeader
                   label="Username"
                   sortKey="username"
@@ -620,7 +631,7 @@ export function HostsPage({
                 />
                 {resizeHandle("username")}
               </TableHead>
-              <TableHead className="relative">
+              <TableHead className={hiddenCols.has("tag") ? "hidden" : "relative"}>
                 <SortHeader
                   label="Tag"
                   sortKey="tag"
@@ -630,7 +641,7 @@ export function HostsPage({
                 />
                 {resizeHandle("tag")}
               </TableHead>
-              <TableHead className="relative">
+              <TableHead className={hiddenCols.has("flavor") ? "hidden" : "relative"}>
                 <SortHeader
                   label="Flavor"
                   sortKey="flavor"
@@ -686,7 +697,7 @@ export function HostsPage({
                   <TableCell className="truncate font-medium" title={h.label}>
                     {h.label}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={hiddenCols.has("status") ? "hidden" : undefined}>
                     <span
                       className={`block h-2.5 w-2.5 rounded-full ${
                         connectedHostIds.has(h.id)
@@ -706,14 +717,40 @@ export function HostsPage({
                   <TableCell className="truncate font-mono text-xs" title={h.hostname}>
                     {h.hostname}
                   </TableCell>
-                  <TableCell className="truncate font-mono text-xs">{h.port}</TableCell>
-                  <TableCell className="truncate font-mono text-xs" title={h.username}>
+                  <TableCell
+                    className={
+                      hiddenCols.has("port")
+                        ? "hidden"
+                        : "truncate font-mono text-xs"
+                    }
+                  >
+                    {h.port}
+                  </TableCell>
+                  <TableCell
+                    className={
+                      hiddenCols.has("username")
+                        ? "hidden"
+                        : "truncate font-mono text-xs"
+                    }
+                    title={h.username}
+                  >
                     {h.username}
                   </TableCell>
-                  <TableCell className="truncate text-xs" title={h.tag ?? undefined}>
+                  <TableCell
+                    className={
+                      hiddenCols.has("tag") ? "hidden" : "truncate text-xs"
+                    }
+                    title={h.tag ?? undefined}
+                  >
                     {h.tag ?? "—"}
                   </TableCell>
-                  <TableCell className="truncate text-xs text-muted-foreground">
+                  <TableCell
+                    className={
+                      hiddenCols.has("flavor")
+                        ? "hidden"
+                        : "truncate text-xs text-muted-foreground"
+                    }
+                  >
                     {h.linux_flavor ?? "—"}
                   </TableCell>
                   <TableCell className="text-right">

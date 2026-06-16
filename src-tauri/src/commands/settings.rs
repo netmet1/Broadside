@@ -198,6 +198,29 @@ pub fn set_app_settings(
     })
 }
 
+/// Resets app *preferences* to their built-in defaults (the "reset everything"
+/// action). Deletes the config keys so the getters fall back to defaults:
+/// max sessions, default timeout, help hints, and the font settings. It does
+/// NOT touch user content — hosts, credentials, guard rules, shortcuts, command
+/// history and the audit log are all left intact. The frontend clears its own
+/// UI prefs (theme, layout, sort) from localStorage alongside this.
+#[tauri::command]
+pub fn reset_app_settings(state: State<'_, DbState>) -> AppResult<()> {
+    with_db(&state, |conn| {
+        for key in [
+            KEY_MAX_SESSIONS,
+            KEY_DEFAULT_TIMEOUT,
+            KEY_HELP_HINTS,
+            KEY_TERMINAL_FONT_FAMILY,
+            KEY_TERMINAL_FONT_SIZE,
+            KEY_APP_FONT_SIZE,
+        ] {
+            conn.execute("DELETE FROM settings WHERE key = ?1", rusqlite::params![key])?;
+        }
+        Ok(())
+    })
+}
+
 /// Toggle for the bottom-bar help hints; saved immediately on change (same
 /// pattern as the audit toggle).
 #[tauri::command]
