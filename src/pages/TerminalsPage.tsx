@@ -3,6 +3,17 @@ import { TextIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+import {
   TerminalView,
   type ConnectionGate,
   type TerminalSearchHandle,
@@ -211,6 +222,16 @@ export function TerminalsPage({
     onCloseSession(id);
   };
 
+  // Close-all guard rail (T-…): confirm before tearing down every session.
+  const [closeAllOpen, setCloseAllOpen] = useState(false);
+  const closeAll = () => {
+    for (const s of sessions) {
+      ptyClose(s.id).catch(() => {});
+      onCloseSession(s.id);
+    }
+    setCloseAllOpen(false);
+  };
+
   // Show the gate dialog for the active session only — switching tabs while
   // a gate is pending leaves that session in its waiting state.
   const activeGateSession =
@@ -255,6 +276,19 @@ export function TerminalsPage({
             onRun={runShortcut}
             onManage={onManageShortcuts}
           />
+          {sessions.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCloseAllOpen(true)}
+              {...hint(
+                "Close every open terminal session at once (asks first)",
+              )}
+            >
+              <XIcon />
+              Close all
+            </Button>
+          )}
           {sessions.length > 0 && (
             <Select value={activeId ?? ""} onValueChange={(v) => onActivate(v)}>
               <SelectTrigger
@@ -383,6 +417,28 @@ export function TerminalsPage({
           </div>
         ))}
       </div>
+
+      <AlertDialog open={closeAllOpen} onOpenChange={setCloseAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close all terminals?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This closes{" "}
+              <span className="font-semibold text-foreground">
+                all {sessions.length}
+              </span>{" "}
+              open terminal {sessions.length === 1 ? "session" : "sessions"} and
+              disconnects them. Any unsaved work in those shells is lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={closeAll}>
+              Close all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <TofuKeyDialog
         open={activeGate?.status === "unknown_key"}
