@@ -44,15 +44,25 @@ pub async fn pty_open(
         }
     };
     let fingerprints = keys.iter().map(|k| k.fingerprint_sha256.clone()).collect();
+    // Sudo password auto-fill (D-065): armed only for a non-root host that has
+    // one stored. A locked credential store yields None — never block opening
+    // the terminal over it.
+    let sudo_password = if host.has_sudo_password && !host.username.eq_ignore_ascii_case("root") {
+        cred_state.get_sudo_password(host.id).ok().flatten()
+    } else {
+        None
+    };
     let result = pty::open(
         app,
         &pty_state,
         session_id,
+        &host.label,
         &host.hostname,
         host.port,
         &host.username,
         fingerprints,
         auth,
+        sudo_password,
         cols.clamp(2, 1000),
         rows.clamp(2, 1000),
     )

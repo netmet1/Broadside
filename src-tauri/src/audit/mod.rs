@@ -42,6 +42,13 @@ pub enum AuditEvent {
         hostname: String,
         port: u16,
     },
+    /// The stored sudo password was auto-filled at an interactive sudo prompt
+    /// in a PTY session (D-065). Never carries the password itself.
+    SudoInjected {
+        host_label: String,
+        hostname: String,
+        port: u16,
+    },
     SessionSaved {
         path: String,
         encrypted: bool,
