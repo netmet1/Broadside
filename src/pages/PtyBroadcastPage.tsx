@@ -252,7 +252,7 @@ export function PtyBroadcastPage({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-xs text-amber-300/90">
+      <div className="shrink-0 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
         Sends the command to every checked terminal session as if typed there.
         Results appear in each tab on the Terminals page.
       </div>
