@@ -33,6 +33,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/tauri/hosts";
+import {
+  HIDEABLE_COLUMNS,
+  loadHiddenCols,
+  saveHiddenCols,
+} from "@/lib/hostColumns";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
 import { useHint, useStatus } from "@/lib/status";
 import { useTheme } from "next-themes";
@@ -92,6 +97,19 @@ export function SettingsPage({
   const { prefs, apply: applyUiPrefs } = useUiPrefs();
   const { theme, setTheme } = useTheme();
   const hint = useHint();
+
+  // Host-table column visibility (Appearance). Read by the Hosts tab on mount;
+  // saved immediately on toggle.
+  const [hiddenCols, setHiddenCols] = useState(loadHiddenCols);
+  const toggleColumn = (id: string, visible: boolean) => {
+    setHiddenCols((prev) => {
+      const next = new Set(prev);
+      if (visible) next.delete(id);
+      else next.add(id);
+      saveHiddenCols(next);
+      return next;
+    });
+  };
 
   // Reset-everything-to-defaults (with a guard rail).
   const [resetOpen, setResetOpen] = useState(false);
@@ -1050,6 +1068,29 @@ export function SettingsPage({
             <p className="text-xs text-muted-foreground">
               12–20 px. Scales the whole UI except terminal panes.
             </p>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Host table columns</Label>
+            <p className="text-xs text-muted-foreground">
+              Hide nice-to-have columns from the Hosts table. Label, hostname
+              and actions always show.
+            </p>
+            <div className="flex flex-wrap gap-x-5 gap-y-1.5 pt-1">
+              {HIDEABLE_COLUMNS.map((col) => (
+                <label
+                  key={col.id}
+                  className="flex cursor-pointer items-center gap-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={!hiddenCols.has(col.id)}
+                    onChange={(e) => toggleColumn(col.id, e.target.checked)}
+                  />
+                  {col.label}
+                </label>
+              ))}
+            </div>
           </div>
           <div>
             <Button
