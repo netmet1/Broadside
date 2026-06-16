@@ -82,6 +82,13 @@ export function setHelpHintsEnabled(enabled: boolean): Promise<void> {
   return invoke<void>("set_help_hints_enabled", { enabled });
 }
 
+/** Resets app preferences (timeouts, sessions, fonts, hints) to defaults.
+ * Does not touch hosts, credentials, guard rules, shortcuts or history. The
+ * caller also clears its own localStorage UI prefs and reloads. */
+export function resetAppSettings(): Promise<void> {
+  return invoke<void>("reset_app_settings");
+}
+
 export type UiSettingsInput = {
   terminal_font_family: string;
   terminal_font_size: number;

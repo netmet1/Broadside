@@ -100,6 +100,7 @@ pub fn run() {
             commands::backup::backup_app_data,
             commands::settings::get_app_settings,
             commands::settings::set_app_settings,
+            commands::settings::reset_app_settings,
             commands::settings::set_help_hints_enabled,
             commands::settings::set_ui_settings,
             commands::settings::save_shortcuts,
