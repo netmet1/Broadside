@@ -3,6 +3,8 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   Loader2Icon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
   SendIcon,
   TriangleAlertIcon,
 } from "lucide-react";
@@ -55,6 +57,20 @@ import { useShortcuts } from "@/lib/useShortcuts";
 const DEFAULT_TIMEOUT_SECS = 30;
 /** How many past runs to reload on mount (matches the backend cap). */
 const HISTORY_RUNS = 200;
+/** Persisted collapse state for the host selection rail (mirrors OmniTerminal). */
+const RAIL_COLLAPSED_KEY = "broadcast-rail-collapsed";
+/** Persisted "show per-host output headers" toggle (mirrors OmniTerminal O4). */
+const HEADERS_KEY = "broadcast-headers";
+
+/** Initials of each whitespace-separated word, for the collapsed rail. */
+function wordInitials(label: string): string {
+  const i = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  return i || label.slice(0, 2).toUpperCase();
+}
 
 type Block = HostExecReport & { collapsed: boolean; receivedAt: string };
 
@@ -119,6 +135,29 @@ export function BroadcastPage({
     null,
   );
   const [activeHitIdx, setActiveHitIdx] = useState(0);
+
+  // Collapsible host rail (mirrors OmniTerminal's O1), persisted.
+  const [railCollapsed, setRailCollapsed] = useState(
+    () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
+  );
+  const toggleRail = useCallback(() => {
+    setRailCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(RAIL_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
+  // Per-host output headers toggle (O4): default ON; off = output only.
+  const [headers, setHeaders] = useState(
+    () => localStorage.getItem(HEADERS_KEY) !== "0",
+  );
+  const toggleHeaders = useCallback(() => {
+    setHeaders((prev) => {
+      const next = !prev;
+      localStorage.setItem(HEADERS_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
 
   const hint = useHint();
   const shortcuts = useShortcuts(visible);
@@ -576,107 +615,169 @@ export function BroadcastPage({
         print output and exit.
       </div>
       <div className="flex min-h-0 flex-1">
-      {/* Host selection rail */}
-      <div className="flex w-60 shrink-0 flex-col border-r border-border/50">
-        <label
-          className="flex shrink-0 cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium"
-          {...hint("Select or deselect every host for this broadcast")}
-        >
-          <input
-            type="checkbox"
-            className="accent-primary"
-            checked={allSelected}
-            onChange={toggleAll}
-            disabled={running}
-          />
-          Select all
-          <span className="ml-auto text-xs font-normal text-muted-foreground">
-            {selected.size}/{hosts.length}
-          </span>
-        </label>
-        {/* Sort-by dropdown for the host list (B3). */}
-        <div className="shrink-0 px-3 pb-2">
-          <select
-            value={railSort}
-            onChange={(e) => setRailSort(e.target.value)}
-            aria-label="Sort hosts"
-            className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-muted-foreground outline-none focus-visible:border-ring"
+      {/* Host selection rail (collapsible — mirrors OmniTerminal). */}
+      <div
+        className={`flex shrink-0 flex-col border-r border-border/50 ${
+          railCollapsed ? "w-14" : "w-60"
+        }`}
+      >
+        <div className="flex shrink-0 items-center gap-2 px-2 py-2">
+          <button
+            type="button"
+            onClick={toggleRail}
+            className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            aria-label={railCollapsed ? "Expand host rail" : "Collapse host rail"}
+            {...hint(
+              railCollapsed
+                ? "Expand the host selection rail"
+                : "Collapse the host selection rail to dots",
+            )}
           >
-            {RAIL_SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                Sort: {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          {railHosts.map((h) => (
+            {railCollapsed ? (
+              <PanelLeftOpenIcon className="h-4 w-4" />
+            ) : (
+              <PanelLeftCloseIcon className="h-4 w-4" />
+            )}
+          </button>
+          {!railCollapsed && (
             <label
-              key={h.id}
-              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+              className="flex cursor-pointer items-center gap-2 text-sm font-medium"
+              {...hint("Select or deselect every host for this broadcast")}
             >
               <input
                 type="checkbox"
                 className="accent-primary"
-                checked={selected.has(h.id)}
-                onChange={() => toggleHost(h.id)}
+                checked={allSelected}
+                onChange={toggleAll}
                 disabled={running}
               />
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: h.color }}
-              />
-              <span className="min-w-0 truncate" title={h.label}>
-                {h.label}
+              Select all
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                {selected.size}/{hosts.length}
               </span>
-              {/* Live terminal-connection dot (user request): green when this
-                  host has a connected terminal, red otherwise. */}
-              <span
-                className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
-                  connectedHostIds.has(h.id) ? "bg-emerald-500" : "bg-red-500/60"
-                }`}
-                title={
-                  connectedHostIds.has(h.id)
-                    ? "Connected — a terminal to this host is open"
-                    : "No connected terminal for this host"
-                }
-              />
             </label>
-          ))}
-          {hosts.length === 0 && (
+          )}
+        </div>
+        {/* Sort-by dropdown for the host list (B3). */}
+        {!railCollapsed && (
+          <div className="shrink-0 px-3 pb-2">
+            <select
+              value={railSort}
+              onChange={(e) => setRailSort(e.target.value)}
+              aria-label="Sort hosts"
+              className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-muted-foreground outline-none focus-visible:border-ring"
+            >
+              {RAIL_SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  Sort: {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          {railHosts.map((h) =>
+            railCollapsed ? (
+              <button
+                key={h.id}
+                type="button"
+                onClick={() => toggleHost(h.id)}
+                disabled={running}
+                title={`${h.label}${connectedHostIds.has(h.id) ? "" : " (no connected terminal)"}`}
+                className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 ${
+                  selected.has(h.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""
+                }`}
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: h.color }}
+                />
+                <span className="font-mono text-[10px] leading-none">
+                  {wordInitials(h.label)}
+                </span>
+              </button>
+            ) : (
+              <label
+                key={h.id}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-primary"
+                  checked={selected.has(h.id)}
+                  onChange={() => toggleHost(h.id)}
+                  disabled={running}
+                />
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: h.color }}
+                />
+                <span className="min-w-0 truncate" title={h.label}>
+                  {h.label}
+                </span>
+                {/* Live terminal-connection dot (user request): green when this
+                    host has a connected terminal, red otherwise. */}
+                <span
+                  className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
+                    connectedHostIds.has(h.id) ? "bg-emerald-500" : "bg-red-500/60"
+                  }`}
+                  title={
+                    connectedHostIds.has(h.id)
+                      ? "Connected — a terminal to this host is open"
+                      : "No connected terminal for this host"
+                  }
+                />
+              </label>
+            ),
+          )}
+          {hosts.length === 0 && !railCollapsed && (
             <p className="px-2 py-4 text-xs text-muted-foreground">
               No hosts configured. Add hosts on the Hosts page first.
             </p>
           )}
         </div>
         {/* Bottom-pinned clear actions — stay visible while the host list
-            above scrolls (work queue 2026-06-13). */}
-        <div className="shrink-0 space-y-1 border-t border-border/50 p-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={clearResults}
-            disabled={!hasOutput}
-            {...hint("Clear all saved broadcast results (also clears the persisted history)")}
-          >
-            Clear results
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={clearCmdHistory}
-            {...hint("Clear the Up/Down command recall history")}
-          >
-            Clear command history
-          </Button>
-        </div>
+            above scrolls (work queue 2026-06-13). Hidden when collapsed. */}
+        {!railCollapsed && (
+          <div className="shrink-0 space-y-1 border-t border-border/50 p-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={clearResults}
+              disabled={!hasOutput}
+              {...hint("Clear all saved broadcast results (also clears the persisted history)")}
+            >
+              Clear results
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={clearCmdHistory}
+              {...hint("Clear the Up/Down command recall history")}
+            >
+              Clear command history
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Output + composer */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center justify-end border-b border-border/30 px-3 py-1.5">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/30 px-3 py-1.5">
+          <label
+            className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
+            {...hint("Show the per-host header (label, exit, time) above each result. Off = output only.")}
+          >
+            <input
+              type="checkbox"
+              className="accent-primary"
+              checked={headers}
+              onChange={toggleHeaders}
+            />
+            Headers
+          </label>
           <ShortcutBar
             shortcuts={shortcuts}
             disabled={running || selected.size === 0}
@@ -742,6 +843,7 @@ export function BroadcastPage({
                         key={key}
                         block={tinted}
                         blockKey={key}
+                        showHeader={headers}
                         findData={
                           searchMode === "find" && scan
                             ? { byRef: scan.byRef, activeHit }
@@ -903,6 +1005,7 @@ type FindData = {
 function OutputBlock({
   block,
   blockKey,
+  showHeader,
   findData,
   filterMatcher,
   onToggle,
@@ -910,11 +1013,19 @@ function OutputBlock({
 }: {
   block: Block;
   blockKey: string;
+  /** When false, hide the per-host header (output only, color-tinted). */
+  showHeader: boolean;
   findData: FindData | null;
   filterMatcher: Matcher | null;
   onToggle: () => void;
   onReviewMismatch: (stored: string, presented: PresentedKey) => void;
 }) {
+  // With headers hidden there's no collapse affordance, so always show output;
+  // a coloured left border keeps each host's block identifiable.
+  const bodyShown = !showHeader || !block.collapsed;
+  const tintBorder = showHeader
+    ? undefined
+    : { borderLeftColor: block.color, borderLeftWidth: 3 };
   const { result } = block;
   const summary = statusSummary(result);
   const toneClass =
@@ -940,14 +1051,19 @@ function OutputBlock({
       );
     }
     return (
-      <div className="overflow-hidden rounded-md border border-border/40">
-        <BlockHeader
-          block={block}
-          summaryText={summary.text}
-          toneClass={toneClass}
-          onToggle={onToggle}
-        />
-        {!block.collapsed && (
+      <div
+        className="overflow-hidden rounded-md border border-border/40"
+        style={tintBorder}
+      >
+        {showHeader && (
+          <BlockHeader
+            block={block}
+            summaryText={summary.text}
+            toneClass={toneClass}
+            onToggle={onToggle}
+          />
+        )}
+        {bodyShown && (
           <div className="px-3 pb-3 font-mono text-xs">
             {matchingLines.map((l, i) => (
               <pre
@@ -968,14 +1084,19 @@ function OutputBlock({
   }
 
   return (
-    <div className="overflow-hidden rounded-md border border-border/40">
-      <BlockHeader
-        block={block}
-        summaryText={summary.text}
-        toneClass={toneClass}
-        onToggle={onToggle}
-      />
-      {!block.collapsed && (
+    <div
+      className="overflow-hidden rounded-md border border-border/40"
+      style={tintBorder}
+    >
+      {showHeader && (
+        <BlockHeader
+          block={block}
+          summaryText={summary.text}
+          toneClass={toneClass}
+          onToggle={onToggle}
+        />
+      )}
+      {bodyShown && (
         <div className="px-3 pb-3">
           <BlockBody
             result={result}
