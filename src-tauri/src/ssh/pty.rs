@@ -26,6 +26,9 @@ pub const CLOSED_EVENT: &str = "pty:closed";
 pub const BLOCK_EVENT: &str = "pty:block";
 /// The stored sudo password was auto-filled at a prompt (D-065).
 pub const SUDO_EVENT: &str = "pty:sudo";
+/// An auto-filled sudo password was rejected by sudo (`Sorry, try again.`),
+/// so the stored password is probably wrong (D-065, 11.3).
+pub const SUDO_REJECTED_EVENT: &str = "pty:sudo-rejected";
 
 const TERM: &str = "xterm-256color";
 
@@ -72,6 +75,8 @@ pub trait PtyEvents: Send + Sync + 'static {
     fn block(&self, payload: PtyBlock);
     /// The sudo password was auto-filled at a prompt (D-065).
     fn sudo_injected(&self, payload: SudoInjected);
+    /// An auto-filled sudo password was rejected (probably wrong) (D-065).
+    fn sudo_rejected(&self, payload: SudoInjected);
 }
 
 impl PtyEvents for tauri::AppHandle {
@@ -96,6 +101,11 @@ impl PtyEvents for tauri::AppHandle {
         // Notify the UI so it can toast (transparency: the operator should know
         // a password was typed for them).
         let _ = self.emit(SUDO_EVENT, &payload);
+    }
+    fn sudo_rejected(&self, payload: SudoInjected) {
+        // Transparency: the auto-filled password didn't work — tell the operator
+        // so they can fix the stored sudo password. No secret in the payload.
+        let _ = self.emit(SUDO_REJECTED_EVENT, &payload);
     }
 }
 
@@ -329,6 +339,11 @@ pub async fn open<E: PtyEvents>(
                             if channel.data(payload.as_bytes()).await.is_ok() {
                                 events.sudo_injected(sudo_meta.clone());
                             }
+                        }
+                        // An injected password that sudo rejected — warn once so
+                        // the operator knows to fix the stored password (11.3).
+                        if sudo.take_rejected() {
+                            events.sudo_rejected(sudo_meta.clone());
                         }
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {

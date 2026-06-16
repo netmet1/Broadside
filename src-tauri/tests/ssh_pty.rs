@@ -35,6 +35,7 @@ impl PtyEvents for ChannelEvents {
         let _ = self.0.send(Event::Block(payload));
     }
     fn sudo_injected(&self, _payload: SudoInjected) {}
+    fn sudo_rejected(&self, _payload: SudoInjected) {}
 }
 
 async fn trust(fx: &Fixture) -> String {

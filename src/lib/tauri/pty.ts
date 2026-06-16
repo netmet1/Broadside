@@ -82,6 +82,16 @@ export function onPtySudo(
   return listen<PtySudo>("pty:sudo", (event) => handler(event.payload));
 }
 
+/** An auto-filled sudo password was rejected by sudo (the stored password is
+ * probably wrong). Same payload shape as {@link PtySudo}; no secret. */
+export function onPtySudoRejected(
+  handler: (payload: PtySudo) => void,
+): Promise<UnlistenFn> {
+  return listen<PtySudo>("pty:sudo-rejected", (event) =>
+    handler(event.payload),
+  );
+}
+
 /** Why a block isn't mirrored as text (D-061). `normal` blocks carry output
  * lines; the others are full-screen/redrawing TUI apps shown as a notice. */
 export type BlockInteractivity = "normal" | "alt_screen" | "redraw";

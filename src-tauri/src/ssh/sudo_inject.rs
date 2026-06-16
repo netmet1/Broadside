@@ -41,6 +41,12 @@ pub struct SudoInjector {
     armed: bool,
     /// A rejection was seen; stop injecting until the next sudo command.
     suppressed: bool,
+    /// We injected during the current sudo cycle — so a following rejection is
+    /// *our* password being wrong (not the operator's own typing).
+    did_inject: bool,
+    /// Latched when an injected password was rejected; drained by
+    /// [`take_rejected`](Self::take_rejected) so the caller can warn once.
+    rejected: bool,
     /// The last command submitted while armed, to recognise (and skip) its
     /// echo so we never type the password as a command (Tier B safety).
     armed_cmd: String,
@@ -54,10 +60,19 @@ impl SudoInjector {
             password,
             armed: false,
             suppressed: false,
+            did_inject: false,
+            rejected: false,
             armed_cmd: String::new(),
             input_line: Vec::new(),
             out_tail: String::new(),
         }
+    }
+
+    /// Returns (and clears) whether an *injected* password was just rejected —
+    /// the caller uses this to warn the operator "possible wrong sudo password"
+    /// once per rejection. Never set for the operator's own mistyped password.
+    pub fn take_rejected(&mut self) -> bool {
+        std::mem::take(&mut self.rejected)
     }
 
     /// Feed bytes the operator / PTY Broadcast typed. Updates the arm state on
@@ -87,6 +102,7 @@ impl SudoInjector {
         if guard::rewrite_for_sudo(&line).needs_password {
             self.armed = true;
             self.suppressed = false;
+            self.did_inject = false; // fresh cycle for the new sudo command
             self.armed_cmd = line;
         } else {
             // A non-sudo command: stop expecting a generic password prompt.
@@ -108,6 +124,11 @@ impl SudoInjector {
         // Rejection → hand off; don't inject again until a new sudo command
         // re-arms us.
         if lower.contains("sorry, try again") || lower.contains("incorrect password") {
+            // Only warn when it was *our* injected password that bounced.
+            if self.did_inject {
+                self.rejected = true;
+            }
+            self.did_inject = false;
             self.suppressed = true;
             self.armed = false;
             self.out_tail.clear();
@@ -136,6 +157,7 @@ impl SudoInjector {
 
         if tier_a || tier_b {
             self.armed = false;
+            self.did_inject = true;
             self.out_tail.clear();
             return Some(format!("{password}\n"));
         }
@@ -240,8 +262,21 @@ mod tests {
             s.on_output(b"\r\nSorry, try again.\r\n[sudo] password for joe: "),
             None
         );
+        // …and the rejection is flagged once so the UI can warn.
+        assert!(s.take_rejected());
+        assert!(!s.take_rejected()); // drained
         // Even a fresh prompt chunk stays suppressed until re-armed.
         assert_eq!(s.on_output(b"[sudo] password for joe: "), None);
+    }
+
+    #[test]
+    fn operator_typed_wrong_password_is_not_flagged_as_our_rejection() {
+        // No sudo command armed + no injection: a "Sorry, try again." from the
+        // operator fumbling their own password must NOT raise our warning.
+        let mut s = armed_injector();
+        s.on_input(b"ls\n");
+        assert_eq!(s.on_output(b"\r\nSorry, try again.\r\n"), None);
+        assert!(!s.take_rejected());
     }
 
     #[test]

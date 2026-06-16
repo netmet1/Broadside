@@ -18,7 +18,7 @@ import {
   isCredentialsUnlocked,
   requiresMasterPassword,
 } from "@/lib/tauri/hosts";
-import { onPtySudo } from "@/lib/tauri/pty";
+import { onPtySudo, onPtySudoRejected } from "@/lib/tauri/pty";
 
 function App() {
   const [page, setPage] = useState<Page>("hosts");
@@ -51,6 +51,20 @@ function App() {
   useEffect(() => {
     const unlisten = onPtySudo((p) =>
       toast.info(`Auto-filled sudo password for ${p.host_label}`),
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // The auto-filled password bounced (sudo said "Sorry, try again.") — warn so
+  // the operator fixes the stored sudo password (D-065, 11.3). Auto-fill has
+  // already stopped itself; the prompt is now the operator's to answer.
+  useEffect(() => {
+    const unlisten = onPtySudoRejected((p) =>
+      toast.warning(
+        `Possible wrong sudo password for ${p.host_label} — auto-fill stopped; enter it manually`,
+      ),
     );
     return () => {
       unlisten.then((fn) => fn());
