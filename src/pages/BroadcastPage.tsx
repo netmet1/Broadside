@@ -34,6 +34,7 @@ import {
   clearCommandHistory,
   commandHistory,
   getAppSettings,
+  setAppSettings,
 } from "@/lib/tauri/settings";
 import type { PresentedKey } from "@/lib/tauri/ssh";
 import {
@@ -141,6 +142,11 @@ export function BroadcastPage({
   // the selected-by-default treatment) from "existing host the user
   // deselected" (selection preserved) when re-syncing on page return.
   const knownHostIds = useRef<Set<number>>(new Set());
+  // The default timeout is a persisted setting (D-…); the broadcast-tab field
+  // edits it in place. These refs hold the last-saved value (so we don't re-save
+  // on load) and max_concurrent_sessions (set_app_settings writes both at once).
+  const savedTimeoutRef = useRef<number | null>(null);
+  const maxSessionsRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -170,7 +176,11 @@ export function BroadcastPage({
         // Recall is a convenience; the composer works without it.
       });
     getAppSettings()
-      .then((s) => setTimeoutSecs(String(s.default_timeout_secs)))
+      .then((s) => {
+        setTimeoutSecs(String(s.default_timeout_secs));
+        savedTimeoutRef.current = s.default_timeout_secs;
+        maxSessionsRef.current = s.max_concurrent_sessions;
+      })
       .catch(() => {
         // Keep the built-in 30s default if settings can't load.
       });
@@ -358,6 +368,23 @@ export function BroadcastPage({
     const n = Number(timeoutSecs);
     return Number.isFinite(n) && n >= 1 && n <= 3600 ? Math.floor(n) : null;
   })();
+
+  // Persist a valid timeout change as the default so it survives restart (6.4).
+  // Debounced; skips the no-op save right after the initial settings load.
+  useEffect(() => {
+    if (parsedTimeout === null || savedTimeoutRef.current === null) return;
+    if (parsedTimeout === savedTimeoutRef.current) return;
+    const t = window.setTimeout(() => {
+      savedTimeoutRef.current = parsedTimeout;
+      setAppSettings({
+        max_concurrent_sessions: maxSessionsRef.current,
+        default_timeout_secs: parsedTimeout,
+      }).catch(() => {
+        // Persisting the default is best-effort; the run still uses the value.
+      });
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [parsedTimeout]);
 
   const runBroadcast = useCallback(
     async (hostIds: number[], cmd: string, confirmed: boolean) => {
@@ -743,7 +770,7 @@ export function BroadcastPage({
               disabled={running}
               aria-label="Timeout in seconds"
               className={`h-10 w-16 text-center font-mono text-sm ${parsedTimeout === null ? "border-destructive" : ""}`}
-              {...hint("Per-command timeout in seconds (1–3600). Partial output is kept if it elapses.")}
+              {...hint("Per-command timeout in seconds (1–3600), saved as the default. Partial output is kept if it elapses.")}
             />
             <span className="text-xs text-muted-foreground">s</span>
           </div>
