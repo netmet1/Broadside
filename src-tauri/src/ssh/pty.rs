@@ -1,6 +1,9 @@
 //! Interactive PTY sessions for per-host terminal tabs (D-002 hybrid model).
-//! PTY mode is deliberately exempt from the destructive guard (D-014) and
-//! sudo password piping (D-026) — the operator is interactive.
+//! PTY mode is deliberately exempt from the destructive guard (D-014) — the
+//! operator is interactive. Sudo password auto-fill, however, IS wired in here
+//! (D-065, reversing D-026's PTY exemption): the session task feeds the
+//! keystroke and output streams through a [`SudoInjector`](super::sudo_inject)
+//! that answers a sudo password prompt with the host's stored sudo password.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,9 +13,10 @@ use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use russh::ChannelMsg;
 use serde::Serialize;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tokio::sync::mpsc;
 
+use super::sudo_inject::SudoInjector;
 use super::{connect_and_auth, AuthMethod, ConnectFailure, PresentedKey};
 use crate::error::{AppError, AppResult};
 
@@ -20,6 +24,8 @@ pub const DATA_EVENT: &str = "pty:data";
 pub const CLOSED_EVENT: &str = "pty:closed";
 /// Completed command blocks for the OmniTerminal aggregate view (D-061).
 pub const BLOCK_EVENT: &str = "pty:block";
+/// The stored sudo password was auto-filled at a prompt (D-065).
+pub const SUDO_EVENT: &str = "pty:sudo";
 
 const TERM: &str = "xterm-256color";
 
@@ -35,6 +41,16 @@ pub struct PtyClosed {
     pub session_id: String,
     pub exit_code: Option<u32>,
     pub message: Option<String>,
+}
+
+/// The stored sudo password was auto-filled for one session (D-065). Carries
+/// no secret — only enough to audit-log and toast.
+#[derive(Debug, Clone, Serialize)]
+pub struct SudoInjected {
+    pub session_id: String,
+    pub host_label: String,
+    pub hostname: String,
+    pub port: u16,
 }
 
 /// A completed command block for one session, fed to the OmniTerminal view
@@ -54,6 +70,8 @@ pub trait PtyEvents: Send + Sync + 'static {
     fn closed(&self, payload: PtyClosed);
     /// A command finished — its completion-delimited block (D-061).
     fn block(&self, payload: PtyBlock);
+    /// The sudo password was auto-filled at a prompt (D-065).
+    fn sudo_injected(&self, payload: SudoInjected);
 }
 
 impl PtyEvents for tauri::AppHandle {
@@ -65,6 +83,19 @@ impl PtyEvents for tauri::AppHandle {
     }
     fn block(&self, payload: PtyBlock) {
         let _ = self.emit(BLOCK_EVENT, &payload);
+    }
+    fn sudo_injected(&self, payload: SudoInjected) {
+        // Always-on audit (D-011) — never includes the password (D-026 rule).
+        let _ = self
+            .state::<crate::audit::AuditState>()
+            .append(&crate::audit::AuditEvent::SudoInjected {
+                host_label: payload.host_label.clone(),
+                hostname: payload.hostname.clone(),
+                port: payload.port,
+            });
+        // Notify the UI so it can toast (transparency: the operator should know
+        // a password was typed for them).
+        let _ = self.emit(SUDO_EVENT, &payload);
     }
 }
 
@@ -196,11 +227,15 @@ pub async fn open<E: PtyEvents>(
     events: E,
     state: &PtyState,
     session_id: String,
+    host_label: &str,
     hostname: &str,
     port: u16,
     username: &str,
     trusted_fingerprints: Vec<String>,
     auth: AuthMethod,
+    // The host's stored sudo password (D-065), or None to disable auto-fill
+    // (root host, or no password stored). Never leaves this task.
+    sudo_password: Option<String>,
     cols: u32,
     rows: u32,
 ) -> AppResult<PtyOpenResult> {
@@ -229,6 +264,15 @@ pub async fn open<E: PtyEvents>(
     let (tx, mut rx) = mpsc::channel::<SessionCmd>(64);
     let epoch = state.insert(session_id.clone(), tx);
     let state = state.clone();
+
+    // Sudo password auto-fill (D-065). Inert when `sudo_password` is None.
+    let mut sudo = SudoInjector::new(sudo_password);
+    let sudo_meta = SudoInjected {
+        session_id: session_id.clone(),
+        host_label: host_label.to_string(),
+        hostname: hostname.to_string(),
+        port,
+    };
 
     tauri::async_runtime::spawn(async move {
         let mut exit_code: Option<u32> = None;
@@ -278,6 +322,14 @@ pub async fn open<E: PtyEvents>(
                             session_id: session_id.clone(),
                             data_b64: B64.encode(data),
                         });
+                        // Answer a sudo prompt after the bytes reach the UI so
+                        // the operator sees the prompt (D-065). The password
+                        // never enters the visible stream.
+                        if let Some(payload) = sudo.on_output(&data[..]) {
+                            if channel.data(payload.as_bytes()).await.is_ok() {
+                                events.sudo_injected(sudo_meta.clone());
+                            }
+                        }
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         exit_code = Some(exit_status);
@@ -293,6 +345,8 @@ pub async fn open<E: PtyEvents>(
                 },
                 cmd = rx.recv() => match cmd {
                     Some(SessionCmd::Write(data)) => {
+                        // Track typed input to arm sudo auto-fill (D-065).
+                        sudo.on_input(&data);
                         if let Err(e) = channel.data(&data[..]).await {
                             message = Some(format!("write failed: {e}"));
                             break;

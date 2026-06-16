@@ -10,7 +10,9 @@ use std::time::Duration;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use common::{Fixture, PASSWORD, USER};
-use omniterminal_lib::ssh::pty::{open, PtyBlock, PtyClosed, PtyData, PtyEvents, PtyState};
+use omniterminal_lib::ssh::pty::{
+    open, PtyBlock, PtyClosed, PtyData, PtyEvents, PtyState, SudoInjected,
+};
 use omniterminal_lib::ssh::{probe, AuthMethod, ProbeResult};
 use tokio::sync::mpsc;
 
@@ -32,6 +34,7 @@ impl PtyEvents for ChannelEvents {
     fn block(&self, payload: PtyBlock) {
         let _ = self.0.send(Event::Block(payload));
     }
+    fn sudo_injected(&self, _payload: SudoInjected) {}
 }
 
 async fn trust(fx: &Fixture) -> String {
@@ -109,11 +112,13 @@ async fn pty_shell_round_trip_and_close() {
         ChannelEvents(tx),
         &state,
         "test-session".into(),
+        "test-host",
         "127.0.0.1",
         fx.port,
         USER,
         vec![fp],
         AuthMethod::Password(PASSWORD.to_string()),
+        None,
         80,
         24,
     )
@@ -172,11 +177,13 @@ async fn pty_reopen_same_id_replaces_session() {
             ChannelEvents(tx.clone()),
             &state,
             "dup-session".into(),
+            "test-host",
             "127.0.0.1",
             fx.port,
             USER,
             vec![fp.clone()],
             AuthMethod::Password(PASSWORD.to_string()),
+            None,
             80,
             24,
         )
@@ -209,11 +216,13 @@ async fn pty_remote_exit_emits_closed() {
         ChannelEvents(tx),
         &state,
         "exit-session".into(),
+        "test-host",
         "127.0.0.1",
         fx.port,
         USER,
         vec![fp],
         AuthMethod::Password(PASSWORD.to_string()),
+        None,
         80,
         24,
     )
@@ -257,11 +266,13 @@ async fn pty_omni_blocks_from_bash() {
         ChannelEvents(tx),
         &state,
         "omni-session".into(),
+        "test-host",
         "127.0.0.1",
         fx.port,
         USER,
         vec![fp],
         AuthMethod::Password(PASSWORD.to_string()),
+        None,
         80,
         24,
     )
