@@ -39,7 +39,9 @@ pub struct StoredOmniBlock {
 }
 
 /// Appends one displayed block, then prunes to the most recent MAX_BLOCKS.
-pub fn add(conn: &Connection, b: &OmniBlockInput) -> AppResult<()> {
+/// Returns the new row id so the UI can later delete this single block (e.g. to
+/// purge a stray block without clearing the whole log).
+pub fn add(conn: &Connection, b: &OmniBlockInput) -> AppResult<i64> {
     let lines_json = serde_json::to_string(&b.lines).unwrap_or_else(|_| "[]".into());
     conn.execute(
         "INSERT INTO omni_blocks
@@ -56,13 +58,20 @@ pub fn add(conn: &Connection, b: &OmniBlockInput) -> AppResult<()> {
             b.interactivity
         ],
     )?;
+    let id = conn.last_insert_rowid();
     conn.execute(
         "DELETE FROM omni_blocks WHERE id <= (
             SELECT id FROM omni_blocks ORDER BY id DESC LIMIT 1 OFFSET ?1
          )",
         params![MAX_BLOCKS],
     )?;
-    Ok(())
+    Ok(id)
+}
+
+/// Deletes one block by id (the per-block "purge this entry" action). Returns
+/// rows removed (0 if it was already gone).
+pub fn delete(conn: &Connection, id: i64) -> AppResult<usize> {
+    Ok(conn.execute("DELETE FROM omni_blocks WHERE id = ?1", params![id])?)
 }
 
 /// The most recent `limit` blocks, oldest-first (so the UI appends them with
@@ -145,5 +154,22 @@ mod tests {
         add(&conn, &block("a", "c")).unwrap();
         clear(&conn).unwrap();
         assert!(list(&conn, 50).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_removes_only_one() {
+        let conn = open_in_memory().unwrap();
+        let _ = add(&conn, &block("a", "keep")).unwrap();
+        let id = add(&conn, &block("b", "purge")).unwrap();
+        add(&conn, &block("c", "keep")).unwrap();
+        assert_eq!(delete(&conn, id).unwrap(), 1);
+        let cmds: Vec<_> = list(&conn, 50)
+            .unwrap()
+            .into_iter()
+            .filter_map(|b| b.command)
+            .collect();
+        assert_eq!(cmds, vec!["keep", "keep"]);
+        // Deleting an already-gone id is a no-op.
+        assert_eq!(delete(&conn, id).unwrap(), 0);
     }
 }

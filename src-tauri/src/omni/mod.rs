@@ -292,7 +292,11 @@ pub fn shell_integration_command() -> String {
 /// without the visible setup command. It's a single line, so the integration's
 /// preexec guard suppresses any OmniTerminal block for the clear/MOTD/echo.
 pub fn shell_setup_command(last_login: Option<&str>) -> String {
-    let mut cmd = String::from(SHELL_INTEGRATION);
+    // Leading space so shells with `ignorespace`/`ignoreboth` in HISTCONTROL
+    // (the Debian/Ubuntu default) don't record this long line in shell history
+    // — otherwise an Up-arrow in the terminal recalls the whole setup line.
+    let mut cmd = String::from(" ");
+    cmd.push_str(SHELL_INTEGRATION);
     cmd.push_str("; clear; cat /run/motd.dynamic /etc/motd 2>/dev/null");
     if let Some(ll) = last_login {
         // Single-quote the captured line, escaping any single quotes, so any
@@ -569,6 +573,7 @@ mod tests {
     #[test]
     fn setup_command_clears_reprints_motd_and_last_login() {
         let c = shell_setup_command(Some("Last login: Mon Jun 15 from 1.2.3.4"));
+        assert!(c.starts_with(' ')); // leading space keeps it out of shell history
         assert!(c.contains("133;A")); // integration is in there
         assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
         assert!(c.contains("printf '%s\\n' 'Last login: Mon Jun 15 from 1.2.3.4'"));

@@ -86,6 +86,7 @@ pub fn run() {
             commands::pty::omni_blocks_add,
             commands::pty::omni_blocks_list,
             commands::pty::omni_blocks_clear,
+            commands::pty::omni_blocks_delete,
             commands::session::save_session,
             commands::session::session_is_encrypted,
             commands::session::load_session,
