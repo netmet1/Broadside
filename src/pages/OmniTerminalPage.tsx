@@ -4,6 +4,7 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   SendIcon,
+  XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -16,6 +17,7 @@ import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import {
   omniBlocksAdd,
   omniBlocksClear,
+  omniBlocksDelete,
   omniBlocksList,
   omniLogCommand,
   onPtyBlock,
@@ -39,6 +41,8 @@ const HOST_UNKNOWN_COLOR = "#6b7280";
  * by `hostId` at render (snapshot is the deletion fallback). */
 type DisplayBlock = {
   key: string;
+  /** Persisted-row id (set once omni_blocks_add resolves); null until then. */
+  dbId: number | null;
   ts: string;
   hostId: number | null;
   labelSnapshot: string;
@@ -153,23 +157,31 @@ export function OmniTerminalPage({
       // when the mirror toggle was off (O5).
       const queue = pendingDispatched.current.get(blk.session_id);
       let dispatched = false;
+      let dispatchedCmd: string | null = null;
       if (queue && queue.length > 0) {
-        queue.shift();
+        dispatchedCmd = queue.shift() ?? null;
         dispatched = true;
       }
       // Hand-typed blocks only appear when the mirror toggle is on.
       if (!dispatched && !mirrorRef.current) return;
+      // For blocks WE dispatched, trust the command we sent — the parsed echo
+      // (blk.command) can be corrupted by recalled/edited input still sitting at
+      // the prompt (e.g. an Up-arrow recall of the setup line before dispatch).
+      // Hand-typed (mirrored) blocks keep the parsed echo; it's all we have.
+      const command = dispatched ? dispatchedCmd : blk.command;
       const ts = new Date().toISOString();
+      const key = crypto.randomUUID();
       setBlocks((prev) => {
         const next = [
           ...prev,
           {
-            key: crypto.randomUUID(),
+            key,
+            dbId: null,
             ts,
             hostId: sess.host.id,
             labelSnapshot: sess.host.label,
             colorSnapshot: sess.host.color,
-            command: blk.command,
+            command,
             lines: blk.lines,
             exitCode: blk.exit_code,
             durationMs: blk.duration_ms,
@@ -180,17 +192,24 @@ export function OmniTerminalPage({
           ? next.slice(next.length - MAX_BLOCKS)
           : next;
       });
-      // Persist so the log survives a restart (best-effort).
+      // Persist so the log survives a restart (best-effort); stash the row id
+      // back on the block so it can be individually deleted later.
       omniBlocksAdd({
         ts,
         host_id: sess.host.id,
         label: sess.host.label,
-        command: blk.command,
+        command,
         lines: blk.lines,
         exit_code: blk.exit_code,
         duration_ms: blk.duration_ms,
         interactivity: blk.interactivity,
-      }).catch(() => {});
+      })
+        .then((id) =>
+          setBlocks((prev) =>
+            prev.map((b) => (b.key === key ? { ...b, dbId: id } : b)),
+          ),
+        )
+        .catch(() => {});
     });
     return () => {
       un.then((f) => f());
@@ -204,6 +223,7 @@ export function OmniTerminalPage({
         setBlocks(
           stored.map((s) => ({
             key: crypto.randomUUID(),
+            dbId: s.id,
             ts: s.ts,
             hostId: s.host_id,
             labelSnapshot: s.label,
@@ -336,6 +356,20 @@ export function OmniTerminalPage({
       return;
     }
     setBlocks([]);
+  }, []);
+
+  // Purge a single block (e.g. a stray setup-line capture) without clearing the
+  // whole log. Drops the in-memory entry and the persisted row if it has one.
+  const deleteBlock = useCallback(async (block: DisplayBlock) => {
+    if (block.dbId != null) {
+      try {
+        await omniBlocksDelete(block.dbId);
+      } catch (e) {
+        toast.error(errorMessage(e));
+        return;
+      }
+    }
+    setBlocks((prev) => prev.filter((b) => b.key !== block.key));
   }, []);
 
   const hasOutput = blocks.length > 0;
@@ -536,6 +570,7 @@ export function OmniTerminalPage({
                       durationMs={b.durationMs}
                       interactivity={b.interactivity}
                       showHeader={headers}
+                      onDelete={() => deleteBlock(b)}
                     />
                   );
                 })}
@@ -609,6 +644,7 @@ function OmniBlock({
   durationMs,
   interactivity,
   showHeader,
+  onDelete,
 }: {
   color: string;
   label: string;
@@ -619,15 +655,25 @@ function OmniBlock({
   durationMs: number | null;
   interactivity: BlockInteractivity;
   showHeader: boolean;
+  onDelete: () => void;
 }) {
   const interactive = interactivity !== "normal";
   return (
     <div
-      className="rounded-md border border-border/40 pl-3"
+      className="group relative rounded-md border border-border/40 pl-3"
       style={{ borderLeftColor: color, borderLeftWidth: 3 }}
     >
+      <button
+        type="button"
+        onClick={onDelete}
+        title="Remove this block from the log"
+        aria-label="Remove this block"
+        className="absolute right-1 top-1 z-10 hidden rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive group-hover:block"
+      >
+        <XIcon className="h-3.5 w-3.5" />
+      </button>
       {showHeader && (
-      <div className="flex items-center gap-2 px-2 py-1.5 text-xs">
+      <div className="flex items-center gap-2 py-1.5 pl-2 pr-7 text-xs">
         <span
           className="h-2.5 w-2.5 shrink-0 rounded-full"
           style={{ backgroundColor: color }}

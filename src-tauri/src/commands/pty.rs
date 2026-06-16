@@ -161,8 +161,15 @@ pub fn omni_log_command(
 pub fn omni_blocks_add(
     block: crate::db::omni_history::OmniBlockInput,
     state: State<'_, DbState>,
-) -> AppResult<()> {
+) -> AppResult<i64> {
     with_db(&state, |conn| crate::db::omni_history::add(conn, &block))
+}
+
+/// Deletes one OmniTerminal block by id (purge a single stray entry without
+/// clearing the whole log). Returns rows removed.
+#[tauri::command]
+pub fn omni_blocks_delete(id: i64, state: State<'_, DbState>) -> AppResult<usize> {
+    with_db(&state, |conn| crate::db::omni_history::delete(conn, id))
 }
 
 /// The persisted OmniTerminal block log, oldest first.

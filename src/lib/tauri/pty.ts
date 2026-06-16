@@ -117,8 +117,14 @@ export type StoredOmniBlock = {
 
 export type OmniBlockInput = Omit<StoredOmniBlock, "id">;
 
-export function omniBlocksAdd(block: OmniBlockInput): Promise<void> {
-  return invoke<void>("omni_blocks_add", { block });
+/** Persists a block; resolves to its new row id (used for per-block delete). */
+export function omniBlocksAdd(block: OmniBlockInput): Promise<number> {
+  return invoke<number>("omni_blocks_add", { block });
+}
+
+/** Deletes one persisted OmniTerminal block by id. Returns rows removed. */
+export function omniBlocksDelete(id: number): Promise<number> {
+  return invoke<number>("omni_blocks_delete", { id });
 }
 
 /** The persisted OmniTerminal block log, oldest first. */
