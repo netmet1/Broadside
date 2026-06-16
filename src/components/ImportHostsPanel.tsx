@@ -144,7 +144,14 @@ export function ImportHostsPanel({
   const statusBadge = (row: RowPreview) => {
     switch (row.status) {
       case "ready":
-        return <span className="text-xs text-emerald-400">ready</span>;
+        return (
+          <span className="text-xs text-emerald-400">
+            ready
+            {row.message && (
+              <span className="ml-1.5 text-muted-foreground">{row.message}</span>
+            )}
+          </span>
+        );
       case "duplicate":
         return (
           <span className="text-xs text-amber-400">
@@ -170,7 +177,9 @@ export function ImportHostsPanel({
             port, color, tag, linux_flavor, notes
           </span>
           . A color of <span className="font-mono text-xs">#auto</span> (or
-          empty) picks the next palette hue. Duplicate labels are skipped.
+          empty) picks the next palette hue. A row is a duplicate only when the
+          same host+port+username already exists; reusing a label for a distinct
+          host auto-renames it (e.g. <span className="font-mono text-xs">web-2</span>).
           Credentials are never imported — set them per host afterwards.
         </p>
       </div>

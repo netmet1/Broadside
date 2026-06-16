@@ -235,22 +235,17 @@ fn validate_inner(
     let mut seen_endpoints: HashSet<String> = HashSet::new();
     rows.into_iter()
         .map(|row| {
-            let preview = validate_row(&row);
+            let mut preview = validate_row(&row);
             if preview.status != RowStatus::Ready {
                 return preview;
             }
-            let label = preview.label.clone();
-            if existing_labels.contains(&label) || seen_labels.contains(&label) {
-                return RowPreview {
-                    status: RowStatus::Duplicate,
-                    message: Some("skipped — duplicate label".into()),
-                    ..preview
-                };
-            }
-            // Endpoint (hostname+port+username) dedup, only when the caller
-            // opts in (import does). Differing port or username = distinct.
-            let key = endpoint_key(&preview.hostname, preview.port, &preview.username);
+
+            // Endpoint-aware path (import opts in): the endpoint
+            // (hostname+port+username) is the real identity. A matching
+            // endpoint is the only true duplicate; differing port or username
+            // is a distinct host that must import (H5, 2026-06-16).
             if let Some(existing) = existing_endpoints {
+                let key = endpoint_key(&preview.hostname, preview.port, &preview.username);
                 if existing.contains(&key) || seen_endpoints.contains(&key) {
                     return RowPreview {
                         status: RowStatus::Duplicate,
@@ -262,11 +257,52 @@ fn validate_inner(
                     };
                 }
                 seen_endpoints.insert(key);
+
+                // Labels are a UNIQUE key, so a distinct endpoint that reuses a
+                // label (in the DB or earlier in the file) would fail the
+                // insert. Auto-suffix it (web → web-2 → web-3) and keep the row
+                // ready; the preview shows the chosen label and a note (H5).
+                if existing_labels.contains(&preview.label) || seen_labels.contains(&preview.label)
+                {
+                    let unique = unique_label(&preview.label, existing_labels, &seen_labels);
+                    preview.message =
+                        Some(format!("label \"{}\" in use — imported as \"{unique}\"", preview.label));
+                    preview.label = unique;
+                }
+                seen_labels.insert(preview.label.clone());
+                return preview;
             }
-            seen_labels.insert(label);
+
+            // Label-only path (export round-trip etc.): duplicate label = skip.
+            if existing_labels.contains(&preview.label) || seen_labels.contains(&preview.label) {
+                return RowPreview {
+                    status: RowStatus::Duplicate,
+                    message: Some("skipped — duplicate label".into()),
+                    ..preview
+                };
+            }
+            seen_labels.insert(preview.label.clone());
             preview
         })
         .collect()
+}
+
+/// First of `base`, `base-2`, `base-3`, … not already taken (in the DB
+/// `existing` set or the `seen` set built earlier in the file). Used to keep
+/// imported labels unique when a distinct endpoint reuses a label (H5).
+fn unique_label(base: &str, existing: &HashSet<String>, seen: &HashSet<String>) -> String {
+    let taken = |s: &str| existing.contains(s) || seen.contains(s);
+    if !taken(base) {
+        return base.to_string();
+    }
+    let mut n = 2u32;
+    loop {
+        let candidate = format!("{base}-{n}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 fn validate_row(row: &RawRow) -> RowPreview {

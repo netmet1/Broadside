@@ -345,6 +345,55 @@ fn duplicate_endpoint_tuple_against_db_and_within_file() {
 }
 
 #[test]
+fn distinct_endpoint_sharing_a_label_is_auto_suffixed() {
+    // Smoke-test 4.3: three rows all labelled "web", same host, but the 2nd
+    // differs by port and the 3rd by username — all three are distinct
+    // endpoints and must import. Labels are unique, so 2nd/3rd get suffixed.
+    let existing_labels = HashSet::new();
+    let existing_endpoints = HashSet::new();
+    let row = |host: &str, user: &str, port: &str| {
+        let mut r = raw("web", host, user);
+        r.port = port.into();
+        r
+    };
+    let out = validate_rows_with_endpoints(
+        &existing_labels,
+        &existing_endpoints,
+        vec![
+            row("10.0.0.9", "root", "22"),
+            row("10.0.0.9", "root", "2222"),   // diff port -> distinct
+            row("10.0.0.9", "deploy", "2222"), // diff user -> distinct
+            row("10.0.0.9", "root", "22"),     // true dup of row 1
+        ],
+    );
+    assert_eq!(out[0].status, RowStatus::Ready);
+    assert_eq!(out[0].label, "web");
+    assert_eq!(out[1].status, RowStatus::Ready);
+    assert_eq!(out[1].label, "web-2");
+    assert_eq!(out[2].status, RowStatus::Ready);
+    assert_eq!(out[2].label, "web-3");
+    assert_eq!(out[3].status, RowStatus::Duplicate);
+    assert!(out[3].message.as_ref().unwrap().contains("already exists"));
+}
+
+#[test]
+fn auto_suffix_skips_labels_already_in_db() {
+    // "web" and "web-2" already exist in the DB; a distinct endpoint reusing
+    // "web" lands on the first free "web-3".
+    let mut existing_labels = HashSet::new();
+    existing_labels.insert("web".to_string());
+    existing_labels.insert("web-2".to_string());
+    let existing_endpoints = HashSet::new();
+    let out = validate_rows_with_endpoints(
+        &existing_labels,
+        &existing_endpoints,
+        vec![raw("web", "10.0.0.9", "root")],
+    );
+    assert_eq!(out[0].status, RowStatus::Ready);
+    assert_eq!(out[0].label, "web-3");
+}
+
+#[test]
 fn label_only_validate_ignores_duplicate_hostnames() {
     // The label-only entry point (used by export round-trip etc.) must NOT
     // dedup hostnames — manual entries may legitimately share an IP (D-033).
