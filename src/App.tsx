@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { AppShell, type Page } from "@/components/AppShell";
 import { HostsPage } from "@/pages/HostsPage";
@@ -17,6 +18,7 @@ import {
   isCredentialsUnlocked,
   requiresMasterPassword,
 } from "@/lib/tauri/hosts";
+import { onPtySudo } from "@/lib/tauri/pty";
 
 function App() {
   const [page, setPage] = useState<Page>("hosts");
@@ -42,6 +44,17 @@ function App() {
         // until they try and get prompted.
       }
     })();
+  }, []);
+
+  // Sudo auto-fill transparency (D-065): toast whenever the backend answers a
+  // sudo prompt with a stored password, on any tab.
+  useEffect(() => {
+    const unlisten = onPtySudo((p) =>
+      toast.info(`Auto-filled sudo password for ${p.host_label}`),
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   const openTerminal = useCallback((host: Host) => {
