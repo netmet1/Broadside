@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -96,11 +103,14 @@ function SortHeader({
   sortKey,
   sort,
   onSort,
+  headHint,
 }: {
   label: string;
   sortKey: SortKey;
   sort: { key: SortKey; dir: "asc" | "desc" } | null;
   onSort: (key: SortKey) => void;
+  /** Status-bar help props (from useHint) — explains the column on hover. */
+  headHint?: ComponentProps<"button">;
 }) {
   const active = sort?.key === sortKey;
   const Icon = !active
@@ -114,6 +124,7 @@ function SortHeader({
       onClick={() => onSort(sortKey)}
       className="-mx-1 flex min-w-0 max-w-full items-center gap-2 rounded px-1 py-0.5 hover:text-foreground"
       aria-label={`Sort by ${label}`}
+      {...headHint}
     >
       <span className="truncate">{label}</span>
       <Icon
@@ -559,35 +570,82 @@ export function HostsPage({
                   {...hint("Select or deselect every host (for Multi-terminal)")}
                 />
               </TableHead>
-              <TableHead />
+              <TableHead {...hint("Open an interactive terminal to this host")} />
               <TableHead className="relative">
-                <SortHeader label="Label" sortKey="label" sort={sort} onSort={toggleSort} />
+                <SortHeader
+                  label="Label"
+                  sortKey="label"
+                  sort={sort}
+                  onSort={toggleSort}
+                  headHint={hint("The host's unique display name, used in tints, logs and pickers")}
+                />
                 {resizeHandle("label")}
               </TableHead>
               <TableHead className="text-xs">
-                <SortHeader label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
+                <SortHeader
+                  label="Status"
+                  sortKey="status"
+                  sort={sort}
+                  onSort={toggleSort}
+                  headHint={hint("Terminal connection: green dot = a terminal to this host is connected, otherwise none is open")}
+                />
               </TableHead>
               <TableHead className="relative">
-                <SortHeader label="Hostname" sortKey="hostname" sort={sort} onSort={toggleSort} />
+                <SortHeader
+                  label="Hostname"
+                  sortKey="hostname"
+                  sort={sort}
+                  onSort={toggleSort}
+                  headHint={hint("The host's address — IP or DNS name used to connect")}
+                />
                 {resizeHandle("hostname")}
               </TableHead>
               <TableHead className="relative">
-                <SortHeader label="Port" sortKey="port" sort={sort} onSort={toggleSort} />
+                <SortHeader
+                  label="Port"
+                  sortKey="port"
+                  sort={sort}
+                  onSort={toggleSort}
+                  headHint={hint("The SSH port (default 22)")}
+                />
                 {resizeHandle("port")}
               </TableHead>
               <TableHead className="relative">
-                <SortHeader label="Username" sortKey="username" sort={sort} onSort={toggleSort} />
+                <SortHeader
+                  label="Username"
+                  sortKey="username"
+                  sort={sort}
+                  onSort={toggleSort}
+                  headHint={hint("The SSH login user for this host")}
+                />
                 {resizeHandle("username")}
               </TableHead>
               <TableHead className="relative">
-                <SortHeader label="Tag" sortKey="tag" sort={sort} onSort={toggleSort} />
+                <SortHeader
+                  label="Tag"
+                  sortKey="tag"
+                  sort={sort}
+                  onSort={toggleSort}
+                  headHint={hint("Optional free-text label for grouping/sorting hosts (e.g. prod, db)")}
+                />
                 {resizeHandle("tag")}
               </TableHead>
               <TableHead className="relative">
-                <SortHeader label="Flavor" sortKey="flavor" sort={sort} onSort={toggleSort} />
+                <SortHeader
+                  label="Flavor"
+                  sortKey="flavor"
+                  sort={sort}
+                  onSort={toggleSort}
+                  headHint={hint("The host's Linux distribution (icon only) — set on the host form")}
+                />
                 {resizeHandle("flavor")}
               </TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead
+                className="text-right"
+                {...hint("Edit, open a terminal, or delete this host")}
+              >
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
