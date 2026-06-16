@@ -307,7 +307,9 @@ export function PtyBroadcastPage({
                   className="h-2.5 w-2.5 shrink-0 rounded-full"
                   style={{ backgroundColor: s.host.color }}
                 />
-                <span className="min-w-0 truncate">{s.host.label}</span>
+                <span className="min-w-0 truncate" title={s.host.label}>
+                  {s.host.label}
+                </span>
                 <span
                   className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
                     connectedSessions.has(s.id)
