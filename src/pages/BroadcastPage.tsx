@@ -83,9 +83,12 @@ type FindHit = {
 
 export function BroadcastPage({
   visible,
+  connectedHostIds,
   onManageShortcuts,
 }: {
   visible: boolean;
+  /** Host ids with at least one connected terminal — drives the status dot. */
+  connectedHostIds: Set<number>;
   onManageShortcuts: () => void;
 }) {
   const [hosts, setHosts] = useState<Host[]>([]);
@@ -596,7 +599,21 @@ export function BroadcastPage({
                 className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{ backgroundColor: h.color }}
               />
-              <span className="truncate">{h.label}</span>
+              <span className="min-w-0 truncate" title={h.label}>
+                {h.label}
+              </span>
+              {/* Live terminal-connection dot (user request): green when this
+                  host has a connected terminal, red otherwise. */}
+              <span
+                className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
+                  connectedHostIds.has(h.id) ? "bg-emerald-500" : "bg-red-500/60"
+                }`}
+                title={
+                  connectedHostIds.has(h.id)
+                    ? "Connected — a terminal to this host is open"
+                    : "No connected terminal for this host"
+                }
+              />
             </label>
           ))}
           {hosts.length === 0 && (

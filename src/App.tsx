@@ -151,6 +151,7 @@ function App() {
       <div className={page === "broadcast" ? "block h-full" : "hidden"}>
         <BroadcastPage
           visible={page === "broadcast"}
+          connectedHostIds={connectedHostIds}
           onManageShortcuts={openShortcutSettings}
         />
       </div>
