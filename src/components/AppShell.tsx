@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   CastIcon,
   InfoIcon,
@@ -80,6 +80,14 @@ const NAV_ITEMS: {
 const COLLAPSE_BREAKPOINT = 1280;
 
 const SIDEBAR_PREF_KEY = "sidebar-collapsed";
+const SIDEBAR_WIDTH_KEY = "sidebar-width";
+
+/** The full-label width (was the fixed `w-56`) — the maximum; can't grow past
+ * it. The icon-only strip is `w-14`. Dragging narrower than the snap width
+ * collapses to icons. */
+const SIDEBAR_MAX_WIDTH = 224;
+const SIDEBAR_ICON_WIDTH = 56;
+const SIDEBAR_COLLAPSE_SNAP = 120;
 
 function loadManualPref(): boolean | null {
   switch (localStorage.getItem(SIDEBAR_PREF_KEY)) {
@@ -90,6 +98,12 @@ function loadManualPref(): boolean | null {
     default:
       return null;
   }
+}
+
+function loadWidth(): number {
+  const n = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  if (!Number.isFinite(n) || n <= 0) return SIDEBAR_MAX_WIDTH;
+  return Math.min(Math.max(n, SIDEBAR_COLLAPSE_SNAP), SIDEBAR_MAX_WIDTH);
 }
 
 export function AppShell({
@@ -111,6 +125,10 @@ export function AppShell({
   const [narrow, setNarrow] = useState(
     () => window.innerWidth < COLLAPSE_BREAKPOINT,
   );
+  // Drag-resizable expanded width (px). The icon-only width is fixed.
+  const [width, setWidth] = useState(loadWidth);
+  const [dragging, setDragging] = useState(false);
+  const asideRef = useRef<HTMLElement>(null);
   const hint = useHint();
   const { clearHint } = useStatus();
 
@@ -134,19 +152,52 @@ export function AppShell({
 
   const collapsed = manualCollapsed ?? narrow;
 
-  const toggleSidebar = () => {
-    const next = !collapsed;
+  const setCollapsed = (next: boolean) => {
     setManualCollapsed(next);
     localStorage.setItem(SIDEBAR_PREF_KEY, String(next));
   };
+
+  const toggleSidebar = () => setCollapsed(!collapsed);
+
+  // Drag the separator to resize. Narrower than the snap width collapses to
+  // icons; the coded max width can't be exceeded.
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      const left = asideRef.current?.getBoundingClientRect().left ?? 0;
+      const raw = e.clientX - left;
+      if (raw < SIDEBAR_COLLAPSE_SNAP) {
+        if (!collapsed) setCollapsed(true);
+        return; // keep the stored expanded width for when it's re-expanded
+      }
+      const next = Math.min(raw, SIDEBAR_MAX_WIDTH);
+      if (collapsed) setCollapsed(false);
+      setWidth(next);
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
+    };
+    const onUp = () => setDragging(false);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    // Suppress text selection / iframe focus stealing while dragging.
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [dragging, collapsed]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <div className="flex min-h-0 flex-1">
         <aside
+          ref={asideRef}
+          style={{ width: collapsed ? SIDEBAR_ICON_WIDTH : width }}
           className={cn(
             "flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
-            collapsed ? "w-14" : "w-56",
+            !dragging && "transition-[width] duration-150",
           )}
         >
           <div
@@ -157,10 +208,12 @@ export function AppShell({
           >
             {!collapsed && (
               <>
-                <span className="font-heading text-base font-semibold tracking-tight">
+                <span className="truncate font-heading text-base font-semibold tracking-tight">
                   OmniTerminal
                 </span>
-                <span className="ml-2 text-xs text-muted-foreground">v0.1a</span>
+                <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                  v0.1a
+                </span>
               </>
             )}
             <button
@@ -194,7 +247,7 @@ export function AppShell({
                 title={collapsed ? label : undefined}
                 {...hint(navHint)}
                 className={cn(
-                  "relative flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium",
+                  "relative flex w-full items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-sm font-medium",
                   collapsed && "justify-center px-0",
                   active === page
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
@@ -202,11 +255,11 @@ export function AppShell({
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                {!collapsed && label}
+                {!collapsed && <span className="truncate">{label}</span>}
                 {page === "terminals" && terminalCount > 0 && (
                   <span
                     className={cn(
-                      "rounded-full bg-sidebar-accent px-1.5 text-xs text-sidebar-accent-foreground",
+                      "shrink-0 rounded-full bg-sidebar-accent px-1.5 text-xs text-sidebar-accent-foreground",
                       collapsed ? "absolute -top-0.5 right-0.5" : "ml-auto",
                     )}
                   >
@@ -223,15 +276,35 @@ export function AppShell({
               title={collapsed ? "About" : undefined}
               {...hint("Version, copyright and project information")}
               className={cn(
-                "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                "flex w-full items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                 collapsed && "justify-center px-0",
               )}
             >
               <InfoIcon className="h-4 w-4 shrink-0" />
-              {!collapsed && "About"}
+              {!collapsed && <span className="truncate">About</span>}
             </button>
           </div>
         </aside>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDoubleClick={() => {
+            // Double-click resets to the full width (and un-collapses).
+            setCollapsed(false);
+            setWidth(SIDEBAR_MAX_WIDTH);
+            localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_MAX_WIDTH));
+          }}
+          title="Drag to resize · double-click to reset"
+          className={cn(
+            "w-1 shrink-0 cursor-col-resize hover:bg-primary/40",
+            dragging && "bg-primary/50",
+          )}
+        />
         <main className="min-w-0 flex-1 overflow-auto">{children}</main>
       </div>
       <StatusBar />
