@@ -36,7 +36,7 @@ export function AboutDialog({
         <DialogHeader>
           <DialogTitle>OmniTerminal</DialogTitle>
           <DialogDescription>
-            SSH broadcast console — one command, many hosts.
+            SSH broadcast console: one command, many hosts.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 text-sm">
@@ -52,7 +52,7 @@ export function AboutDialog({
             </Button>
           </div>
           <p className="pt-1 text-xs text-muted-foreground">
-            © 2026 netmet1. All rights reserved. Proprietary software — see
+            © 2026 netmet1. All rights reserved. Proprietary software; see
             NOTICE.md for terms.
           </p>
         </div>

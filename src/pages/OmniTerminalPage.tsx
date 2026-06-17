@@ -459,7 +459,7 @@ export function OmniTerminalPage({
               return (
                 <label
                   key={s.id}
-                  title={isConnected ? undefined : "Disconnected — reconnect the terminal to dispatch to it"}
+                  title={isConnected ? undefined : "Disconnected: reconnect the terminal to dispatch to it"}
                   className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
                     isConnected
                       ? "cursor-pointer hover:bg-accent/50"
@@ -550,7 +550,7 @@ export function OmniTerminalPage({
             {!hasOutput ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 {ready
-                  ? "Type a command below — it runs on every selected terminal and each host's output appears here as it finishes."
+                  ? "Type a command below. It runs on every selected terminal, and each host's output appears here as it finishes."
                   : "Open at least 2 terminals to use OmniTerminal."}
               </p>
             ) : (
@@ -631,8 +631,8 @@ export function OmniTerminalPage({
 }
 
 const NOTICE: Record<Exclude<BlockInteractivity, "normal">, string> = {
-  alt_screen: "full-screen program — its output isn't shown here",
-  redraw: "live-updating program — its output isn't shown here",
+  alt_screen: "full-screen program, output not shown here",
+  redraw: "live-updating program, output not shown here",
 };
 
 /** One completion-ordered, host-tinted output block. */

@@ -287,15 +287,15 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
             onGate(sessionId, result);
             break;
           case "auth_failed":
-            setPhase({ kind: "failed", message: `Authentication failed — ${result.message}` });
+            setPhase({ kind: "failed", message: `Authentication failed: ${result.message}` });
             break;
           case "unreachable":
-            setPhase({ kind: "failed", message: `Unreachable — ${result.message}` });
+            setPhase({ kind: "failed", message: `Unreachable: ${result.message}` });
             break;
           case "no_credentials":
             setPhase({
               kind: "failed",
-              message: "No credentials stored — edit the host on the Hosts page.",
+              message: "No credentials stored. Edit the host on the Hosts page.",
             });
             break;
         }

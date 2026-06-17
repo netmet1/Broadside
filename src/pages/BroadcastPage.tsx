@@ -755,7 +755,7 @@ export function BroadcastPage({
                   }`}
                   title={
                     connectedHostIds.has(h.id)
-                      ? "Connected — a terminal to this host is open"
+                      ? "Connected: a terminal to this host is open"
                       : "No connected terminal for this host"
                   }
                 />
@@ -925,7 +925,7 @@ export function BroadcastPage({
               disabled={running}
               aria-label="Timeout in seconds"
               className={`h-10 w-16 text-center font-mono text-sm ${parsedTimeout === null ? "border-destructive" : ""}`}
-              {...hint("Per-command timeout in seconds (1–3600), saved as the default. Partial output is kept if it elapses.")}
+              {...hint("Per-command timeout in seconds (1-3600), saved as the default. Partial output is kept if it elapses.")}
             />
             <span className="text-xs text-muted-foreground">s</span>
           </div>
@@ -1082,7 +1082,7 @@ function OutputBlock({
             className="h-2 w-2 shrink-0 rounded-full opacity-50"
             style={{ backgroundColor: block.color }}
           />
-          {block.label} — 0 matches
+          {block.label}: 0 matches
         </div>
       );
     }
@@ -1248,14 +1248,14 @@ function BlockBody({
             <p className="text-muted-foreground">(no output)</p>
           )}
           {result.timed_out && (
-            <p className="text-red-400">[TIMEOUT — partial output above]</p>
+            <p className="text-red-400">[TIMEOUT: partial output above]</p>
           )}
         </div>
       );
     case "unknown_key":
       return (
         <p className="text-xs text-muted-foreground">
-          First contact with this endpoint — trust its key in the dialog to
+          First contact with this host. Trust its key in the dialog to
           proceed.
         </p>
       );
@@ -1284,7 +1284,7 @@ function BlockBody({
     case "no_credentials":
       return (
         <p className="text-xs text-muted-foreground">
-          No credentials stored — edit the host on the Hosts page.
+          No credentials stored. Edit the host on the Hosts page.
         </p>
       );
   }

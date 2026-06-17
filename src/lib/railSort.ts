@@ -11,10 +11,10 @@ export type RailSort =
   | "offline";
 
 export const RAIL_SORT_OPTIONS: { value: RailSort; label: string }[] = [
-  { value: "az", label: "Name A–Z" },
-  { value: "za", label: "Name Z–A" },
-  { value: "tag", label: "Tag A–Z" },
-  { value: "tag-za", label: "Tag Z–A" },
+  { value: "az", label: "Name A-Z" },
+  { value: "za", label: "Name Z-A" },
+  { value: "tag", label: "Tag A-Z" },
+  { value: "tag-za", label: "Tag Z-A" },
   { value: "ip", label: "IP / hostname" },
   { value: "online", label: "Online first" },
   { value: "offline", label: "Offline first" },

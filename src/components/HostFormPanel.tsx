@@ -316,7 +316,7 @@ export function HostFormPanel({
         // real file) before they're stored and fail at connect time.
         if (!(await pathIsFile(keyPath))) {
           setError("keyPath", {
-            message: "File not found — check the path or use Browse",
+            message: "File not found. Check the path or use Browse",
           });
           return;
         }
@@ -502,7 +502,7 @@ export function HostFormPanel({
               ))}
             </datalist>
             <p className="min-h-4 text-xs text-muted-foreground">
-              Optional — group hosts for sorting.
+              Optional. Group hosts for sorting.
             </p>
           </div>
 
@@ -576,7 +576,7 @@ export function HostFormPanel({
                     })
                   }
                   className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                  aria-label={`Current color ${selectedColor} — click to open the color picker`}
+                  aria-label={`Current color ${selectedColor}, click to open the color picker`}
                   title="Pick a color"
                 />
               </span>
@@ -770,7 +770,7 @@ export function HostFormPanel({
             <Label className="text-sm font-semibold">
               Sudo password{" "}
               <span className="text-xs font-normal text-muted-foreground">
-                (optional — used to auto-answer sudo prompts in broadcasts)
+                (optional, used to auto-answer sudo prompts in broadcasts)
               </span>
             </Label>
             {hasSudo && sudoAction === "keep" && (

@@ -348,7 +348,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
           ts: e.ts,
           host: e.host_label ?? e.source,
           stream: "stderr",
-          data: `${e.source} — ${e.message}`,
+          data: `${e.source}: ${e.message}`,
         }));
         setSessionLines(lines);
         setSessionPath(path);
@@ -500,7 +500,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
                         key={host}
                         className="flex items-center gap-2 rounded-md border border-border/30 px-3 py-1.5 text-xs text-muted-foreground"
                       >
-                        {host} — 0 matches
+                        {host}: 0 matches
                       </div>
                     );
                   }
@@ -777,7 +777,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
                     )}
                   >
                     <span className="shrink-0 text-muted-foreground">
-                      {entry.ts ? new Date(entry.ts).toLocaleString() : "—"}
+                      {entry.ts ? new Date(entry.ts).toLocaleString() : "-"}
                     </span>
                     {tintLabel && (
                       <span
