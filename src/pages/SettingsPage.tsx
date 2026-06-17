@@ -10,6 +10,7 @@ import {
   RefreshCwIcon,
   SearchIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -162,6 +163,7 @@ export function SettingsPage({
   const [query, setQuery] = useState(
     () => sessionStorage.getItem(SEARCH_STORAGE_KEY) ?? "",
   );
+  const searchInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     sessionStorage.setItem(SEARCH_STORAGE_KEY, query);
   }, [query]);
@@ -211,16 +213,27 @@ export function SettingsPage({
   const didRestoreScroll = useRef(false);
   useEffect(() => {
     if (didRestoreScroll.current) return;
+    // A deep-link (focusSection) owns the scroll — let it win, don't restore.
+    if (focusSection) {
+      didRestoreScroll.current = true;
+      return;
+    }
+    // Wait until the async settings (and the probe panel they render) have
+    // loaded: restoring before that lets the Performance section grow AFTER we
+    // scroll, pushing the target down so we land above it (the reported drift).
+    if (!settings) return;
     didRestoreScroll.current = true;
-    if (focusSection) return;
     const saved = sessionStorage.getItem(SECTION_SCROLL_KEY);
     if (!saved || saved === SECTION_TITLES[0]) return; // top section = no scroll
-    requestAnimationFrame(() => {
-      document
-        .getElementById(sectionDomId(saved))
-        ?.scrollIntoView({ block: "start" });
-    });
-  }, [focusSection]);
+    // Double rAF: let this commit paint, then scroll once layout is settled.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        document
+          .getElementById(sectionDomId(saved))
+          ?.scrollIntoView({ block: "start" });
+      }),
+    );
+  }, [settings, focusSection]);
 
   // Jump-to-section dropdown: picking a section clears any search filter (so
   // the target is mounted) and smooth-scrolls to it — no button needed.
@@ -584,13 +597,28 @@ export function SettingsPage({
           <div className="relative w-64">
             <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
+              ref={searchInputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search sections…"
-              className="h-8 pl-8 text-sm"
+              className="h-8 pl-8 pr-7 text-sm"
               aria-label="Search settings sections"
               {...hint("Filter the settings sections by name")}
             />
+            {query !== "" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  searchInputRef.current?.focus();
+                }}
+                aria-label="Clear search"
+                title="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <XIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
