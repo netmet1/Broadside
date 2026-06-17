@@ -402,7 +402,7 @@ export function TerminalsPage({
                 onMaximize();
               }}
               aria-label={`Maximize ${s.host.label}`}
-              title="Maximize this terminal to fill the window"
+              title="Maximize this terminal to fill the window (F11)"
             >
               <Maximize2Icon className="h-3.5 w-3.5" />
             </button>

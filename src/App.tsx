@@ -162,20 +162,23 @@ function App() {
   const maximizeTerminal = useCallback(() => setMaximized(true), []);
   const restoreTerminal = useCallback(() => setMaximized(false), []);
 
-  // Esc restores from the maximized terminal. Capture phase so it fires before
-  // xterm consumes the key (xterm listens on its own textarea).
+  // F11 toggles the maximized terminal — the standard fullscreen key, and
+  // (unlike Esc) one the shell and TUI apps like vim/less never use, so it's
+  // safe to capture. Capture phase fires before xterm consumes the key.
   useEffect(() => {
-    if (!maximized) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
+      if (e.key !== "F11") return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (maximized) {
         setMaximized(false);
+      } else if (page === "terminals" && activeSessionId !== null) {
+        setMaximized(true);
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [maximized]);
+  }, [maximized, page, activeSessionId]);
 
   // Maximize only makes sense on the Terminals page with a live session — drop
   // out of it if the active terminal closes or the page somehow changes.
