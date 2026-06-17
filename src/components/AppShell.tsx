@@ -224,7 +224,7 @@ export function AppShell({
             type="button"
             onClick={onRestore}
             aria-label="Restore terminal"
-            title="Restore terminal (Esc)"
+            title="Restore terminal (F11)"
             className="ml-auto rounded-md p-1 text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
           >
             <Minimize2Icon className="h-4 w-4" />
