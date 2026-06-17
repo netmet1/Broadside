@@ -773,7 +773,7 @@ export function HostFormPanel({
                 (optional, used to auto-answer sudo prompts in broadcasts)
               </span>
             </Label>
-            {hasSudo && sudoAction === "keep" && (
+            {!adminLocked && hasSudo && sudoAction === "keep" && (
               <div className="flex gap-1">
                 <Button
                   type="button"
@@ -794,7 +794,7 @@ export function HostFormPanel({
                 </Button>
               </div>
             )}
-            {hasSudo && sudoAction !== "keep" && (
+            {!adminLocked && hasSudo && sudoAction !== "keep" && (
               <Button
                 type="button"
                 variant="ghost"
@@ -806,17 +806,32 @@ export function HostFormPanel({
             )}
           </div>
 
-          {hasSudo && sudoAction === "keep" && (
+          {adminLocked && (
+            <div className="space-y-2 rounded-md border border-dashed border-border/60 bg-muted/30 p-4 opacity-90">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <LockIcon className="h-4 w-4" />
+                Locked by admin
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {hasSudo
+                  ? "A sudo password is stored."
+                  : "No sudo password is stored."}{" "}
+                Adding, changing or removing it is locked by the admin passcode.
+                Unlock in Settings → Security to edit it.
+              </p>
+            </div>
+          )}
+          {!adminLocked && hasSudo && sudoAction === "keep" && (
             <p className="text-xs font-medium text-emerald-400">
               Sudo password is stored
             </p>
           )}
-          {hasSudo && sudoAction === "remove" && (
+          {!adminLocked && hasSudo && sudoAction === "remove" && (
             <p className="text-xs font-medium text-amber-400">
               Sudo password will be removed on save
             </p>
           )}
-          {sudoEditing && (
+          {!adminLocked && sudoEditing && (
             <div className="grid max-w-md gap-2">
               <div className="relative">
                 <Input
