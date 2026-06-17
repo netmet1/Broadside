@@ -83,6 +83,28 @@ function sectionDomId(title: string): string {
   return "settings-sec-" + title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
+/** Section render order — also the jump-to dropdown list. */
+const SECTION_TITLES = [
+  "Performance",
+  "Network probe",
+  "Destructive command guard",
+  "Shortcut commands",
+  "Appearance",
+  "Backup",
+  "Help",
+  "Audit log",
+  "Reset",
+];
+
+// The search filter and scroll position persist across tab switches (Settings
+// unmounts on navigation) but NOT across restarts — sessionStorage clears when
+// the app window closes. Matches the existing rail/sort persistence pattern.
+const SEARCH_STORAGE_KEY = "settings-search";
+const SECTION_SCROLL_KEY = "settings-scroll-section";
+/** Sticky-header height to discount when finding the section nearest the top
+ * (matches the sections' scroll-margin-top: 4rem in index.css). */
+const STICKY_OFFSET_PX = 64;
+
 export function SettingsPage({
   focusSection = null,
   onFocusConsumed,
@@ -135,26 +157,70 @@ export function SettingsPage({
     window.location.reload();
   };
 
-  // Section search — filters which settings sections are shown.
-  const [query, setQuery] = useState("");
+  // Section search — filters which settings sections are shown. Restored from
+  // sessionStorage so it survives leaving and returning to the Settings tab.
+  const [query, setQuery] = useState(
+    () => sessionStorage.getItem(SEARCH_STORAGE_KEY) ?? "",
+  );
+  useEffect(() => {
+    sessionStorage.setItem(SEARCH_STORAGE_KEY, query);
+  }, [query]);
   const sectionVisible = useCallback(
     (title: string) =>
       query.trim() === "" ||
       title.toLowerCase().includes(query.trim().toLowerCase()),
     [query],
   );
-  const SECTION_TITLES = [
-    "Performance",
-    "Network probe",
-    "Destructive command guard",
-    "Shortcut commands",
-    "Appearance",
-    "Backup",
-    "Help",
-    "Audit log",
-    "Reset",
-  ];
   const anyVisible = SECTION_TITLES.some(sectionVisible);
+
+  // The page scroll lives on the shared <main>; remember the section nearest
+  // the top as the user scrolls so returning to Settings restores that spot.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scroller = rootRef.current?.closest("main");
+    if (!scroller) return;
+    let raf = 0;
+    const save = () => {
+      raf = 0;
+      const anchor = scroller.getBoundingClientRect().top + STICKY_OFFSET_PX;
+      let best: string | null = null;
+      let bestDist = Infinity;
+      for (const title of SECTION_TITLES) {
+        const el = document.getElementById(sectionDomId(title));
+        if (!el) continue;
+        const dist = Math.abs(el.getBoundingClientRect().top - anchor);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = title;
+        }
+      }
+      if (best) sessionStorage.setItem(SECTION_SCROLL_KEY, best);
+    };
+    const onScroll = () => {
+      if (raf === 0) raf = requestAnimationFrame(save);
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  // Restore the last-viewed section when returning to the tab — once per mount,
+  // and never when a deep-link (focusSection) is steering the scroll instead.
+  const didRestoreScroll = useRef(false);
+  useEffect(() => {
+    if (didRestoreScroll.current) return;
+    didRestoreScroll.current = true;
+    if (focusSection) return;
+    const saved = sessionStorage.getItem(SECTION_SCROLL_KEY);
+    if (!saved || saved === SECTION_TITLES[0]) return; // top section = no scroll
+    requestAnimationFrame(() => {
+      document
+        .getElementById(sectionDomId(saved))
+        ?.scrollIntoView({ block: "start" });
+    });
+  }, [focusSection]);
 
   // Jump-to-section dropdown: picking a section clears any search filter (so
   // the target is mounted) and smooth-scrolls to it — no button needed.
@@ -491,7 +557,7 @@ export function SettingsPage({
   const probe = settings?.local_probe ?? null;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-10 p-6 pb-16">
+    <div ref={rootRef} className="mx-auto max-w-3xl space-y-10 p-6 pb-16">
       {/* Sticky header (S2): the jump-to dropdown + search stay pinned to the
           top of the tab while the sections scroll. -mx-6/px-6 lets the
           background span the page padding so content doesn't peek at the edges. */}
