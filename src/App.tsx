@@ -31,6 +31,9 @@ function App() {
   );
   // Set when "Manage shortcuts…" is picked — Settings scrolls there on open.
   const [settingsFocus, setSettingsFocus] = useState<string | null>(null);
+  // Maximized terminal: the active terminal fills the whole window — no nav
+  // sidebar, tabs or status bar, just a slim banner with a restore control.
+  const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -156,6 +159,32 @@ function App() {
     setPage("settings");
   }, []);
 
+  const maximizeTerminal = useCallback(() => setMaximized(true), []);
+  const restoreTerminal = useCallback(() => setMaximized(false), []);
+
+  // Esc restores from the maximized terminal. Capture phase so it fires before
+  // xterm consumes the key (xterm listens on its own textarea).
+  useEffect(() => {
+    if (!maximized) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setMaximized(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [maximized]);
+
+  // Maximize only makes sense on the Terminals page with a live session — drop
+  // out of it if the active terminal closes or the page somehow changes.
+  useEffect(() => {
+    if (maximized && (page !== "terminals" || activeSessionId === null)) {
+      setMaximized(false);
+    }
+  }, [maximized, page, activeSessionId]);
+
   const connectedHostIds = useMemo(() => {
     const ids = new Set<number>();
     for (const s of sessions) {
@@ -171,6 +200,9 @@ function App() {
     [sessions],
   );
 
+  const activeSession =
+    sessions.find((s) => s.id === activeSessionId) ?? null;
+
   return (
     <StatusProvider>
       <UiPrefsProvider>
@@ -178,6 +210,9 @@ function App() {
         active={page}
         onNavigate={setPage}
         terminalCount={sessions.length}
+        maximized={maximized}
+        onRestore={restoreTerminal}
+        maximizedHost={activeSession?.host ?? null}
       >
       {page === "hosts" && (
         <HostsPage
@@ -217,6 +252,8 @@ function App() {
           onActivate={setActiveSessionId}
           onCloseSession={closeSession}
           onReorder={reorderSessions}
+          onMaximize={maximizeTerminal}
+          maximized={maximized}
           onManageShortcuts={openShortcutSettings}
         />
       </div>

@@ -3,6 +3,7 @@ import {
   CastIcon,
   InfoIcon,
   LayersIcon,
+  Minimize2Icon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   RadioTowerIcon,
@@ -110,11 +111,21 @@ export function AppShell({
   active,
   onNavigate,
   terminalCount,
+  maximized = false,
+  onRestore,
+  maximizedHost = null,
   children,
 }: {
   active: Page;
   onNavigate: (page: Page) => void;
   terminalCount: number;
+  /** When true, hide all chrome and show only the maximized terminal. */
+  maximized?: boolean;
+  /** Restore from the maximized terminal (banner button + Esc). */
+  onRestore?: () => void;
+  /** The maximized terminal's host, shown in the banner so you know which
+   * session is filling the window. */
+  maximizedHost?: { label: string; color: string } | null;
   children: ReactNode;
 }) {
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -188,6 +199,42 @@ export function AppShell({
       document.body.style.cursor = "";
     };
   }, [dragging, collapsed]);
+
+  // Maximized terminal: drop the sidebar, tabs and status bar; show only a
+  // slim banner (brand + version + the host, with a restore control) above the
+  // terminal, which fills the rest of the window. Esc also restores (App).
+  if (maximized) {
+    return (
+      <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-sidebar-border bg-sidebar px-3 text-sidebar-foreground">
+          <span className="font-heading text-sm font-semibold tracking-tight">
+            OmniTerminal
+          </span>
+          <span className="text-xs text-muted-foreground">v0.1a</span>
+          {maximizedHost && (
+            <span className="ml-2 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: maximizedHost.color }}
+              />
+              <span className="truncate">{maximizedHost.label}</span>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onRestore}
+            aria-label="Restore terminal"
+            title="Restore terminal (Esc)"
+            className="ml-auto rounded-md p-1 text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          >
+            <Minimize2Icon className="h-4 w-4" />
+          </button>
+        </div>
+        <main className="min-w-0 flex-1 overflow-auto">{children}</main>
+        <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
