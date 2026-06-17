@@ -101,12 +101,17 @@ function dtStamp(): string {
  * current direction. */
 function SortHeader({
   label,
+  display,
   sortKey,
   sort,
   onSort,
   headHint,
 }: {
   label: string;
+  /** Visible header text when it should differ from the accessible label —
+   * e.g. the narrow Status column shows just "S" but stays "Status" for
+   * screen readers and the sort aria-label. */
+  display?: string;
   sortKey: SortKey;
   sort: { key: SortKey; dir: "asc" | "desc" } | null;
   onSort: (key: SortKey) => void;
@@ -127,7 +132,7 @@ function SortHeader({
       aria-label={`Sort by ${label}`}
       {...headHint}
     >
-      <span className="truncate">{label}</span>
+      <span className="truncate">{display ?? label}</span>
       <Icon
         className={`h-3 w-3 shrink-0 ${active ? "text-foreground" : "text-muted-foreground/50"}`}
       />
@@ -595,10 +600,11 @@ export function HostsPage({
               <TableHead className={hiddenCols.has("status") ? "hidden" : "text-xs"}>
                 <SortHeader
                   label="Status"
+                  display="S"
                   sortKey="status"
                   sort={sort}
                   onSort={toggleSort}
-                  headHint={hint("Terminal connection: green dot = a terminal to this host is connected, otherwise none is open")}
+                  headHint={hint("Status (S): terminal connection — green dot = a terminal to this host is connected, otherwise none is open")}
                 />
               </TableHead>
               <TableHead className="relative">
