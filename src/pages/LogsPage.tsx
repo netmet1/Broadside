@@ -60,6 +60,18 @@ type Tab = "session" | "audit" | "history" | "errors";
 /** Colour for a host we can't resolve live (deleted, or a source without ids). */
 const HOST_UNKNOWN_COLOR = "#6b7280";
 const MAX_HISTORY_HOSTS = 8;
+/** Persisted pretty-print preference for the audit log tab. */
+const AUDIT_PRETTY_KEY = "audit-pretty-print";
+
+/** Pretty-print one JSONL audit entry over indented lines; returns the raw text
+ * unchanged if it isn't valid JSON. */
+function prettyJsonLine(line: string): string {
+  try {
+    return JSON.stringify(JSON.parse(line), null, 2);
+  } catch {
+    return line;
+  }
+}
 
 /** Human label for a command's source (LG1). */
 const SOURCE_LABEL: Record<string, string> = {
@@ -220,6 +232,11 @@ export function LogsPage({ visible }: { visible: boolean }) {
   // Audit tab state
   const [info, setInfo] = useState<AuditInfo | null>(null);
   const [auditLines, setAuditLines] = useState<string[]>([]);
+  // Pretty-print toggle for the audit log (each JSONL entry expanded over
+  // multiple indented lines). Persisted so it survives tab/app restarts.
+  const [auditPretty, setAuditPretty] = useState(
+    () => localStorage.getItem(AUDIT_PRETTY_KEY) === "1",
+  );
 
   // Command history tab state
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
@@ -238,9 +255,16 @@ export function LogsPage({ visible }: { visible: boolean }) {
       })),
     [sessionLines],
   );
+  // What the audit tab actually shows: raw JSONL lines, or each entry
+  // pretty-printed. Search + highlight run over the displayed text so they stay
+  // consistent with what's on screen.
+  const auditDisplayLines = useMemo(
+    () => (auditPretty ? auditLines.map(prettyJsonLine) : auditLines),
+    [auditLines, auditPretty],
+  );
   const auditSearchLines = useMemo(
-    () => auditLines.map((text, i) => ({ key: `${i}`, text })),
-    [auditLines],
+    () => auditDisplayLines.map((text, i) => ({ key: `${i}`, text })),
+    [auditDisplayLines],
   );
   const historySearchLines = useMemo(
     () => historyEntries.map((e, i) => ({ key: `${i}`, text: e.command })),
@@ -589,6 +613,19 @@ export function LogsPage({ visible }: { visible: boolean }) {
               />
               Audit logging enabled
             </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="accent-primary"
+                checked={auditPretty}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setAuditPretty(next);
+                  localStorage.setItem(AUDIT_PRETTY_KEY, next ? "1" : "0");
+                }}
+              />
+              Pretty print
+            </label>
             <Button variant="ghost" size="sm" onClick={refreshAudit}>
               <RefreshCwIcon />
               Refresh
@@ -614,7 +651,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
                 terminals opened and saved sessions are recorded here.
               </p>
             ) : (
-              auditLines.map((text, idx) => {
+              auditDisplayLines.map((text, idx) => {
                 const matches = auditSearch.scan?.perLine.get(idx) ?? null;
                 if (auditSearch.filterActive && !matches) return null;
                 const isActiveLine = auditSearch.activeHit?.lineIdx === idx;
@@ -623,6 +660,8 @@ export function LogsPage({ visible }: { visible: boolean }) {
                     key={idx}
                     className={cn(
                       "whitespace-pre-wrap break-words",
+                      // Separate the multi-line entries when pretty-printed.
+                      auditPretty && "border-b border-border/30 py-2",
                       auditSearch.findActive && !matches && "opacity-40",
                     )}
                   >
