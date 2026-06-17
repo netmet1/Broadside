@@ -109,26 +109,42 @@ export function SearchBar({
         </div>
       )}
 
-      <Input
-        ref={inputRef}
-        value={raw}
-        onChange={(e) => setRaw(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && onNavigate && mode === "find") {
-            e.preventDefault();
-            onNavigate(e.shiftKey ? -1 : 1);
-          }
-          if (e.key === "Escape") {
-            e.preventDefault();
-            onClose();
-          }
-        }}
-        placeholder={mode === "find" ? "Find…" : "Filter lines…"}
-        autoComplete="off"
-        spellCheck={false}
-        className="h-8 max-w-72 font-mono text-sm"
-        aria-label={mode === "find" ? "Find" : "Filter"}
-      />
+      <div className="relative flex items-center">
+        <Input
+          ref={inputRef}
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && onNavigate && mode === "find") {
+              e.preventDefault();
+              onNavigate(e.shiftKey ? -1 : 1);
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onClose();
+            }
+          }}
+          placeholder={mode === "find" ? "Find…" : "Filter lines…"}
+          autoComplete="off"
+          spellCheck={false}
+          className="h-8 max-w-72 pr-7 font-mono text-sm"
+          aria-label={mode === "find" ? "Find" : "Filter"}
+        />
+        {raw !== "" && (
+          <button
+            type="button"
+            onClick={() => {
+              setRaw("");
+              inputRef.current?.focus();
+            }}
+            aria-label="Clear search"
+            title="Clear search"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <XIcon className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
 
       <button
         type="button"
