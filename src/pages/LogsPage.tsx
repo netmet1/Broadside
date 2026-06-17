@@ -610,8 +610,8 @@ export function LogsPage({ visible }: { visible: boolean }) {
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 font-mono text-xs">
             {auditLines.length === 0 ? (
               <p className="py-8 text-center font-sans text-sm text-muted-foreground">
-                No audit entries yet. Broadcasts, key-trust decisions, PTY
-                opens and session saves are recorded here.
+                No audit entries yet. Broadcasts, host-key trust decisions,
+                terminals opened and saved sessions are recorded here.
               </p>
             ) : (
               auditLines.map((text, idx) => {

@@ -516,7 +516,7 @@ export function OmniTerminalPage({
             </label>
             <label
               className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
-              {...hint("Provide a hostname header per execution of a command")}
+              {...hint("Show a host label above each command's output")}
             >
               <input
                 type="checkbox"
@@ -631,8 +631,8 @@ export function OmniTerminalPage({
 }
 
 const NOTICE: Record<Exclude<BlockInteractivity, "normal">, string> = {
-  alt_screen: "interactive (full-screen app) — not mirrored",
-  redraw: "interactive (live-redrawing) — not mirrored",
+  alt_screen: "full-screen program — its output isn't shown here",
+  redraw: "live-updating program — its output isn't shown here",
 };
 
 /** One completion-ordered, host-tinted output block. */

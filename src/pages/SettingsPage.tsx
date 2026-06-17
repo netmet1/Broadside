@@ -719,7 +719,7 @@ export function SettingsPage({
       <section id={sectionDomId("Performance")} className="space-y-4">
         <SectionHeading
           title="Performance"
-          hint="The local probe suggests a concurrency ceiling from this machine's resources. Suggestions are advisory — your override wins."
+          hint="Suggests how many sessions this computer can comfortably run at once, based on its resources. It's only a suggestion — whatever you set always wins."
         />
         <div className="flex items-start justify-between gap-4">
           <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
@@ -810,14 +810,14 @@ export function SettingsPage({
       <section id={sectionDomId("Network probe")} className="space-y-4">
         <SectionHeading
           title="Network probe"
-          hint="TCP connect timing against every configured host, on demand."
+          hint="Checks how quickly each saved host responds, whenever you run it."
         />
         <Button
           variant="outline"
           size="sm"
           onClick={runNetworkProbe}
           disabled={probing}
-          {...hint("Measure TCP connect latency to every configured host")}
+          {...hint("Check how quickly each saved host responds")}
         >
           {probing ? <Loader2Icon className="animate-spin" /> : <RadarIcon />}
           Probe all hosts
@@ -852,7 +852,7 @@ export function SettingsPage({
       <section id={sectionDomId("Destructive command guard")} className="space-y-4">
         <SectionHeading
           title="Destructive command guard"
-          hint="Broadcasts matching a rule require typed CONFIRM before they run. Core rules are built in and cannot be removed in v0.1a; your own rules can be toggled or deleted."
+          hint="Commands that match a rule make you type CONFIRM before they run. Built-in rules can't be removed; rules you add can be turned off or deleted."
         />
 
         {settings && settings.user_rules.length > 0 && (
@@ -1187,7 +1187,7 @@ export function SettingsPage({
       <section id={sectionDomId("Appearance")} className="space-y-4">
         <SectionHeading
           title="Appearance"
-          hint="Theme, terminal font (xterm panes) and the application font size."
+          hint="Theme, the font used in terminals, and the overall app font size."
         />
         <div className="grid max-w-md gap-4">
           <div className="grid gap-1">
@@ -1294,7 +1294,7 @@ export function SettingsPage({
       <section id={sectionDomId("Backup")} className="space-y-3">
         <SectionHeading
           title="Backup"
-          hint="Snapshots the database — hosts, settings, trusted host keys and command history — into a folder you pick. Credentials are never included; they stay in Windows Credential Manager."
+          hint="Saves a copy of your hosts, settings, trusted host keys and command history to a folder you pick. Saved passwords are never included — they stay in Windows Credential Manager."
         />
         <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
           <input
@@ -1323,7 +1323,7 @@ export function SettingsPage({
       <section id={sectionDomId("Help")} className="space-y-3">
         <SectionHeading
           title="Help"
-          hint="Contextual hints in the bottom bar while hovering buttons and actions."
+          hint="Short help in the bottom bar while you hover over buttons and actions."
         />
         <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
           <input
@@ -1349,7 +1349,7 @@ export function SettingsPage({
       <section id={sectionDomId("Audit log")} className="space-y-3">
         <SectionHeading
           title="Audit log"
-          hint="Rolling record of broadcasts, key-trust decisions, PTY opens and session saves. Also toggleable on the Logs page."
+          hint="A running record of broadcasts, host-key trust decisions, terminals opened and saved sessions. You can also turn this on or off on the Logs page."
         />
         <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
           <input
@@ -1402,11 +1402,11 @@ export function SettingsPage({
           Sudo password auto-fill
         </label>
         <p className="max-w-xl text-xs text-muted-foreground">
-          When on, a host's stored sudo password is typed automatically at sudo
-          prompts in interactive terminals (D-065). Turn it{" "}
-          <strong>off</strong> on shared or restricted machines so sudo passwords
-          are never auto-typed — operators then enter sudo manually. Takes effect
-          on the next terminal opened; stored passwords are not deleted.
+          When on, a host's saved sudo password is typed in for you at sudo
+          prompts in a terminal. Turn it <strong>off</strong> on shared or
+          restricted computers so sudo passwords are never typed in
+          automatically — people then enter sudo themselves. Takes effect the
+          next time you open a terminal; saved passwords are not deleted.
         </p>
 
         {/* Admin lock (opt-in) — gates the toggle above, credential editing and
@@ -1433,9 +1433,9 @@ export function SettingsPage({
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Optional. When set, changing sudo auto-fill, adding/editing
-            credentials, and Reset require this passcode. Everyday use (opening
-            terminals, broadcasts) is never gated. It re-locks each time the app
+            Optional. When set, changing sudo auto-fill, adding or editing saved
+            passwords, and Reset all ask for this passcode. Everyday use (opening
+            terminals, broadcasts) never does. It locks again each time the app
             restarts.
           </p>
 
