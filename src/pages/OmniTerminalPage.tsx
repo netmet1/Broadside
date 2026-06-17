@@ -425,7 +425,9 @@ export function OmniTerminalPage({
               </label>
             )}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          {/* pt-2 (not just pb-2) so the first item's selection ring isn't
+              clipped by the scroll container's top edge when collapsed. */}
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {sessions.map((s) => {
               const isConnected = connectedSessions.has(s.id);
               const color = hostsById.get(s.host.id)?.color ?? s.host.color;
