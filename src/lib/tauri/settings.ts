@@ -45,6 +45,7 @@ export type AppSettings = {
   max_concurrent_sessions: number | null;
   default_timeout_secs: number;
   help_hints_enabled: boolean;
+  sudo_autofill_enabled: boolean;
   core_rules: CoreRuleInfo[];
   user_rules: UserRule[];
   core_shortcuts: string[];
@@ -80,6 +81,10 @@ export function setAppSettings(input: {
 
 export function setHelpHintsEnabled(enabled: boolean): Promise<void> {
   return invoke<void>("set_help_hints_enabled", { enabled });
+}
+
+export function setSudoAutofillEnabled(enabled: boolean): Promise<void> {
+  return invoke<void>("set_sudo_autofill_enabled", { enabled });
 }
 
 /** Resets app preferences (timeouts, sessions, fonts, hints) to defaults.

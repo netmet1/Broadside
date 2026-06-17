@@ -14,6 +14,10 @@ const KEY_LOCAL_PROBE: &str = "local_probe";
 const KEY_MAX_SESSIONS: &str = "max_concurrent_sessions";
 const KEY_DEFAULT_TIMEOUT: &str = "default_timeout_secs";
 const KEY_HELP_HINTS: &str = "help_hints_enabled";
+/// Global sudo password auto-fill toggle (D-065). Default on; off = stored sudo
+/// passwords are never injected into interactive terminals. Public so the PTY
+/// open path can read the same key when deciding whether to arm injection.
+pub const KEY_SUDO_AUTOFILL: &str = "sudo_autofill_enabled";
 const KEY_SHORTCUTS: &str = "shortcut_commands";
 const KEY_TERMINAL_FONT_FAMILY: &str = "terminal_font_family";
 const KEY_TERMINAL_FONT_SIZE: &str = "terminal_font_size";
@@ -49,6 +53,7 @@ pub struct AppSettings {
     pub max_concurrent_sessions: Option<usize>,
     pub default_timeout_secs: u64,
     pub help_hints_enabled: bool,
+    pub sudo_autofill_enabled: bool,
     pub core_rules: Vec<CoreRuleInfo>,
     pub user_rules: Vec<UserRule>,
     pub core_shortcuts: Vec<String>,
@@ -99,6 +104,7 @@ pub fn get_app_settings(state: State<'_, DbState>) -> AppResult<AppSettings> {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(30),
             help_hints_enabled: settings::get_bool(conn, KEY_HELP_HINTS, true)?,
+            sudo_autofill_enabled: settings::get_bool(conn, KEY_SUDO_AUTOFILL, true)?,
             core_rules: guard::core_rule_infos(),
             user_rules: load_user_rules(conn)?,
             core_shortcuts: CORE_SHORTCUTS.iter().map(|s| s.to_string()).collect(),
@@ -227,6 +233,18 @@ pub fn reset_app_settings(state: State<'_, DbState>) -> AppResult<()> {
 pub fn set_help_hints_enabled(enabled: bool, state: State<'_, DbState>) -> AppResult<()> {
     with_db(&state, |conn| {
         settings::set(conn, KEY_HELP_HINTS, if enabled { "true" } else { "false" })
+    })
+}
+
+/// Global sudo password auto-fill toggle (D-065). Off = stored sudo passwords
+/// are never injected into interactive terminals. Saved immediately. The PTY
+/// open path reads the same key, so disabling it takes effect on the next
+/// terminal opened. Intentionally NOT cleared by `reset_app_settings` — a
+/// preferences reset must never silently re-enable sudo auto-fill.
+#[tauri::command]
+pub fn set_sudo_autofill_enabled(enabled: bool, state: State<'_, DbState>) -> AppResult<()> {
+    with_db(&state, |conn| {
+        settings::set(conn, KEY_SUDO_AUTOFILL, if enabled { "true" } else { "false" })
     })
 }
 
