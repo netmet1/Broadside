@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   ArchiveIcon,
   CircleHelpIcon,
@@ -77,7 +77,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-function SectionHeading({ title, hint }: { title: string; hint?: string }) {
+function SectionHeading({
+  title,
+  hint,
+}: {
+  title: string;
+  hint?: ReactNode;
+}) {
   return (
     <div>
       <h2 className="font-heading text-sm font-semibold">{title}</h2>
@@ -719,7 +725,7 @@ export function SettingsPage({
       <section id={sectionDomId("Performance")} className="space-y-4">
         <SectionHeading
           title="Performance"
-          hint="Suggests how many sessions this computer can comfortably run at once, based on its resources. It's only a suggestion; whatever you set always wins."
+          hint="Suggests how many sessions this computer can comfortably run at once, based on its resources. It's only a suggestion."
         />
         <div className="flex items-start justify-between gap-4">
           <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
@@ -810,7 +816,7 @@ export function SettingsPage({
       <section id={sectionDomId("Network probe")} className="space-y-4">
         <SectionHeading
           title="Network probe"
-          hint="Checks how quickly each saved host responds, whenever you run it."
+          hint="Test to check how quickly each saved host responds."
         />
         <Button
           variant="outline"
@@ -852,7 +858,13 @@ export function SettingsPage({
       <section id={sectionDomId("Destructive command guard")} className="space-y-4">
         <SectionHeading
           title="Destructive command guard"
-          hint="Commands that match a rule make you type CONFIRM before they run. Built-in rules can't be removed; rules you add can be turned off or deleted."
+          hint={
+            <>
+              Matched rules require <strong>CONFIRM</strong> before they run.
+              Built-in rules can't be removed; rules you add can be turned off or
+              deleted.
+            </>
+          }
         />
 
         {settings && settings.user_rules.length > 0 && (
@@ -1402,11 +1414,9 @@ export function SettingsPage({
           Sudo password auto-fill
         </label>
         <p className="max-w-xl text-xs text-muted-foreground">
-          When on, a host's saved sudo password is typed in for you at sudo
-          prompts in a terminal. Turn it <strong>off</strong> on shared or
-          restricted computers so sudo passwords are never typed in
-          automatically; people then enter sudo themselves. Takes effect the
-          next time you open a terminal; saved passwords are not deleted.
+          Auto Complete 'sudo' passwords. Turn it <strong>off</strong> to
+          disable; Takes effect next time a new terminal is opened. Disabling
+          does not delete stored passwords.
         </p>
 
         {/* Admin lock (opt-in) — gates the toggle above, credential editing and
