@@ -27,7 +27,7 @@ import {
 import { commandHistory } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
-import type { TermSession } from "@/pages/TerminalsPage";
+import type { SshTermSession } from "@/pages/TerminalsPage";
 
 const MIRROR_KEY = "omni-mirror-typed";
 const HEADERS_KEY = "omni-headers";
@@ -68,7 +68,7 @@ export function OmniTerminalPage({
   onManageShortcuts,
 }: {
   visible: boolean;
-  sessions: TermSession[];
+  sessions: SshTermSession[];
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
 }) {
@@ -96,7 +96,7 @@ export function OmniTerminalPage({
   const outputRef = useRef<HTMLDivElement>(null);
 
   const sessionsById = useMemo(() => {
-    const m = new Map<string, TermSession>();
+    const m = new Map<string, SshTermSession>();
     for (const s of sessions) m.set(s.id, s);
     return m;
   }, [sessions]);

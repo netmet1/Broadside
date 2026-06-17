@@ -22,6 +22,7 @@ import {
   ptyWrite,
   type PtyOpenResult,
 } from "@/lib/tauri/pty";
+import { ptyOpenLocal } from "@/lib/tauri/local";
 import { errorMessage } from "@/lib/tauri/hosts";
 import type { SearchOptions } from "@/lib/search";
 import { useUiPrefs } from "@/lib/uiPrefs";
@@ -61,9 +62,14 @@ type Phase =
   | { kind: "failed"; message: string }
   | { kind: "closed"; message: string };
 
+/** What backs this terminal: an SSH host, or a local shell over ConPTY. */
+export type TerminalSource =
+  | { type: "ssh"; hostId: number }
+  | { type: "local"; shellId: string };
+
 type Props = {
   sessionId: string;
-  hostId: number;
+  source: TerminalSource;
   /** Whether this terminal's tab AND the Terminals page are visible. */
   visible: boolean;
   /** Bumps when the user resolves a TOFU gate — triggers a reconnect. */
@@ -85,7 +91,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   function TerminalView(
     {
       sessionId,
-      hostId,
+      source,
       visible,
       retryNonce,
       onGate,
@@ -265,9 +271,24 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       setPhase({ kind: "connecting" });
       if (containerRef.current?.offsetParent) fit.fit();
       try {
+        // Local shells have no host-key trust or auth gate — just spawn and open.
+        if (source.type === "local") {
+          await ptyOpenLocal({
+            sessionId,
+            shellId: source.shellId,
+            cols: term.cols,
+            rows: term.rows,
+          });
+          if (cancelled) return;
+          if (phaseRef.current.kind !== "closed") {
+            setPhase({ kind: "open" });
+            term.focus();
+          }
+          return;
+        }
         const result = await ptyOpen({
           sessionId,
-          hostId,
+          hostId: source.hostId,
           cols: term.cols,
           rows: term.rows,
         });
@@ -307,7 +328,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, hostId, retryNonce]);
+  }, [sessionId, retryNonce]);
 
   // Apply appearance-setting changes to the live terminal.
   useEffect(() => {

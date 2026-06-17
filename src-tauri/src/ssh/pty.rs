@@ -148,7 +148,10 @@ impl From<ConnectFailure> for PtyOpenResult {
     }
 }
 
-enum SessionCmd {
+/// Commands sent into a live session task. Shared by the SSH path (below) and
+/// the local-shell path (`crate::local`) — both consume the same channel so the
+/// `pty_write`/`pty_resize`/`pty_close` commands work identically for either.
+pub(crate) enum SessionCmd {
     Write(Vec<u8>),
     Resize { cols: u32, rows: u32 },
     Close,
@@ -189,12 +192,21 @@ impl PtyState {
         epoch
     }
 
+    /// Creates the command channel, registers the session and returns its epoch
+    /// plus the receiver for the session task to consume. Used by the local-shell
+    /// path so it can reuse the same write/resize/close plumbing as SSH.
+    pub(crate) fn register(&self, session_id: String) -> (u64, mpsc::Receiver<SessionCmd>) {
+        let (tx, rx) = mpsc::channel::<SessionCmd>(64);
+        let epoch = self.insert(session_id, tx);
+        (epoch, rx)
+    }
+
     /// Deregisters the session only if the entry still belongs to the task
     /// stamped with `epoch`. Returns whether it did — false means the entry
     /// was already removed (deliberate close) or replaced by a newer open
     /// with the same id, and the caller must not tear down or report on the
     /// replacement's behalf.
-    fn remove_if_current(&self, session_id: &str, epoch: u64) -> bool {
+    pub(crate) fn remove_if_current(&self, session_id: &str, epoch: u64) -> bool {
         let mut map = self.0.lock().unwrap();
         match map.get(session_id) {
             Some(entry) if entry.epoch == epoch => {
