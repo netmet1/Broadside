@@ -1,0 +1,255 @@
+//! Local shell sessions (PowerShell / pwsh / Command Prompt / WSL distros) hosted
+//! over a Windows pseudo-console (ConPTY) via `portable-pty`, surfaced as terminal
+//! tabs alongside SSH sessions. This reuses the SAME session plumbing as the SSH
+//! path (`crate::ssh::pty`): the `PtyState` registry, the `SessionCmd`
+//! write/resize/close channel, and the `pty:data` / `pty:closed` events. Only the
+//! data SOURCE differs (a local child process instead of an SSH channel), so the
+//! frontend's `pty_write`/`pty_resize`/`pty_close` and xterm rendering are
+//! identical. None of the SSH-only machinery (host-key trust, sudo auto-fill,
+//! guard rules, OmniTerminal blocks) applies to local shells.
+
+use std::io::{Read, Write};
+
+use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine;
+use portable_pty::{CommandBuilder, PtySize};
+use serde::Serialize;
+
+use crate::error::{AppError, AppResult};
+use crate::ssh::pty::{PtyClosed, PtyData, PtyEvents, PtyState, SessionCmd};
+
+/// A launchable local shell discovered on this machine.
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalShell {
+    /// Stable id used to launch it: `powershell`, `pwsh`, `cmd`, or
+    /// `wsl:<distro>` (e.g. `wsl:Ubuntu-24.04`).
+    pub id: String,
+    /// Human label for the launcher menu.
+    pub label: String,
+    /// Coarse kind for the UI icon: `powershell` | `pwsh` | `cmd` | `wsl`.
+    pub kind: String,
+}
+
+/// Lists the local shells available on this machine: PowerShell (always present
+/// on Windows), pwsh if installed, Command Prompt, and each installed WSL distro.
+pub fn list_local_shells() -> Vec<LocalShell> {
+    let mut shells = vec![LocalShell {
+        id: "powershell".into(),
+        label: "PowerShell".into(),
+        kind: "powershell".into(),
+    }];
+    if on_path("pwsh.exe") {
+        shells.push(LocalShell {
+            id: "pwsh".into(),
+            label: "PowerShell 7 (pwsh)".into(),
+            kind: "pwsh".into(),
+        });
+    }
+    shells.push(LocalShell {
+        id: "cmd".into(),
+        label: "Command Prompt".into(),
+        kind: "cmd".into(),
+    });
+    for distro in list_wsl_distros() {
+        shells.push(LocalShell {
+            id: format!("wsl:{distro}"),
+            label: format!("WSL: {distro}"),
+            kind: "wsl".into(),
+        });
+    }
+    shells
+}
+
+/// Whether `exe` resolves on PATH (via `where.exe`).
+fn on_path(exe: &str) -> bool {
+    std::process::Command::new("where.exe")
+        .arg(exe)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Installed WSL distro names, from `wsl.exe -l -q` (which emits UTF-16LE).
+fn list_wsl_distros() -> Vec<String> {
+    let output = match std::process::Command::new("wsl.exe")
+        .args(["-l", "-q"])
+        .output()
+    {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return Vec::new(),
+    };
+    decode_utf16le(&output)
+        .lines()
+        .map(|l| l.trim().trim_matches('\0').trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// Decode WSL's UTF-16LE output (with an optional BOM) to a String.
+fn decode_utf16le(bytes: &[u8]) -> String {
+    let bytes = bytes.strip_prefix(&[0xFF, 0xFE]).unwrap_or(bytes);
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    String::from_utf16_lossy(&units)
+}
+
+/// Map a shell id to the process to launch.
+fn build_command(shell_id: &str) -> AppResult<CommandBuilder> {
+    let mut cmd = if let Some(distro) = shell_id.strip_prefix("wsl:") {
+        let mut c = CommandBuilder::new("wsl.exe");
+        c.arg("-d");
+        c.arg(distro);
+        c
+    } else {
+        match shell_id {
+            "powershell" => CommandBuilder::new("powershell.exe"),
+            "pwsh" => CommandBuilder::new("pwsh.exe"),
+            "cmd" => CommandBuilder::new("cmd.exe"),
+            other => {
+                return Err(AppError::InvalidInput(format!(
+                    "unknown local shell: {other}"
+                )))
+            }
+        }
+    };
+    // Start in the user's home directory rather than the app's working dir.
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        cmd.cwd(home);
+    }
+    Ok(cmd)
+}
+
+fn pty_size(cols: u32, rows: u32) -> PtySize {
+    PtySize {
+        rows: rows as u16,
+        cols: cols as u16,
+        pixel_width: 0,
+        pixel_height: 0,
+    }
+}
+
+/// Spawns a local shell over ConPTY and wires it into the shared session
+/// registry, emitting `pty:data` as output streams and `pty:closed` when the
+/// shell exits. The blocking ConPTY reader/waiter run on dedicated threads and
+/// feed an async task that also services the write/resize/close channel.
+pub fn open_local<E: PtyEvents>(
+    events: E,
+    state: &PtyState,
+    session_id: String,
+    shell_id: &str,
+    cols: u32,
+    rows: u32,
+) -> AppResult<()> {
+    let cmd = build_command(shell_id)?;
+    let pty_system = portable_pty::native_pty_system();
+    let pair = pty_system
+        .openpty(pty_size(cols, rows))
+        .map_err(|e| AppError::State(format!("open pty: {e}")))?;
+
+    let mut child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| AppError::State(format!("spawn local shell: {e}")))?;
+    // Drop the slave in this process so the child holds the only slave handle —
+    // its exit then closes the pty and the reader sees EOF.
+    drop(pair.slave);
+
+    let mut killer = child.clone_killer();
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| AppError::State(format!("pty reader: {e}")))?;
+    let mut writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| AppError::State(format!("pty writer: {e}")))?;
+    let master = pair.master; // kept for resize
+
+    let (epoch, mut rx) = state.register(session_id.clone());
+    let state = state.clone();
+
+    // Blocking reader thread → forwards output bytes to the async task. Dropping
+    // `data_tx` (on EOF) signals the async task that output has ended.
+    let (data_tx, mut data_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if data_tx.blocking_send(buf[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    // Blocking waiter thread → reports the child's exit code once.
+    let (exit_tx, mut exit_rx) = tokio::sync::mpsc::channel::<Option<u32>>(1);
+    std::thread::spawn(move || {
+        let code = child.wait().ok().map(|s| s.exit_code());
+        let _ = exit_tx.blocking_send(code);
+    });
+
+    tauri::async_runtime::spawn(async move {
+        let mut exit_code: Option<u32> = None;
+        let mut message: Option<String> = None;
+        let mut reader_done = false;
+
+        let emit = |session_id: &str, bytes: &[u8], events: &E| {
+            events.data(PtyData {
+                session_id: session_id.to_string(),
+                data_b64: B64.encode(bytes),
+            });
+        };
+
+        loop {
+            tokio::select! {
+                // `if !reader_done` stops us busy-looping once the reader EOFs.
+                data = data_rx.recv(), if !reader_done => match data {
+                    Some(bytes) => emit(&session_id, &bytes, &events),
+                    None => reader_done = true,
+                },
+                code = exit_rx.recv() => {
+                    exit_code = code.flatten();
+                    break;
+                }
+                cmd = rx.recv() => match cmd {
+                    Some(SessionCmd::Write(d)) => {
+                        if let Err(e) = writer.write_all(&d).and_then(|_| writer.flush()) {
+                            message = Some(format!("write failed: {e}"));
+                            break;
+                        }
+                    }
+                    Some(SessionCmd::Resize { cols, rows }) => {
+                        let _ = master.resize(pty_size(cols, rows));
+                    }
+                    Some(SessionCmd::Close) | None => break,
+                },
+            }
+        }
+
+        // Ensure the child is gone, then flush any output still in flight before
+        // reporting the close so no trailing bytes are lost.
+        let _ = killer.kill();
+        while let Some(bytes) = data_rx.recv().await {
+            emit(&session_id, &bytes, &events);
+        }
+
+        // Only report if the entry is still ours (a re-open with the same id, or a
+        // deliberate close, must not emit a stray pty:closed).
+        if state.remove_if_current(&session_id, epoch) {
+            events.closed(PtyClosed {
+                session_id: session_id.clone(),
+                exit_code,
+                message,
+            });
+        }
+    });
+
+    Ok(())
+}

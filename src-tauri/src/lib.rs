@@ -12,6 +12,7 @@ pub mod export;
 pub mod guard;
 pub mod import;
 mod licensing;
+pub mod local;
 pub mod omni;
 pub mod probe;
 pub mod session;
@@ -80,6 +81,8 @@ pub fn run() {
             commands::broadcast::broadcast_history_list,
             commands::broadcast::broadcast_history_clear,
             commands::pty::pty_open,
+            commands::pty::pty_open_local,
+            commands::pty::list_local_shells,
             commands::pty::pty_write,
             commands::pty::pty_resize,
             commands::pty::pty_close,

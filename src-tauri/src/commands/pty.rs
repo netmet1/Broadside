@@ -132,6 +132,35 @@ pub fn pty_resize(
     pty_state.resize(&session_id, cols.clamp(2, 1000), rows.clamp(2, 1000))
 }
 
+/// Lists the local shells available on this machine (PowerShell / pwsh / Command
+/// Prompt / installed WSL distros) for the "New local shell" launcher.
+#[tauri::command]
+pub fn list_local_shells() -> Vec<crate::local::LocalShell> {
+    crate::local::list_local_shells()
+}
+
+/// Opens a local shell tab over ConPTY. Mirrors `pty_open` but the source is a
+/// local process rather than an SSH host; the same session id then flows through
+/// `pty_write`/`pty_resize`/`pty_close`.
+#[tauri::command]
+pub fn pty_open_local(
+    session_id: String,
+    shell_id: String,
+    cols: u32,
+    rows: u32,
+    app: AppHandle,
+    pty_state: State<'_, PtyState>,
+) -> AppResult<()> {
+    crate::local::open_local(
+        app,
+        &pty_state,
+        session_id,
+        &shell_id,
+        cols.clamp(2, 1000),
+        rows.clamp(2, 1000),
+    )
+}
+
 #[tauri::command]
 pub fn pty_close(session_id: String, pty_state: State<'_, PtyState>) -> AppResult<()> {
     pty_state.close(&session_id)
