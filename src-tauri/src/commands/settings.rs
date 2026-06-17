@@ -211,8 +211,12 @@ pub fn set_app_settings(
 /// history and the audit log are all left intact. The frontend clears its own
 /// UI prefs (theme, layout, sort) from localStorage alongside this.
 #[tauri::command]
-pub fn reset_app_settings(state: State<'_, DbState>) -> AppResult<()> {
+pub fn reset_app_settings(
+    state: State<'_, DbState>,
+    lock_state: State<'_, crate::admin_lock::AdminLockState>,
+) -> AppResult<()> {
     with_db(&state, |conn| {
+        crate::admin_lock::ensure_unlocked(conn, &lock_state)?;
         for key in [
             KEY_MAX_SESSIONS,
             KEY_DEFAULT_TIMEOUT,
@@ -242,8 +246,13 @@ pub fn set_help_hints_enabled(enabled: bool, state: State<'_, DbState>) -> AppRe
 /// terminal opened. Intentionally NOT cleared by `reset_app_settings` — a
 /// preferences reset must never silently re-enable sudo auto-fill.
 #[tauri::command]
-pub fn set_sudo_autofill_enabled(enabled: bool, state: State<'_, DbState>) -> AppResult<()> {
+pub fn set_sudo_autofill_enabled(
+    enabled: bool,
+    state: State<'_, DbState>,
+    lock_state: State<'_, crate::admin_lock::AdminLockState>,
+) -> AppResult<()> {
     with_db(&state, |conn| {
+        crate::admin_lock::ensure_unlocked(conn, &lock_state)?;
         settings::set(conn, KEY_SUDO_AUTOFILL, if enabled { "true" } else { "false" })
     })
 }

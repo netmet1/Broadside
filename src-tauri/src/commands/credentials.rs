@@ -3,6 +3,7 @@ use std::sync::MutexGuard;
 use rusqlite::Connection;
 use tauri::State;
 
+use crate::admin_lock::{self, AdminLockState};
 use crate::credentials::{AuthInput, CredentialState};
 use crate::db::hosts as host_repo;
 use crate::db::DbState;
@@ -15,13 +16,25 @@ fn lock_db<'a>(state: &'a State<'_, DbState>) -> AppResult<MutexGuard<'a, Connec
         .map_err(|_| AppError::State("db mutex poisoned".into()))
 }
 
+/// Admin-lock gate: credential mutations require an unlocked session when a
+/// passcode is set (otherwise it's a no-op). Locks the db only briefly.
+fn ensure_admin_unlocked(
+    db_state: &State<'_, DbState>,
+    lock_state: &State<'_, AdminLockState>,
+) -> AppResult<()> {
+    let conn = lock_db(db_state)?;
+    admin_lock::ensure_unlocked(&conn, lock_state)
+}
+
 #[tauri::command]
 pub fn set_host_credentials(
     host_id: i64,
     auth: AuthInput,
     cred_state: State<'_, CredentialState>,
     db_state: State<'_, DbState>,
+    lock_state: State<'_, AdminLockState>,
 ) -> AppResult<()> {
+    ensure_admin_unlocked(&db_state, &lock_state)?;
     cred_state.apply_auth(host_id, &auth)?;
     let (auth_method, key_path) = match &auth {
         AuthInput::Password { .. } => ("password", None),
@@ -36,7 +49,9 @@ pub fn clear_host_credentials(
     host_id: i64,
     cred_state: State<'_, CredentialState>,
     db_state: State<'_, DbState>,
+    lock_state: State<'_, AdminLockState>,
 ) -> AppResult<()> {
+    ensure_admin_unlocked(&db_state, &lock_state)?;
     cred_state.clear_host(host_id)?;
     let conn = lock_db(&db_state)?;
     host_repo::set_auth_method(&conn, host_id, None, None)
@@ -50,7 +65,9 @@ pub fn set_sudo_password(
     value: Option<String>,
     cred_state: State<'_, CredentialState>,
     db_state: State<'_, DbState>,
+    lock_state: State<'_, AdminLockState>,
 ) -> AppResult<()> {
+    ensure_admin_unlocked(&db_state, &lock_state)?;
     let value = value.filter(|v| !v.is_empty());
     cred_state.set_sudo_password(host_id, value.as_deref())?;
     let conn = lock_db(&db_state)?;
@@ -65,7 +82,9 @@ pub fn set_sudo_same_as_login(
     host_id: i64,
     cred_state: State<'_, CredentialState>,
     db_state: State<'_, DbState>,
+    lock_state: State<'_, AdminLockState>,
 ) -> AppResult<()> {
+    ensure_admin_unlocked(&db_state, &lock_state)?;
     let password = cred_state.get_password(host_id)?.ok_or_else(|| {
         AppError::InvalidInput("no SSH password stored for this host".into())
     })?;

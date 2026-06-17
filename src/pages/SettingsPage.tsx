@@ -45,21 +45,27 @@ import { useTheme } from "next-themes";
 
 import { useUiPrefs } from "@/lib/uiPrefs";
 import {
+  type AdminLockStatus,
   type AppSettings,
   type HostLatency,
   type ShortcutCommand,
   type UserRule,
+  adminLockStatus,
   backupAppData,
   getAppSettings,
   networkProbe,
   recalibrateProbe,
+  removeAdminLock,
+  resetAdminPasscode,
   resetAppSettings,
   saveGuardRules,
   saveShortcuts,
+  setAdminPasscode,
   setAppSettings,
   setSudoAutofillEnabled,
   setUiSettings,
 } from "@/lib/tauri/settings";
+import { AdminUnlockDialog } from "@/components/AdminUnlockDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -134,6 +140,82 @@ export function SettingsPage({
       saveHiddenCols(next);
       return next;
     });
+  };
+
+  // Opt-in admin lock (gates the sudo toggle, credential editing and Reset).
+  const [lockStatus, setLockStatus] = useState<AdminLockStatus | null>(null);
+  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [passcodeFormOpen, setPasscodeFormOpen] = useState(false);
+  const [pcNew, setPcNew] = useState("");
+  const [pcConfirm, setPcConfirm] = useState("");
+  const [pcSaving, setPcSaving] = useState(false);
+  // The one-time recovery code, shown once after set/reset until acknowledged.
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  // Recover-with-recovery-code form.
+  const [recoverOpen, setRecoverOpen] = useState(false);
+  const [recCode, setRecCode] = useState("");
+  const [recNewPc, setRecNewPc] = useState("");
+  // True when a lock is set but this session hasn't been unlocked yet — the
+  // sensitive controls are disabled until the user unlocks.
+  const adminLocked = !!lockStatus?.lock_set && !lockStatus.unlocked;
+  const refreshLock = useCallback(async () => {
+    try {
+      setLockStatus(await adminLockStatus());
+    } catch {
+      // Non-fatal; the section just won't reflect the latest lock state.
+    }
+  }, []);
+  const savePasscode = async () => {
+    if (pcNew.length < 4) {
+      toast.error("Passcode must be at least 4 characters");
+      return;
+    }
+    if (pcNew !== pcConfirm) {
+      toast.error("Passcodes don't match");
+      return;
+    }
+    setPcSaving(true);
+    try {
+      const recovery = await setAdminPasscode(pcNew);
+      setRecoveryCode(recovery);
+      setPcNew("");
+      setPcConfirm("");
+      setPasscodeFormOpen(false);
+      await refreshLock();
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setPcSaving(false);
+    }
+  };
+  const submitRecover = async () => {
+    if (recNewPc.length < 4) {
+      toast.error("New passcode must be at least 4 characters");
+      return;
+    }
+    try {
+      const newRecovery = await resetAdminPasscode(recCode.trim(), recNewPc);
+      if (newRecovery === null) {
+        toast.error("Recovery code is incorrect");
+        return;
+      }
+      setRecoveryCode(newRecovery);
+      setRecCode("");
+      setRecNewPc("");
+      setRecoverOpen(false);
+      await refreshLock();
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+  const removeLock = async () => {
+    try {
+      await removeAdminLock();
+      await refreshLock();
+      toast.success("Admin lock removed");
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
   };
 
   // Reset-everything-to-defaults (with a guard rail).
@@ -319,7 +401,8 @@ export function SettingsPage({
     } catch {
       // Audit info is non-critical for this page.
     }
-  }, []);
+    await refreshLock();
+  }, [refreshLock]);
 
   useEffect(() => {
     load();
@@ -1291,17 +1374,19 @@ export function SettingsPage({
 
       {/* Security */}
       {sectionVisible("Security") && (
-      <section id={sectionDomId("Security")} className="space-y-3">
+      <section id={sectionDomId("Security")} className="space-y-4">
         <SectionHeading
           title="Security"
-          hint="Controls for sensitive behaviour like the sudo password auto-fill."
+          hint="Sudo password auto-fill, plus an optional admin lock for the sensitive controls."
         />
-        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+        <label
+          className={`flex w-fit items-center gap-2 text-sm ${adminLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+        >
           <input
             type="checkbox"
             className="accent-primary"
             checked={settings?.sudo_autofill_enabled ?? true}
-            disabled={settings === null}
+            disabled={settings === null || adminLocked}
             onChange={async (e) => {
               const next = e.target.checked;
               try {
@@ -1323,6 +1408,124 @@ export function SettingsPage({
           are never auto-typed — operators then enter sudo manually. Takes effect
           on the next terminal opened; stored passwords are not deleted.
         </p>
+
+        {/* Admin lock (opt-in) — gates the toggle above, credential editing and
+            Reset. Authorization only: it stores no key, so a lost passcode never
+            loses data (use the recovery code, or remove the lock). */}
+        <div className="max-w-xl space-y-3 rounded-md border border-border/40 p-4">
+          <div className="flex items-center gap-2">
+            <LockIcon className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-medium">Admin lock</h3>
+            <span
+              className={`ml-auto rounded-full px-2 py-0.5 text-xs ${
+                !lockStatus?.lock_set
+                  ? "bg-muted text-muted-foreground"
+                  : adminLocked
+                    ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                    : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+              }`}
+            >
+              {!lockStatus?.lock_set
+                ? "Not set"
+                : adminLocked
+                  ? "Locked"
+                  : "Unlocked"}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Optional. When set, changing sudo auto-fill, adding/editing
+            credentials, and Reset require this passcode. Everyday use (opening
+            terminals, broadcasts) is never gated. It re-locks each time the app
+            restarts.
+          </p>
+
+          {passcodeFormOpen ? (
+            <div className="space-y-2">
+              <div className="grid gap-1">
+                <Label htmlFor="pc-new">
+                  {lockStatus?.lock_set ? "New passcode" : "Passcode"}
+                </Label>
+                <Input
+                  id="pc-new"
+                  type="password"
+                  value={pcNew}
+                  onChange={(e) => setPcNew(e.target.value)}
+                  className="max-w-xs"
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label htmlFor="pc-confirm">Confirm passcode</Label>
+                <Input
+                  id="pc-confirm"
+                  type="password"
+                  value={pcConfirm}
+                  onChange={(e) => setPcConfirm(e.target.value)}
+                  className="max-w-xs"
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button size="sm" onClick={savePasscode} disabled={pcSaving}>
+                  {pcSaving && <Loader2Icon className="animate-spin" />}
+                  Save passcode
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setPasscodeFormOpen(false);
+                    setPcNew("");
+                    setPcConfirm("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {!lockStatus?.lock_set && (
+                <Button
+                  size="sm"
+                  onClick={() => setPasscodeFormOpen(true)}
+                  {...hint("Set an admin passcode to lock the sensitive controls")}
+                >
+                  Set admin passcode
+                </Button>
+              )}
+              {adminLocked && (
+                <>
+                  <Button size="sm" onClick={() => setUnlockOpen(true)}>
+                    Unlock…
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setRecoverOpen(true)}
+                    {...hint("Lost the passcode? Reset it with the recovery code")}
+                  >
+                    Use recovery code
+                  </Button>
+                </>
+              )}
+              {lockStatus?.lock_set && !adminLocked && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPasscodeFormOpen(true)}
+                  >
+                    Change passcode
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={removeLock}>
+                    Remove lock
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </section>
       )}
 
@@ -1336,11 +1539,21 @@ export function SettingsPage({
         <Button
           variant="destructive"
           size="sm"
+          disabled={adminLocked}
           onClick={() => setResetOpen(true)}
-          {...hint("Reset every preference (theme, layout, sorts, timeouts, fonts) to defaults")}
+          {...hint(
+            adminLocked
+              ? "Locked by the admin passcode — unlock in the Security section first"
+              : "Reset every preference (theme, layout, sorts, timeouts, fonts) to defaults",
+          )}
         >
           Reset everything to defaults
         </Button>
+        {adminLocked && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Reset is locked. Unlock in Settings → Security to enable it.
+          </p>
+        )}
         {/* Bottom banner help tip explaining exactly what reset does. */}
         <div className="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
           This resets <strong>preferences only</strong> — theme, sidebar &amp;
@@ -1392,6 +1605,90 @@ export function SettingsPage({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter showCloseButton />
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin-lock: unlock prompt for this session. */}
+      <AdminUnlockDialog
+        open={unlockOpen}
+        onOpenChange={setUnlockOpen}
+        onUnlocked={refreshLock}
+      />
+
+      {/* One-time recovery code, shown once after set/reset. */}
+      <Dialog
+        open={recoveryCode !== null}
+        onOpenChange={(open) => !open && setRecoveryCode(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save your recovery code</DialogTitle>
+            <DialogDescription>
+              This is shown <strong>once</strong>. Store it somewhere safe — it's
+              the only way to reset the admin passcode if you forget it. It is not
+              kept in readable form.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border border-border/50 bg-muted/40 px-3 py-2 text-center font-mono text-sm tracking-wider">
+            {recoveryCode}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (recoveryCode) {
+                  navigator.clipboard?.writeText(recoveryCode).then(
+                    () => toast.success("Recovery code copied"),
+                    () => {},
+                  );
+                }
+              }}
+            >
+              Copy
+            </Button>
+            <Button onClick={() => setRecoveryCode(null)}>I've saved it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset the passcode with the recovery code. */}
+      <Dialog open={recoverOpen} onOpenChange={setRecoverOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset admin passcode</DialogTitle>
+            <DialogDescription>
+              Enter your recovery code and a new passcode. This issues a fresh
+              recovery code.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-1">
+              <Label htmlFor="rec-code">Recovery code</Label>
+              <Input
+                id="rec-code"
+                value={recCode}
+                onChange={(e) => setRecCode(e.target.value)}
+                className="font-mono"
+                autoComplete="off"
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="rec-new">New passcode</Label>
+              <Input
+                id="rec-new"
+                type="password"
+                value={recNewPc}
+                onChange={(e) => setRecNewPc(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRecoverOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitRecover}>Reset passcode</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -6,6 +6,7 @@ pub mod errlog;
 pub mod hosts;
 pub mod import;
 pub mod pty;
+pub mod security;
 pub mod session;
 pub mod settings;
 pub mod ssh;
