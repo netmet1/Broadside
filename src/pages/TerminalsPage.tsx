@@ -348,6 +348,8 @@ export function TerminalsPage({
             onDragStart={(e) => {
               setDragId(s.id);
               e.dataTransfer.effectAllowed = "move";
+              // Some webviews need drag data set or the drag is rejected.
+              e.dataTransfer.setData("text/plain", s.id);
             }}
             onDragOver={(e) => {
               if (!dragId || dragId === s.id) return;
