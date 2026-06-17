@@ -586,14 +586,14 @@ export function HostsPage({
                   {...hint("Select or deselect every host (for Multi-terminal)")}
                 />
               </TableHead>
-              <TableHead {...hint("Open an interactive terminal to this host")} />
+              <TableHead {...hint("Open a terminal to this host")} />
               <TableHead className="relative">
                 <SortHeader
                   label="Label"
                   sortKey="label"
                   sort={sort}
                   onSort={toggleSort}
-                  headHint={hint("The host's unique display name, used in tints, logs and pickers")}
+                  headHint={hint("The host's unique display name — shown in its colour, in logs, and when picking hosts")}
                 />
                 {resizeHandle("label")}
               </TableHead>
@@ -765,7 +765,7 @@ export function HostsPage({
                       size="icon-sm"
                       onClick={() => handleOpenTerminal(h)}
                       aria-label="Open terminal"
-                      {...hint(`Open an interactive terminal tab on ${h.label}`)}
+                      {...hint(`Open a terminal tab on ${h.label}`)}
                     >
                       <TerminalIcon />
                     </Button>

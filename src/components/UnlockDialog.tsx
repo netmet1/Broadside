@@ -53,9 +53,10 @@ export function UnlockDialog({ open, onOpenChange, onUnlocked }: Props) {
         <DialogHeader>
           <DialogTitle>Unlock credentials</DialogTitle>
           <DialogDescription>
-            The system keyring is unavailable. Enter your master password to
-            unlock the encrypted credential store. If this is the first time,
-            choose any passphrase — it will be used to encrypt new credentials.
+            Your computer's secure credential store isn't available. Enter your
+            master password to unlock your saved passwords. If this is your first
+            time, pick any password — it will be used to protect new passwords
+            you save.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-2">

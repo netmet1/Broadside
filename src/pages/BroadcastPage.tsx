@@ -641,8 +641,8 @@ export function BroadcastPage({
     <div className="flex h-full flex-col">
       {/* Static reminder of the exec-channel contract (D-002). */}
       <div className="shrink-0 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
-        The broadcast channel is exclusively for non-interactive commands that
-        print output and exit.
+        Use Broadcast for commands that run and finish on their own. For
+        programs that need you to interact with them, open a terminal instead.
       </div>
       <div className="flex min-h-0 flex-1">
       {/* Host selection rail (collapsible — mirrors OmniTerminal). */}
