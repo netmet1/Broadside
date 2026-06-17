@@ -64,6 +64,8 @@ type Props = {
   onManageShortcuts: () => void;
   onActivate: (id: string) => void;
   onCloseSession: (id: string) => void;
+  /** Reorder tabs: drop the dragged session in front of the target. */
+  onReorder: (sourceId: string, targetId: string) => void;
 };
 
 export function TerminalsPage({
@@ -74,6 +76,7 @@ export function TerminalsPage({
   onManageShortcuts,
   onActivate,
   onCloseSession,
+  onReorder,
 }: Props) {
   const shortcuts = useShortcuts(visible);
   const hint = useHint();
@@ -107,6 +110,11 @@ export function TerminalsPage({
       return next;
     });
   }, []);
+
+  // Drag-to-reorder tab state: the session being dragged and the tab it's
+  // currently hovering over (drives the drop-indicator border).
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const [gates, setGates] = useState<Map<string, ConnectionGate>>(new Map());
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
@@ -326,11 +334,34 @@ export function TerminalsPage({
         {sessions.map((s) => (
           <div
             key={s.id}
+            draggable
+            onDragStart={(e) => {
+              setDragId(s.id);
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onDragOver={(e) => {
+              if (!dragId || dragId === s.id) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (dragOverId !== s.id) setDragOverId(s.id);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragId && dragId !== s.id) onReorder(dragId, s.id);
+              setDragId(null);
+              setDragOverId(null);
+            }}
+            onDragEnd={() => {
+              setDragId(null);
+              setDragOverId(null);
+            }}
             className={cn(
               "group flex shrink-0 cursor-pointer items-center gap-2 rounded-t-md border border-b-0 px-3 py-1.5 text-sm",
               s.id === activeId
                 ? "border-border/60 bg-accent/40 text-foreground"
                 : "border-transparent text-muted-foreground hover:bg-accent/20 hover:text-foreground",
+              dragId === s.id && "opacity-40",
+              dragOverId === s.id && "border-l-2 border-l-primary",
             )}
             onClick={() => onActivate(s.id)}
             role="tab"
