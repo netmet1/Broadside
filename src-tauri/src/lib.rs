@@ -1,5 +1,6 @@
 // Public so the integration test crate (tests/) can drive the ssh + db
 // layers directly against docker fixtures.
+pub mod admin_lock;
 pub mod audit;
 pub mod commands;
 pub mod credentials;
@@ -50,6 +51,9 @@ pub fn run() {
             app.manage(cred_state);
 
             app.manage(ssh::pty::PtyState::default());
+
+            // Admin lock unlock state — fresh (locked) on every launch.
+            app.manage(admin_lock::AdminLockState::default());
 
             Ok(())
         })
@@ -104,6 +108,11 @@ pub fn run() {
             commands::settings::reset_app_settings,
             commands::settings::set_help_hints_enabled,
             commands::settings::set_sudo_autofill_enabled,
+            commands::security::admin_lock_status,
+            commands::security::set_admin_passcode,
+            commands::security::verify_admin_passcode,
+            commands::security::reset_admin_passcode,
+            commands::security::remove_admin_lock,
             commands::settings::set_ui_settings,
             commands::settings::save_shortcuts,
             commands::settings::save_guard_rules,

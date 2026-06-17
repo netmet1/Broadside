@@ -15,6 +15,8 @@ pub enum AppError {
     State(String),
     #[error("credentials locked: master password required")]
     CredentialsLocked,
+    #[error("admin lock is on: unlock in Settings → Security to change this")]
+    AdminLocked,
     #[error("credentials error: {0}")]
     Credentials(String),
     #[error("serde error: {0}")]
@@ -41,6 +43,7 @@ impl Serialize for AppError {
             AppError::InvalidInput(_) => "invalid_input",
             AppError::State(_) => "state",
             AppError::CredentialsLocked => "credentials_locked",
+            AppError::AdminLocked => "admin_locked",
             AppError::Credentials(_) => "credentials",
             AppError::Serde(_) => "serde",
             AppError::Ssh(_) => "ssh",

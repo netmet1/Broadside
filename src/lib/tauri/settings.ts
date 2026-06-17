@@ -87,6 +87,41 @@ export function setSudoAutofillEnabled(enabled: boolean): Promise<void> {
   return invoke<void>("set_sudo_autofill_enabled", { enabled });
 }
 
+/** Opt-in admin lock state: `lock_set` = a passcode is configured;
+ * `unlocked` = this session has been unlocked (re-locks on app restart). */
+export type AdminLockStatus = { lock_set: boolean; unlocked: boolean };
+
+export function adminLockStatus(): Promise<AdminLockStatus> {
+  return invoke<AdminLockStatus>("admin_lock_status");
+}
+
+/** Set/replace the admin passcode. Returns the one-time recovery code. */
+export function setAdminPasscode(passcode: string): Promise<string> {
+  return invoke<string>("set_admin_passcode", { passcode });
+}
+
+/** Verify the passcode and unlock this session. */
+export function verifyAdminPasscode(passcode: string): Promise<boolean> {
+  return invoke<boolean>("verify_admin_passcode", { passcode });
+}
+
+/** Reset the passcode with the recovery code. Returns the NEW recovery code, or
+ * null if the recovery code was wrong. */
+export function resetAdminPasscode(
+  recoveryCode: string,
+  newPasscode: string,
+): Promise<string | null> {
+  return invoke<string | null>("reset_admin_passcode", {
+    recoveryCode,
+    newPasscode,
+  });
+}
+
+/** Remove the admin lock entirely (requires an unlocked session). */
+export function removeAdminLock(): Promise<void> {
+  return invoke<void>("remove_admin_lock");
+}
+
 /** Resets app preferences (timeouts, sessions, fonts, hints) to defaults.
  * Does not touch hosts, credentials, guard rules, shortcuts or history. The
  * caller also clears its own localStorage UI prefs and reloads. */
