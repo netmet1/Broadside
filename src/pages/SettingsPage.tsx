@@ -57,6 +57,7 @@ import {
   saveGuardRules,
   saveShortcuts,
   setAppSettings,
+  setSudoAutofillEnabled,
   setUiSettings,
 } from "@/lib/tauri/settings";
 import {
@@ -94,6 +95,7 @@ const SECTION_TITLES = [
   "Backup",
   "Help",
   "Audit log",
+  "Security",
   "Reset",
 ];
 
@@ -1284,6 +1286,43 @@ export function SettingsPage({
           />
           Audit logging enabled
         </label>
+      </section>
+      )}
+
+      {/* Security */}
+      {sectionVisible("Security") && (
+      <section id={sectionDomId("Security")} className="space-y-3">
+        <SectionHeading
+          title="Security"
+          hint="Controls for sensitive behaviour like the sudo password auto-fill."
+        />
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="accent-primary"
+            checked={settings?.sudo_autofill_enabled ?? true}
+            disabled={settings === null}
+            onChange={async (e) => {
+              const next = e.target.checked;
+              try {
+                await setSudoAutofillEnabled(next);
+                setSettings((prev) =>
+                  prev ? { ...prev, sudo_autofill_enabled: next } : prev,
+                );
+              } catch (err) {
+                toast.error(errorMessage(err));
+              }
+            }}
+          />
+          Sudo password auto-fill
+        </label>
+        <p className="max-w-xl text-xs text-muted-foreground">
+          When on, a host's stored sudo password is typed automatically at sudo
+          prompts in interactive terminals (D-065). Turn it{" "}
+          <strong>off</strong> on shared or restricted machines so sudo passwords
+          are never auto-typed — operators then enter sudo manually. Takes effect
+          on the next terminal opened; stored passwords are not deleted.
+        </p>
       </section>
       )}
 

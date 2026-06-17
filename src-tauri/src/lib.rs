@@ -103,6 +103,7 @@ pub fn run() {
             commands::settings::set_app_settings,
             commands::settings::reset_app_settings,
             commands::settings::set_help_hints_enabled,
+            commands::settings::set_sudo_autofill_enabled,
             commands::settings::set_ui_settings,
             commands::settings::save_shortcuts,
             commands::settings::save_guard_rules,
