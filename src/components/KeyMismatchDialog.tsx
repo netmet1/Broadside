@@ -69,7 +69,7 @@ export function KeyMismatchDialog({
               {host?.hostname}:{host?.port}
             </span>{" "}
             does not match the one stored from a previous connection. This can
-            mean the server was reinstalled — or that the connection is being
+            mean the server was reinstalled, or that the connection is being
             intercepted (man-in-the-middle). The connection was refused.
           </AlertDialogDescription>
         </AlertDialogHeader>

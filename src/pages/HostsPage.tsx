@@ -469,10 +469,10 @@ export function HostsPage({
           });
           break;
         case "auth_failed":
-          toast.error(`${host.label}: authentication failed — ${result.message}`);
+          toast.error(`${host.label}: authentication failed (${result.message})`);
           break;
         case "unreachable":
-          toast.error(`${host.label}: unreachable — ${result.message}`);
+          toast.error(`${host.label}: unreachable (${result.message})`);
           break;
         case "no_credentials":
           toast.warning(
@@ -533,7 +533,7 @@ export function HostsPage({
             variant="outline"
             onClick={runExport}
             disabled={loading || hosts.length === 0}
-            {...hint("Export all hosts to a CSV or Excel (.xlsx) file (re-importable). No credentials are included — safe to hand to a restricted operator to import under their own login.")}
+            {...hint("Export all hosts to a CSV or Excel (.xlsx) file (re-importable). No credentials are included; it's safe to hand to a restricted operator to import under their own login.")}
           >
             <DownloadIcon />
             Export hosts…
@@ -593,7 +593,7 @@ export function HostsPage({
                   sortKey="label"
                   sort={sort}
                   onSort={toggleSort}
-                  headHint={hint("The host's unique display name — shown in its colour, in logs, and when picking hosts")}
+                  headHint={hint("The host's unique display name, shown in its colour, in logs, and when picking hosts")}
                 />
                 {resizeHandle("label")}
               </TableHead>
@@ -604,7 +604,7 @@ export function HostsPage({
                   sortKey="status"
                   sort={sort}
                   onSort={toggleSort}
-                  headHint={hint("Status (S): terminal connection — green dot = a terminal to this host is connected, otherwise none is open")}
+                  headHint={hint("Status (S): terminal connection. Green dot = a terminal to this host is connected; otherwise none is open")}
                 />
               </TableHead>
               <TableHead className="relative">
@@ -613,7 +613,7 @@ export function HostsPage({
                   sortKey="hostname"
                   sort={sort}
                   onSort={toggleSort}
-                  headHint={hint("The host's address — IP or DNS name used to connect")}
+                  headHint={hint("The host's address: the IP or DNS name used to connect")}
                 />
                 {resizeHandle("hostname")}
               </TableHead>
@@ -653,7 +653,7 @@ export function HostsPage({
                   sortKey="flavor"
                   sort={sort}
                   onSort={toggleSort}
-                  headHint={hint("The host's Linux distribution (icon only) — set on the host form")}
+                  headHint={hint("The host's Linux distribution (icon only), set on the host form")}
                 />
                 {resizeHandle("flavor")}
               </TableHead>
@@ -712,7 +712,7 @@ export function HostsPage({
                       }`}
                       title={
                         connectedHostIds.has(h.id)
-                          ? "Connected — live terminal session"
+                          ? "Connected: live terminal session"
                           : "Not connected"
                       }
                       aria-label={
@@ -748,7 +748,7 @@ export function HostsPage({
                     }
                     title={h.tag ?? undefined}
                   >
-                    {h.tag ?? "—"}
+                    {h.tag ?? "-"}
                   </TableCell>
                   <TableCell
                     className={
@@ -757,7 +757,7 @@ export function HostsPage({
                         : "truncate text-xs text-muted-foreground"
                     }
                   >
-                    {h.linux_flavor ?? "—"}
+                    {h.linux_flavor ?? "-"}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
@@ -814,7 +814,7 @@ export function HostsPage({
                       size="icon-sm"
                       onClick={() => openEdit(h)}
                       aria-label="Edit"
-                      {...hint(`Edit ${h.label} — connection details and credentials`)}
+                      {...hint(`Edit ${h.label}: connection details and credentials`)}
                     >
                       <PencilIcon />
                     </Button>

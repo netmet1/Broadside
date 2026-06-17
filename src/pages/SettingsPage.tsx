@@ -480,7 +480,7 @@ export function SettingsPage({
     try {
       const probe = await recalibrateProbe();
       setSettings((prev) => (prev ? { ...prev, local_probe: probe } : prev));
-      toast.success(`Probe complete — suggests ${probe.suggested_max_sessions} sessions`);
+      toast.success(`Probe complete: suggests ${probe.suggested_max_sessions} sessions`);
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
@@ -719,7 +719,7 @@ export function SettingsPage({
       <section id={sectionDomId("Performance")} className="space-y-4">
         <SectionHeading
           title="Performance"
-          hint="Suggests how many sessions this computer can comfortably run at once, based on its resources. It's only a suggestion — whatever you set always wins."
+          hint="Suggests how many sessions this computer can comfortably run at once, based on its resources. It's only a suggestion; whatever you set always wins."
         />
         <div className="flex items-start justify-between gap-4">
           <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
@@ -743,7 +743,7 @@ export function SettingsPage({
               </>
             ) : (
               <p className="col-span-2 text-sm text-muted-foreground">
-                Not probed yet — run Recalibrate to measure this machine.
+                Not probed yet. Run Recalibrate to measure this machine.
               </p>
             )}
           </div>
@@ -773,7 +773,7 @@ export function SettingsPage({
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              Leave empty to follow the probe suggestion. 1–2048.
+              Leave empty to follow the probe suggestion. 1-2048.
             </p>
           </div>
           <div className="grid gap-1">
@@ -785,7 +785,7 @@ export function SettingsPage({
               className={`w-40 font-mono text-sm ${parsedTimeout === undefined ? "border-destructive" : ""}`}
               autoComplete="off"
             />
-            <p className="text-xs text-muted-foreground">1–3600. Overridable per command.</p>
+            <p className="text-xs text-muted-foreground">1-3600. Overridable per command.</p>
           </div>
           <div>
             <Button
@@ -947,7 +947,7 @@ export function SettingsPage({
                 </p>
               ) : ruleSubmitAttempted && ruleCommandsHaveSpace ? (
                 <p className="text-xs text-destructive">
-                  Command names can't contain spaces — separate multiple
+                  Command names can't contain spaces; separate multiple
                   commands with commas.
                 </p>
               ) : (
@@ -1233,7 +1233,7 @@ export function SettingsPage({
               className={`w-40 font-mono text-sm ${parsedTermFontSize === undefined ? "border-destructive" : ""}`}
               autoComplete="off"
             />
-            <p className="text-xs text-muted-foreground">8–32 px.</p>
+            <p className="text-xs text-muted-foreground">8-32 px.</p>
           </div>
           <div className="grid gap-1">
             <Label htmlFor="app-font-size">Application font size</Label>
@@ -1245,7 +1245,7 @@ export function SettingsPage({
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              12–20 px. Scales the whole UI except terminal panes.
+              12-20 px. Scales the whole UI except terminal panes.
             </p>
           </div>
           <div className="grid gap-1.5">
@@ -1294,7 +1294,7 @@ export function SettingsPage({
       <section id={sectionDomId("Backup")} className="space-y-3">
         <SectionHeading
           title="Backup"
-          hint="Saves a copy of your hosts, settings, trusted host keys and command history to a folder you pick. Saved passwords are never included — they stay in Windows Credential Manager."
+          hint="Saves a copy of your hosts, settings, trusted host keys and command history to a folder you pick. Saved passwords are never included; they stay in Windows Credential Manager."
         />
         <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
           <input
@@ -1405,7 +1405,7 @@ export function SettingsPage({
           When on, a host's saved sudo password is typed in for you at sudo
           prompts in a terminal. Turn it <strong>off</strong> on shared or
           restricted computers so sudo passwords are never typed in
-          automatically — people then enter sudo themselves. Takes effect the
+          automatically; people then enter sudo themselves. Takes effect the
           next time you open a terminal; saved passwords are not deleted.
         </p>
 
@@ -1543,7 +1543,7 @@ export function SettingsPage({
           onClick={() => setResetOpen(true)}
           {...hint(
             adminLocked
-              ? "Locked by the admin passcode — unlock in the Security section first"
+              ? "Locked by the admin passcode; unlock in the Security section first"
               : "Reset every preference (theme, layout, sorts, timeouts, fonts) to defaults",
           )}
         >
@@ -1556,7 +1556,7 @@ export function SettingsPage({
         )}
         {/* Bottom banner help tip explaining exactly what reset does. */}
         <div className="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
-          This resets <strong>preferences only</strong> — theme, sidebar &amp;
+          This resets <strong>preferences only</strong>: theme, sidebar &amp;
           rail layout, tab order, table column widths &amp; sorting, header
           toggles, the broadcast timeout, fonts and help hints all go back to
           their defaults. Your <strong>hosts, credentials, guard rules,
@@ -1624,7 +1624,7 @@ export function SettingsPage({
           <DialogHeader>
             <DialogTitle>Save your recovery code</DialogTitle>
             <DialogDescription>
-              This is shown <strong>once</strong>. Store it somewhere safe — it's
+              This is shown <strong>once</strong>. Store it somewhere safe; it's
               the only way to reset the admin passcode if you forget it. It is not
               kept in readable form.
             </DialogDescription>

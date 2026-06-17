@@ -132,7 +132,7 @@ export function ImportHostsPanel({
         onImported();
       }
       if (result.skipped.length > 0) {
-        toast.warning(`${result.skipped.length} skipped — see report`);
+        toast.warning(`${result.skipped.length} skipped (see report)`);
       }
     } catch (e) {
       toast.error(errorMessage(e));
@@ -155,7 +155,7 @@ export function ImportHostsPanel({
       case "duplicate":
         return (
           <span className="text-xs text-amber-400">
-            {row.message ?? "duplicate — skipped"}
+            {row.message ?? "duplicate, skipped"}
           </span>
         );
       case "error":
@@ -180,7 +180,7 @@ export function ImportHostsPanel({
           empty) picks the next palette hue. A row is a duplicate only when the
           same host+port+username already exists; reusing a label for a distinct
           host auto-renames it (e.g. <span className="font-mono text-xs">web-2</span>).
-          Credentials are never imported — set them per host afterwards.
+          Credentials are never imported. Set them per host afterwards.
         </p>
       </div>
 
@@ -257,9 +257,9 @@ export function ImportHostsPanel({
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-xs">{r.tag ?? "—"}</TableCell>
+                    <TableCell className="text-xs">{r.tag ?? "-"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {r.linux_flavor ?? "—"}
+                      {r.linux_flavor ?? "-"}
                     </TableCell>
                     <TableCell>{statusBadge(r)}</TableCell>
                   </TableRow>
@@ -277,7 +277,7 @@ export function ImportHostsPanel({
           </p>
           {outcome.skipped.map((s, i) => (
             <p key={i} className="font-mono text-muted-foreground">
-              {s.label} — {s.reason}
+              {s.label}: {s.reason}
             </p>
           ))}
         </div>

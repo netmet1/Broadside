@@ -68,7 +68,7 @@ function App() {
   useEffect(() => {
     const unlisten = onPtySudoRejected((p) =>
       toast.warning(
-        `Possible wrong sudo password for ${p.host_label} — auto-fill stopped; enter it manually`,
+        `Possible wrong sudo password for ${p.host_label}. Auto-fill stopped; enter it manually`,
       ),
     );
     return () => {

@@ -530,7 +530,7 @@ export function PtyBroadcastPage({
                               {label}
                             </span>
                             <span className="ml-auto font-mono text-xs text-muted-foreground">
-                              {r.ok ? "sent — see Terminals tab" : r.message}
+                              {r.ok ? "sent (see Terminals tab)" : r.message}
                             </span>
                           </div>
                         );

@@ -55,7 +55,7 @@ export function UnlockDialog({ open, onOpenChange, onUnlocked }: Props) {
           <DialogDescription>
             Your computer's secure credential store isn't available. Enter your
             master password to unlock your saved passwords. If this is your first
-            time, pick any password — it will be used to protect new passwords
+            time, pick any password. It will be used to protect new passwords
             you save.
           </DialogDescription>
         </DialogHeader>
