@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronDownIcon,
   Maximize2Icon,
   PlusIcon,
   SquareTerminalIcon,
@@ -112,13 +113,41 @@ export function TerminalsPage({
   const shortcuts = useShortcuts(visible);
   // Local shells available on this machine, for the "+" launcher menu.
   const [localShells, setLocalShells] = useState<LocalShell[]>([]);
+  const [shellsError, setShellsError] = useState<string | null>(null);
   useEffect(() => {
     listLocalShells()
-      .then(setLocalShells)
-      .catch(() => {
-        // Launcher just stays empty if enumeration fails (e.g. non-Windows).
+      .then((s) => {
+        setLocalShells(s);
+        setShellsError(null);
+      })
+      .catch((e) => {
+        // Surface the failure (e.g. a stale build missing the command) instead
+        // of silently hiding the launcher.
+        console.error("[TerminalsPage] listLocalShells failed", e);
+        setShellsError(errorMessage(e));
       });
   }, []);
+  // The local-shell launcher menu (a self-contained dropdown — robust in the
+  // webview, unlike a Select used as an action menu).
+  const [shellMenuOpen, setShellMenuOpen] = useState(false);
+  const launcherRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!shellMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!launcherRef.current?.contains(e.target as Node)) {
+        setShellMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShellMenuOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [shellMenuOpen]);
   const hint = useHint();
   usePageStatus(
     `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`,
@@ -464,36 +493,47 @@ export function TerminalsPage({
             </button>
           </div>
         ))}
-        {/* "+" launcher for local shells (Windows Terminal style): the bar is a
-            Select used as an action menu (same pattern as Settings → Jump to). */}
-        {localShells.length > 0 && (
-          <Select
-            value=""
-            onValueChange={(id) => {
-              const shell = localShells.find((sh) => sh.id === id);
-              if (shell) onOpenLocalShell(shell);
-            }}
+        {/* "+" launcher for local shells (Windows Terminal style). A
+            self-contained dropdown (not a Select) so it opens reliably. */}
+        <div ref={launcherRef} className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setShellMenuOpen((v) => !v)}
+            aria-label="New local shell"
+            aria-expanded={shellMenuOpen}
+            {...hint("Open a local shell (PowerShell, Command Prompt, WSL)")}
+            className="flex h-7 items-center gap-0.5 rounded-md border border-input px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
-            <SelectTrigger
-              size="sm"
-              className="shrink-0 gap-0.5 px-1.5"
-              aria-label="New local shell"
-              {...hint("Open a local shell (PowerShell, Command Prompt, WSL)")}
-            >
-              <PlusIcon className="h-4 w-4" />
-            </SelectTrigger>
-            <SelectContent>
-              {localShells.map((sh) => (
-                <SelectItem key={sh.id} value={sh.id}>
-                  <span className="flex items-center gap-2">
+            <PlusIcon className="h-4 w-4" />
+            <ChevronDownIcon className="h-3 w-3" />
+          </button>
+          {shellMenuOpen && (
+            <div className="absolute left-0 top-full z-50 mt-1 min-w-48 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+              {localShells.length === 0 ? (
+                <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                  {shellsError
+                    ? "Couldn't list local shells. Rebuild the app and try again."
+                    : "No local shells found."}
+                </p>
+              ) : (
+                localShells.map((sh) => (
+                  <button
+                    key={sh.id}
+                    type="button"
+                    onClick={() => {
+                      setShellMenuOpen(false);
+                      onOpenLocalShell(sh);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                  >
                     <SquareTerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     {sh.label}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
         {sessions.length === 0 && (
           <p className="px-3 py-2 text-sm text-muted-foreground">
             No open terminals. Open an SSH host from the Hosts page, or a local
