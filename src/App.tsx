@@ -106,6 +106,21 @@ function App() {
     [],
   );
 
+  /** Drag-to-reorder terminal tabs: move the dragged session so it lands in
+   * front of the drop target, preserving every other tab's relative order. */
+  const reorderSessions = useCallback((sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    setSessions((prev) => {
+      const from = prev.findIndex((s) => s.id === sourceId);
+      const to = prev.findIndex((s) => s.id === targetId);
+      if (from < 0 || to < 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }, []);
+
   const closeSession = useCallback((id: string) => {
     setSessions((prev) => {
       const idx = prev.findIndex((s) => s.id === id);
@@ -201,6 +216,7 @@ function App() {
           onConnectionChange={handleConnectionChange}
           onActivate={setActiveSessionId}
           onCloseSession={closeSession}
+          onReorder={reorderSessions}
           onManageShortcuts={openShortcutSettings}
         />
       </div>
