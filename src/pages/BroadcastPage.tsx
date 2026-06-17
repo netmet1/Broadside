@@ -173,6 +173,13 @@ export function BroadcastPage({
   const lastCommandRef = useRef<string>("");
   const lastConfirmedRef = useRef<boolean>(false);
   const outputRef = useRef<HTMLDivElement>(null);
+  // Inner content wrapper — observed so the view follows output to the true
+  // bottom as blocks stream in (the scroll height grows after each result).
+  const outputContentRef = useRef<HTMLDivElement>(null);
+  // Whether the output is scrolled to (near) the bottom. Starts true so output
+  // auto-follows; set false when the user scrolls up to read scrollback, true
+  // again when they return to the bottom or dispatch a new command.
+  const atBottomRef = useRef(true);
 
   const hostsById = useMemo(() => {
     const map = new Map<number, Host>();
@@ -278,12 +285,31 @@ export function BroadcastPage({
     };
   }, []);
 
+  // Keep the output pinned to the bottom as results stream in. A ResizeObserver
+  // on the content catches every height change (each host's block arrives
+  // separately and the last one used to land below the fold), so the newest
+  // output is always in view — unless the user scrolled up or is searching.
   useEffect(() => {
-    // Don't yank the scroll position around while the user is searching.
-    if (searchMode === null) {
-      outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
-    }
+    const scroller = outputRef.current;
+    const content = outputContentRef.current;
+    if (!scroller || !content) return;
+    const stickToBottom = () => {
+      if (searchMode !== null || !atBottomRef.current) return;
+      scroller.scrollTop = scroller.scrollHeight;
+    };
+    const ro = new ResizeObserver(stickToBottom);
+    ro.observe(content);
+    stickToBottom();
+    return () => ro.disconnect();
   }, [runs, searchMode]);
+
+  // Track whether the user is at the bottom so streaming output doesn't yank
+  // them down while they're reading earlier results.
+  const onOutputScroll = useCallback(() => {
+    const el = outputRef.current;
+    if (!el) return;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  }, []);
 
   // Keyboard entry points (D-015). Only while this page is the visible one —
   // the component stays mounted in the background after navigation.
@@ -437,6 +463,9 @@ export function BroadcastPage({
       // Mirror the backend's history write (consecutive duplicates collapse).
       setHistory((prev) => (prev[0] === cmd ? prev : [cmd, ...prev]));
       setRunning(true);
+      // A fresh dispatch always follows its own output to the bottom, even if
+      // the user had scrolled up in the previous run's results.
+      atBottomRef.current = true;
       // Append a new run; previous runs stay (appending history, D-059).
       setRuns((prev) => [
         ...prev,
@@ -812,13 +841,17 @@ export function BroadcastPage({
             </Button>
           </div>
         )}
-        <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div
+          ref={outputRef}
+          onScroll={onOutputScroll}
+          className="min-h-0 flex-1 overflow-y-auto p-4"
+        >
           {!hasOutput && (
             <p className="py-8 text-center text-sm text-muted-foreground">
               Select hosts, type a command, press Enter.
             </p>
           )}
-          <div className="space-y-5">
+          <div ref={outputContentRef} className="space-y-5">
             {runs.map((run) => (
               <div key={run.runId} className="space-y-2">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
