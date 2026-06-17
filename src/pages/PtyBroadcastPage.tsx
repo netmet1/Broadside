@@ -25,7 +25,7 @@ import {
 import { clearCommandHistory, commandHistory } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
-import type { TermSession } from "@/pages/TerminalsPage";
+import type { SshTermSession } from "@/pages/TerminalsPage";
 
 const HISTORY_RUNS = 200;
 /** Persisted collapse state for the session rail (mirrors OmniTerminal). */
@@ -72,7 +72,7 @@ export function PtyBroadcastPage({
   onManageShortcuts,
 }: {
   visible: boolean;
-  sessions: TermSession[];
+  sessions: SshTermSession[];
   /** Session ids with a live connection — only these can receive input. */
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;

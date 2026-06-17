@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Maximize2Icon, TextIcon, XIcon } from "lucide-react";
+import {
+  Maximize2Icon,
+  PlusIcon,
+  SquareTerminalIcon,
+  TextIcon,
+  XIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -32,6 +38,7 @@ import {
 } from "@/components/ui/select";
 import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage, type Host } from "@/lib/tauri/hosts";
+import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import type { SearchOptions } from "@/lib/search";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
@@ -50,11 +57,26 @@ function labelInitials(label: string): string {
   return initials || label.slice(0, 2).toUpperCase();
 }
 
-export type TermSession = {
+/** An SSH terminal (bound to a saved host) or a local shell (PowerShell / pwsh /
+ * Command Prompt / WSL) hosted over ConPTY. Both share the same session id /
+ * pty plumbing; only the source and tab affordances differ. */
+export type SshTermSession = {
   id: string;
+  type: "ssh";
   /** Snapshot of the host at open time (rename/recolor mid-session is fine). */
   host: Host;
 };
+export type LocalTermSession = {
+  id: string;
+  type: "local";
+  shell: LocalShell;
+};
+export type TermSession = SshTermSession | LocalTermSession;
+
+/** Display label for a tab, regardless of session kind. */
+function sessionLabel(s: TermSession): string {
+  return s.type === "ssh" ? s.host.label : s.shell.label;
+}
 
 type Props = {
   sessions: TermSession[];
@@ -70,6 +92,8 @@ type Props = {
   onMaximize: (id: string) => void;
   /** Whether the terminal is currently maximized (hides the page chrome). */
   maximized: boolean;
+  /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab. */
+  onOpenLocalShell: (shell: LocalShell) => void;
 };
 
 export function TerminalsPage({
@@ -83,22 +107,34 @@ export function TerminalsPage({
   onReorder,
   onMaximize,
   maximized,
+  onOpenLocalShell,
 }: Props) {
   const shortcuts = useShortcuts(visible);
+  // Local shells available on this machine, for the "+" launcher menu.
+  const [localShells, setLocalShells] = useState<LocalShell[]>([]);
+  useEffect(() => {
+    listLocalShells()
+      .then(setLocalShells)
+      .catch(() => {
+        // Launcher just stays empty if enumeration fails (e.g. non-Windows).
+      });
+  }, []);
   const hint = useHint();
   usePageStatus(
     `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`,
     visible,
   );
 
-  // Suffix for duplicate terminals to the same host: the 2nd+ get " 02", " 03",
-  // … so the tabs are distinguishable (T3). The first stays unsuffixed.
+  // Suffix for duplicate terminals to the same target: the 2nd+ get " 02", " 03",
+  // … so the tabs are distinguishable (T3). The first stays unsuffixed. Dedup key
+  // is the host (SSH) or the shell id (local), so two PowerShell tabs also count.
   const tabSuffix = useMemo(() => {
-    const counts = new Map<number, number>();
+    const counts = new Map<string, number>();
     const map = new Map<string, string>();
     for (const s of sessions) {
-      const n = (counts.get(s.host.id) ?? 0) + 1;
-      counts.set(s.host.id, n);
+      const key = s.type === "ssh" ? `ssh:${s.host.id}` : `local:${s.shell.id}`;
+      const n = (counts.get(key) ?? 0) + 1;
+      counts.set(key, n);
       map.set(s.id, n > 1 ? ` ${String(n).padStart(2, "0")}` : "");
     }
     return map;
@@ -321,12 +357,16 @@ export function TerminalsPage({
                 {sessions.map((s) => (
                   <SelectItem key={s.id} value={s.id}>
                     <span className="flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: s.host.color }}
-                      />
+                      {s.type === "ssh" ? (
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: s.host.color }}
+                        />
+                      ) : (
+                        <SquareTerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      )}
                       <span className="truncate">
-                        {s.host.label}
+                        {sessionLabel(s)}
                         {tabSuffix.get(s.id)}
                       </span>
                     </span>
@@ -378,20 +418,24 @@ export function TerminalsPage({
             onClick={() => onActivate(s.id)}
             role="tab"
             aria-selected={s.id === activeId}
-            title={tabsCompact ? `${s.host.label}${tabSuffix.get(s.id)}` : undefined}
+            title={tabsCompact ? `${sessionLabel(s)}${tabSuffix.get(s.id)}` : undefined}
           >
-            <span
-              className="h-2 w-2 shrink-0 rounded-full"
-              style={{ backgroundColor: s.host.color }}
-            />
+            {s.type === "ssh" ? (
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: s.host.color }}
+              />
+            ) : (
+              <SquareTerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            )}
             {tabsCompact ? (
               <span className="font-mono">
-                {labelInitials(s.host.label)}
+                {labelInitials(sessionLabel(s))}
                 {tabSuffix.get(s.id)}
               </span>
             ) : (
               <span className="max-w-40 truncate">
-                {s.host.label}
+                {sessionLabel(s)}
                 {tabSuffix.get(s.id)}
               </span>
             )}
@@ -402,7 +446,7 @@ export function TerminalsPage({
                 e.stopPropagation();
                 onMaximize(s.id);
               }}
-              aria-label={`Maximize ${s.host.label}`}
+              aria-label={`Maximize ${sessionLabel(s)}`}
               title="Maximize this terminal to fill the window (F11)"
             >
               <Maximize2Icon className="h-3.5 w-3.5" />
@@ -414,15 +458,46 @@ export function TerminalsPage({
                 e.stopPropagation();
                 closeSession(s.id);
               }}
-              aria-label={`Close ${s.host.label}`}
+              aria-label={`Close ${sessionLabel(s)}`}
             >
               <XIcon className="h-3.5 w-3.5" />
             </button>
           </div>
         ))}
+        {/* "+" launcher for local shells (Windows Terminal style): the bar is a
+            Select used as an action menu (same pattern as Settings → Jump to). */}
+        {localShells.length > 0 && (
+          <Select
+            value=""
+            onValueChange={(id) => {
+              const shell = localShells.find((sh) => sh.id === id);
+              if (shell) onOpenLocalShell(shell);
+            }}
+          >
+            <SelectTrigger
+              size="sm"
+              className="shrink-0 gap-0.5 px-1.5"
+              aria-label="New local shell"
+              {...hint("Open a local shell (PowerShell, Command Prompt, WSL)")}
+            >
+              <PlusIcon className="h-4 w-4" />
+            </SelectTrigger>
+            <SelectContent>
+              {localShells.map((sh) => (
+                <SelectItem key={sh.id} value={sh.id}>
+                  <span className="flex items-center gap-2">
+                    <SquareTerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    {sh.label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         {sessions.length === 0 && (
           <p className="px-3 py-2 text-sm text-muted-foreground">
-            No open terminals. Open one from a host row on the Hosts page.
+            No open terminals. Open an SSH host from the Hosts page, or a local
+            shell with the + button.
           </p>
         )}
         </div>
@@ -460,7 +535,11 @@ export function TerminalsPage({
                 }
               }}
               sessionId={s.id}
-              hostId={s.host.id}
+              source={
+                s.type === "ssh"
+                  ? { type: "ssh", hostId: s.host.id }
+                  : { type: "local", shellId: s.shell.id }
+              }
               visible={visible && s.id === activeId}
               retryNonce={retryNonces.get(s.id) ?? 0}
               onGate={handleGate}
@@ -502,7 +581,7 @@ export function TerminalsPage({
         onOpenChange={(open) => {
           if (!open && activeGateSession) clearGate(activeGateSession.id);
         }}
-        host={activeGateSession?.host ?? null}
+        host={activeGateSession?.type === "ssh" ? activeGateSession.host : null}
         presentedKey={
           activeGate?.status === "unknown_key" ? activeGate.key : null
         }
@@ -516,7 +595,7 @@ export function TerminalsPage({
         onOpenChange={(open) => {
           if (!open && activeGateSession) clearGate(activeGateSession.id);
         }}
-        host={activeGateSession?.host ?? null}
+        host={activeGateSession?.type === "ssh" ? activeGateSession.host : null}
         storedFingerprint={
           activeGate?.status === "key_mismatch"
             ? activeGate.stored_fingerprint

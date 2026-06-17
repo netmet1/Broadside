@@ -4,7 +4,12 @@ import { toast } from "sonner";
 import { AppShell, type Page } from "@/components/AppShell";
 import { HostsPage } from "@/pages/HostsPage";
 import { BroadcastPage } from "@/pages/BroadcastPage";
-import { TerminalsPage, type TermSession } from "@/pages/TerminalsPage";
+import {
+  TerminalsPage,
+  type TermSession,
+  type SshTermSession,
+} from "@/pages/TerminalsPage";
+import type { LocalShell } from "@/lib/tauri/local";
 import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
 import { OmniTerminalPage } from "@/pages/OmniTerminalPage";
 import { LogsPage } from "@/pages/LogsPage";
@@ -77,7 +82,7 @@ function App() {
   }, []);
 
   const openTerminal = useCallback((host: Host) => {
-    const session: TermSession = { id: crypto.randomUUID(), host };
+    const session: TermSession = { id: crypto.randomUUID(), type: "ssh", host };
     setSessions((prev) => [...prev, session]);
     setActiveSessionId(session.id);
     setPage("terminals");
@@ -88,10 +93,23 @@ function App() {
     if (hostsToOpen.length === 0) return;
     const newSessions: TermSession[] = hostsToOpen.map((host) => ({
       id: crypto.randomUUID(),
+      type: "ssh" as const,
       host,
     }));
     setSessions((prev) => [...prev, ...newSessions]);
     setActiveSessionId(newSessions[0].id);
+    setPage("terminals");
+  }, []);
+
+  /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab. */
+  const openLocalShell = useCallback((shell: LocalShell) => {
+    const session: TermSession = {
+      id: crypto.randomUUID(),
+      type: "local",
+      shell,
+    };
+    setSessions((prev) => [...prev, session]);
+    setActiveSessionId(session.id);
     setPage("terminals");
   }, []);
 
@@ -144,7 +162,9 @@ function App() {
    * ptyClose — the same teardown path as closing a tab. */
   const terminateHost = useCallback((hostId: number) => {
     setSessions((prev) => {
-      const next = prev.filter((s) => s.host.id !== hostId);
+      const next = prev.filter(
+        (s) => !(s.type === "ssh" && s.host.id === hostId),
+      );
       if (next.length === prev.length) return prev;
       setActiveSessionId((current) => {
         if (current && !next.some((s) => s.id === current)) {
@@ -199,15 +219,23 @@ function App() {
   const connectedHostIds = useMemo(() => {
     const ids = new Set<number>();
     for (const s of sessions) {
-      if (connectedSessions.has(s.id)) ids.add(s.host.id);
+      if (s.type === "ssh" && connectedSessions.has(s.id)) ids.add(s.host.id);
     }
     return ids;
   }, [sessions, connectedSessions]);
 
   // Hosts with at least one open terminal tab (connected or not) — drives the
-  // "already open" guard rails on the Hosts page (H7/H8).
-  const openHostIds = useMemo(
-    () => new Set(sessions.map((s) => s.host.id)),
+  // "already open" guard rails on the Hosts page (H7/H8). Local shells excluded.
+  const openHostIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const s of sessions) if (s.type === "ssh") ids.add(s.host.id);
+    return ids;
+  }, [sessions]);
+
+  // SSH-only sessions for the host-oriented pages (PTY Broadcast, OmniTerminal),
+  // which target saved hosts and don't apply to local shells.
+  const sshSessions = useMemo(
+    () => sessions.filter((s): s is SshTermSession => s.type === "ssh"),
     [sessions],
   );
 
@@ -223,7 +251,13 @@ function App() {
         terminalCount={sessions.length}
         maximized={maximized}
         onRestore={restoreTerminal}
-        maximizedHost={maximizedSession?.host ?? null}
+        maximizedHost={
+          maximizedSession
+            ? maximizedSession.type === "ssh"
+              ? maximizedSession.host
+              : { label: maximizedSession.shell.label, color: "#6b7280" }
+            : null
+        }
       >
       {page === "hosts" && (
         <HostsPage
@@ -248,7 +282,7 @@ function App() {
       <div className={page === "ptybroadcast" ? "block h-full" : "hidden"}>
         <PtyBroadcastPage
           visible={page === "ptybroadcast"}
-          sessions={sessions}
+          sessions={sshSessions}
           connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}
         />
@@ -265,6 +299,7 @@ function App() {
           onReorder={reorderSessions}
           onMaximize={maximizeTerminal}
           maximized={maximized}
+          onOpenLocalShell={openLocalShell}
           onManageShortcuts={openShortcutSettings}
         />
       </div>
@@ -273,7 +308,7 @@ function App() {
       <div className={page === "omniterminal" ? "block h-full" : "hidden"}>
         <OmniTerminalPage
           visible={page === "omniterminal"}
-          sessions={sessions}
+          sessions={sshSessions}
           connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}
         />
