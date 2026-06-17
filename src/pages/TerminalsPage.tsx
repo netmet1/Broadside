@@ -66,8 +66,8 @@ type Props = {
   onCloseSession: (id: string) => void;
   /** Reorder tabs: drop the dragged session in front of the target. */
   onReorder: (sourceId: string, targetId: string) => void;
-  /** Maximize the active terminal to fill the whole window. */
-  onMaximize: () => void;
+  /** Maximize the given terminal to fill the whole window. */
+  onMaximize: (id: string) => void;
   /** Whether the terminal is currently maximized (hides the page chrome). */
   maximized: boolean;
 };
@@ -398,8 +398,7 @@ export function TerminalsPage({
               className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
-                onActivate(s.id);
-                onMaximize();
+                onMaximize(s.id);
               }}
               aria-label={`Maximize ${s.host.label}`}
               title="Maximize this terminal to fill the window (F11)"

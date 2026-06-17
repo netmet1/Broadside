@@ -200,12 +200,12 @@ export function AppShell({
     };
   }, [dragging, collapsed]);
 
-  // Maximized terminal: drop the sidebar, tabs and status bar; show only a
-  // slim banner (brand + version + the host, with a restore control) above the
-  // terminal, which fills the rest of the window. Esc also restores (App).
-  if (maximized) {
-    return (
-      <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+  // Maximized terminal: keep the SAME tree (so the terminal's TerminalView is
+  // never remounted — that would kill and reopen the PTY) but hide the sidebar,
+  // separator and status bar via CSS and show a slim banner above the terminal.
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      {maximized && (
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-sidebar-border bg-sidebar px-3 text-sidebar-foreground">
           <span className="font-heading text-sm font-semibold tracking-tight">
             OmniTerminal
@@ -230,14 +230,7 @@ export function AppShell({
             <Minimize2Icon className="h-4 w-4" />
           </button>
         </div>
-        <main className="min-w-0 flex-1 overflow-auto">{children}</main>
-        <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      )}
       <div className="flex min-h-0 flex-1">
         <aside
           ref={asideRef}
@@ -245,6 +238,7 @@ export function AppShell({
           className={cn(
             "flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
             !dragging && "transition-[width] duration-150",
+            maximized && "hidden",
           )}
         >
           <div
@@ -350,11 +344,12 @@ export function AppShell({
           className={cn(
             "w-1 shrink-0 cursor-col-resize hover:bg-primary/40",
             dragging && "bg-primary/50",
+            maximized && "hidden",
           )}
         />
         <main className="min-w-0 flex-1 overflow-auto">{children}</main>
       </div>
-      <StatusBar />
+      {!maximized && <StatusBar />}
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </div>
   );

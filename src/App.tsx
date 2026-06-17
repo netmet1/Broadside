@@ -31,9 +31,11 @@ function App() {
   );
   // Set when "Manage shortcuts…" is picked — Settings scrolls there on open.
   const [settingsFocus, setSettingsFocus] = useState<string | null>(null);
-  // Maximized terminal: the active terminal fills the whole window — no nav
-  // sidebar, tabs or status bar, just a slim banner with a restore control.
-  const [maximized, setMaximized] = useState(false);
+  // Maximized terminal: the id of the session filling the whole window (null =
+  // normal view). Tracking the id (not a bool) lets us drop back to the tabbed
+  // view automatically when that specific terminal is closed.
+  const [maxSessionId, setMaxSessionId] = useState<string | null>(null);
+  const maximized = maxSessionId !== null;
 
   useEffect(() => {
     (async () => {
@@ -159,8 +161,11 @@ function App() {
     setPage("settings");
   }, []);
 
-  const maximizeTerminal = useCallback(() => setMaximized(true), []);
-  const restoreTerminal = useCallback(() => setMaximized(false), []);
+  const maximizeTerminal = useCallback((id: string) => {
+    setActiveSessionId(id);
+    setMaxSessionId(id);
+  }, []);
+  const restoreTerminal = useCallback(() => setMaxSessionId(null), []);
 
   // F11 toggles the maximized terminal — the standard fullscreen key, and
   // (unlike Esc) one the shell and TUI apps like vim/less never use, so it's
@@ -171,22 +176,25 @@ function App() {
       e.preventDefault();
       e.stopPropagation();
       if (maximized) {
-        setMaximized(false);
+        setMaxSessionId(null);
       } else if (page === "terminals" && activeSessionId !== null) {
-        setMaximized(true);
+        setMaxSessionId(activeSessionId);
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [maximized, page, activeSessionId]);
 
-  // Maximize only makes sense on the Terminals page with a live session — drop
-  // out of it if the active terminal closes or the page somehow changes.
+  // Drop back to the tabbed view when the maximized terminal is gone (closed
+  // or terminated) or we've left the Terminals page.
   useEffect(() => {
-    if (maximized && (page !== "terminals" || activeSessionId === null)) {
-      setMaximized(false);
+    if (
+      maxSessionId !== null &&
+      (page !== "terminals" || !sessions.some((s) => s.id === maxSessionId))
+    ) {
+      setMaxSessionId(null);
     }
-  }, [maximized, page, activeSessionId]);
+  }, [maxSessionId, page, sessions]);
 
   const connectedHostIds = useMemo(() => {
     const ids = new Set<number>();
@@ -203,8 +211,8 @@ function App() {
     [sessions],
   );
 
-  const activeSession =
-    sessions.find((s) => s.id === activeSessionId) ?? null;
+  const maximizedSession =
+    sessions.find((s) => s.id === maxSessionId) ?? null;
 
   return (
     <StatusProvider>
@@ -215,7 +223,7 @@ function App() {
         terminalCount={sessions.length}
         maximized={maximized}
         onRestore={restoreTerminal}
-        maximizedHost={activeSession?.host ?? null}
+        maximizedHost={maximizedSession?.host ?? null}
       >
       {page === "hosts" && (
         <HostsPage
