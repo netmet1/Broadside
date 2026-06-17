@@ -244,8 +244,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     clearSearch: () => {
       try {
         searchRef.current?.clearDecorations();
+        // findNext highlights the active match via the terminal SELECTION (no
+        // decorations — they threw), so clearing decorations alone leaves that
+        // selection lit until the user clicks away. Drop it now too.
+        termRef.current?.clearSelection();
       } catch (err) {
-        console.error("[TerminalView] clearDecorations failed", err);
+        console.error("[TerminalView] clearSearch failed", err);
       }
     },
     focusTerminal: () => termRef.current?.focus(),
