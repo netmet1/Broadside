@@ -533,7 +533,7 @@ export function HostsPage({
             variant="outline"
             onClick={runExport}
             disabled={loading || hosts.length === 0}
-            {...hint("Export all hosts to a CSV or Excel (.xlsx) file (re-importable)")}
+            {...hint("Export all hosts to a CSV or Excel (.xlsx) file (re-importable). No credentials are included — safe to hand to a restricted operator to import under their own login.")}
           >
             <DownloadIcon />
             Export hosts…
