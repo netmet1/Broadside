@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextIcon, XIcon } from "lucide-react";
+import { Maximize2Icon, TextIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -66,6 +66,10 @@ type Props = {
   onCloseSession: (id: string) => void;
   /** Reorder tabs: drop the dragged session in front of the target. */
   onReorder: (sourceId: string, targetId: string) => void;
+  /** Maximize the active terminal to fill the whole window. */
+  onMaximize: () => void;
+  /** Whether the terminal is currently maximized (hides the page chrome). */
+  maximized: boolean;
 };
 
 export function TerminalsPage({
@@ -77,6 +81,8 @@ export function TerminalsPage({
   onActivate,
   onCloseSession,
   onReorder,
+  onMaximize,
+  maximized,
 }: Props) {
   const shortcuts = useShortcuts(visible);
   const hint = useHint();
@@ -260,6 +266,10 @@ export function TerminalsPage({
 
   return (
     <div className="flex h-full flex-col">
+      {/* Chrome (controls + tab strip) is hidden while a terminal is maximized
+          — only the terminal pane and the AppShell banner remain. */}
+      {!maximized && (
+        <>
       {/* Controls line: tab-label toggle (left) + shortcut bar + a session
           picker for jumping between many open tabs (right). */}
       <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
@@ -388,6 +398,19 @@ export function TerminalsPage({
               className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
+                onActivate(s.id);
+                onMaximize();
+              }}
+              aria-label={`Maximize ${s.host.label}`}
+              title="Maximize this terminal to fill the window"
+            >
+              <Maximize2Icon className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
                 closeSession(s.id);
               }}
               aria-label={`Close ${s.host.label}`}
@@ -403,6 +426,8 @@ export function TerminalsPage({
         )}
         </div>
       </div>
+        </>
+      )}
 
       {searchOpen && (
         <SearchBar
