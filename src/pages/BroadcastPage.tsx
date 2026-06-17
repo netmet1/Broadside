@@ -412,8 +412,9 @@ export function BroadcastPage({
   // Rail sort order (B3). Component stays mounted so this survives tab switches.
   const [railSort, setRailSort] = useState("az");
   const railHosts = useMemo(
-    () => sortForRail(hosts, (h) => h, railSort),
-    [hosts, railSort],
+    () =>
+      sortForRail(hosts, (h) => h, railSort, (h) => connectedHostIds.has(h.id)),
+    [hosts, railSort, connectedHostIds],
   );
 
   const allSelected = hosts.length > 0 && selected.size === hosts.length;

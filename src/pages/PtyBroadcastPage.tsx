@@ -288,8 +288,14 @@ export function PtyBroadcastPage({
   // Rail sort order (P3). Component stays mounted so this survives tab switches.
   const [railSort, setRailSort] = useState("az");
   const railSessions = useMemo(
-    () => sortForRail(sessions, (s) => s.host, railSort),
-    [sessions, railSort],
+    () =>
+      sortForRail(
+        sessions,
+        (s) => s.host,
+        railSort,
+        (s) => connectedSessions.has(s.id),
+      ),
+    [sessions, railSort, connectedSessions],
   );
 
   const hasOutput = runs.length > 0;
