@@ -3,7 +3,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { EyeIcon, EyeOffIcon, FolderOpenIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, FolderOpenIcon, LockIcon } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,7 @@ import {
   setSudoSameAsLogin,
   updateHost,
 } from "@/lib/tauri/hosts";
+import { type AdminLockStatus, adminLockStatus } from "@/lib/tauri/settings";
 import { PALETTE } from "@/lib/palette";
 
 const FLAVOR_OPTIONS = [
@@ -198,6 +199,11 @@ export function HostFormPanel({
 }: Props) {
   const isEdit = host !== null;
   const [editingCredentials, setEditingCredentials] = useState(!isEdit);
+  // Admin lock: when a passcode is set and this session isn't unlocked, the
+  // credential fields are read-only with a "Locked by admin" message rather
+  // than letting the user fill everything in only to be refused on save.
+  const [lockStatus, setLockStatus] = useState<AdminLockStatus | null>(null);
+  const adminLocked = !!lockStatus?.lock_set && !lockStatus.unlocked;
   const [showPassword, setShowPassword] = useState(false);
   const [showKeyPassphrase, setShowKeyPassphrase] = useState(false);
   const [showSudoPassword, setShowSudoPassword] = useState(false);
@@ -249,6 +255,17 @@ export function HostFormPanel({
     setSudoAction("keep");
     reset(valuesFromHost(host, defaultColor));
   }, [host, defaultColor, reset]);
+
+  // Fetch the admin-lock state once; if locked, never enter credential-edit
+  // mode (so the fields stay ghosted and save skips credential writes).
+  useEffect(() => {
+    adminLockStatus()
+      .then((s) => {
+        setLockStatus(s);
+        if (s.lock_set && !s.unlocked) setEditingCredentials(false);
+      })
+      .catch(() => {});
+  }, []);
 
   // Signal AppShell to blur the sidebar while this panel is mounted.
   useEffect(() => {
@@ -347,32 +364,36 @@ export function HostFormPanel({
         ? await updateHost(host.id, input)
         : await createHost(input);
 
-      if (editingCredentials) {
-        if (data.authMethod === "none") {
-          if (host?.auth_method) {
-            await clearHostCredentials(saved.id);
+      // Credential writes are skipped entirely while admin-locked (the fields
+      // are ghosted, so there's nothing to write) — host metadata still saves.
+      if (!adminLocked) {
+        if (editingCredentials) {
+          if (data.authMethod === "none") {
+            if (host?.auth_method) {
+              await clearHostCredentials(saved.id);
+            }
+          } else if (data.authMethod === "password") {
+            const auth: AuthInput = { kind: "password", value: data.password };
+            await setHostCredentials(saved.id, auth);
+          } else if (data.authMethod === "key") {
+            const auth: AuthInput = {
+              kind: "key",
+              path: data.keyPath.trim(),
+              passphrase:
+                data.keyPassphrase.length === 0 ? null : data.keyPassphrase,
+            };
+            await setHostCredentials(saved.id, auth);
           }
-        } else if (data.authMethod === "password") {
-          const auth: AuthInput = { kind: "password", value: data.password };
-          await setHostCredentials(saved.id, auth);
-        } else if (data.authMethod === "key") {
-          const auth: AuthInput = {
-            kind: "key",
-            path: data.keyPath.trim(),
-            passphrase:
-              data.keyPassphrase.length === 0 ? null : data.keyPassphrase,
-          };
-          await setHostCredentials(saved.id, auth);
         }
-      }
 
-      if (hasSudo && sudoAction === "remove") {
-        await setSudoPassword(saved.id, null);
-      } else if (sudoEditing) {
-        if (data.sudoSameAsLogin && passwordAuthEffective) {
-          await setSudoSameAsLogin(saved.id);
-        } else if (data.sudoPassword.length > 0) {
-          await setSudoPassword(saved.id, data.sudoPassword);
+        if (hasSudo && sudoAction === "remove") {
+          await setSudoPassword(saved.id, null);
+        } else if (sudoEditing) {
+          if (data.sudoSameAsLogin && passwordAuthEffective) {
+            await setSudoSameAsLogin(saved.id);
+          } else if (data.sudoPassword.length > 0) {
+            await setSudoPassword(saved.id, data.sudoPassword);
+          }
         }
       }
 
@@ -575,7 +596,7 @@ export function HostFormPanel({
         <div className="mt-6 max-w-4xl rounded-xl border border-border/50 bg-muted/20 p-5">
           <div className="mb-3 flex items-center justify-between">
             <Label className="text-sm font-semibold">Credentials</Label>
-            {isEdit && !editingCredentials && (
+            {!adminLocked && isEdit && !editingCredentials && (
               <Button
                 type="button"
                 variant="ghost"
@@ -585,7 +606,7 @@ export function HostFormPanel({
                 Replace credentials...
               </Button>
             )}
-            {isEdit && editingCredentials && (
+            {!adminLocked && isEdit && editingCredentials && (
               <Button
                 type="button"
                 variant="ghost"
@@ -597,7 +618,22 @@ export function HostFormPanel({
             )}
           </div>
 
-          {isEdit && !editingCredentials ? (
+          {adminLocked ? (
+            <div className="space-y-2 rounded-md border border-dashed border-border/60 bg-muted/30 p-4 opacity-90">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <LockIcon className="h-4 w-4" />
+                Locked by admin
+              </div>
+              {isEdit && (
+                <p className="text-xs text-muted-foreground">{credSummary}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Adding or changing saved passwords is locked by the admin
+                passcode. Unlock in Settings → Security to edit them. You can
+                still save the host's other details.
+              </p>
+            </div>
+          ) : isEdit && !editingCredentials ? (
             <p
               className={`text-xs ${
                 host?.auth_method
