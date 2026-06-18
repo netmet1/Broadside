@@ -841,9 +841,11 @@ export function HelpPage() {
     };
 
     // Restore (next frame, so the content has laid out), then allow saving.
+    // Always assign scrollTop (even 0) so we clear any position inherited from
+    // the previously shown page sharing this <main>.
     const saved = Number(sessionStorage.getItem(HELP_SCROLL_KEY));
     requestAnimationFrame(() => {
-      if (Number.isFinite(saved) && saved > 0) scroller.scrollTop = saved;
+      scroller.scrollTop = Number.isFinite(saved) && saved > 0 ? saved : 0;
       computeActive();
       saveEnabled.current = true;
     });

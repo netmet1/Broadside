@@ -376,7 +376,11 @@ export function SettingsPage({
     didRestoreScroll.current = true;
     const saved = sessionStorage.getItem(SECTION_SCROLL_KEY);
     if (!saved || saved === SECTION_TITLES[0]) {
-      // Top section (or nothing saved) = no scroll; start saving immediately.
+      // Nothing meaningful to restore. Reset to the top so we don't keep the
+      // scroll position inherited from the previously shown (possibly taller)
+      // page, which the browser clamps to this page's bottom (the lingering
+      // Settings<->Help "lands at the bottom" case).
+      rootRef.current?.closest("main")?.scrollTo({ top: 0 });
       saveEnabled.current = true;
       return;
     }

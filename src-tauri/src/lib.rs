@@ -20,6 +20,37 @@ pub mod ssh;
 
 use tauri::Manager;
 
+/// Keep the (restored) main window visible: if its rectangle does not overlap
+/// any connected monitor, center it on the primary screen. Covers the case
+/// where the window was last on a monitor that has since been disconnected.
+fn ensure_window_on_screen(window: &tauri::WebviewWindow) {
+    let (Ok(pos), Ok(size), Ok(monitors)) = (
+        window.outer_position(),
+        window.outer_size(),
+        window.available_monitors(),
+    ) else {
+        return;
+    };
+    let (w, h) = (size.width as i32, size.height as i32);
+    let overlaps_a_monitor = monitors.iter().any(|m| {
+        let mp = m.position();
+        let ms = m.size();
+        let (mx2, my2) = (mp.x + ms.width as i32, mp.y + ms.height as i32);
+        let (wx2, wy2) = (pos.x + w, pos.y + h);
+        pos.x < mx2 && wx2 > mp.x && pos.y < my2 && wy2 > mp.y
+    });
+    if overlaps_a_monitor {
+        return;
+    }
+    if let Ok(Some(primary)) = window.primary_monitor() {
+        let mp = primary.position();
+        let ms = primary.size();
+        let x = mp.x + (ms.width as i32 - w).max(0) / 2;
+        let y = mp.y + (ms.height as i32 - h).max(0) / 2;
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _tier = licensing::entitlement();
@@ -27,6 +58,18 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Remember the window size, position and maximized state across restarts
+        // (saved on exit, restored on launch). The recenter check in setup below
+        // handles a saved monitor that is no longer connected.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        )
         .setup(|app| {
             let handle = app.handle();
             let db_state = db::init(&handle)?;
@@ -55,6 +98,13 @@ pub fn run() {
 
             // Admin lock unlock state — fresh (locked) on every launch.
             app.manage(admin_lock::AdminLockState::default());
+
+            // The window-state plugin has already restored the saved geometry.
+            // If that geometry is off every connected monitor (e.g. the monitor
+            // it was on was unplugged), recenter on the primary screen.
+            if let Some(window) = app.get_webview_window("main") {
+                ensure_window_on_screen(&window);
+            }
 
             Ok(())
         })

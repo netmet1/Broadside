@@ -384,7 +384,10 @@ export function TerminalsPage({
    * interactive here, same as if they typed it themselves. */
   const runShortcut = (cmd: string) => {
     if (activeId === null) return;
-    ptyWrite(activeId, cmd + "\n").catch((e) => {
+    // Submit with a carriage return (\r), the byte a real Enter keypress sends.
+    // Windows ConPTY shells (PowerShell/cmd) need \r to execute; \n leaves the
+    // line at a ">>" continuation prompt. \r is also correct for SSH/WSL.
+    ptyWrite(activeId, cmd + "\r").catch((e) => {
       toast.error(errorMessage(e));
     });
   };
