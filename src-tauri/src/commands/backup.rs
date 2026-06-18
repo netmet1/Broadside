@@ -52,9 +52,9 @@ pub fn backup_app_data(
             dir.display()
         )));
     }
-    // Datetime first in the filename (S4), e.g. 20260613-101715-omniterminal-backup.db.
+    // Datetime first in the filename (S4), e.g. 20260613-101715-broadside-backup.db.
     let stamp = Local::now().format("%Y%m%d-%H%M%S");
-    let db_dest = dir.join(format!("{stamp}-omniterminal-backup.db"));
+    let db_dest = dir.join(format!("{stamp}-broadside-backup.db"));
 
     let (hosts, ()) = with_db(&state, |conn| {
         let hosts = host_repo::list_all(conn)?;
@@ -63,7 +63,7 @@ pub fn backup_app_data(
     })?;
 
     let csv_path = if include_hosts_csv {
-        let csv_dest = dir.join(format!("{stamp}-omniterminal-hosts.csv"));
+        let csv_dest = dir.join(format!("{stamp}-broadside-hosts.csv"));
         crate::export::write_hosts_csv(&hosts, &csv_dest)?;
         Some(csv_dest.display().to_string())
     } else {

@@ -122,7 +122,7 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     def: (
       <>
         A network protocol for running commands on another computer over an
-        encrypted connection. OmniTerminal uses SSH to reach every host you add.
+        encrypted connection. Broadside uses SSH to reach every host you add.
         All traffic between the app and a host travels inside this encrypted
         channel.
       </>
@@ -145,7 +145,7 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     label: "ConPTY (Windows pseudo-console)",
     def: (
       <>
-        Windows' built-in version of a <Term term="PTY" />. OmniTerminal uses it
+        Windows' built-in version of a <Term term="PTY" />. Broadside uses it
         to run local Windows shells (PowerShell, Command Prompt, WSL) inside a
         Terminals tab, the same way it runs remote shells over <Term term="SSH" />.
       </>
@@ -168,7 +168,7 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     def: (
       <>
         A Unix command that runs another command with administrator rights. It
-        usually asks for your password first. OmniTerminal can fill that password
+        usually asks for your password first. Broadside can fill that password
         prompt for you when the feature is turned on (see the Security section).
       </>
     ),
@@ -204,7 +204,7 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     def: (
       <>
         An optional secret that unlocks an SSH private key file, so that simply
-        copying the file is not enough to use it. OmniTerminal can store the
+        copying the file is not enough to use it. Broadside can store the
         passphrase for you in the same protected place as your other secrets.
       </>
     ),
@@ -215,7 +215,7 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     def: (
       <>
         A secrets vault built into Windows, tied to your Windows user account.
-        OmniTerminal stores passwords and passphrases here first so they are
+        Broadside stores passwords and passphrases here first so they are
         protected by your Windows login and never kept in plain text.
       </>
     ),
@@ -238,7 +238,7 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     def: (
       <>
         A plain-text spreadsheet format (comma-separated values) where each line
-        is one record. OmniTerminal can import a list of hosts from a CSV file.
+        is one record. Broadside can import a list of hosts from a CSV file.
         The importer never reads passwords from the file.
       </>
     ),
@@ -262,7 +262,7 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
       <>
         ANSI codes are the invisible control sequences a program sends to color
         text, move the cursor and clear the screen. xterm is the long-standing
-        terminal standard those codes follow. OmniTerminal renders them so remote
+        terminal standard those codes follow. Broadside renders them so remote
         output looks the way it would in a native terminal.
       </>
     ),
@@ -286,7 +286,7 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          OmniTerminal is an SSH console built around one idea: send one command
+          Broadside is an SSH console built around one idea: send one command
           to many machines at once, while still giving each machine its own full
           interactive terminal when you need it. It also opens local Windows
           shells in the same window.
@@ -296,7 +296,7 @@ const SECTIONS: HelpSection[] = [
           <p>
             The buttons down the left side switch between the main areas of the
             app: <Nav>Hosts</Nav>, <Nav>Terminals</Nav>, <Nav>Broadcast</Nav>,{" "}
-            <Nav>PTY Broadcast</Nav>, <Nav>OmniTerminal</Nav>, <Nav>Logs</Nav>{" "}
+            <Nav>PTY Broadcast</Nav>, <Nav>MultiTerminal</Nav>, <Nav>Logs</Nav>{" "}
             and <Nav>Settings</Nav>. <Nav>Help</Nav> and <Nav>About</Nav> sit at
             the bottom. The rail collapses to icons only on narrow windows, or
             with the collapse button at the top. Drag its right edge to resize
@@ -309,7 +309,7 @@ const SECTIONS: HelpSection[] = [
               status bar along the bottom of the window.
             </li>
             <li>
-              The current app version is shown next to the OmniTerminal name at
+              The current app version is shown next to the Broadside name at
               the top of the rail and in the About dialog.
             </li>
             <li>
@@ -434,8 +434,8 @@ const SECTIONS: HelpSection[] = [
               alias) will not appear in the list.
             </li>
             <li>
-              OmniTerminal reads PATH when it starts. If you install a new shell
-              while the app is already running, restart OmniTerminal for it to
+              Broadside reads PATH when it starts. If you install a new shell
+              while the app is already running, restart Broadside for it to
               show up in the launcher.
             </li>
             <li>
@@ -568,14 +568,14 @@ const SECTIONS: HelpSection[] = [
     ),
   },
   {
-    id: "help-sec-omniterminal",
-    title: "OmniTerminal",
+    id: "help-sec-multiterminal",
+    title: "MultiTerminal",
     keywords:
-      "omniterminal aggregate combined output color tint per host block log delete two open compare",
+      "multiterminal aggregate combined output color tint per host block log delete two open compare",
     body: (
       <>
         <Lead>
-          <Nav>OmniTerminal</Nav> runs a command across all of your open terminals
+          <Nav>MultiTerminal</Nav> runs a command across all of your open terminals
           and shows every host's output together, each tinted with that host's
           color so you can compare results at a glance.
         </Lead>
@@ -634,7 +634,7 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          <Nav>Settings</Nav> is where you tune how OmniTerminal behaves. Use the
+          <Nav>Settings</Nav> is where you tune how Broadside behaves. Use the
           search box at the top to jump straight to a section.
         </Lead>
         <Detail>
@@ -696,7 +696,7 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          OmniTerminal handles passwords and connects to your machines, so it is
+          Broadside handles passwords and connects to your machines, so it is
           worth understanding exactly what it stores, what it sends, and the
           controls you have.{" "}
           <strong className="font-semibold text-red-600 dark:text-red-400">
@@ -930,7 +930,7 @@ export function HelpPage() {
             Help center
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            How OmniTerminal works, tab by tab, with a glossary for the technical
+            How Broadside works, tab by tab, with a glossary for the technical
             terms. Hover any control in the app to see a short explanation in the
             status bar.
           </p>

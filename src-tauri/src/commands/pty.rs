@@ -194,8 +194,8 @@ pub fn pty_history_add(
     })
 }
 
-/// Records an OmniTerminal dispatch in the shared command history (D-061
-/// sub-4). Rendered as `OmniTerminal <hosts> <command>` with the hosts tinted
+/// Records an MultiTerminal dispatch in the shared command history (D-061
+/// sub-4). Rendered as `MultiTerminal <hosts> <command>` with the hosts tinted
 /// by their live colour. Never blocks the dispatch (best-effort).
 #[tauri::command]
 pub fn omni_log_command(
@@ -204,11 +204,11 @@ pub fn omni_log_command(
     state: State<'_, DbState>,
 ) -> AppResult<()> {
     with_db(&state, |conn| {
-        crate::db::history::add(conn, &command, &hosts, "omniterminal")
+        crate::db::history::add(conn, &command, &hosts, "multiterminal")
     })
 }
 
-/// Persists one displayed OmniTerminal block so the aggregate view survives
+/// Persists one displayed MultiTerminal block so the aggregate view survives
 /// restarts (D-061 follow-up).
 #[tauri::command]
 pub fn omni_blocks_add(
@@ -218,14 +218,14 @@ pub fn omni_blocks_add(
     with_db(&state, |conn| crate::db::omni_history::add(conn, &block))
 }
 
-/// Deletes one OmniTerminal block by id (purge a single stray entry without
+/// Deletes one MultiTerminal block by id (purge a single stray entry without
 /// clearing the whole log). Returns rows removed.
 #[tauri::command]
 pub fn omni_blocks_delete(id: i64, state: State<'_, DbState>) -> AppResult<usize> {
     with_db(&state, |conn| crate::db::omni_history::delete(conn, id))
 }
 
-/// The persisted OmniTerminal block log, oldest first.
+/// The persisted MultiTerminal block log, oldest first.
 #[tauri::command]
 pub fn omni_blocks_list(
     limit: usize,
@@ -236,7 +236,7 @@ pub fn omni_blocks_list(
     })
 }
 
-/// Clears the persisted OmniTerminal block log. Returns rows removed.
+/// Clears the persisted MultiTerminal block log. Returns rows removed.
 #[tauri::command]
 pub fn omni_blocks_clear(state: State<'_, DbState>) -> AppResult<usize> {
     with_db(&state, |conn| crate::db::omni_history::clear(conn))

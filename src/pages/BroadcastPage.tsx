@@ -57,9 +57,9 @@ import { useShortcuts } from "@/lib/useShortcuts";
 const DEFAULT_TIMEOUT_SECS = 30;
 /** How many past runs to reload on mount (matches the backend cap). */
 const HISTORY_RUNS = 200;
-/** Persisted collapse state for the host selection rail (mirrors OmniTerminal). */
+/** Persisted collapse state for the host selection rail (mirrors MultiTerminal). */
 const RAIL_COLLAPSED_KEY = "broadcast-rail-collapsed";
-/** Persisted "show per-host output headers" toggle (mirrors OmniTerminal O4). */
+/** Persisted "show per-host output headers" toggle (mirrors MultiTerminal O4). */
 const HEADERS_KEY = "broadcast-headers";
 
 /** Initials of each whitespace-separated word, for the collapsed rail. */
@@ -136,7 +136,7 @@ export function BroadcastPage({
   );
   const [activeHitIdx, setActiveHitIdx] = useState(0);
 
-  // Collapsible host rail (mirrors OmniTerminal's O1), persisted.
+  // Collapsible host rail (mirrors MultiTerminal's O1), persisted.
   const [railCollapsed, setRailCollapsed] = useState(
     () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
   );
@@ -645,7 +645,7 @@ export function BroadcastPage({
         terminal for more complex interaction.
       </div>
       <div className="flex min-h-0 flex-1">
-      {/* Host selection rail (collapsible — mirrors OmniTerminal). */}
+      {/* Host selection rail (collapsible — mirrors MultiTerminal). */}
       <div
         className={`flex shrink-0 flex-col border-r border-border/50 ${
           railCollapsed ? "w-14" : "w-60"

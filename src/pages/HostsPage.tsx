@@ -436,7 +436,7 @@ export function HostsPage({
     try {
       const path = await saveDialog({
         title: "Export hosts",
-        defaultPath: `${dtStamp()}-omniterminal-hosts.csv`,
+        defaultPath: `${dtStamp()}-broadside-hosts.csv`,
         filters: [
           { name: "CSV", extensions: ["csv"] },
           { name: "Excel workbook", extensions: ["xlsx"] },

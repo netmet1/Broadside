@@ -28,9 +28,9 @@ import { useShortcuts } from "@/lib/useShortcuts";
 import type { SshTermSession } from "@/pages/TerminalsPage";
 
 const HISTORY_RUNS = 200;
-/** Persisted collapse state for the session rail (mirrors OmniTerminal). */
+/** Persisted collapse state for the session rail (mirrors MultiTerminal). */
 const RAIL_COLLAPSED_KEY = "pty-broadcast-rail-collapsed";
-/** Persisted "show per-run command header" toggle (mirrors OmniTerminal O4). */
+/** Persisted "show per-run command header" toggle (mirrors MultiTerminal O4). */
 const HEADERS_KEY = "pty-broadcast-headers";
 
 /** Initials of each whitespace-separated word, for the collapsed rail. */
@@ -92,7 +92,7 @@ export function PtyBroadcastPage({
   const shortcuts = useShortcuts(visible);
   const outputRef = useRef<HTMLDivElement>(null);
 
-  // Collapsible session rail (mirrors OmniTerminal's O1), persisted.
+  // Collapsible session rail (mirrors MultiTerminal's O1), persisted.
   const [railCollapsed, setRailCollapsed] = useState(
     () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
   );
@@ -307,7 +307,7 @@ export function PtyBroadcastPage({
         Results appear in each tab on the Terminals page.
       </div>
       <div className="flex min-h-0 flex-1">
-        {/* Session selection rail (collapsible — mirrors OmniTerminal). */}
+        {/* Session selection rail (collapsible — mirrors MultiTerminal). */}
         <div
           className={`flex shrink-0 flex-col border-r border-border/50 ${
             railCollapsed ? "w-14" : "w-60"

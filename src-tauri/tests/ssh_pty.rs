@@ -10,10 +10,10 @@ use std::time::Duration;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use common::{Fixture, PASSWORD, USER};
-use omniterminal_lib::ssh::pty::{
+use broadside_lib::ssh::pty::{
     open, PtyBlock, PtyClosed, PtyData, PtyEvents, PtyState, SudoInjected,
 };
-use omniterminal_lib::ssh::{probe, AuthMethod, ProbeResult};
+use broadside_lib::ssh::{probe, AuthMethod, ProbeResult};
 use tokio::sync::mpsc;
 
 enum Event {
@@ -71,7 +71,7 @@ async fn read_until(
                     return buffer;
                 }
             }
-            Ok(Some(Event::Block(_))) => {} // OmniTerminal blocks: not under test here
+            Ok(Some(Event::Block(_))) => {} // MultiTerminal blocks: not under test here
             Ok(Some(Event::Closed(_))) | Ok(None) => {
                 panic!("session closed before {needle:?} appeared; got: {buffer}")
             }
@@ -126,7 +126,7 @@ async fn pty_shell_round_trip_and_close() {
     .await
     .unwrap();
     assert!(
-        matches!(result, omniterminal_lib::ssh::pty::PtyOpenResult::Opened),
+        matches!(result, broadside_lib::ssh::pty::PtyOpenResult::Opened),
         "expected Opened, got {result:?}"
     );
 
@@ -191,7 +191,7 @@ async fn pty_reopen_same_id_replaces_session() {
         .await
         .unwrap();
         assert!(
-            matches!(result, omniterminal_lib::ssh::pty::PtyOpenResult::Opened),
+            matches!(result, broadside_lib::ssh::pty::PtyOpenResult::Opened),
             "expected Opened, got {result:?}"
         );
     }
@@ -247,7 +247,7 @@ async fn pty_remote_exit_emits_closed() {
     }
 }
 
-/// End-to-end OmniTerminal block pipeline (D-061): real bash + the OSC 133
+/// End-to-end MultiTerminal block pipeline (D-061): real bash + the OSC 133
 /// shell integration we ship + the `omni` VT parser must produce a clean,
 /// completion-delimited block (command text, output lines, exit code) for a
 /// normal command, and flag a full-screen app as interactive (no mirrored
@@ -256,7 +256,7 @@ async fn pty_remote_exit_emits_closed() {
 #[tokio::test]
 #[ignore]
 async fn pty_omni_blocks_from_bash() {
-    use omniterminal_lib::omni::{shell_integration_command, Interactivity};
+    use broadside_lib::omni::{shell_integration_command, Interactivity};
 
     let fx = Fixture::start();
     let fp = trust(&fx).await;

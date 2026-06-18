@@ -1,4 +1,4 @@
-# OmniTerminal
+# Broadside
 
 Windows desktop application for opening many concurrent SSH sessions to Linux
 hosts and broadcasting commands across them simultaneously.

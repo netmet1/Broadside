@@ -96,7 +96,7 @@ export function onPtySudoRejected(
  * lines; the others are full-screen/redrawing TUI apps shown as a notice. */
 export type BlockInteractivity = "normal" | "alt_screen" | "redraw";
 
-/** One completed command on a session, for the OmniTerminal aggregate view
+/** One completed command on a session, for the MultiTerminal aggregate view
  * (D-061). Emitted when the command finishes (OSC 133 `D`) or on session close. */
 export type PtyBlock = {
   session_id: string;
@@ -117,8 +117,8 @@ export function onPtyBlock(
   return listen<PtyBlock>("pty:block", (event) => handler(event.payload));
 }
 
-/** Records an OmniTerminal dispatch in the shared command history, rendered as
- * `OmniTerminal <hosts> <command>` with the hosts tinted live (D-061 sub-4). */
+/** Records an MultiTerminal dispatch in the shared command history, rendered as
+ * `MultiTerminal <hosts> <command>` with the hosts tinted live (D-061 sub-4). */
 export function omniLogCommand(
   command: string,
   hosts: { id: number | null; label: string }[],
@@ -126,7 +126,7 @@ export function omniLogCommand(
   return invoke<void>("omni_log_command", { command, hosts });
 }
 
-/** One persisted OmniTerminal block (survives restarts). `host_id` resolves the
+/** One persisted MultiTerminal block (survives restarts). `host_id` resolves the
  * live colour; `label` is the snapshot fallback. */
 export type StoredOmniBlock = {
   id: number;
@@ -147,17 +147,17 @@ export function omniBlocksAdd(block: OmniBlockInput): Promise<number> {
   return invoke<number>("omni_blocks_add", { block });
 }
 
-/** Deletes one persisted OmniTerminal block by id. Returns rows removed. */
+/** Deletes one persisted MultiTerminal block by id. Returns rows removed. */
 export function omniBlocksDelete(id: number): Promise<number> {
   return invoke<number>("omni_blocks_delete", { id });
 }
 
-/** The persisted OmniTerminal block log, oldest first. */
+/** The persisted MultiTerminal block log, oldest first. */
 export function omniBlocksList(limit: number): Promise<StoredOmniBlock[]> {
   return invoke<StoredOmniBlock[]>("omni_blocks_list", { limit });
 }
 
-/** Clears the persisted OmniTerminal block log. Returns rows removed. */
+/** Clears the persisted MultiTerminal block log. Returns rows removed. */
 export function omniBlocksClear(): Promise<number> {
   return invoke<number>("omni_blocks_clear");
 }

@@ -43,7 +43,7 @@ export function SaveSessionDialog({ open, onOpenChange, buildLines }: Props) {
       const path = await saveDialog({
         title: "Save session",
         defaultPath: `session-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}.otlog`,
-        filters: [{ name: "OmniTerminal session", extensions: ["otlog"] }],
+        filters: [{ name: "Broadside session", extensions: ["otlog"] }],
       });
       if (typeof path !== "string") return; // user cancelled
       const lines = buildLines();

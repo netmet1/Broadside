@@ -77,11 +77,11 @@ function prettyJsonLine(line: string): string {
 const SOURCE_LABEL: Record<string, string> = {
   broadcast: "Broadcast",
   ptybroadcast: "PTY Broadcast",
-  omniterminal: "OmniTerminal",
+  multiterminal: "MultiTerminal",
 };
 
 /** The target hosts of a command-history entry, colour-tinted live by id
- * (D-061 sub-4). OmniTerminal entries read `OmniTerminal <hosts> <command>`;
+ * (D-061 sub-4). MultiTerminal entries read `MultiTerminal <hosts> <command>`;
  * colour/label come from the current host (grey + snapshot label if gone). */
 function HistoryHosts({
   entry,
@@ -415,7 +415,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
         `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
       const path = await saveDialog({
         title: kind === "audit" ? "Export audit log" : "Export error log",
-        defaultPath: `${stamp}-omniterminal-${kind}.jsonl`,
+        defaultPath: `${stamp}-broadside-${kind}.jsonl`,
       });
       if (typeof path !== "string") return;
       const bytes =

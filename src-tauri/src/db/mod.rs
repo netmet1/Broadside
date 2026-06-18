@@ -21,7 +21,7 @@ pub fn init(app: &AppHandle) -> AppResult<DbState> {
         .app_data_dir()
         .map_err(|e| AppError::State(format!("app_data_dir: {e}")))?;
     std::fs::create_dir_all(&dir)?;
-    let db_path = dir.join("omniterminal.db");
+    let db_path = dir.join("broadside.db");
     let conn = Connection::open(&db_path)?;
     bootstrap(&conn)?;
     Ok(DbState(Mutex::new(conn)))
@@ -110,7 +110,7 @@ const MIGRATIONS: &[&str] = &[
     // 9: command_history host references + source (D-061 sub-4). hosts_json is
     // a JSON array of {id, label}; id is null for sources that don't track it
     // yet (PTY broadcast until a later PR). source is one of
-    // "broadcast" | "ptybroadcast" | "omniterminal". Rows predating this stay
+    // "broadcast" | "ptybroadcast" | "multiterminal". Rows predating this stay
     // NULL on both and render by host_count only.
     "ALTER TABLE command_history ADD COLUMN hosts_json TEXT;
      ALTER TABLE command_history ADD COLUMN source TEXT;",
@@ -118,7 +118,7 @@ const MIGRATIONS: &[&str] = &[
     // the host's *live* colour, like broadcast_results already does. Nullable —
     // rows predating this fall back to the stored colour snapshot.
     "ALTER TABLE pty_dispatch_results ADD COLUMN host_id INTEGER;",
-    // 11: persistent OmniTerminal block log (D-061 follow-up) so the aggregate
+    // 11: persistent MultiTerminal block log (D-061 follow-up) so the aggregate
     // view survives restarts (it otherwise lived only in frontend memory). One
     // row per displayed block; host_id resolves the live colour, label is the
     // snapshot fallback, lines is a JSON array.

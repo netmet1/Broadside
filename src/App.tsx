@@ -11,7 +11,7 @@ import {
 } from "@/pages/TerminalsPage";
 import type { LocalShell } from "@/lib/tauri/local";
 import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
-import { OmniTerminalPage } from "@/pages/OmniTerminalPage";
+import { MultiTerminalPage } from "@/pages/MultiTerminalPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { HelpPage } from "@/pages/HelpPage";
@@ -244,7 +244,7 @@ function App() {
     return ids;
   }, [sessions]);
 
-  // SSH-only sessions for the host-oriented pages (PTY Broadcast, OmniTerminal),
+  // SSH-only sessions for the host-oriented pages (PTY Broadcast, MultiTerminal),
   // which target saved hosts and don't apply to local shells.
   const sshSessions = useMemo(
     () => sessions.filter((s): s is SshTermSession => s.type === "ssh"),
@@ -315,11 +315,11 @@ function App() {
           onManageShortcuts={openShortcutSettings}
         />
       </div>
-      {/* OmniTerminal stays mounted so its aggregated block log survives tab
+      {/* MultiTerminal stays mounted so its aggregated block log survives tab
           switches (it subscribes to every session's pty:block stream). */}
-      <div className={page === "omniterminal" ? "block h-full" : "hidden"}>
-        <OmniTerminalPage
-          visible={page === "omniterminal"}
+      <div className={page === "multiterminal" ? "block h-full" : "hidden"}>
+        <MultiTerminalPage
+          visible={page === "multiterminal"}
           sessions={sshSessions}
           connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}

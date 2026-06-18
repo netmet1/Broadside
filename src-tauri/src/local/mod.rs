@@ -6,7 +6,7 @@
 //! data SOURCE differs (a local child process instead of an SSH channel), so the
 //! frontend's `pty_write`/`pty_resize`/`pty_close` and xterm rendering are
 //! identical. None of the SSH-only machinery (host-key trust, sudo auto-fill,
-//! guard rules, OmniTerminal blocks) applies to local shells.
+//! guard rules, MultiTerminal blocks) applies to local shells.
 
 use std::io::{Read, Write};
 

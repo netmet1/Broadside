@@ -26,7 +26,7 @@ pub struct HistoryEntry {
     pub ts: String,
     /// Target hosts for tinting (empty for rows predating D-061 sub-4).
     pub hosts: Vec<HistoryHost>,
-    /// "broadcast" | "ptybroadcast" | "omniterminal" (None for old rows).
+    /// "broadcast" | "ptybroadcast" | "multiterminal" (None for old rows).
     pub source: Option<String>,
 }
 
@@ -46,7 +46,7 @@ fn from_row(row: &Row) -> rusqlite::Result<HistoryEntry> {
 }
 
 /// Records a command run. `hosts` are the targets (for tinting) and `source`
-/// is "broadcast" | "ptybroadcast" | "omniterminal". Consecutive duplicates of
+/// is "broadcast" | "ptybroadcast" | "multiterminal". Consecutive duplicates of
 /// the same command collapse (timestamp/targets/source updated, not stacked).
 pub fn add(
     conn: &Connection,
@@ -126,13 +126,13 @@ mod tests {
     fn add_and_recent_round_trip() {
         let conn = open_in_memory().unwrap();
         add(&conn, "uptime", &hosts(3), "broadcast").unwrap();
-        add(&conn, "df -h", &hosts(5), "omniterminal").unwrap();
+        add(&conn, "df -h", &hosts(5), "multiterminal").unwrap();
         let entries = recent(&conn, 10).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].command, "df -h");
         assert_eq!(entries[0].host_count, 5);
         assert_eq!(entries[0].hosts.len(), 5);
-        assert_eq!(entries[0].source.as_deref(), Some("omniterminal"));
+        assert_eq!(entries[0].source.as_deref(), Some("multiterminal"));
         assert_eq!(entries[0].hosts[0].label, "host1");
         assert_eq!(entries[1].command, "uptime");
     }
@@ -155,11 +155,11 @@ mod tests {
     fn consecutive_duplicates_collapse() {
         let conn = open_in_memory().unwrap();
         add(&conn, "uptime", &hosts(3), "broadcast").unwrap();
-        add(&conn, "uptime", &hosts(4), "omniterminal").unwrap();
+        add(&conn, "uptime", &hosts(4), "multiterminal").unwrap();
         let entries = recent(&conn, 10).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].host_count, 4);
-        assert_eq!(entries[0].source.as_deref(), Some("omniterminal"));
+        assert_eq!(entries[0].source.as_deref(), Some("multiterminal"));
     }
 
     #[test]

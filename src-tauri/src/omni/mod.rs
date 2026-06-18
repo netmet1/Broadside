@@ -1,10 +1,10 @@
-//! VT stream interpretation for the OmniTerminal aggregate view (D-061).
+//! VT stream interpretation for the MultiTerminal aggregate view (D-061).
 //!
 //! Each live PTY session is a full interactive VT byte stream — cursor moves,
 //! colours, prompt redraws, echoed keystrokes. You cannot pour N of those into
 //! one pane and get something readable. This module feeds one session's bytes
 //! through a [`vte`] parser plus a minimal screen model and emits **completion-
-//! delimited command blocks**: OmniTerminal stays quiet while a command runs,
+//! delimited command blocks**: MultiTerminal stays quiet while a command runs,
 //! then drops the whole block in, in completion order (the Broadcast-tab shape,
 //! D-003, but driven through the live shells).
 //!
@@ -55,7 +55,7 @@ impl Interactivity {
 }
 
 /// A completed command, ready to render as one color-tinted block in
-/// OmniTerminal.
+/// MultiTerminal.
 #[derive(Debug, Clone, Serialize)]
 pub struct CommandBlock {
     /// The command text, when known (captured between OSC 133 `B` and `C`).
@@ -290,7 +290,7 @@ pub fn shell_integration_command() -> String {
 /// OSC 133 integration, clears the screen, reprints the MOTD, and re-echoes the
 /// real captured `Last login:` line — so the terminal looks like a fresh login
 /// without the visible setup command. It's a single line, so the integration's
-/// preexec guard suppresses any OmniTerminal block for the clear/MOTD/echo.
+/// preexec guard suppresses any MultiTerminal block for the clear/MOTD/echo.
 pub fn shell_setup_command(last_login: Option<&str>) -> String {
     // Leading space so shells with `ignorespace`/`ignoreboth` in HISTCONTROL
     // (the Debian/Ubuntu default) don't record this long line in shell history
@@ -578,7 +578,7 @@ mod tests {
         assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
         assert!(c.contains("printf '%s\\n' 'Last login: Mon Jun 15 from 1.2.3.4'"));
         assert!(c.ends_with('\n'));
-        // Single line so the preexec guard suppresses any OmniTerminal block.
+        // Single line so the preexec guard suppresses any MultiTerminal block.
         assert!(!c.trim_end_matches('\n').contains('\n'));
     }
 

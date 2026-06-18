@@ -1,4 +1,4 @@
-//! Persistent OmniTerminal block log (D-061 follow-up). The aggregate view
+//! Persistent MultiTerminal block log (D-061 follow-up). The aggregate view
 //! appends every displayed block here and reloads them on mount, so the log
 //! survives app restarts (it otherwise lived only in frontend memory).
 //!

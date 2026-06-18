@@ -34,7 +34,7 @@ export function AboutDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>OmniTerminal</DialogTitle>
+          <DialogTitle>Broadside</DialogTitle>
           <DialogDescription>
             SSH broadcast console: one command, many hosts.
           </DialogDescription>

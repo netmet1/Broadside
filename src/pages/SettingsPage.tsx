@@ -1414,7 +1414,7 @@ export function SettingsPage({
             <p className="text-xs text-muted-foreground">
               Choose which detected local shells appear in the Terminals + menu.
               A shell you install later appears automatically (enabled); restart
-              OmniTerminal for a newly installed shell to be detected.
+              Broadside for a newly installed shell to be detected.
             </p>
             {shells.length === 0 ? (
               <p className="pt-1 text-xs text-muted-foreground">

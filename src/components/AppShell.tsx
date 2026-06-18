@@ -24,7 +24,7 @@ export type Page =
   | "broadcast"
   | "ptybroadcast"
   | "terminals"
-  | "omniterminal"
+  | "multiterminal"
   | "logs"
   | "settings"
   | "help";
@@ -60,8 +60,8 @@ const NAV_ITEMS: {
     hint: "Type one command into every open terminal session",
   },
   {
-    page: "omniterminal",
-    label: "OmniTerminal",
+    page: "multiterminal",
+    label: "MultiTerminal",
     icon: LayersIcon,
     hint: "Run a command across all terminals and see every host's output, color-tinted (needs 2+ open)",
   },
@@ -210,7 +210,7 @@ export function AppShell({
       {maximized && (
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-sidebar-border bg-sidebar px-3 text-sidebar-foreground">
           <span className="font-heading text-sm font-semibold tracking-tight">
-            OmniTerminal
+            Broadside
           </span>
           <span className="text-xs text-muted-foreground">v0.1a</span>
           {maximizedHost && (
@@ -252,7 +252,7 @@ export function AppShell({
             {!collapsed && (
               <>
                 <span className="truncate font-heading text-base font-semibold tracking-tight">
-                  OmniTerminal
+                  Broadside
                 </span>
                 <span className="ml-2 shrink-0 text-xs text-muted-foreground">
                   v0.1a

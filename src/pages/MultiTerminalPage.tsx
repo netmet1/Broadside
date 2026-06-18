@@ -55,13 +55,13 @@ type DisplayBlock = {
 };
 
 /**
- * OmniTerminal (D-061) — the namesake aggregate view. A command typed here runs
+ * MultiTerminal (D-061) — the namesake aggregate view. A command typed here runs
  * through the selected terminals' live shells; each host's whole output drops in
  * as one colour-tinted block in completion order. Full-screen/redrawing apps
  * show an "interactive — not mirrored" notice. The block log persists across
  * restarts. Inert until 2+ terminals are open.
  */
-export function OmniTerminalPage({
+export function MultiTerminalPage({
   visible,
   sessions,
   connectedSessions,
@@ -296,7 +296,7 @@ export function OmniTerminalPage({
       const targets = sessions.filter(
         (s) => selected.has(s.id) && connectedSessions.has(s.id),
       );
-      // Log to the shared command history as `OmniTerminal <hosts> <command>`,
+      // Log to the shared command history as `MultiTerminal <hosts> <command>`,
       // tinted live by host (D-061 sub-4). Best-effort — never blocks dispatch.
       omniLogCommand(
         cmd,
@@ -378,7 +378,7 @@ export function OmniTerminalPage({
     <div className="flex h-full flex-col">
       {!ready && (
         <div className="shrink-0 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
-          Open at least 2 terminals (from the Hosts page) to use OmniTerminal.
+          Open at least 2 terminals (from the Hosts page) to use MultiTerminal.
         </div>
       )}
       <div className="flex min-h-0 flex-1">
@@ -503,7 +503,7 @@ export function OmniTerminalPage({
             <label
               className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
               {...hint(
-                "When on, commands you type by hand inside a terminal tab also appear here. Off = only commands sent from OmniTerminal.",
+                "When on, commands you type by hand inside a terminal tab also appear here. Off = only commands sent from MultiTerminal.",
               )}
             >
               <input
@@ -539,7 +539,7 @@ export function OmniTerminalPage({
                 size="sm"
                 onClick={clearBlocks}
                 disabled={!hasOutput}
-                {...hint("Clear the OmniTerminal output log (also clears the saved history)")}
+                {...hint("Clear the MultiTerminal output log (also clears the saved history)")}
               >
                 Clear
               </Button>
@@ -552,7 +552,7 @@ export function OmniTerminalPage({
               <p className="py-8 text-center text-sm text-muted-foreground">
                 {ready
                   ? "Type a command below. It runs on every selected terminal, and each host's output appears here as it finishes."
-                  : "Open at least 2 terminals to use OmniTerminal."}
+                  : "Open at least 2 terminals to use MultiTerminal."}
               </p>
             ) : (
               <div className="space-y-3">
@@ -591,7 +591,7 @@ export function OmniTerminalPage({
               history={history}
               placeholder={
                 !ready
-                  ? "Open at least 2 terminals to use OmniTerminal…"
+                  ? "Open at least 2 terminals to use MultiTerminal…"
                   : selectedConnectedCount === 0
                     ? "Select at least one connected terminal…"
                     : `Run on ${selectedConnectedCount} connected ${selectedConnectedCount === 1 ? "terminal" : "terminals"}…`

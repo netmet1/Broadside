@@ -93,7 +93,7 @@ try {
 
 # ---- Rust (src-tauri) ----
 # A running dev build locks the exe and blocks cargo build; stop it first.
-try { Stop-Process -Name omniterminal -Force -ErrorAction Stop; Write-Host "stopped running omniterminal" } catch {}
+try { Stop-Process -Name broadside -Force -ErrorAction Stop; Write-Host "stopped running broadside" } catch {}
 
 Push-Location $srcTauri
 try {

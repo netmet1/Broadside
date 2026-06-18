@@ -22,7 +22,7 @@ use crate::error::{AppError, AppResult};
 
 pub const DATA_EVENT: &str = "pty:data";
 pub const CLOSED_EVENT: &str = "pty:closed";
-/// Completed command blocks for the OmniTerminal aggregate view (D-061).
+/// Completed command blocks for the MultiTerminal aggregate view (D-061).
 pub const BLOCK_EVENT: &str = "pty:block";
 /// The stored sudo password was auto-filled at a prompt (D-065).
 pub const SUDO_EVENT: &str = "pty:sudo";
@@ -56,7 +56,7 @@ pub struct SudoInjected {
     pub port: u16,
 }
 
-/// A completed command block for one session, fed to the OmniTerminal view
+/// A completed command block for one session, fed to the MultiTerminal view
 /// (D-061). The block fields are flattened in so the frontend payload is
 /// `{ session_id, command, lines, exit_code, interactivity }`.
 #[derive(Debug, Clone, Serialize)]
@@ -299,7 +299,7 @@ pub async fn open<E: PtyEvents>(
     tauri::async_runtime::spawn(async move {
         let mut exit_code: Option<u32> = None;
         let mut message: Option<String> = None;
-        // Per-session VT interpreter feeding the OmniTerminal block stream
+        // Per-session VT interpreter feeding the MultiTerminal block stream
         // (D-061). The raw `pty:data` stream below is unchanged — the live
         // terminal pane still renders every byte; this is a parallel feed.
         let mut omni = crate::omni::OmniParser::new();
@@ -397,7 +397,7 @@ pub async fn open<E: PtyEvents>(
         if state.remove_if_current(&session_id, epoch) {
             // Flush a dangling block (a command still running when the shell
             // died, or a shell without OSC 133 integration) so its output
-            // isn't lost from the OmniTerminal view.
+            // isn't lost from the MultiTerminal view.
             if let Some(block) = omni.flush() {
                 events.block(PtyBlock {
                     session_id: session_id.clone(),

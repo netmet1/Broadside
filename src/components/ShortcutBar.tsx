@@ -20,7 +20,7 @@ const MANAGE_VALUE = "__manage__";
 const SEP = " ";
 
 /** Shortcut-command picker shown top-right on the Broadcast, PTY Broadcast,
- * OmniTerminal and Terminals pages (D-054). The dropdown shows only the
+ * MultiTerminal and Terminals pages (D-054). The dropdown shows only the
  * shortcuts that run in the active terminal: a shortcut matches when its scope
  * equals the active scope or is `both`. A `both` shortcut takes the active
  * terminal's icon (host for SSH/WSL, square for cmd/PowerShell). */

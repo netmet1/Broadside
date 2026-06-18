@@ -9,8 +9,8 @@ mod common;
 use std::time::Duration;
 
 use common::{Fixture, PASSWORD, USER};
-use omniterminal_lib::ssh::exec::{exec, ExecResult};
-use omniterminal_lib::ssh::{probe, AuthMethod, ProbeResult};
+use broadside_lib::ssh::exec::{exec, ExecResult};
+use broadside_lib::ssh::{probe, AuthMethod, ProbeResult};
 
 fn password_auth() -> AuthMethod {
     AuthMethod::Password(PASSWORD.to_string())

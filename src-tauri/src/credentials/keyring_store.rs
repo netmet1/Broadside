@@ -2,7 +2,7 @@ use keyring::Entry;
 
 use crate::error::{AppError, AppResult};
 
-const SERVICE: &str = "omniterminal";
+const SERVICE: &str = "broadside";
 
 pub fn probe() -> bool {
     let Ok(entry) = Entry::new(SERVICE, "__probe__") else {
