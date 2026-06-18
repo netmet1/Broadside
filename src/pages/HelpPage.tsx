@@ -34,6 +34,18 @@ function Term({ term, children }: { term: string; children?: ReactNode }) {
   );
 }
 
+/** Accent for the names of app areas and named controls (tabs, buttons, key
+ * settings), so they stand out from the surrounding prose. Distinct from the
+ * dotted-underline glossary links above and from the emerald/amber/red status
+ * colors used elsewhere in the app. */
+function Nav({ children }: { children: ReactNode }) {
+  return (
+    <span className="font-medium text-sky-600 dark:text-sky-400">
+      {children}
+    </span>
+  );
+}
+
 function Section({
   id,
   title,
@@ -260,11 +272,12 @@ const SECTIONS: HelpSection[] = [
           <H3>The left rail</H3>
           <p>
             The buttons down the left side switch between the main areas of the
-            app: Hosts, Terminals, Broadcast, PTY Broadcast, OmniTerminal, Logs
-            and Settings. Help and About sit at the bottom. The rail collapses to
-            icons only on narrow windows, or with the collapse button at the top.
-            Drag its right edge to resize it, or double-click that edge to reset
-            the width.
+            app: <Nav>Hosts</Nav>, <Nav>Terminals</Nav>, <Nav>Broadcast</Nav>,{" "}
+            <Nav>PTY Broadcast</Nav>, <Nav>OmniTerminal</Nav>, <Nav>Logs</Nav>{" "}
+            and <Nav>Settings</Nav>. <Nav>Help</Nav> and <Nav>About</Nav> sit at
+            the bottom. The rail collapses to icons only on narrow windows, or
+            with the collapse button at the top. Drag its right edge to resize
+            it, or double-click that edge to reset the width.
           </p>
           <H3>Finding your way</H3>
           <Bullets>
@@ -277,12 +290,13 @@ const SECTIONS: HelpSection[] = [
               the top of the rail and in the About dialog.
             </li>
             <li>
-              Switch between light and dark appearance in Settings, under
-              Appearance.
+              Switch between light and dark appearance in <Nav>Settings</Nav>,
+              under <Nav>Appearance</Nav>.
             </li>
             <li>
-              Press F11 (or the maximize button on a terminal tab) to fill the
-              whole window with a single terminal, and F11 again to return.
+              Press <Nav>F11</Nav> (or the maximize button on a terminal tab) to
+              fill the whole window with a single terminal, and <Nav>F11</Nav>{" "}
+              again to return.
             </li>
           </Bullets>
         </Detail>
@@ -297,8 +311,9 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          The Hosts tab is your address book of machines to connect to. Each host
-          records how to reach it (address, port, username) and how to sign in.
+          The <Nav>Hosts</Nav> tab is your address book of machines to connect
+          to. Each host records how to reach it (address, port, username) and how
+          to sign in.
         </Lead>
         <Detail>
           <H3>Adding and editing hosts</H3>
@@ -322,17 +337,18 @@ const SECTIONS: HelpSection[] = [
           </Bullets>
           <H3>Importing many hosts</H3>
           <p>
-            Use Import to load a list of hosts from a <Term term="csv" /> file.
-            The importer only reads connection details, never passwords. If a
-            label is already in use for a different machine, the import keeps both
-            by adding a numbered suffix (for example web becomes web-2).
+            Use <Nav>Import</Nav> to load a list of hosts from a{" "}
+            <Term term="csv" /> file. The importer only reads connection details,
+            never passwords. If a label is already in use for a different machine,
+            the import keeps both by adding a numbered suffix (for example web
+            becomes web-2).
           </p>
           <H3>Working with the list</H3>
           <Bullets>
             <li>
-              The Status column shows whether each host currently answers on the
-              network. Its header is the single letter S when the column is
-              narrow.
+              The <Nav>Status</Nav> column shows whether each host currently
+              answers on the network. Its header is the single letter S when the
+              column is narrow.
             </li>
             <li>
               A colored dot marks hosts that have a live terminal connection open
@@ -342,7 +358,8 @@ const SECTIONS: HelpSection[] = [
               Select several hosts and open a terminal for all of them at once.
             </li>
             <li>
-              You can hide columns you do not use from Settings, under Appearance.
+              You can hide columns you do not use from <Nav>Settings</Nav>, under{" "}
+              <Nav>Appearance</Nav>.
             </li>
           </Bullets>
         </Detail>
@@ -357,8 +374,8 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          Terminals gives you full, interactive terminal sessions, one per tab.
-          Each tab is a real <Term term="shell" /> running over a{" "}
+          <Nav>Terminals</Nav> gives you full, interactive terminal sessions, one
+          per tab. Each tab is a real <Term term="shell" /> running over a{" "}
           <Term term="PTY" />, so editors, progress bars and anything that needs a
           live screen all work normally.
         </Lead>
@@ -366,14 +383,14 @@ const SECTIONS: HelpSection[] = [
           <H3>Remote and local shells</H3>
           <Bullets>
             <li>
-              Open a remote shell by starting a terminal for a host from the Hosts
-              tab. The connection runs over <Term term="SSH" />.
+              Open a remote shell by starting a terminal for a host from the{" "}
+              <Nav>Hosts</Nav> tab. The connection runs over <Term term="SSH" />.
             </li>
             <li>
-              Open a local Windows shell with the plus button at the end of the
-              tab strip. It lists the shells installed on your PC: Windows
-              PowerShell, PowerShell 7 (pwsh), Command Prompt and any installed
-              WSL distributions. Local shells run through{" "}
+              Open a local Windows shell with the <Nav>plus button</Nav> at the
+              end of the tab strip. It lists the shells installed on your PC:
+              Windows PowerShell, PowerShell 7 (pwsh), Command Prompt and any
+              installed WSL distributions. Local shells run through{" "}
               <Term term="ConPTY" />.
             </li>
           </Bullets>
@@ -400,13 +417,14 @@ const SECTIONS: HelpSection[] = [
               tab so you can tell duplicates apart.
             </li>
             <li>
-              Use the find box to search the visible output of the active
-              terminal. The match count is shown, and clearing the search removes
-              the highlight.
+              Use the <Nav>find box</Nav> to search the visible output of the
+              active terminal. The match count is shown, and clearing the search
+              removes the highlight.
             </li>
             <li>
-              Maximize a single terminal to fill the window (also F11), and close
-              a single tab or use Close all to clear them with a confirmation.
+              Maximize a single terminal to fill the window (also <Nav>F11</Nav>),
+              and close a single tab or use <Nav>Close all</Nav> to clear them
+              with a confirmation.
             </li>
           </Bullets>
         </Detail>
@@ -421,9 +439,9 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          Broadcast sends one command to many hosts at the same time and gathers
-          each host's output in one place. It is the fastest way to run the same
-          one-shot command everywhere.
+          <Nav>Broadcast</Nav> sends one command to many hosts at the same time
+          and gathers each host's output in one place. It is the fastest way to
+          run the same one-shot command everywhere.
         </Lead>
         <Detail>
           <H3>How it runs</H3>
@@ -434,10 +452,10 @@ const SECTIONS: HelpSection[] = [
               grouped per host.
             </li>
             <li>
-              Because the exec channel is not interactive, Broadcast is best for
-              commands that finish on their own and print a result. For anything
-              that prompts you or needs a live screen, use a Terminals tab or PTY
-              Broadcast instead.
+              Because the exec channel is not interactive, <Nav>Broadcast</Nav>{" "}
+              is best for commands that finish on their own and print a result.
+              For anything that prompts you or needs a live screen, use a{" "}
+              <Nav>Terminals</Nav> tab or <Nav>PTY Broadcast</Nav> instead.
             </li>
             <li>
               A per-command time limit stops hosts that take too long. The output
@@ -449,7 +467,7 @@ const SECTIONS: HelpSection[] = [
           <p>
             A destructive-command guard can warn you before sending commands that
             look dangerous, and ask you to confirm first. You configure which
-            patterns count as destructive in Settings.
+            patterns count as destructive in <Nav>Settings</Nav>.
           </p>
         </Detail>
       </>
@@ -463,9 +481,9 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          PTY Broadcast types one command into every open interactive terminal at
-          once. Unlike plain Broadcast, it drives the live shells you already have
-          running in the Terminals tab.
+          <Nav>PTY Broadcast</Nav> types one command into every open interactive
+          terminal at once. Unlike plain <Nav>Broadcast</Nav>, it drives the live
+          shells you already have running in the <Nav>Terminals</Nav> tab.
         </Lead>
         <Detail>
           <H3>When to use it</H3>
@@ -481,9 +499,10 @@ const SECTIONS: HelpSection[] = [
               shells, exactly as if you typed in each tab yourself.
             </li>
             <li>
-              Plain Broadcast runs a command and waits for a result. PTY Broadcast
-              just sends the text. Choose Broadcast for one-shot commands and PTY
-              Broadcast for interactive ones.
+              Plain <Nav>Broadcast</Nav> runs a command and waits for a result.{" "}
+              <Nav>PTY Broadcast</Nav> just sends the text. Choose{" "}
+              <Nav>Broadcast</Nav> for one-shot commands and{" "}
+              <Nav>PTY Broadcast</Nav> for interactive ones.
             </li>
           </Bullets>
         </Detail>
@@ -498,9 +517,9 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          OmniTerminal runs a command across all of your open terminals and shows
-          every host's output together, each tinted with that host's color so you
-          can compare results at a glance.
+          <Nav>OmniTerminal</Nav> runs a command across all of your open terminals
+          and shows every host's output together, each tinted with that host's
+          color so you can compare results at a glance.
         </Lead>
         <Detail>
           <H3>How it works</H3>
@@ -527,8 +546,9 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          The Logs tab is your record of what happened: saved terminal sessions,
-          an audit log of security-relevant actions, and your past commands.
+          The <Nav>Logs</Nav> tab is your record of what happened: saved terminal
+          sessions, an audit log of security-relevant actions, and your past
+          commands.
         </Lead>
         <Detail>
           <H3>What you can find</H3>
@@ -540,7 +560,7 @@ const SECTIONS: HelpSection[] = [
             <li>
               The audit log records important actions over time. You can switch it
               between compact and pretty-printed views, and turn audit logging on
-              or off in Settings.
+              or off in <Nav>Settings</Nav>.
             </li>
             <li>Command history lists commands you have run, and every view has a search box.</li>
           </Bullets>
@@ -556,45 +576,44 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          Settings is where you tune how OmniTerminal behaves. Use the search box
-          at the top to jump straight to a section.
+          <Nav>Settings</Nav> is where you tune how OmniTerminal behaves. Use the
+          search box at the top to jump straight to a section.
         </Lead>
         <Detail>
           <H3>What you can change</H3>
           <Bullets>
             <li>
-              <strong>Performance</strong>: how many hosts the app talks to at
-              once.
+              <Nav>Performance</Nav>: how many hosts the app talks to at once.
             </li>
             <li>
-              <strong>Network probe</strong>: how the app checks whether hosts are
-              reachable for the Status column.
+              <Nav>Network probe</Nav>: how the app checks whether hosts are
+              reachable for the <Nav>Status</Nav> column.
             </li>
             <li>
-              <strong>Destructive command guard</strong>: the patterns that
-              trigger a confirmation before a risky command is sent.
+              <Nav>Destructive command guard</Nav>: the patterns that trigger a
+              confirmation before a risky command is sent.
             </li>
             <li>
-              <strong>Shortcut commands</strong>: reusable commands you can insert
+              <Nav>Shortcut commands</Nav>: reusable commands you can insert
               quickly while broadcasting.
             </li>
             <li>
-              <strong>Appearance</strong>: light or dark theme, and which Hosts
-              columns to show.
+              <Nav>Appearance</Nav>: light or dark theme, and which{" "}
+              <Nav>Hosts</Nav> columns to show.
             </li>
             <li>
-              <strong>Backup</strong>: save a copy of your app data.
+              <Nav>Backup</Nav>: save a copy of your app data.
             </li>
             <li>
-              <strong>Audit log</strong>: turn audit recording on or off.
+              <Nav>Audit log</Nav>: turn audit recording on or off.
             </li>
             <li>
-              <strong>Security</strong>: the sudo auto-fill switch and the admin
-              lock, both described in the Security section below.
+              <Nav>Security</Nav>: the sudo auto-fill switch and the admin lock,
+              both described in the Security section below.
             </li>
             <li>
-              <strong>Reset</strong>: return every setting to its default, behind
-              a confirmation.
+              <Nav>Reset</Nav>: return every setting to its default, behind a
+              confirmation.
             </li>
           </Bullets>
         </Detail>
@@ -637,8 +656,8 @@ const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               The app makes outbound <Term term="SSH" /> connections only to the
-              hosts you configure. Broadcast uses an{" "}
-              <Term term="exec-channel" />; Terminals use a full{" "}
+              hosts you configure. <Nav>Broadcast</Nav> uses an{" "}
+              <Term term="exec-channel" />; <Nav>Terminals</Nav> use a full{" "}
               <Term term="PTY" />. Nothing else is sent anywhere.
             </li>
             <li>
@@ -655,9 +674,10 @@ const SECTIONS: HelpSection[] = [
           <H3>The sudo auto-fill switch and admin lock</H3>
           <Bullets>
             <li>
-              Sudo auto-fill is a global switch in Settings. When on, the app
-              answers a host's sudo password prompt using the password you stored
-              for that host. Turn it off to always type sudo passwords yourself.
+              Sudo auto-fill is a global switch in <Nav>Settings</Nav>. When on,
+              the app answers a host's sudo password prompt using the password you
+              stored for that host. Turn it off to always type sudo passwords
+              yourself.
             </li>
             <li>
               The admin lock is an optional passcode that protects the credential
