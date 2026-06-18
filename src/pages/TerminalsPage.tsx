@@ -4,6 +4,7 @@ import {
   Maximize2Icon,
   PlusIcon,
   SquareTerminalIcon,
+  TerminalIcon,
   TextIcon,
   XIcon,
 } from "lucide-react";
@@ -41,6 +42,7 @@ import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage, type Host } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import type { SearchOptions } from "@/lib/search";
+import type { ShortcutScope } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
@@ -82,6 +84,26 @@ export type TermSession = SshTermSession | LocalTermSession;
 /** Display label for a tab, regardless of session kind. */
 function sessionLabel(s: TermSession): string {
   return s.type === "ssh" ? s.host.label : s.shell.label;
+}
+
+/** Which shortcut scope a tab belongs to. SSH hosts and local WSL tabs run
+ * Linux (ssh); local Command Prompt / PowerShell run Windows commands (local). */
+function sessionScope(s: TermSession): ShortcutScope {
+  if (s.type === "ssh") return "ssh";
+  return s.shell.kind === "wsl" ? "ssh" : "local";
+}
+
+/** Tab/menu icon for a local shell. WSL is grouped with SSH hosts under the
+ * terminal icon; the Windows shells use the square-terminal icon. */
+function LocalShellIcon({
+  kind,
+  className,
+}: {
+  kind: string;
+  className?: string;
+}) {
+  const Icon = kind === "wsl" ? TerminalIcon : SquareTerminalIcon;
+  return <Icon className={className} />;
 }
 
 type Props = {
@@ -337,6 +359,11 @@ export function TerminalsPage({
       : null;
   const activeGate = activeGateSession ? gates.get(activeGateSession.id)! : null;
 
+  // Scope of the active tab, so the shortcut dropdown can enable only the
+  // matching shortcuts (SSH/WSL run Linux; cmd/PowerShell run Windows commands).
+  const activeSession = sessions.find((s) => s.id === activeId) ?? null;
+  const activeScope = activeSession ? sessionScope(activeSession) : null;
+
   /** Shortcut Go: type the command into the active terminal and press Enter.
    * PTY tabs bypass the guard by design (D-014) — the operator is
    * interactive here, same as if they typed it themselves. */
@@ -373,6 +400,7 @@ export function TerminalsPage({
         <div className="ml-auto flex items-center gap-1.5">
           <ShortcutBar
             shortcuts={shortcuts}
+            activeScope={activeScope}
             disabled={activeId === null}
             onRun={runShortcut}
             onManage={onManageShortcuts}
@@ -410,7 +438,10 @@ export function TerminalsPage({
                           style={{ backgroundColor: s.host.color }}
                         />
                       ) : (
-                        <SquareTerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <LocalShellIcon
+                          kind={s.shell.kind}
+                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        />
                       )}
                       <span className="truncate">
                         {sessionLabel(s)}
@@ -477,7 +508,10 @@ export function TerminalsPage({
                 style={{ backgroundColor: s.host.color }}
               />
             ) : (
-              <SquareTerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <LocalShellIcon
+                kind={s.shell.kind}
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+              />
             )}
             {tabsCompact ? (
               <span className="font-mono">
@@ -557,7 +591,10 @@ export function TerminalsPage({
                     }}
                     className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                   >
-                    <SquareTerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <LocalShellIcon
+                      kind={sh.kind}
+                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                    />
                     {sh.label}
                   </button>
                 ))

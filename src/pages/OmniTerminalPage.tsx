@@ -529,6 +529,8 @@ export function OmniTerminalPage({
             <div className="ml-auto flex items-center gap-1.5">
               <ShortcutBar
                 shortcuts={shortcuts}
+                activeScope="ssh"
+                restrictToScope
                 disabled={!ready || sending || selectedConnectedCount === 0}
                 onRun={runShortcut}
                 onManage={onManageShortcuts}

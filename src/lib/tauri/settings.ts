@@ -33,10 +33,21 @@ export type UserRule = {
   enabled: boolean;
 };
 
+/** Where a shortcut runs: `ssh` covers remote SSH hosts and local WSL tabs (both
+ * Linux); `local` covers local Command Prompt and PowerShell tabs (Windows). */
+export type ShortcutScope = "ssh" | "local";
+
 /** A user-defined shortcut command (D-054). */
 export type ShortcutCommand = {
   id: string;
   command: string;
+  scope: ShortcutScope;
+};
+
+/** A built-in shortcut command with its scope. */
+export type CoreShortcut = {
+  command: string;
+  scope: ShortcutScope;
 };
 
 export type AppSettings = {
@@ -48,7 +59,7 @@ export type AppSettings = {
   sudo_autofill_enabled: boolean;
   core_rules: CoreRuleInfo[];
   user_rules: UserRule[];
-  core_shortcuts: string[];
+  core_shortcuts: CoreShortcut[];
   user_shortcuts: ShortcutCommand[];
   terminal_font_family: string;
   terminal_font_size: number;

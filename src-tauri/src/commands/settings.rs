@@ -27,9 +27,21 @@ pub const DEFAULT_TERMINAL_FONT_FAMILY: &str = "Consolas, 'Cascadia Mono', monos
 pub const DEFAULT_TERMINAL_FONT_SIZE: u16 = 13;
 pub const DEFAULT_APP_FONT_SIZE: u16 = 16;
 
-/// Built-in shortcut commands (D-054). Like guard core rules these live in
-/// code and cannot be removed; the UI sorts everything alphabetically.
-pub const CORE_SHORTCUTS: [&str; 6] = [
+/// Where a shortcut command can run. `Ssh` covers remote SSH hosts and local
+/// WSL tabs (both run Linux); `Local` covers local Command Prompt and PowerShell
+/// tabs (Windows). Defaults to `Ssh` so shortcuts saved before scopes existed
+/// (and any JSON missing the field) keep their original SSH behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ShortcutScope {
+    #[default]
+    Ssh,
+    Local,
+}
+
+/// Built-in SSH/Linux shortcut commands (D-054). Also offered on WSL tabs, which
+/// run Linux. Like guard core rules these live in code and cannot be removed.
+pub const CORE_SHORTCUTS_SSH: [&str; 6] = [
     "ls -la",
     "uptime",
     "sudo apt update",
@@ -38,11 +50,40 @@ pub const CORE_SHORTCUTS: [&str; 6] = [
     "htop",
 ];
 
+/// Built-in Command Prompt / PowerShell shortcut commands. Every entry is valid
+/// in BOTH cmd.exe and PowerShell so it runs whichever Windows shell the tab is.
+pub const CORE_SHORTCUTS_LOCAL: [&str; 6] =
+    ["dir", "whoami", "hostname", "ipconfig", "tasklist", "cls"];
+
+/// A built-in shortcut with its scope, sent to the Settings page.
+#[derive(Debug, Clone, Serialize)]
+pub struct CoreShortcut {
+    pub command: String,
+    pub scope: ShortcutScope,
+}
+
 /// A user-defined shortcut command (Settings CRUD, D-054).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShortcutCommand {
     pub id: String,
     pub command: String,
+    #[serde(default)]
+    pub scope: ShortcutScope,
+}
+
+/// All built-in shortcuts (SSH set then local set), each tagged with its scope.
+fn core_shortcuts() -> Vec<CoreShortcut> {
+    CORE_SHORTCUTS_SSH
+        .iter()
+        .map(|c| CoreShortcut {
+            command: c.to_string(),
+            scope: ShortcutScope::Ssh,
+        })
+        .chain(CORE_SHORTCUTS_LOCAL.iter().map(|c| CoreShortcut {
+            command: c.to_string(),
+            scope: ShortcutScope::Local,
+        }))
+        .collect()
 }
 
 /// Everything the Settings page needs in one fetch.
@@ -56,7 +97,7 @@ pub struct AppSettings {
     pub sudo_autofill_enabled: bool,
     pub core_rules: Vec<CoreRuleInfo>,
     pub user_rules: Vec<UserRule>,
-    pub core_shortcuts: Vec<String>,
+    pub core_shortcuts: Vec<CoreShortcut>,
     pub user_shortcuts: Vec<ShortcutCommand>,
     pub terminal_font_family: String,
     pub terminal_font_size: u16,
@@ -107,7 +148,7 @@ pub fn get_app_settings(state: State<'_, DbState>) -> AppResult<AppSettings> {
             sudo_autofill_enabled: settings::get_bool(conn, KEY_SUDO_AUTOFILL, true)?,
             core_rules: guard::core_rule_infos(),
             user_rules: load_user_rules(conn)?,
-            core_shortcuts: CORE_SHORTCUTS.iter().map(|s| s.to_string()).collect(),
+            core_shortcuts: core_shortcuts(),
             user_shortcuts: load_user_shortcuts(conn)?,
             terminal_font_family: settings::get(conn, KEY_TERMINAL_FONT_FAMILY)?
                 .unwrap_or_else(|| DEFAULT_TERMINAL_FONT_FAMILY.to_string()),
@@ -321,4 +362,41 @@ pub fn command_history(
 #[tauri::command]
 pub fn clear_command_history(state: State<'_, DbState>) -> AppResult<usize> {
     with_db(&state, history::clear)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shortcut_without_scope_defaults_to_ssh() {
+        // Shortcuts saved before scopes existed have no `scope` field; they must
+        // deserialize as Ssh so they keep working on SSH/WSL tabs.
+        let legacy = r#"{"id":"shortcut-1","command":"ls -la"}"#;
+        let parsed: ShortcutCommand = serde_json::from_str(legacy).unwrap();
+        assert_eq!(parsed.scope, ShortcutScope::Ssh);
+    }
+
+    #[test]
+    fn scope_round_trips_as_lowercase() {
+        let s = ShortcutCommand {
+            id: "x".into(),
+            command: "dir".into(),
+            scope: ShortcutScope::Local,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"scope\":\"local\""), "got {json}");
+        let back: ShortcutCommand = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.scope, ShortcutScope::Local);
+    }
+
+    #[test]
+    fn core_shortcuts_are_six_ssh_then_six_local() {
+        let cores = core_shortcuts();
+        assert_eq!(cores.len(), 12);
+        assert!(cores[..6].iter().all(|c| c.scope == ShortcutScope::Ssh));
+        assert!(cores[6..].iter().all(|c| c.scope == ShortcutScope::Local));
+        assert_eq!(cores[0].command, "ls -la");
+        assert_eq!(cores[6].command, "dir");
+    }
 }

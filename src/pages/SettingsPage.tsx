@@ -9,6 +9,8 @@ import {
   RadarIcon,
   RefreshCwIcon,
   SearchIcon,
+  SquareTerminalIcon,
+  TerminalIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -49,6 +51,7 @@ import {
   type AppSettings,
   type HostLatency,
   type ShortcutCommand,
+  type ShortcutScope,
   type UserRule,
   adminLockStatus,
   backupAppData,
@@ -91,6 +94,19 @@ function SectionHeading({
     </div>
   );
 }
+
+/** Leading icon for a shortcut's scope, matching the Terminals tab: SSH and WSL
+ * tabs use the host/terminal icon, Command Prompt / PowerShell use the square. */
+function ScopeIcon({ scope }: { scope: ShortcutScope }) {
+  const Icon = scope === "local" ? SquareTerminalIcon : TerminalIcon;
+  return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
+}
+
+/** Human-readable scope names for the add/edit form and row tooltips. */
+const SCOPE_LABELS: Record<ShortcutScope, string> = {
+  ssh: "SSH / WSL (Linux)",
+  local: "Command Prompt / PowerShell",
+};
 
 /** Stable DOM id for a settings section, used by the jump-to dropdown. */
 function sectionDomId(title: string): string {
@@ -374,6 +390,7 @@ export function SettingsPage({
   // Shortcut commands (D-054)
   const [shortcutFormOpen, setShortcutFormOpen] = useState(false);
   const [shortcutCmd, setShortcutCmd] = useState("");
+  const [shortcutScope, setShortcutScope] = useState<ShortcutScope>("ssh");
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
   const [shortcutSubmitAttempted, setShortcutSubmitAttempted] = useState(false);
   const shortcutsSectionRef = useRef<HTMLElement>(null);
@@ -610,14 +627,21 @@ export function SettingsPage({
     const cmd = shortcutCmd.trim();
     const next = editingShortcutId
       ? settings.user_shortcuts.map((s) =>
-          s.id === editingShortcutId ? { ...s, command: cmd } : s,
+          s.id === editingShortcutId
+            ? { ...s, command: cmd, scope: shortcutScope }
+            : s,
         )
       : [
           ...settings.user_shortcuts,
-          { id: `shortcut-${crypto.randomUUID().slice(0, 8)}`, command: cmd },
+          {
+            id: `shortcut-${crypto.randomUUID().slice(0, 8)}`,
+            command: cmd,
+            scope: shortcutScope,
+          },
         ];
     if (await persistShortcuts(next)) {
       setShortcutCmd("");
+      setShortcutScope("ssh");
       setEditingShortcutId(null);
       setShortcutSubmitAttempted(false);
       setShortcutFormOpen(false);
@@ -627,6 +651,7 @@ export function SettingsPage({
   const editShortcut = (s: ShortcutCommand) => {
     setEditingShortcutId(s.id);
     setShortcutCmd(s.command);
+    setShortcutScope(s.scope);
     setShortcutSubmitAttempted(false);
     setShortcutFormOpen(true);
   };
@@ -1094,7 +1119,7 @@ export function SettingsPage({
       >
         <SectionHeading
           title="Shortcut commands"
-          hint="One-click commands for the dropdown on the Broadcast and Terminals pages. Core shortcuts are built in; add, edit or delete your own."
+          hint="One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / WSL (Linux) commands run on SSH hosts and WSL tabs; Command Prompt / PowerShell commands run on local Windows shells. Core shortcuts are built in; add, edit or delete your own."
         />
 
         {settings && settings.user_shortcuts.length > 0 && (
@@ -1104,6 +1129,9 @@ export function SettingsPage({
                 key={s.id}
                 className="flex items-center gap-3 rounded-md border border-border/40 px-3 py-2 text-sm"
               >
+                <span title={SCOPE_LABELS[s.scope]}>
+                  <ScopeIcon scope={s.scope} />
+                </span>
                 <span className="min-w-0 flex-1 truncate font-mono text-xs">
                   {s.command}
                 </span>
@@ -1138,7 +1166,7 @@ export function SettingsPage({
                 id="shortcut-cmd"
                 value={shortcutCmd}
                 onChange={(e) => setShortcutCmd(e.target.value)}
-                placeholder="df -h"
+                placeholder={shortcutScope === "local" ? "dir" : "df -h"}
                 className={`font-mono text-sm ${
                   shortcutSubmitAttempted && shortcutCmdMissing
                     ? "border-destructive"
@@ -1146,6 +1174,35 @@ export function SettingsPage({
                 }`}
                 autoComplete="off"
               />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="shortcut-scope">Runs in</Label>
+              <Select
+                value={shortcutScope}
+                onValueChange={(v) => setShortcutScope(v as ShortcutScope)}
+              >
+                <SelectTrigger id="shortcut-scope" size="sm" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ssh">
+                    <span className="flex items-center gap-2">
+                      <TerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      {SCOPE_LABELS.ssh}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="local">
+                    <span className="flex items-center gap-2">
+                      <SquareTerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      {SCOPE_LABELS.local}
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                SSH / WSL commands run on SSH hosts and WSL tabs; Command Prompt /
+                PowerShell commands run on local Windows shells.
+              </p>
             </div>
             <div className="flex gap-2 pt-1">
               <Button size="sm" onClick={submitShortcut}>
@@ -1158,6 +1215,7 @@ export function SettingsPage({
                   setShortcutFormOpen(false);
                   setEditingShortcutId(null);
                   setShortcutCmd("");
+                  setShortcutScope("ssh");
                   setShortcutSubmitAttempted(false);
                 }}
               >
@@ -1181,13 +1239,18 @@ export function SettingsPage({
           <p className="pt-2 text-xs font-medium text-muted-foreground">
             Core shortcuts (built in)
           </p>
-          {settings?.core_shortcuts.map((cmd) => (
+          {settings?.core_shortcuts.map((c) => (
             <div
-              key={cmd}
+              key={`${c.scope}:${c.command}`}
               className="flex items-center gap-3 rounded-md border border-border/30 px-3 py-1.5 text-sm text-muted-foreground"
             >
               <LockIcon className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate font-mono text-xs">{cmd}</span>
+              <span title={SCOPE_LABELS[c.scope]}>
+                <ScopeIcon scope={c.scope} />
+              </span>
+              <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                {c.command}
+              </span>
             </div>
           ))}
         </div>

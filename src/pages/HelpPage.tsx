@@ -370,7 +370,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope",
     body: (
       <>
         <Lead>
@@ -425,6 +425,27 @@ const SECTIONS: HelpSection[] = [
               Maximize a single terminal to fill the window (also <Nav>F11</Nav>),
               and close a single tab or use <Nav>Close all</Nav> to clear them
               with a confirmation.
+            </li>
+          </Bullets>
+          <H3>Shortcut commands</H3>
+          <Bullets>
+            <li>
+              The <Nav>Shortcut command</Nav> dropdown runs a saved command in the
+              active tab. Each shortcut is scoped to a shell family, shown by an
+              icon: the host icon for{" "}
+              <Nav>SSH / WSL (Linux)</Nav> and the terminal icon for{" "}
+              <Nav>Command Prompt / PowerShell</Nav>.
+            </li>
+            <li>
+              WSL tabs run Linux, so they use the SSH/Linux shortcuts (and show
+              the host icon in the tab strip and the <Nav>plus button</Nav> menu).
+              Command Prompt and PowerShell tabs use the Windows shortcuts.
+            </li>
+            <li>
+              The dropdown lists every shortcut, but greys out the ones that do
+              not match the active tab, so a Linux command is never sent into a
+              Windows shell by mistake. Add your own, with a scope, in{" "}
+              <Nav>Settings</Nav> under Shortcut commands.
             </li>
           </Bullets>
         </Detail>
@@ -594,8 +615,13 @@ const SECTIONS: HelpSection[] = [
               confirmation before a risky command is sent.
             </li>
             <li>
-              <Nav>Shortcut commands</Nav>: reusable commands you can insert
-              quickly while broadcasting.
+              <Nav>Shortcut commands</Nav>: reusable one-click commands for the
+              dropdown on the Terminals and Broadcast pages. Each one is scoped
+              when you add it: <Nav>SSH / WSL (Linux)</Nav> commands run on SSH
+              hosts and WSL tabs, and{" "}
+              <Nav>Command Prompt / PowerShell</Nav> commands run on local
+              Windows shells. See the Terminals section for how the dropdown uses
+              the scope.
             </li>
             <li>
               <Nav>Appearance</Nav>: light or dark theme, and which{" "}
