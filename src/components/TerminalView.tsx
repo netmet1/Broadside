@@ -106,6 +106,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
+  // Resolves once the pty:data listener is actually registered. The connect
+  // effect awaits this before opening so a shell that emits immediately (e.g.
+  // PowerShell's startup cursor-position query, which it blocks on) isn't missed.
+  const dataReadyRef = useRef<Promise<unknown> | null>(null);
   const onSearchRequestRef = useRef(onSearchRequest);
   onSearchRequestRef.current = onSearchRequest;
   const onSearchResultsRef = useRef(onSearchResults);
@@ -180,6 +184,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const unlistenData = onPtyData((id, bytes) => {
       if (id === sessionId) term.write(bytes);
     });
+    dataReadyRef.current = unlistenData;
     const unlistenClosed = onPtyClosed((closed) => {
       if (closed.session_id !== sessionId) return;
       // Accept the close during "connecting" too — a shell can die in the
@@ -270,6 +275,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       if (!term || !fit) return;
       setPhase({ kind: "connecting" });
       if (containerRef.current?.offsetParent) fit.fit();
+      // Make sure the pty:data listener is live before the backend can emit, so
+      // no early output (e.g. a shell's startup cursor query) is dropped.
+      await dataReadyRef.current;
+      if (cancelled) return;
       try {
         // Local shells have no host-key trust or auth gate — just spawn and open.
         if (source.type === "local") {
