@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell, type Page } from "@/components/AppShell";
@@ -30,6 +30,10 @@ function App() {
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [sessions, setSessions] = useState<TermSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  // Monotonic creation counter: stamps each new tab with a stable `seq` so the
+  // duplicate suffix and pane order survive drag-reordering. Never resets.
+  const seqRef = useRef(0);
+  const nextSeq = useCallback(() => seqRef.current++, []);
   // Session ids with a live PTY connection (drives Hosts connected dots).
   const [connectedSessions, setConnectedSessions] = useState<Set<string>>(
     new Set(),
@@ -82,11 +86,16 @@ function App() {
   }, []);
 
   const openTerminal = useCallback((host: Host) => {
-    const session: TermSession = { id: crypto.randomUUID(), type: "ssh", host };
+    const session: TermSession = {
+      id: crypto.randomUUID(),
+      type: "ssh",
+      seq: nextSeq(),
+      host,
+    };
     setSessions((prev) => [...prev, session]);
     setActiveSessionId(session.id);
     setPage("terminals");
-  }, []);
+  }, [nextSeq]);
 
   /** Open a terminal tab for every host at once (Hosts multi-select). */
   const openTerminals = useCallback((hostsToOpen: Host[]) => {
@@ -94,24 +103,26 @@ function App() {
     const newSessions: TermSession[] = hostsToOpen.map((host) => ({
       id: crypto.randomUUID(),
       type: "ssh" as const,
+      seq: nextSeq(),
       host,
     }));
     setSessions((prev) => [...prev, ...newSessions]);
     setActiveSessionId(newSessions[0].id);
     setPage("terminals");
-  }, []);
+  }, [nextSeq]);
 
   /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab. */
   const openLocalShell = useCallback((shell: LocalShell) => {
     const session: TermSession = {
       id: crypto.randomUUID(),
       type: "local",
+      seq: nextSeq(),
       shell,
     };
     setSessions((prev) => [...prev, session]);
     setActiveSessionId(session.id);
     setPage("terminals");
-  }, []);
+  }, [nextSeq]);
 
   const handleConnectionChange = useCallback(
     (sessionId: string, connected: boolean) => {

@@ -61,15 +61,20 @@ function labelInitials(label: string): string {
 /** An SSH terminal (bound to a saved host) or a local shell (PowerShell / pwsh /
  * Command Prompt / WSL) hosted over ConPTY. Both share the same session id /
  * pty plumbing; only the source and tab affordances differ. */
+/** Monotonic creation order, assigned when the tab opens. Drives the duplicate
+ * " 02" suffix and the terminal-pane render order so neither depends on the
+ * (drag-reorderable) display order. */
 export type SshTermSession = {
   id: string;
   type: "ssh";
+  seq: number;
   /** Snapshot of the host at open time (rename/recolor mid-session is fine). */
   host: Host;
 };
 export type LocalTermSession = {
   id: string;
   type: "local";
+  seq: number;
   shell: LocalShell;
 };
 export type TermSession = SshTermSession | LocalTermSession;
@@ -157,10 +162,13 @@ export function TerminalsPage({
   // Suffix for duplicate terminals to the same target: the 2nd+ get " 02", " 03",
   // … so the tabs are distinguishable (T3). The first stays unsuffixed. Dedup key
   // is the host (SSH) or the shell id (local), so two PowerShell tabs also count.
+  // Numbered by creation order (seq), NOT display order, so dragging a tab to a
+  // new position never reshuffles the suffixes (the names stay put as the user
+  // expects them to).
   const tabSuffix = useMemo(() => {
     const counts = new Map<string, number>();
     const map = new Map<string, string>();
-    for (const s of sessions) {
+    for (const s of [...sessions].sort((a, b) => a.seq - b.seq)) {
       const key = s.type === "ssh" ? `ssh:${s.host.id}` : `local:${s.shell.id}`;
       const n = (counts.get(key) ?? 0) + 1;
       counts.set(key, n);
@@ -168,6 +176,16 @@ export function TerminalsPage({
     }
     return map;
   }, [sessions]);
+
+  // Terminal panes are rendered in stable creation order, decoupled from the
+  // (drag-reorderable) tab order. The active pane is shown via CSS regardless of
+  // its position, so pane order is invisible to the user -- and keeping it stable
+  // means dragging a tab never moves a pane's DOM node, so the live xterm/PTY is
+  // never torn down or remounted by a reorder.
+  const paneOrder = useMemo(
+    () => [...sessions].sort((a, b) => a.seq - b.seq),
+    [sessions],
+  );
 
   // Tab label mode: full label (default) vs color-dot + initials. Persisted
   // like the sidebar-collapse pref (localStorage, UI-only).
@@ -564,7 +582,7 @@ export function TerminalsPage({
       )}
 
       <div className="relative min-h-0 flex-1 bg-[var(--terminal-bg)] p-2">
-        {sessions.map((s) => (
+        {paneOrder.map((s) => (
           <div
             key={s.id}
             className={cn(
