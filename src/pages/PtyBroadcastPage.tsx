@@ -476,7 +476,6 @@ export function PtyBroadcastPage({
             <ShortcutBar
               shortcuts={shortcuts}
               activeScope="ssh"
-              restrictToScope
               disabled={sending || selected.size === 0}
               onRun={runShortcut}
               onManage={onManageShortcuts}

@@ -530,7 +530,6 @@ export function OmniTerminalPage({
               <ShortcutBar
                 shortcuts={shortcuts}
                 activeScope="ssh"
-                restrictToScope
                 disabled={!ready || sending || selectedConnectedCount === 0}
                 onRun={runShortcut}
                 onManage={onManageShortcuts}

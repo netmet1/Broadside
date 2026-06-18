@@ -813,7 +813,6 @@ export function BroadcastPage({
           <ShortcutBar
             shortcuts={shortcuts}
             activeScope="ssh"
-            restrictToScope
             disabled={running || selected.size === 0}
             onRun={runShortcut}
             onManage={onManageShortcuts}

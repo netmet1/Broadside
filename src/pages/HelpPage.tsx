@@ -431,21 +431,22 @@ const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               The <Nav>Shortcut command</Nav> dropdown runs a saved command in the
-              active tab. Each shortcut is scoped to a shell family, shown by an
-              icon: the host icon for{" "}
-              <Nav>SSH / WSL (Linux)</Nav> and the terminal icon for{" "}
-              <Nav>Command Prompt / PowerShell</Nav>.
+              active tab. Each shortcut has a scope:{" "}
+              <Nav>SSH / WSL (Linux)</Nav>, <Nav>Command Prompt / PowerShell</Nav>,
+              or <Nav>Both</Nav> for commands that work everywhere (for example
+              whoami).
+            </li>
+            <li>
+              The dropdown shows only the shortcuts that run in the current tab,
+              so a Linux command is never offered in a Windows shell. The icon
+              next to each one reflects the active tab: the host icon on SSH and
+              WSL tabs, the terminal icon on Command Prompt and PowerShell tabs.
             </li>
             <li>
               WSL tabs run Linux, so they use the SSH/Linux shortcuts (and show
               the host icon in the tab strip and the <Nav>plus button</Nav> menu).
-              Command Prompt and PowerShell tabs use the Windows shortcuts.
-            </li>
-            <li>
-              The dropdown lists every shortcut, but greys out the ones that do
-              not match the active tab, so a Linux command is never sent into a
-              Windows shell by mistake. Add your own, with a scope, in{" "}
-              <Nav>Settings</Nav> under Shortcut commands.
+              Add your own, with a scope, in <Nav>Settings</Nav> under Shortcut
+              commands.
             </li>
           </Bullets>
         </Detail>
@@ -618,10 +619,10 @@ const SECTIONS: HelpSection[] = [
               <Nav>Shortcut commands</Nav>: reusable one-click commands for the
               dropdown on the Terminals and Broadcast pages. Each one is scoped
               when you add it: <Nav>SSH / WSL (Linux)</Nav> commands run on SSH
-              hosts and WSL tabs, and{" "}
-              <Nav>Command Prompt / PowerShell</Nav> commands run on local
-              Windows shells. See the Terminals section for how the dropdown uses
-              the scope.
+              hosts and WSL tabs, <Nav>Command Prompt / PowerShell</Nav> commands
+              run on local Windows shells, and <Nav>Both</Nav> commands run
+              everywhere. See the Terminals section for how the dropdown uses the
+              scope.
             </li>
             <li>
               <Nav>Appearance</Nav>: light or dark theme, and which{" "}

@@ -29,14 +29,16 @@ pub const DEFAULT_APP_FONT_SIZE: u16 = 16;
 
 /// Where a shortcut command can run. `Ssh` covers remote SSH hosts and local
 /// WSL tabs (both run Linux); `Local` covers local Command Prompt and PowerShell
-/// tabs (Windows). Defaults to `Ssh` so shortcuts saved before scopes existed
-/// (and any JSON missing the field) keep their original SSH behavior.
+/// tabs (Windows); `Both` runs in either (e.g. `whoami`). Defaults to `Ssh` so
+/// shortcuts saved before scopes existed (any JSON missing the field) keep their
+/// original SSH behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ShortcutScope {
     #[default]
     Ssh,
     Local,
+    Both,
 }
 
 /// Built-in SSH/Linux shortcut commands (D-054). Also offered on WSL tabs, which
@@ -50,10 +52,13 @@ pub const CORE_SHORTCUTS_SSH: [&str; 6] = [
     "htop",
 ];
 
+/// Built-in shortcuts that work on BOTH Linux (SSH/WSL) and Windows (cmd +
+/// PowerShell), so they appear in every terminal's dropdown.
+pub const CORE_SHORTCUTS_BOTH: [&str; 2] = ["whoami", "hostname"];
+
 /// Built-in Command Prompt / PowerShell shortcut commands. Every entry is valid
 /// in BOTH cmd.exe and PowerShell so it runs whichever Windows shell the tab is.
-pub const CORE_SHORTCUTS_LOCAL: [&str; 6] =
-    ["dir", "whoami", "hostname", "ipconfig", "tasklist", "cls"];
+pub const CORE_SHORTCUTS_LOCAL: [&str; 4] = ["dir", "ipconfig", "tasklist", "cls"];
 
 /// A built-in shortcut with its scope, sent to the Settings page.
 #[derive(Debug, Clone, Serialize)]
@@ -71,19 +76,23 @@ pub struct ShortcutCommand {
     pub scope: ShortcutScope,
 }
 
-/// All built-in shortcuts (SSH set then local set), each tagged with its scope.
+/// All built-in shortcuts (SSH set, then the cross-shell set, then the local
+/// set), each tagged with its scope.
 fn core_shortcuts() -> Vec<CoreShortcut> {
-    CORE_SHORTCUTS_SSH
-        .iter()
-        .map(|c| CoreShortcut {
-            command: c.to_string(),
-            scope: ShortcutScope::Ssh,
-        })
-        .chain(CORE_SHORTCUTS_LOCAL.iter().map(|c| CoreShortcut {
-            command: c.to_string(),
-            scope: ShortcutScope::Local,
-        }))
-        .collect()
+    let tag = |cmds: &[&str], scope: ShortcutScope| {
+        cmds.iter()
+            .map(move |c| CoreShortcut {
+                command: c.to_string(),
+                scope,
+            })
+            .collect::<Vec<_>>()
+    };
+    [
+        tag(&CORE_SHORTCUTS_SSH, ShortcutScope::Ssh),
+        tag(&CORE_SHORTCUTS_BOTH, ShortcutScope::Both),
+        tag(&CORE_SHORTCUTS_LOCAL, ShortcutScope::Local),
+    ]
+    .concat()
 }
 
 /// Everything the Settings page needs in one fetch.
@@ -391,12 +400,26 @@ mod tests {
     }
 
     #[test]
-    fn core_shortcuts_are_six_ssh_then_six_local() {
+    fn core_shortcuts_cover_all_three_scopes() {
         let cores = core_shortcuts();
         assert_eq!(cores.len(), 12);
+        // 6 SSH, then 2 cross-shell (both), then 4 local.
         assert!(cores[..6].iter().all(|c| c.scope == ShortcutScope::Ssh));
-        assert!(cores[6..].iter().all(|c| c.scope == ShortcutScope::Local));
+        assert!(cores[6..8].iter().all(|c| c.scope == ShortcutScope::Both));
+        assert!(cores[8..].iter().all(|c| c.scope == ShortcutScope::Local));
         assert_eq!(cores[0].command, "ls -la");
-        assert_eq!(cores[6].command, "dir");
+        assert_eq!(cores[6].command, "whoami");
+        assert_eq!(cores[8].command, "dir");
+    }
+
+    #[test]
+    fn both_scope_serializes_lowercase() {
+        let json = serde_json::to_string(&ShortcutCommand {
+            id: "x".into(),
+            command: "whoami".into(),
+            scope: ShortcutScope::Both,
+        })
+        .unwrap();
+        assert!(json.contains("\"scope\":\"both\""), "got {json}");
     }
 }

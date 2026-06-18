@@ -34,8 +34,9 @@ export type UserRule = {
 };
 
 /** Where a shortcut runs: `ssh` covers remote SSH hosts and local WSL tabs (both
- * Linux); `local` covers local Command Prompt and PowerShell tabs (Windows). */
-export type ShortcutScope = "ssh" | "local";
+ * Linux); `local` covers local Command Prompt and PowerShell tabs (Windows);
+ * `both` runs in either. */
+export type ShortcutScope = "ssh" | "local" | "both";
 
 /** A user-defined shortcut command (D-054). */
 export type ShortcutCommand = {

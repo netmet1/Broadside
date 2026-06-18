@@ -9,6 +9,7 @@ import {
   RadarIcon,
   RefreshCwIcon,
   SearchIcon,
+  SquareAsteriskIcon,
   SquareTerminalIcon,
   TerminalIcon,
   Trash2Icon,
@@ -95,10 +96,16 @@ function SectionHeading({
   );
 }
 
-/** Leading icon for a shortcut's scope, matching the Terminals tab: SSH and WSL
- * tabs use the host/terminal icon, Command Prompt / PowerShell use the square. */
+/** Leading icon for a shortcut's scope, shown on the Settings page: SSH/WSL use
+ * the host/terminal icon, Command Prompt / PowerShell use the square terminal,
+ * and a command that runs in both uses the square-asterisk (any shell). */
 function ScopeIcon({ scope }: { scope: ShortcutScope }) {
-  const Icon = scope === "local" ? SquareTerminalIcon : TerminalIcon;
+  const Icon =
+    scope === "both"
+      ? SquareAsteriskIcon
+      : scope === "local"
+        ? SquareTerminalIcon
+        : TerminalIcon;
   return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
 }
 
@@ -106,6 +113,7 @@ function ScopeIcon({ scope }: { scope: ShortcutScope }) {
 const SCOPE_LABELS: Record<ShortcutScope, string> = {
   ssh: "SSH / WSL (Linux)",
   local: "Command Prompt / PowerShell",
+  both: "Both (Linux and Windows)",
 };
 
 /** Stable DOM id for a settings section, used by the jump-to dropdown. */
@@ -1197,11 +1205,18 @@ export function SettingsPage({
                       {SCOPE_LABELS.local}
                     </span>
                   </SelectItem>
+                  <SelectItem value="both">
+                    <span className="flex items-center gap-2">
+                      <SquareAsteriskIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      {SCOPE_LABELS.both}
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
                 SSH / WSL commands run on SSH hosts and WSL tabs; Command Prompt /
-                PowerShell commands run on local Windows shells.
+                PowerShell commands run on local Windows shells; Both runs in
+                every terminal (for example whoami).
               </p>
             </div>
             <div className="flex gap-2 pt-1">
