@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   CastIcon,
+  CircleHelpIcon,
   InfoIcon,
   LayersIcon,
   Minimize2Icon,
@@ -25,7 +26,8 @@ export type Page =
   | "terminals"
   | "omniterminal"
   | "logs"
-  | "settings";
+  | "settings"
+  | "help";
 
 const NAV_ITEMS: {
   page: Page;
@@ -310,7 +312,23 @@ export function AppShell({
               </button>
             ))}
           </nav>
-          <div className="shrink-0 p-2">
+          <div className="shrink-0 space-y-1 p-2">
+            <button
+              type="button"
+              onClick={() => onNavigate("help")}
+              title={collapsed ? "Help" : undefined}
+              {...hint("Guided documentation for every tab and feature")}
+              className={cn(
+                "flex w-full items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-sm font-medium",
+                collapsed && "justify-center px-0",
+                active === "help"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+              )}
+            >
+              <CircleHelpIcon className="h-4 w-4 shrink-0" />
+              {!collapsed && <span className="truncate">Help</span>}
+            </button>
             <button
               type="button"
               onClick={() => setAboutOpen(true)}

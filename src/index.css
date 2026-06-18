@@ -177,7 +177,8 @@
   /* Settings "Jump to…" smooth-scrolls a section to the top of the scroll
      area, but the Settings title bar is sticky and would cover the section
      header. Offset the scroll target so it lands just below the sticky bar. */
-  [id^="settings-sec-"] {
+  [id^="settings-sec-"],
+  [id^="help-sec-"] {
     scroll-margin-top: 4rem;
   }
 

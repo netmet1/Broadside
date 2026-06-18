@@ -14,6 +14,7 @@ import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
 import { OmniTerminalPage } from "@/pages/OmniTerminalPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { HelpPage } from "@/pages/HelpPage";
 import { UnlockDialog } from "@/components/UnlockDialog";
 import { Toaster } from "@/components/ui/sonner";
 import { StatusProvider } from "@/components/StatusProvider";
@@ -334,6 +335,7 @@ function App() {
           onFocusConsumed={() => setSettingsFocus(null)}
         />
       )}
+      {page === "help" && <HelpPage />}
         <UnlockDialog
           open={unlockOpen}
           onOpenChange={setUnlockOpen}
