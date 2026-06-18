@@ -233,11 +233,30 @@ pub fn open_local<E: PtyEvents>(
             }
         }
 
-        // Ensure the child is gone, then flush any output still in flight before
-        // reporting the close so no trailing bytes are lost.
+        // The child has exited (or we were told to close). Kill to be safe, then
+        // DROP the pty handles so the blocking reader thread sees EOF. Without
+        // this, a ConPTY whose output pipe stays open while `master` is alive
+        // keeps the reader parked in read(), `data_tx` is never dropped, and the
+        // drain below would await forever -- so we'd never reach the pty:closed
+        // emit and the local-shell tab would never show its closed banner (the
+        // SSH path is separate, which is why only local shells were affected).
         let _ = killer.kill();
-        while let Some(bytes) = data_rx.recv().await {
-            emit(&session_id, &bytes, &events);
+        drop(writer);
+        drop(master);
+
+        // Flush any output still in flight, but never wait indefinitely: stop on
+        // EOF (reader gone) or after a short idle gap, then always report close.
+        loop {
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                data_rx.recv(),
+            )
+            .await
+            {
+                Ok(Some(bytes)) => emit(&session_id, &bytes, &events),
+                Ok(None) => break,
+                Err(_) => break,
+            }
         }
 
         // Only report if the entry is still ours (a re-open with the same id, or a
