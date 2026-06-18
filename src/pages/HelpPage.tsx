@@ -1,8 +1,15 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SearchIcon, XIcon } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+
+/** Help scroll position, remembered while the app runs (sessionStorage clears on
+ * restart). Mirrors the Settings tab's persistence pattern. */
+const HELP_SCROLL_KEY = "help-scroll-top";
+/** Sticky-offset to discount when picking the section nearest the top, matching
+ * the `help-sec-` scroll-margin-top: 4rem rule in index.css. */
+const STICKY_OFFSET_PX = 64;
 
 /** Stable DOM id for a glossary entry, used by inline term links. */
 function glossaryId(term: string): string {
@@ -14,6 +21,22 @@ function glossaryId(term: string): string {
  * pinned at the top. */
 function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/** An inline link to another help section (not a glossary term). */
+function SectionLink({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <a
+      href={"#" + id}
+      onClick={(e) => {
+        e.preventDefault();
+        scrollToId(id);
+      }}
+      className="font-medium text-primary underline decoration-dotted underline-offset-2 hover:decoration-solid"
+    >
+      {children}
+    </a>
+  );
 }
 
 /** An inline link to a glossary entry. Renders the term text and jumps to its
@@ -331,8 +354,9 @@ const SECTIONS: HelpSection[] = [
             <li>
               For your safety, saved passwords and passphrases are never shown
               again after you save them. You can replace a secret, but the app
-              will not display the stored value. See the Security section for
-              where these are kept.
+              will not display the stored value. See the{" "}
+              <SectionLink id="help-sec-security">Security section</SectionLink>{" "}
+              for where these are kept.
             </li>
           </Bullets>
           <H3>Importing many hosts</H3>
@@ -342,6 +366,12 @@ const SECTIONS: HelpSection[] = [
             never passwords. If a label is already in use for a different machine,
             the import keeps both by adding a numbered suffix (for example web
             becomes web-2).
+          </p>
+          <p>
+            Tip: to build that file without guessing the format, add one host
+            here manually first, use <Nav>Export</Nav> to save the list to a CSV
+            or spreadsheet, then fill in the rest of your hosts in that same file
+            (keeping its column headers) and <Nav>Import</Nav> it back.
           </p>
           <H3>Working with the list</H3>
           <Bullets>
@@ -407,6 +437,12 @@ const SECTIONS: HelpSection[] = [
               OmniTerminal reads PATH when it starts. If you install a new shell
               while the app is already running, restart OmniTerminal for it to
               show up in the launcher.
+            </li>
+            <li>
+              You can hide shells you do not use from the launcher in{" "}
+              <Nav>Settings</Nav> under <Nav>Appearance</Nav>. Every detected
+              shell is shown by default; a newly installed one appears
+              automatically once detected.
             </li>
           </Bullets>
           <H3>Working with tabs</H3>
@@ -625,11 +661,16 @@ const SECTIONS: HelpSection[] = [
               scope.
             </li>
             <li>
-              <Nav>Appearance</Nav>: light or dark theme, and which{" "}
-              <Nav>Hosts</Nav> columns to show.
+              <Nav>Appearance</Nav>: light or dark theme, which{" "}
+              <Nav>Hosts</Nav> columns to show, and which detected local shells
+              appear in the Terminals <Nav>plus button</Nav> menu.
             </li>
             <li>
-              <Nav>Backup</Nav>: save a copy of your app data.
+              <Nav>Backup</Nav>: save a copy of your app data. Backups contain
+              your host list and settings but never your passwords or key
+              passphrases (those stay in the{" "}
+              <SectionLink id="help-sec-security">Security section</SectionLink>{" "}
+              vault), so a backup file cannot leak a secret.
             </li>
             <li>
               <Nav>Audit log</Nav>: turn audit recording on or off.
@@ -657,7 +698,10 @@ const SECTIONS: HelpSection[] = [
         <Lead>
           OmniTerminal handles passwords and connects to your machines, so it is
           worth understanding exactly what it stores, what it sends, and the
-          controls you have. There is no telemetry and the app never phones home.
+          controls you have.{" "}
+          <strong className="font-semibold text-red-600 dark:text-red-400">
+            There is no telemetry and the app never phones home.
+          </strong>
         </Lead>
         <Detail>
           <H3>How your credentials are stored</H3>
@@ -756,6 +800,10 @@ const SECTIONS: HelpSection[] = [
 export function HelpPage() {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // The id of the section nearest the top of the scroll area, for the live TOC
+  // highlight.
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const visibleSections = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -767,8 +815,59 @@ export function HelpPage() {
     );
   }, [query]);
 
+  // Restore the last scroll position on mount, then track scrolling to (a) keep
+  // the TOC highlight in sync and (b) remember the position for the next visit.
+  // Saving is gated until after the restore so the shared <main> being clamped
+  // on remount cannot overwrite the saved value with a wrong spot.
+  const saveEnabled = useRef(false);
+  useEffect(() => {
+    const scroller = rootRef.current?.closest("main");
+    if (!scroller) return;
+
+    const computeActive = () => {
+      const anchor = scroller.getBoundingClientRect().top + STICKY_OFFSET_PX;
+      let best: string | null = null;
+      let bestDist = Infinity;
+      for (const s of SECTIONS) {
+        const el = document.getElementById(s.id);
+        if (!el) continue;
+        const dist = Math.abs(el.getBoundingClientRect().top - anchor);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = s.id;
+        }
+      }
+      setActiveId(best);
+    };
+
+    // Restore (next frame, so the content has laid out), then allow saving.
+    const saved = Number(sessionStorage.getItem(HELP_SCROLL_KEY));
+    requestAnimationFrame(() => {
+      if (Number.isFinite(saved) && saved > 0) scroller.scrollTop = saved;
+      computeActive();
+      saveEnabled.current = true;
+    });
+
+    let raf = 0;
+    const onScroll = () => {
+      if (raf !== 0) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        computeActive();
+        if (saveEnabled.current) {
+          sessionStorage.setItem(HELP_SCROLL_KEY, String(scroller.scrollTop));
+        }
+      });
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
   return (
-    <div className="mx-auto flex max-w-5xl gap-8 px-6 py-6">
+    <div ref={rootRef} className="mx-auto flex max-w-5xl gap-8 px-6 py-6">
       {/* Sticky table of contents (GitBook-style). Hidden on narrow widths,
           where the sections simply stack and scroll. */}
       <aside className="hidden w-56 shrink-0 lg:block">
@@ -803,8 +902,12 @@ export function HelpPage() {
                 key={s.id}
                 type="button"
                 onClick={() => scrollToId(s.id)}
+                aria-current={activeId === s.id ? "true" : undefined}
                 className={cn(
-                  "block w-full truncate rounded-md px-2.5 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  "block w-full truncate rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground",
+                  activeId === s.id
+                    ? "bg-accent font-medium text-accent-foreground"
+                    : "text-muted-foreground",
                 )}
               >
                 {s.title}

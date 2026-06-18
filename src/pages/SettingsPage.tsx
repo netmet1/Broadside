@@ -42,6 +42,11 @@ import {
   loadHiddenCols,
   saveHiddenCols,
 } from "@/lib/hostColumns";
+import {
+  reconcileDisabledShells,
+  saveDisabledShells,
+} from "@/lib/localShellPrefs";
+import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
 import { useHint, useStatus } from "@/lib/status";
 import { useTheme } from "next-themes";
@@ -172,6 +177,30 @@ export function SettingsPage({
     });
   };
 
+  // Local-shell launcher visibility (Appearance). The detected shells plus the
+  // user's hide list (stored by id); the Terminals "+" menu reads the same list.
+  const [shells, setShells] = useState<LocalShell[]>([]);
+  const [disabledShells, setDisabledShells] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    listLocalShells()
+      .then((s) => {
+        setShells(s);
+        setDisabledShells(reconcileDisabledShells(s.map((x) => x.id)));
+      })
+      .catch(() => {
+        // Non-fatal: the section just shows "no local shells detected".
+      });
+  }, []);
+  const toggleShell = (id: string, enabled: boolean) => {
+    setDisabledShells((prev) => {
+      const next = new Set(prev);
+      if (enabled) next.delete(id);
+      else next.add(id);
+      saveDisabledShells(next);
+      return next;
+    });
+  };
+
   // Opt-in admin lock (gates the sudo toggle, credential editing and Reset).
   const [lockStatus, setLockStatus] = useState<AdminLockStatus | null>(null);
   const [unlockOpen, setUnlockOpen] = useState(false);
@@ -291,13 +320,20 @@ export function SettingsPage({
 
   // The page scroll lives on the shared <main>; remember the section nearest
   // the top as the user scrolls so returning to Settings restores that spot.
+  // Saving is gated until the restore below has run: when this tab remounts,
+  // the shared <main> can be clamped to a shorter scrollHeight (e.g. coming
+  // back from the taller Help page), which fires a scroll event. Saving that
+  // clamped position would overwrite the real saved section with a near-bottom
+  // one before the restore reads it (the Settings<->Help drift bug).
   const rootRef = useRef<HTMLDivElement>(null);
+  const saveEnabled = useRef(false);
   useEffect(() => {
     const scroller = rootRef.current?.closest("main");
     if (!scroller) return;
     let raf = 0;
     const save = () => {
       raf = 0;
+      if (!saveEnabled.current) return;
       const anchor = scroller.getBoundingClientRect().top + STICKY_OFFSET_PX;
       let best: string | null = null;
       let bestDist = Infinity;
@@ -330,6 +366,7 @@ export function SettingsPage({
     // A deep-link (focusSection) owns the scroll — let it win, don't restore.
     if (focusSection) {
       didRestoreScroll.current = true;
+      saveEnabled.current = true;
       return;
     }
     // Wait until the async settings (and the probe panel they render) have
@@ -338,13 +375,20 @@ export function SettingsPage({
     if (!settings) return;
     didRestoreScroll.current = true;
     const saved = sessionStorage.getItem(SECTION_SCROLL_KEY);
-    if (!saved || saved === SECTION_TITLES[0]) return; // top section = no scroll
+    if (!saved || saved === SECTION_TITLES[0]) {
+      // Top section (or nothing saved) = no scroll; start saving immediately.
+      saveEnabled.current = true;
+      return;
+    }
     // Double rAF: let this commit paint, then scroll once layout is settled.
+    // Only enable saving AFTER the restore scroll lands, so the restore itself
+    // (and any clamp on remount) cannot clobber the saved section.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         document
           .getElementById(sectionDomId(saved))
           ?.scrollIntoView({ block: "start" });
+        saveEnabled.current = true;
       }),
     );
   }, [settings, focusSection]);
@@ -1360,6 +1404,36 @@ export function SettingsPage({
                 </label>
               ))}
             </div>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Local shells in the launcher</Label>
+            <p className="text-xs text-muted-foreground">
+              Choose which detected local shells appear in the Terminals + menu.
+              A shell you install later appears automatically (enabled); restart
+              OmniTerminal for a newly installed shell to be detected.
+            </p>
+            {shells.length === 0 ? (
+              <p className="pt-1 text-xs text-muted-foreground">
+                No local shells detected.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-x-5 gap-y-1.5 pt-1">
+                {shells.map((sh) => (
+                  <label
+                    key={sh.id}
+                    className="flex cursor-pointer items-center gap-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      className="accent-primary"
+                      checked={!disabledShells.has(sh.id)}
+                      onChange={(e) => toggleShell(sh.id, e.target.checked)}
+                    />
+                    {sh.label}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <Button

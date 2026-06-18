@@ -41,6 +41,7 @@ import {
 import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage, type Host } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
+import { reconcileDisabledShells } from "@/lib/localShellPrefs";
 import type { SearchOptions } from "@/lib/search";
 import type { ShortcutScope } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
@@ -141,6 +142,8 @@ export function TerminalsPage({
   // Local shells available on this machine, for the "+" launcher menu.
   const [localShells, setLocalShells] = useState<LocalShell[]>([]);
   const [shellsError, setShellsError] = useState<string | null>(null);
+  // Shells the user hid in Settings -> Appearance (stored by id).
+  const [disabledShells, setDisabledShells] = useState<Set<string>>(new Set());
   useEffect(() => {
     listLocalShells()
       .then((s) => {
@@ -154,6 +157,18 @@ export function TerminalsPage({
         setShellsError(errorMessage(e));
       });
   }, []);
+  // Re-read the hide list whenever the page is shown so changes made in Settings
+  // (this page stays mounted) take effect on return. Reconcile drops ids no
+  // longer detected so a shell that returns is enabled again.
+  useEffect(() => {
+    if (visible) {
+      setDisabledShells(reconcileDisabledShells(localShells.map((s) => s.id)));
+    }
+  }, [visible, localShells]);
+  const enabledShells = useMemo(
+    () => localShells.filter((s) => !disabledShells.has(s.id)),
+    [localShells, disabledShells],
+  );
   // The local-shell launcher menu (a self-contained dropdown — robust in the
   // webview, unlike a Select used as an action menu).
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
@@ -580,8 +595,13 @@ export function TerminalsPage({
                     ? "Couldn't list local shells. Rebuild the app and try again."
                     : "No local shells found."}
                 </p>
+              ) : enabledShells.length === 0 ? (
+                <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                  All local shells are hidden. Enable them in Settings,
+                  Appearance.
+                </p>
               ) : (
-                localShells.map((sh) => (
+                enabledShells.map((sh) => (
                   <button
                     key={sh.id}
                     type="button"
