@@ -16,6 +16,7 @@ import {
 
 import { AboutDialog } from "@/components/AboutDialog";
 import { StatusBar } from "@/components/StatusBar";
+import logoUrl from "@/assets/broadside-logo.png";
 import { useHint, useStatus } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
@@ -313,6 +314,26 @@ export function AppShell({
             ))}
           </nav>
           <div className="shrink-0 space-y-1 p-2">
+            {!collapsed && width >= SIDEBAR_MAX_WIDTH && (
+              <div
+                aria-hidden
+                className="pointer-events-none mb-2 h-24 overflow-hidden rounded-md opacity-[0.85]"
+                style={{
+                  maskImage:
+                    "linear-gradient(to bottom, transparent, #000 50%, #000 88%, transparent)",
+                  WebkitMaskImage:
+                    "linear-gradient(to bottom, transparent, #000 50%, #000 88%, transparent)",
+                }}
+              >
+                <img
+                  src={logoUrl}
+                  alt=""
+                  draggable={false}
+                  className="h-full w-full select-none object-cover grayscale opacity-30"
+                  style={{ objectPosition: "center 42%" }}
+                />
+              </div>
+            )}
             <button
               type="button"
               onClick={() => onNavigate("help")}
