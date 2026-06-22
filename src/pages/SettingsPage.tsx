@@ -472,6 +472,7 @@ export function SettingsPage({
   // Shortcut commands (D-054)
   const [shortcutFormOpen, setShortcutFormOpen] = useState(false);
   const [shortcutCmd, setShortcutCmd] = useState("");
+  const [shortcutLabel, setShortcutLabel] = useState("");
   const [shortcutScope, setShortcutScope] = useState<ShortcutScope>("ssh");
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
   const [shortcutSubmitAttempted, setShortcutSubmitAttempted] = useState(false);
@@ -707,10 +708,11 @@ export function SettingsPage({
       return;
     }
     const cmd = shortcutCmd.trim();
+    const label = shortcutLabel.trim() || null; // empty label = show the command
     const next = editingShortcutId
       ? settings.user_shortcuts.map((s) =>
           s.id === editingShortcutId
-            ? { ...s, command: cmd, scope: shortcutScope }
+            ? { ...s, command: cmd, scope: shortcutScope, label }
             : s,
         )
       : [
@@ -719,10 +721,12 @@ export function SettingsPage({
             id: `shortcut-${crypto.randomUUID().slice(0, 8)}`,
             command: cmd,
             scope: shortcutScope,
+            label,
           },
         ];
     if (await persistShortcuts(next)) {
       setShortcutCmd("");
+      setShortcutLabel("");
       setShortcutScope("ssh");
       setEditingShortcutId(null);
       setShortcutSubmitAttempted(false);
@@ -733,6 +737,7 @@ export function SettingsPage({
   const editShortcut = (s: ShortcutCommand) => {
     setEditingShortcutId(s.id);
     setShortcutCmd(s.command);
+    setShortcutLabel(s.label ?? "");
     setShortcutScope(s.scope);
     setShortcutSubmitAttempted(false);
     setShortcutFormOpen(true);
@@ -1214,9 +1219,18 @@ export function SettingsPage({
                 <span title={SCOPE_LABELS[s.scope]}>
                   <ScopeIcon scope={s.scope} />
                 </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-xs">
-                  {s.command}
-                </span>
+                {s.label?.trim() ? (
+                  <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                    <span className="truncate">{s.label}</span>
+                    <span className="truncate font-mono text-xs text-muted-foreground">
+                      {s.command}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                    {s.command}
+                  </span>
+                )}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -1242,6 +1256,24 @@ export function SettingsPage({
 
         {shortcutFormOpen ? (
           <div className="max-w-md space-y-3 rounded-md border border-border/40 p-4">
+            <div className="grid gap-1">
+              <Label htmlFor="shortcut-label">
+                Label{" "}
+                <span className="text-xs text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="shortcut-label"
+                value={shortcutLabel}
+                onChange={(e) => setShortcutLabel(e.target.value)}
+                placeholder={shortcutScope === "local" ? "List files" : "Disk free"}
+                className="text-sm"
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                A friendly name shown in the dropdown instead of the raw command.
+                Leave blank to show the command itself.
+              </p>
+            </div>
             <div className="grid gap-1">
               <Label htmlFor="shortcut-cmd">Command</Label>
               <Input
@@ -1304,6 +1336,7 @@ export function SettingsPage({
                   setShortcutFormOpen(false);
                   setEditingShortcutId(null);
                   setShortcutCmd("");
+                  setShortcutLabel("");
                   setShortcutScope("ssh");
                   setShortcutSubmitAttempted(false);
                 }}

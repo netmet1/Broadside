@@ -416,6 +416,10 @@ export function BroadcastPage({
       sortForRail(hosts, (h) => h, railSort, (h) => connectedHostIds.has(h.id)),
     [hosts, railSort, connectedHostIds],
   );
+  // When the rail is ordered by tag, surface each host's tag in the row so the
+  // grouping the user is sorting by is actually visible (otherwise only the
+  // label shows and the tag sort looks arbitrary).
+  const showRailTag = railSort === "tag" || railSort === "tag-za";
 
   const allSelected = hosts.length > 0 && selected.size === hosts.length;
   const toggleAll = () => {
@@ -747,6 +751,14 @@ export function BroadcastPage({
                 <span className="min-w-0 truncate" title={h.label}>
                   {h.label}
                 </span>
+                {showRailTag && (
+                  <span
+                    className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                    title={h.tag ? `Tag: ${h.tag}` : "No tag"}
+                  >
+                    {h.tag ?? "—"}
+                  </span>
+                )}
                 {/* Live terminal-connection dot (user request): green when this
                     host has a connected terminal, red otherwise. */}
                 <span

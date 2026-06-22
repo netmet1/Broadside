@@ -97,15 +97,25 @@ export function ShortcutBar({
         <SelectContent>
           {items.map((s) => {
             const Icon = iconFor(s.scope);
+            const label = s.label?.trim();
             return (
               <SelectItem
                 key={valueOf(s)}
                 value={valueOf(s)}
-                className="font-mono text-xs"
+                className="text-xs"
               >
                 <span className="flex items-center gap-2">
                   <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{s.command}</span>
+                  {label ? (
+                    <>
+                      <span className="truncate">{label}</span>
+                      <span className="truncate font-mono text-muted-foreground">
+                        {s.command}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="truncate font-mono">{s.command}</span>
+                  )}
                 </span>
               </SelectItem>
             );

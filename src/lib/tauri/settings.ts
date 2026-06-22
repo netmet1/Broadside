@@ -43,6 +43,9 @@ export type ShortcutCommand = {
   id: string;
   command: string;
   scope: ShortcutScope;
+  /** Optional friendly name shown in the dropdown/list instead of the raw
+   * command. null/empty = fall back to showing the command itself. */
+  label?: string | null;
 };
 
 /** A built-in shortcut command with its scope. */

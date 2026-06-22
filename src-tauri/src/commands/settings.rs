@@ -74,6 +74,11 @@ pub struct ShortcutCommand {
     pub command: String,
     #[serde(default)]
     pub scope: ShortcutScope,
+    /// Optional friendly name for the dropdown/list. `serde(default)` keeps
+    /// shortcuts saved before labels existed (missing field) deserializing as
+    /// `None` — they just show their command.
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 /// All built-in shortcuts (SSH set, then the cross-shell set, then the local
@@ -426,11 +431,30 @@ mod tests {
             id: "x".into(),
             command: "dir".into(),
             scope: ShortcutScope::Local,
+            label: None,
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"scope\":\"local\""), "got {json}");
         let back: ShortcutCommand = serde_json::from_str(&json).unwrap();
         assert_eq!(back.scope, ShortcutScope::Local);
+    }
+
+    #[test]
+    fn label_defaults_to_none_for_old_json_and_round_trips() {
+        // Shortcuts saved before labels existed have no `label` field.
+        let old = r#"{"id":"x","command":"df -h","scope":"ssh"}"#;
+        let parsed: ShortcutCommand = serde_json::from_str(old).unwrap();
+        assert_eq!(parsed.label, None);
+
+        let with_label = ShortcutCommand {
+            id: "y".into(),
+            command: "df -h".into(),
+            scope: ShortcutScope::Ssh,
+            label: Some("Disk free".into()),
+        };
+        let json = serde_json::to_string(&with_label).unwrap();
+        let back: ShortcutCommand = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.label.as_deref(), Some("Disk free"));
     }
 
     #[test]
@@ -452,6 +476,7 @@ mod tests {
             id: "x".into(),
             command: "whoami".into(),
             scope: ShortcutScope::Both,
+            label: None,
         })
         .unwrap();
         assert!(json.contains("\"scope\":\"both\""), "got {json}");

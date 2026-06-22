@@ -24,6 +24,19 @@ type Props = {
   buildLines: () => OtlogLine[];
 };
 
+/** Default session filename: `session-YYYY-MM-DD-HH-MM-SS.otlog` in *local*
+ * time. Uses the wall clock (not `toISOString()`, which is UTC) so the stamp
+ * matches when the user actually saved — consistent with the hosts/logs
+ * exports' local-time stamps. */
+function defaultSessionName(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `session-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `-${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}.otlog`
+  );
+}
+
 /** Save-to-.otlog flow (D-010): optional passphrase → native save dialog. */
 export function SaveSessionDialog({ open, onOpenChange, buildLines }: Props) {
   const [passphrase, setPassphrase] = useState("");
@@ -42,7 +55,7 @@ export function SaveSessionDialog({ open, onOpenChange, buildLines }: Props) {
     try {
       const path = await saveDialog({
         title: "Save session",
-        defaultPath: `session-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}.otlog`,
+        defaultPath: defaultSessionName(),
         filters: [{ name: "Broadside session", extensions: ["otlog"] }],
       });
       if (typeof path !== "string") return; // user cancelled
