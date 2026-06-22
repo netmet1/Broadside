@@ -318,6 +318,22 @@ export function HostsPage({
       }
     };
     return [...hosts].sort((a, b) => {
+      // Tag sort: untagged hosts always rank after tagged ones, then `factor`
+      // flips that — so they sink to the bottom for A-Z and rise to the top
+      // for Z-A (user request) rather than clumping with the empty string.
+      if (sort.key === "tag") {
+        const ta = (a.tag ?? "").trim();
+        const tb = (b.tag ?? "").trim();
+        const ea = ta === "";
+        const eb = tb === "";
+        if (ea || eb) {
+          if (ea && eb) return a.label.localeCompare(b.label);
+          return (ea ? 1 : -1) * factor;
+        }
+        const cmp = ta.localeCompare(tb, undefined, { sensitivity: "base" });
+        if (cmp !== 0) return cmp * factor;
+        return a.label.localeCompare(b.label); // stable tiebreak, un-flipped
+      }
       const va = valueOf(a);
       const vb = valueOf(b);
       if (va < vb) return -1 * factor;
