@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell, type Page } from "@/components/AppShell";
@@ -13,8 +13,15 @@ import type { LocalShell } from "@/lib/tauri/local";
 import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
 import { MultiTerminalPage } from "@/pages/MultiTerminalPage";
 import { LogsPage } from "@/pages/LogsPage";
-import { SettingsPage } from "@/pages/SettingsPage";
-import { HelpPage } from "@/pages/HelpPage";
+// Settings (~2k lines) and Help (static docs) mount only when their tab is
+// active, so they are code-split into their own chunks to shrink the initial
+// bundle the app parses on launch (perf: slow cold start in the packaged exe).
+const SettingsPage = lazy(() =>
+  import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
+const HelpPage = lazy(() =>
+  import("@/pages/HelpPage").then((m) => ({ default: m.HelpPage })),
+);
 import { UnlockDialog } from "@/components/UnlockDialog";
 import { Toaster } from "@/components/ui/sonner";
 import { StatusProvider } from "@/components/StatusProvider";
@@ -330,12 +337,18 @@ function App() {
         <LogsPage visible={page === "logs"} />
       </div>
       {page === "settings" && (
-        <SettingsPage
-          focusSection={settingsFocus}
-          onFocusConsumed={() => setSettingsFocus(null)}
-        />
+        <Suspense fallback={null}>
+          <SettingsPage
+            focusSection={settingsFocus}
+            onFocusConsumed={() => setSettingsFocus(null)}
+          />
+        </Suspense>
       )}
-      {page === "help" && <HelpPage />}
+      {page === "help" && (
+        <Suspense fallback={null}>
+          <HelpPage />
+        </Suspense>
+      )}
         <UnlockDialog
           open={unlockOpen}
           onOpenChange={setUnlockOpen}
