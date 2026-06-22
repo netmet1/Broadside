@@ -61,6 +61,7 @@ import {
   type UserRule,
   adminLockStatus,
   backupAppData,
+  destroyAllHosts,
   getAppSettings,
   networkProbe,
   recalibrateProbe,
@@ -138,6 +139,7 @@ const SECTION_TITLES = [
   "Audit log",
   "Security",
   "Reset",
+  "Danger Zone",
 ];
 
 // The search filter and scroll position persist across tab switches (Settings
@@ -299,6 +301,30 @@ export function SettingsPage({
       // Non-fatal; the DB-side reset already applied.
     }
     window.location.reload();
+  };
+
+  // Danger Zone: wipe every host + its stored credentials. Guarded by the admin
+  // lock (button disabled), a "back up first" offer, and a typed-DESTROY gate.
+  const [destroyOpen, setDestroyOpen] = useState(false);
+  const [destroying, setDestroying] = useState(false);
+  const [destroyTyped, setDestroyTyped] = useState("");
+  const destroyArmed = destroyTyped === "DESTROY";
+  useEffect(() => {
+    if (!destroyOpen) setDestroyTyped("");
+  }, [destroyOpen]);
+  const destroyHosts = async () => {
+    setDestroying(true);
+    try {
+      const n = await destroyAllHosts();
+      toast.success(
+        `Deleted ${n} ${n === 1 ? "host" : "hosts"} and their credentials`,
+      );
+      setDestroyOpen(false);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setDestroying(false);
+    }
   };
 
   // Section search — filters which settings sections are shown. Restored from
@@ -1731,6 +1757,110 @@ export function SettingsPage({
         </div>
       </section>
       )}
+
+      {/* Danger Zone — wipe every host + its stored credentials. */}
+      {sectionVisible("Danger Zone") && (
+      <section id={sectionDomId("Danger Zone")} className="space-y-3">
+        <SectionHeading
+          title="Danger Zone"
+          hint="Permanently delete all hosts and their saved credentials."
+        />
+        <Button
+          variant="destructive"
+          size="sm"
+          disabled={adminLocked}
+          onClick={() => setDestroyOpen(true)}
+          {...hint(
+            adminLocked
+              ? "Locked by the admin passcode; unlock in the Security section first"
+              : "Delete every host and remove its saved passwords from Windows Credential Manager",
+          )}
+        >
+          Delete all hosts &amp; credentials
+        </Button>
+        {adminLocked && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Locked. Unlock in Settings → Security to enable it.
+          </p>
+        )}
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          This <strong>permanently deletes every host</strong> and removes each
+          host's saved SSH password, key passphrase and sudo password from
+          Windows Credential Manager. It only touches Broadside's own
+          credentials. Your <strong>preferences, guard rules, shortcuts, command
+          history and the admin lock are kept</strong>. This can't be undone —
+          back up first.
+        </div>
+      </section>
+      )}
+
+      <AlertDialog open={destroyOpen} onOpenChange={setDestroyOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">
+              Delete all hosts &amp; credentials?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Every host is permanently removed, along with its saved SSH
+              password, key passphrase and sudo password in Windows Credential
+              Manager. Preferences, guard rules, shortcuts, command history and
+              the admin lock are <strong>not</strong> affected. This can't be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={runBackup}
+              disabled={backingUp || destroying}
+              {...hint("Snapshot the database (and optionally a hosts CSV) before wiping")}
+            >
+              {backingUp ? (
+                <>
+                  <Loader2Icon className="h-4 w-4 animate-spin" />
+                  Backing up…
+                </>
+              ) : (
+                <>
+                  <ArchiveIcon className="h-4 w-4" />
+                  Back up first
+                </>
+              )}
+            </Button>
+            <div className="space-y-2">
+              <Label htmlFor="destroy-input" className="text-xs font-normal">
+                Type <span className="font-mono font-semibold">DESTROY</span> to
+                enable deletion (case-sensitive)
+              </Label>
+              <Input
+                id="destroy-input"
+                value={destroyTyped}
+                onChange={(e) => setDestroyTyped(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                className="font-mono"
+                disabled={destroying}
+              />
+            </div>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={destroying}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={!destroyArmed || destroying}
+              onClick={(e) => {
+                e.preventDefault(); // keep the dialog up while the wipe runs
+                destroyHosts();
+              }}
+            >
+              {destroying ? "Deleting…" : "Delete everything"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
         <AlertDialogContent>

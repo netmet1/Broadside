@@ -141,6 +141,15 @@ export function resetAppSettings(): Promise<void> {
   return invoke<void>("reset_app_settings");
 }
 
+/** Danger Zone wipe: deletes every host and removes each host's stored
+ * credentials (password / passphrase / sudo) from Windows Credential Manager.
+ * Admin-lock gated. Leaves preferences, guard rules, shortcuts, command history,
+ * trusted host keys and the admin lock intact. Returns the number of hosts
+ * deleted. The caller should refresh the hosts list afterwards. */
+export function destroyAllHosts(): Promise<number> {
+  return invoke<number>("destroy_all_hosts");
+}
+
 export type UiSettingsInput = {
   terminal_font_family: string;
   terminal_font_size: number;

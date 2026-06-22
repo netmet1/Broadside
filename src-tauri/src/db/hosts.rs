@@ -212,6 +212,15 @@ pub fn delete(conn: &Connection, id: i64) -> AppResult<()> {
     Ok(())
 }
 
+/// Deletes every host row and returns the number removed. Backs the Settings
+/// "Danger Zone" destroy action; stored credentials are cleared separately
+/// (and first) by the command layer because keyring keys are derived from the
+/// host id. Unlike `delete`, an empty table is not an error — wiping zero hosts
+/// is a valid outcome.
+pub fn delete_all(conn: &Connection) -> AppResult<usize> {
+    Ok(conn.execute("DELETE FROM hosts", [])?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,6 +321,25 @@ mod tests {
         let conn = open_in_memory().unwrap();
         let err = delete(&conn, 9999).unwrap_err();
         assert!(matches!(err, AppError::HostNotFound(9999)));
+    }
+
+    #[test]
+    fn delete_all_removes_every_row_and_counts() {
+        let conn = open_in_memory().unwrap();
+        for label in ["web-01", "web-02", "web-03"] {
+            let mut input = sample();
+            input.label = label.into();
+            create(&conn, input).unwrap();
+        }
+        let removed = delete_all(&conn).unwrap();
+        assert_eq!(removed, 3);
+        assert!(list_all(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_all_on_empty_table_is_ok() {
+        let conn = open_in_memory().unwrap();
+        assert_eq!(delete_all(&conn).unwrap(), 0);
     }
 
     #[test]

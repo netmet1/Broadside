@@ -159,6 +159,7 @@ pub fn run() {
             commands::settings::get_app_settings,
             commands::settings::set_app_settings,
             commands::settings::reset_app_settings,
+            commands::settings::destroy_all_hosts,
             commands::settings::set_help_hints_enabled,
             commands::settings::set_sudo_autofill_enabled,
             commands::security::admin_lock_status,

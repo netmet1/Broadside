@@ -281,6 +281,40 @@ pub fn reset_app_settings(
     })
 }
 
+/// Destroys ALL hosts and their stored credentials — the Settings "Danger Zone"
+/// wipe. Admin-lock gated like the other destructive settings actions. Removes
+/// each host's credential entries (password / passphrase / sudo) *before*
+/// deleting the rows, because the keyring keys are derived from the host id;
+/// dropping the rows first would orphan the secrets in Windows Credential
+/// Manager. Credential clearing is best-effort per host (a missing secret, or a
+/// locked file backend, must never block the wipe). Scope is hosts + their
+/// credentials only: preferences, guard rules, shortcuts, command history,
+/// trusted host keys and the admin lock are all left intact. Returns the number
+/// of hosts deleted.
+#[tauri::command]
+pub fn destroy_all_hosts(
+    cred_state: State<'_, crate::credentials::CredentialState>,
+    state: State<'_, DbState>,
+    lock_state: State<'_, crate::admin_lock::AdminLockState>,
+) -> AppResult<usize> {
+    // Collect ids under the db lock (also enforces the admin gate), then release
+    // it before touching the keyring — a separate mutex — to keep lock scopes
+    // small.
+    let ids: Vec<i64> = with_db(&state, |conn| {
+        crate::admin_lock::ensure_unlocked(conn, &lock_state)?;
+        Ok(host_repo::list_all(conn)?.into_iter().map(|h| h.id).collect())
+    })?;
+
+    // Clear secrets first so none are orphaned once the rows are gone. Keyring
+    // deletes already swallow "no entry"; we additionally ignore any per-host
+    // error so a single bad entry can't abort the wipe mid-way.
+    for id in &ids {
+        let _ = cred_state.clear_host(*id);
+    }
+
+    with_db(&state, host_repo::delete_all)
+}
+
 /// Toggle for the bottom-bar help hints; saved immediately on change (same
 /// pattern as the audit toggle).
 #[tauri::command]
