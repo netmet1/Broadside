@@ -366,6 +366,42 @@ export function TerminalsPage({
     setCloseAllOpen(false);
   };
 
+  // Alt+Left/Right cycle through the open tabs (wrapping around the ends),
+  // following the displayed tab order.
+  const navTab = useCallback(
+    (dir: "prev" | "next") => {
+      if (sessions.length < 2 || activeId === null) return;
+      const idx = sessions.findIndex((s) => s.id === activeId);
+      if (idx < 0) return;
+      const n = sessions.length;
+      const nextIdx = dir === "next" ? (idx + 1) % n : (idx - 1 + n) % n;
+      onActivate(sessions[nextIdx]!.id);
+    },
+    [sessions, activeId, onActivate],
+  );
+
+  // Alt+Left/Right while the Terminals page is visible but a terminal pane is
+  // NOT focused (e.g. focus on the tab strip/chrome). Presses with a terminal
+  // focused route through TerminalView's key handler (onTabNav) instead, since
+  // xterm swallows window-level keydowns while it has focus.
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey &&
+        (e.key === "ArrowLeft" || e.key === "ArrowRight")
+      ) {
+        e.preventDefault();
+        navTab(e.key === "ArrowRight" ? "next" : "prev");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visible, navTab]);
+
   // Show the gate dialog for the active session only — switching tabs while
   // a gate is pending leaves that session in its waiting state.
   const activeGateSession =
@@ -669,6 +705,7 @@ export function TerminalsPage({
               onGate={handleGate}
               onClosed={closeSession}
               onSearchRequest={() => setSearchOpen(true)}
+              onTabNav={navTab}
               onSearchResults={(index, count) =>
                 setSearchResults({ index, count })
               }

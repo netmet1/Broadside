@@ -8,6 +8,7 @@ import {
   PlusIcon,
   RadarIcon,
   RefreshCwIcon,
+  RotateCcwIcon,
   SearchIcon,
   SquareAsteriskIcon,
   SquareTerminalIcon,
@@ -61,6 +62,7 @@ import {
   type UserRule,
   adminLockStatus,
   backupAppData,
+  restoreAppData,
   destroyAllHosts,
   getAppSettings,
   networkProbe,
@@ -134,7 +136,7 @@ const SECTION_TITLES = [
   "Destructive command guard",
   "Shortcut commands",
   "Appearance",
-  "Backup",
+  "Backup & Restore",
   "Help",
   "Audit log",
   "Security",
@@ -488,6 +490,12 @@ export function SettingsPage({
   const [backupIncludeCsv, setBackupIncludeCsv] = useState(true);
   const [backingUp, setBackingUp] = useState(false);
 
+  // Restore: picking a backup file opens a confirmation (it overwrites all
+  // current data); confirming runs the restore and reloads the app.
+  const [restorePath, setRestorePath] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const restoreFileName = restorePath?.split(/[\\/]/).pop() ?? null;
+
   const load = useCallback(async () => {
     try {
       const s = await getAppSettings();
@@ -767,6 +775,43 @@ export function SettingsPage({
       toast.error(errorMessage(e));
     } finally {
       setBackingUp(false);
+    }
+  };
+
+  // Restore step 1: pick a backup .db file, then open the confirm dialog.
+  const pickRestoreFile = async () => {
+    try {
+      const path = await openDialog({
+        directory: false,
+        multiple: false,
+        title: "Choose a Broadside backup (.db)",
+        filters: [{ name: "Broadside backup", extensions: ["db"] }],
+      });
+      if (typeof path !== "string") return;
+      setRestorePath(path);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+
+  // Restore step 2: overwrite the live database with the chosen snapshot, then
+  // reload so every page re-reads the restored data from the (persistent) Rust
+  // connection. Credentials aren't in a backup, so restored hosts re-prompt.
+  const runRestore = async () => {
+    if (!restorePath) return;
+    setRestoring(true);
+    try {
+      const report = await restoreAppData(restorePath);
+      toast.success(
+        `Restored ${report.host_count} ${
+          report.host_count === 1 ? "host" : "hosts"
+        } — reloading…`,
+      );
+      setRestorePath(null);
+      setTimeout(() => window.location.reload(), 700);
+    } catch (e) {
+      toast.error(errorMessage(e));
+      setRestoring(false);
     }
   };
 
@@ -1516,12 +1561,12 @@ export function SettingsPage({
       </section>
       )}
 
-      {/* Backup */}
-      {sectionVisible("Backup") && (
-      <section id={sectionDomId("Backup")} className="space-y-3">
+      {/* Backup & Restore */}
+      {sectionVisible("Backup & Restore") && (
+      <section id={sectionDomId("Backup & Restore")} className="space-y-3">
         <SectionHeading
-          title="Backup"
-          hint="Saves a copy of your hosts, settings, trusted host keys and command history to a folder you pick. Saved passwords are never included; they stay in Windows Credential Manager."
+          title="Backup & Restore"
+          hint="Back up a copy of your hosts, settings, trusted host keys and command history to a folder you pick, or restore an earlier backup. Saved passwords are never included; they stay in Windows Credential Manager."
         />
         <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
           <input
@@ -1532,18 +1577,79 @@ export function SettingsPage({
           />
           Also export hosts to CSV (re-importable without this backup file)
         </label>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={runBackup}
-          disabled={backingUp}
-          {...hint("Save a timestamped snapshot of settings and hosts to a folder")}
-        >
-          {backingUp ? <Loader2Icon className="animate-spin" /> : <ArchiveIcon />}
-          Back up now…
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={runBackup}
+            disabled={backingUp || restoring}
+            {...hint("Save a timestamped snapshot of settings and hosts to a folder")}
+          >
+            {backingUp ? <Loader2Icon className="animate-spin" /> : <ArchiveIcon />}
+            Back up now…
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={pickRestoreFile}
+            disabled={backingUp || restoring}
+            {...hint("Replace all current data with a backup .db file you choose")}
+          >
+            {restoring ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <RotateCcwIcon />
+            )}
+            Restore from backup…
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Restoring replaces all current hosts, settings, trusted host keys and
+          command history with the chosen backup. Saved passwords aren't in a
+          backup, so a restored host may need its password re-entered.
+        </p>
       </section>
       )}
+
+      <AlertDialog
+        open={restorePath !== null}
+        onOpenChange={(open) => {
+          if (!open && !restoring) setRestorePath(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore from this backup?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This replaces <strong>all current data</strong> — hosts, settings,
+              trusted host keys and command history — with the contents of{" "}
+              <span className="font-mono">{restoreFileName}</span>. Your current
+              data will be lost. Saved passwords aren't included in a backup, so
+              restored hosts may need their password re-entered. Broadside will
+              reload when the restore finishes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={restoring}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void runRestore();
+              }}
+              disabled={restoring}
+            >
+              {restoring ? (
+                <>
+                  <Loader2Icon className="h-4 w-4 animate-spin" />
+                  Restoring…
+                </>
+              ) : (
+                "Replace my data"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Help */}
       {sectionVisible("Help") && (
@@ -1821,7 +1927,7 @@ export function SettingsPage({
           host's saved SSH password, key passphrase and sudo password from
           Windows Credential Manager. It only touches Broadside's own
           credentials. Your <strong>preferences, guard rules, shortcuts, command
-          history and the admin lock are kept</strong>. This can't be undone —
+          history and the admin lock are kept</strong>. This can't be undone, so
           back up first.
         </div>
       </section>
@@ -1843,25 +1949,39 @@ export function SettingsPage({
           </AlertDialogHeader>
 
           <div className="space-y-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={runBackup}
-              disabled={backingUp || destroying}
-              {...hint("Snapshot the database (and optionally a hosts CSV) before wiping")}
-            >
-              {backingUp ? (
-                <>
-                  <Loader2Icon className="h-4 w-4 animate-spin" />
-                  Backing up…
-                </>
-              ) : (
-                <>
-                  <ArchiveIcon className="h-4 w-4" />
-                  Back up first
-                </>
-              )}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={runBackup}
+                disabled={backingUp || destroying}
+                {...hint("Snapshot the database (and optionally a hosts CSV) before wiping")}
+              >
+                {backingUp ? (
+                  <>
+                    <Loader2Icon className="h-4 w-4 animate-spin" />
+                    Backing up…
+                  </>
+                ) : (
+                  <>
+                    <ArchiveIcon className="h-4 w-4" />
+                    Back up first
+                  </>
+                )}
+              </Button>
+              {/* Same state as the Backup & Restore section's checkbox, so the
+                  two stay in sync (B3.1): toggling here toggles there too. */}
+              <label className="flex cursor-pointer items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  className="accent-primary"
+                  checked={backupIncludeCsv}
+                  onChange={(e) => setBackupIncludeCsv(e.target.checked)}
+                  disabled={destroying}
+                />
+                Also include hosts CSV
+              </label>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="destroy-input" className="text-xs font-normal">
                 Type <span className="font-mono font-semibold">DESTROY</span> to

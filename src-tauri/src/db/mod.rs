@@ -139,7 +139,7 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE hosts ADD COLUMN tag TEXT;",
 ];
 
-fn bootstrap(conn: &Connection) -> AppResult<()> {
+pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
     let version: i64 =
         conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     for (idx, sql) in MIGRATIONS.iter().enumerate() {

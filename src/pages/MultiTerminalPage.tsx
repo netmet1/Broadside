@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CopyIcon,
   Loader2Icon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   SendIcon,
+  TerminalIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
@@ -24,7 +38,7 @@ import {
   ptyWrite,
   type BlockInteractivity,
 } from "@/lib/tauri/pty";
-import { commandHistory } from "@/lib/tauri/settings";
+import { clearCommandHistory, commandHistory } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import type { SshTermSession } from "@/pages/TerminalsPage";
@@ -66,11 +80,15 @@ export function MultiTerminalPage({
   sessions,
   connectedSessions,
   onManageShortcuts,
+  onCloseAllTerminals,
+  onJumpToHostTerminal,
 }: {
   visible: boolean;
   sessions: SshTermSession[];
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
+  onCloseAllTerminals: () => void;
+  onJumpToHostTerminal: (hostId: number) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [command, setCommand] = useState("");
@@ -100,6 +118,13 @@ export function MultiTerminalPage({
     for (const s of sessions) m.set(s.id, s);
     return m;
   }, [sessions]);
+
+  // Host ids with an open terminal session — drives whether a block shows the
+  // "jump to this host's terminal" icon (hidden for deleted/closed hosts).
+  const openHostIds = useMemo(
+    () => new Set(sessions.map((s) => s.host.id)),
+    [sessions],
+  );
 
   // Gating: the tab is always present but inert until 2+ terminals are open.
   const ready = sessions.length >= 2;
@@ -358,6 +383,25 @@ export function MultiTerminalPage({
     setBlocks([]);
   }, []);
 
+  // Clear the shared Up/Down command-recall history (same store as Broadcast /
+  // PTY Broadcast). Separate from "Clear results", which clears the block log.
+  const clearCmdHistory = useCallback(async () => {
+    try {
+      await clearCommandHistory();
+      setHistory([]);
+      toast.success("Command history cleared");
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  }, []);
+
+  // "Close all terminals" rail action — OK/Cancel guard (no typed confirmation).
+  const [closeAllOpen, setCloseAllOpen] = useState(false);
+  const confirmCloseAll = useCallback(() => {
+    onCloseAllTerminals();
+    setCloseAllOpen(false);
+  }, [onCloseAllTerminals]);
+
   // Purge a single block (e.g. a stray setup-line capture) without clearing the
   // whole log. Drops the in-memory entry and the persisted row if it has one.
   const deleteBlock = useCallback(async (block: DisplayBlock) => {
@@ -494,6 +538,42 @@ export function MultiTerminalPage({
               </p>
             )}
           </div>
+          {/* Bottom-pinned actions — stay visible while the host list above
+              scrolls. Hidden when the rail is collapsed (O1). */}
+          {!railCollapsed && (
+            <div className="shrink-0 space-y-1 border-t border-border/50 p-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={clearBlocks}
+                disabled={!hasOutput}
+                {...hint("Clear the MultiTerminal output log (also clears the saved history)")}
+              >
+                Clear results
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={clearCmdHistory}
+                {...hint("Clear the Up/Down command recall history")}
+              >
+                Clear command history
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setCloseAllOpen(true)}
+                disabled={sessions.length === 0}
+                {...hint("Close every open terminal session at once (asks first)")}
+              >
+                <XIcon className="h-3.5 w-3.5" />
+                Close all terminals
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Output + composer. */}
@@ -534,15 +614,6 @@ export function MultiTerminalPage({
                 onRun={runShortcut}
                 onManage={onManageShortcuts}
               />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={clearBlocks}
-                disabled={!hasOutput}
-                {...hint("Clear the MultiTerminal output log (also clears the saved history)")}
-              >
-                Clear
-              </Button>
             </div>
           </div>
 
@@ -574,6 +645,11 @@ export function MultiTerminalPage({
                       interactivity={b.interactivity}
                       showHeader={headers}
                       onDelete={() => deleteBlock(b)}
+                      onJumpToTerminal={
+                        b.hostId != null && openHostIds.has(b.hostId)
+                          ? () => onJumpToHostTerminal(b.hostId!)
+                          : undefined
+                      }
                     />
                   );
                 })}
@@ -627,6 +703,28 @@ export function MultiTerminalPage({
           setCommand("");
         }}
       />
+
+      <AlertDialog open={closeAllOpen} onOpenChange={setCloseAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close all terminals?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This closes{" "}
+              <span className="font-semibold text-foreground">
+                all {sessions.length}
+              </span>{" "}
+              open terminal {sessions.length === 1 ? "session" : "sessions"} and
+              disconnects them. Any unsaved work in those shells is lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={confirmCloseAll}>
+              Close all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -648,6 +746,7 @@ function OmniBlock({
   interactivity,
   showHeader,
   onDelete,
+  onJumpToTerminal,
 }: {
   color: string;
   label: string;
@@ -659,8 +758,23 @@ function OmniBlock({
   interactivity: BlockInteractivity;
   showHeader: boolean;
   onDelete: () => void;
+  /** Provided only when the host still has an open terminal session. */
+  onJumpToTerminal?: () => void;
 }) {
   const interactive = interactivity !== "normal";
+  const hasLines = lines.length > 0;
+  // Collapse is driven by clicking the header, so it only applies when the
+  // header is shown (O6: headers off = output-only, nothing to collapse from).
+  const [collapsed, setCollapsed] = useState(false);
+  const showOutput = !showHeader || !collapsed;
+
+  const copyOutput = () => {
+    navigator.clipboard
+      .writeText(lines.join("\n"))
+      .then(() => toast.success("Output copied"))
+      .catch((e) => toast.error(errorMessage(e)));
+  };
+
   return (
     <div
       className="group relative rounded-md border border-border/40 pl-3"
@@ -676,7 +790,16 @@ function OmniBlock({
         <XIcon className="h-3.5 w-3.5" />
       </button>
       {showHeader && (
-      <div className="flex items-center gap-2 py-1.5 pl-2 pr-7 text-xs">
+      <div
+        className="flex cursor-pointer items-center gap-2 py-1.5 pl-2 pr-7 text-xs"
+        onClick={() => setCollapsed((c) => !c)}
+        title={collapsed ? "Expand output" : "Collapse output"}
+      >
+        {collapsed ? (
+          <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        )}
         <span
           className="h-2.5 w-2.5 shrink-0 rounded-full"
           style={{ backgroundColor: color }}
@@ -690,6 +813,34 @@ function OmniBlock({
           </code>
         )}
         <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums text-muted-foreground">
+          {hasLines && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                copyOutput();
+              }}
+              title="Copy this output to the clipboard"
+              aria-label="Copy this output"
+              className="hidden rounded p-0.5 hover:bg-accent hover:text-foreground group-hover:inline-flex"
+            >
+              <CopyIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onJumpToTerminal && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onJumpToTerminal();
+              }}
+              title="Go to this host's terminal tab"
+              aria-label="Go to this host's terminal tab"
+              className="hidden rounded p-0.5 hover:bg-accent hover:text-foreground group-hover:inline-flex"
+            >
+              <TerminalIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
           {!interactive && exitCode !== null && (
             <span className={exitCode === 0 ? "text-emerald-400" : "text-red-400"}>
               exit {exitCode}
@@ -702,24 +853,25 @@ function OmniBlock({
         </span>
       </div>
       )}
-      {interactive ? (
-        <p
-          className="px-2 font-mono text-xs italic text-muted-foreground"
-          style={{ paddingTop: showHeader ? undefined : "0.375rem", paddingBottom: "0.5rem" }}
-        >
-          {command ? `${command}: ` : ""}
-          {NOTICE[interactivity]}
-        </p>
-      ) : (
-        lines.length > 0 && (
-          <pre
-            className="overflow-x-auto whitespace-pre-wrap break-words px-2 pb-2 font-mono text-xs"
-            style={{ color, paddingTop: showHeader ? undefined : "0.375rem" }}
+      {showOutput &&
+        (interactive ? (
+          <p
+            className="px-2 font-mono text-xs italic text-muted-foreground"
+            style={{ paddingTop: showHeader ? undefined : "0.375rem", paddingBottom: "0.5rem" }}
           >
-            {lines.join("\n")}
-          </pre>
-        )
-      )}
+            {command ? `${command}: ` : ""}
+            {NOTICE[interactivity]}
+          </p>
+        ) : (
+          hasLines && (
+            <pre
+              className="overflow-x-auto whitespace-pre-wrap break-words px-2 pb-2 font-mono text-xs"
+              style={{ color, paddingTop: showHeader ? undefined : "0.375rem" }}
+            >
+              {lines.join("\n")}
+            </pre>
+          )
+        ))}
     </div>
   );
 }

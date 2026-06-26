@@ -202,3 +202,15 @@ export function backupAppData(
 ): Promise<BackupReport> {
   return invoke<BackupReport>("backup_app_data", { dir, includeHostsCsv });
 }
+
+export type RestoreReport = {
+  host_count: number;
+};
+
+/** Restores a backup `.db` over the live database (hosts, settings, trusted
+ * host keys, command history). This OVERWRITES all current data. Credentials
+ * are never in a backup, so restored hosts may need their password re-entered.
+ * Reload the app afterwards so every page re-reads the restored database. */
+export function restoreAppData(path: string): Promise<RestoreReport> {
+  return invoke<RestoreReport>("restore_app_data", { path });
+}

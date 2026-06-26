@@ -156,6 +156,7 @@ pub fn run() {
             commands::errlog::export_error_log,
             commands::errlog::read_log_lines,
             commands::backup::backup_app_data,
+            commands::backup::restore_app_data,
             commands::settings::get_app_settings,
             commands::settings::set_app_settings,
             commands::settings::reset_app_settings,

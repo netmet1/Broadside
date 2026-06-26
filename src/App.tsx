@@ -195,6 +195,33 @@ function App() {
     });
   }, []);
 
+  /** Close every open terminal session at once. Clearing the list unmounts the
+   * TerminalViews, whose cleanup calls ptyClose (same teardown as closing each
+   * tab). Used by MultiTerminal's "Close all terminals" rail button. */
+  const closeAllTerminals = useCallback(() => {
+    setSessions((prev) => {
+      if (prev.length === 0) return prev;
+      setActiveSessionId(null);
+      setMaxSessionId(null);
+      return [];
+    });
+  }, []);
+
+  /** Jump from a MultiTerminal block to that host's live terminal: switch to the
+   * Terminals page and select the host's first open session. */
+  const jumpToHostTerminal = useCallback(
+    (hostId: number) => {
+      const sess = sessions.find(
+        (s) => s.type === "ssh" && s.host.id === hostId,
+      );
+      if (!sess) return;
+      setActiveSessionId(sess.id);
+      setMaxSessionId(null);
+      setPage("terminals");
+    },
+    [sessions],
+  );
+
   const openShortcutSettings = useCallback(() => {
     setSettingsFocus("shortcuts");
     setPage("settings");
@@ -330,6 +357,8 @@ function App() {
           sessions={sshSessions}
           connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}
+          onCloseAllTerminals={closeAllTerminals}
+          onJumpToHostTerminal={jumpToHostTerminal}
         />
       </div>
       {/* Logs stay mounted so a loaded session survives navigation. */}

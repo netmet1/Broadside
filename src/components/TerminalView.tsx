@@ -78,6 +78,8 @@ type Props = {
   onClosed: (sessionId: string) => void;
   /** Ctrl+F pressed while the terminal has focus. */
   onSearchRequest: () => void;
+  /** Alt+Left/Right pressed while the terminal has focus — switch tabs. */
+  onTabNav: (dir: "prev" | "next") => void;
   /** Live match feedback from the search addon. */
   onSearchResults: (resultIndex: number, resultCount: number) => void;
   /** Fires whenever this session's live-connection state flips (used for
@@ -97,6 +99,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       onGate,
       onClosed,
       onSearchRequest,
+      onTabNav,
       onSearchResults,
       onConnectionChange,
     }: Props,
@@ -112,6 +115,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const dataReadyRef = useRef<Promise<unknown> | null>(null);
   const onSearchRequestRef = useRef(onSearchRequest);
   onSearchRequestRef.current = onSearchRequest;
+  const onTabNavRef = useRef(onTabNav);
+  onTabNavRef.current = onTabNav;
   const onSearchResultsRef = useRef(onSearchResults);
   onSearchResultsRef.current = onSearchResults;
   const onConnectionChangeRef = useRef(onConnectionChange);
@@ -162,6 +167,21 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         (e.key === "f" || e.key === "F")
       ) {
         onSearchRequestRef.current();
+        return false;
+      }
+      // Alt+Left/Right switch terminal tabs even while the terminal is focused.
+      // Intercept here so the shell never receives the escape sequence (and so
+      // the webview doesn't treat Alt+Left/Right as back/forward navigation).
+      if (
+        e.type === "keydown" &&
+        e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey &&
+        (e.key === "ArrowLeft" || e.key === "ArrowRight")
+      ) {
+        e.preventDefault();
+        onTabNavRef.current(e.key === "ArrowRight" ? "next" : "prev");
         return false;
       }
       return true;

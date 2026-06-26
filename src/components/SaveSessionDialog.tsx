@@ -24,16 +24,16 @@ type Props = {
   buildLines: () => OtlogLine[];
 };
 
-/** Default session filename: `session-YYYY-MM-DD-HH-MM-SS.otlog` in *local*
- * time. Uses the wall clock (not `toISOString()`, which is UTC) so the stamp
- * matches when the user actually saved — consistent with the hosts/logs
- * exports' local-time stamps. */
+/** Default session filename: `YYYY-MM-DD-HH-MM-SS-session.otlog` in *UTC*.
+ * The datetime is prepended (so files sort chronologically by name) and uses
+ * UTC for an unambiguous, machine-comparable stamp. */
 function defaultSessionName(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   return (
-    `session-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
-    `-${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}.otlog`
+    `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}` +
+    `-${p(d.getUTCHours())}-${p(d.getUTCMinutes())}-${p(d.getUTCSeconds())}` +
+    `-session.otlog`
   );
 }
 

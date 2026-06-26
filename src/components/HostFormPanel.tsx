@@ -9,6 +9,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { allTags } from "@/lib/hostTags";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -232,17 +233,10 @@ export function HostFormPanel({
     defaultValues: valuesFromHost(host, defaultColor),
   });
 
-  // Distinct tags already in use, for the form's autocomplete (so you don't
-  // have to remember what you typed before).
+  // Distinct individual tags already in use, for the form's autocomplete (so
+  // you don't have to remember what you typed before).
   const tagSuggestions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          existingHosts
-            .map((h) => h.tag?.trim())
-            .filter((t): t is string => !!t),
-        ),
-      ).sort((a, b) => a.localeCompare(b)),
+    () => allTags(existingHosts.map((h) => h.tag)),
     [existingHosts],
   );
 
@@ -488,7 +482,7 @@ export function HostFormPanel({
           </div>
 
           <div className="grid gap-1">
-            <Label htmlFor="tag">Tag</Label>
+            <Label htmlFor="tag">Tags</Label>
             <Input
               id="tag"
               list="host-tag-suggestions"
@@ -502,7 +496,8 @@ export function HostFormPanel({
               ))}
             </datalist>
             <p className="min-h-4 text-xs text-muted-foreground">
-              Optional. Group hosts for sorting.
+              Optional. Separate multiple tags with commas; used for grouping,
+              sorting and filtering.
             </p>
           </div>
 
