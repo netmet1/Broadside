@@ -3,6 +3,8 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CopyIcon,
+  EraserIcon,
+  HistoryIcon,
   Loader2Icon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -539,7 +541,44 @@ export function MultiTerminalPage({
             )}
           </div>
           {/* Bottom-pinned actions — stay visible while the host list above
-              scrolls. Hidden when the rail is collapsed (O1). */}
+              scrolls. When the rail is collapsed they shrink to icon-only
+              buttons (E1.6); hover each for its label. */}
+          {railCollapsed && (
+            <div className="flex shrink-0 flex-col items-center gap-1 border-t border-border/50 p-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={clearBlocks}
+                disabled={!hasOutput}
+                aria-label="Clear results"
+                {...hint("Clear the MultiTerminal output log (also clears the saved history)")}
+              >
+                <EraserIcon className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={clearCmdHistory}
+                aria-label="Clear command history"
+                {...hint("Clear the Up/Down command recall history")}
+              >
+                <HistoryIcon className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setCloseAllOpen(true)}
+                disabled={sessions.length === 0}
+                aria-label="Close all terminals"
+                {...hint("Close every open terminal session at once (asks first)")}
+              >
+                <XIcon className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
           {!railCollapsed && (
             <div className="shrink-0 space-y-1 border-t border-border/50 p-2">
               <Button

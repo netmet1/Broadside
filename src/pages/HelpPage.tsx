@@ -330,7 +330,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-hosts",
     title: "Hosts",
     keywords:
-      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect",
+      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column",
     body: (
       <>
         <Lead>
@@ -389,7 +389,36 @@ const SECTIONS: HelpSection[] = [
             </li>
             <li>
               You can hide columns you do not use from <Nav>Settings</Nav>, under{" "}
-              <Nav>Appearance</Nav>.
+              <Nav>Appearance</Nav>. When a column is hidden, each row gets a small
+              tag/label icon in its <Nav>Actions</Nav>; click it to see that host's
+              values for the hidden columns.
+            </li>
+          </Bullets>
+          <H3>Tags</H3>
+          <Bullets>
+            <li>
+              Give a host one or more tags to group machines (for example prod,
+              web, eu). Separate multiple tags with commas. Each tag shows as its
+              own small chip in the <Nav>Tag</Nav> column; untagged hosts show a
+              dash.
+            </li>
+            <li>
+              Click the <Nav>Tag</Nav> header to sort by the host's first tag
+              (untagged hosts sink to the bottom, or rise to the top when you
+              reverse the sort).
+            </li>
+            <li>
+              The filter icon in the <Nav>Tag</Nav> header opens a checklist of
+              every tag in use. Uncheck tags to hide the hosts that only carry
+              them; a host stays visible as long as one of its tags is still
+              checked. The icon is highlighted while a filter is active, and the
+              status bar shows how many hosts are being shown. The filter lasts for
+              the session and resets when you restart the app.
+            </li>
+            <li>
+              Drag the separator on the right edge of the <Nav>Tag</Nav> column to
+              resize it, or double-click that edge to fit it to the contents. The
+              width is remembered.
             </li>
           </Bullets>
         </Detail>
@@ -400,7 +429,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation",
     body: (
       <>
         <Lead>
@@ -448,6 +477,12 @@ const SECTIONS: HelpSection[] = [
           <H3>Working with tabs</H3>
           <Bullets>
             <li>Drag tabs to reorder them. Their identity stays stable, so reordering never disconnects a session.</li>
+            <li>
+              Switch tabs from the keyboard with <Nav>Alt+Right</Nav> (next tab)
+              and <Nav>Alt+Left</Nav> (previous), even while a terminal is
+              focused. The selection wraps around the ends, and plain arrow keys
+              still do normal line-editing inside the shell.
+            </li>
             <li>
               Opening a second tab for the same host adds a small number to the
               tab so you can tell duplicates apart.
@@ -571,11 +606,11 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-multiterminal",
     title: "MultiTerminal",
     keywords:
-      "multiterminal aggregate combined output color tint per host block log delete two open compare",
+      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror typed composer",
     body: (
       <>
         <Lead>
-          <Nav>MultiTerminal</Nav> runs a command across all of your open terminals
+          <Nav>MultiTerminal</Nav> runs a command across the terminals you choose
           and shows every host's output together, each tinted with that host's
           color so you can compare results at a glance.
         </Lead>
@@ -583,13 +618,42 @@ const SECTIONS: HelpSection[] = [
           <H3>How it works</H3>
           <Bullets>
             <li>
-              It collects the output from your open sessions into one combined,
-              color-coded view. You need at least two terminals open for the
-              combined view to be meaningful.
+              Pick which open sessions to target in the host rail on the left, type
+              a command in the composer, and send. You need at least two terminals
+              open for the combined view to be meaningful. The rail collapses to
+              color dots; its actions shrink to icons when collapsed.
             </li>
             <li>
               Each command produces a block in the log, labeled with the command
               that ran. You can delete an individual block to keep the view tidy.
+            </li>
+            <li>
+              Turn on <Nav>Mirror typed commands</Nav> to also capture commands you
+              type by hand inside a <Nav>Terminals</Nav> tab; with it off, only
+              commands sent from <Nav>MultiTerminal</Nav> appear here.
+            </li>
+          </Bullets>
+          <H3>Block headers</H3>
+          <Bullets>
+            <li>
+              With <Nav>Headers</Nav> on, each block has a header you can click to
+              collapse or expand its output. Hover the header for a{" "}
+              <Nav>copy</Nav> icon (copies that block's output) and, when the host
+              still has an open terminal, a <Nav>terminal</Nav> icon that jumps to
+              its tab.
+            </li>
+            <li>
+              With <Nav>Headers</Nav> off, blocks show output only, with no header
+              to collapse, copy or jump from.
+            </li>
+          </Bullets>
+          <H3>Rail actions</H3>
+          <Bullets>
+            <li>
+              <Nav>Clear results</Nav> empties the block log (and the saved
+              history). <Nav>Clear command history</Nav> clears the Up/Down recall
+              shared with <Nav>Broadcast</Nav>. <Nav>Close all terminals</Nav>
+              tears down every open terminal after a confirmation.
             </li>
           </Bullets>
         </Detail>
@@ -630,7 +694,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns backup audit security admin lock reset jump search",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials",
     body: (
       <>
         <Lead>
@@ -666,11 +730,13 @@ const SECTIONS: HelpSection[] = [
               appear in the Terminals <Nav>plus button</Nav> menu.
             </li>
             <li>
-              <Nav>Backup</Nav>: save a copy of your app data. Backups contain
-              your host list and settings but never your passwords or key
-              passphrases (those stay in the{" "}
+              <Nav>Backup &amp; Restore</Nav>: save a copy of your app data, or
+              restore from one. Backups contain your host list and settings but
+              never your passwords or key passphrases (those stay in the{" "}
               <SectionLink id="help-sec-security">Security section</SectionLink>{" "}
-              vault), so a backup file cannot leak a secret.
+              vault), so a backup file cannot leak a secret. Tick{" "}
+              <Nav>Also include hosts CSV</Nav> to additionally write a plain
+              spreadsheet of your hosts alongside the backup.
             </li>
             <li>
               <Nav>Audit log</Nav>: turn audit recording on or off.
@@ -682,6 +748,12 @@ const SECTIONS: HelpSection[] = [
             <li>
               <Nav>Reset</Nav>: return every setting to its default, behind a
               confirmation.
+            </li>
+            <li>
+              <Nav>Danger Zone</Nav>: <Nav>Delete all hosts &amp; credentials</Nav>{" "}
+              removes every host and its stored secrets in one step. It cannot be
+              undone, so the dialog offers to back up first (optionally including
+              the hosts CSV) before it wipes anything.
             </li>
           </Bullets>
         </Detail>

@@ -181,6 +181,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         (e.key === "ArrowLeft" || e.key === "ArrowRight")
       ) {
         e.preventDefault();
+        // Stop the event bubbling to the window-level Alt+arrow handler in
+        // TerminalsPage — otherwise both handlers fire for one keypress and the
+        // tab index advances twice (skips every other tab).
+        e.stopPropagation();
         onTabNavRef.current(e.key === "ArrowRight" ? "next" : "prev");
         return false;
       }

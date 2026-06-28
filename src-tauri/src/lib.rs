@@ -19,6 +19,22 @@ pub mod session;
 pub mod ssh;
 
 use tauri::Manager;
+use tauri_plugin_window_state::{StateFlags, WindowExt};
+
+/// Reveal the main window once the webview has painted (the frontend calls this
+/// after first paint). Showing here — rather than in `setup` — means the window
+/// only ever appears with content already drawn.
+///
+/// Maximize is applied *here*, after the window is visible. Maximizing a hidden
+/// window makes tao briefly `ShowWindow(SW_MAXIMIZE)` then `SW_HIDE` it, which
+/// flashes an empty frame on launch (the reason we skip the window-state
+/// plugin's initial restore of the maximized flag). Maximizing a window that is
+/// already visible is just a normal maximize, no flash.
+#[tauri::command]
+fn reveal_main_window(window: tauri::WebviewWindow) {
+    let _ = window.show();
+    let _ = window.restore_state(StateFlags::MAXIMIZED);
+}
 
 /// Keep the (restored) main window visible: if its rectangle does not overlap
 /// any connected monitor, center it on the primary screen. Covers the case
@@ -64,10 +80,13 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(
-                    tauri_plugin_window_state::StateFlags::SIZE
-                        | tauri_plugin_window_state::StateFlags::POSITION
-                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED,
                 )
+                // Save all three flags on exit, but skip the automatic restore at
+                // window creation — it maximizes the still-hidden window, which
+                // flashes an empty frame. We restore geometry (no flash) in
+                // `setup` and maximize after the window is shown instead.
+                .skip_initial_state("main")
                 .build(),
         )
         .setup(|app| {
@@ -99,16 +118,20 @@ pub fn run() {
             // Admin lock unlock state — fresh (locked) on every launch.
             app.manage(admin_lock::AdminLockState::default());
 
-            // The window-state plugin has already restored the saved geometry.
-            // If that geometry is off every connected monitor (e.g. the monitor
-            // it was on was unplugged), recenter on the primary screen.
+            // Restore size + position now (while the window is still hidden, so
+            // there is no flash), but NOT the maximized flag — that is applied
+            // after the window is shown in `reveal_main_window`. If the restored
+            // geometry is off every connected monitor (e.g. the monitor it was
+            // on was unplugged), recenter on the primary screen.
             if let Some(window) = app.get_webview_window("main") {
+                let _ = window.restore_state(StateFlags::SIZE | StateFlags::POSITION);
                 ensure_window_on_screen(&window);
             }
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            reveal_main_window,
             commands::hosts::list_hosts,
             commands::hosts::get_host,
             commands::hosts::create_host,
