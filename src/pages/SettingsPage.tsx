@@ -16,7 +16,6 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -59,8 +58,6 @@ import {
   type ShortcutCommand,
   type ShortcutScope,
   type UserRule,
-  backupAppData,
-  restoreAppData,
   destroyAllHosts,
   getAppSettings,
   networkProbe,
@@ -93,6 +90,7 @@ import {
 } from "@/pages/settings/constants";
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { useAdminLock } from "@/pages/settings/useAdminLock";
+import { useBackupRestore } from "@/pages/settings/useBackupRestore";
 
 export function SettingsPage({
   focusSection = null,
@@ -380,15 +378,19 @@ export function SettingsPage({
   const [appFontSize, setAppFontSize] = useState("16");
   const [savingUi, setSavingUi] = useState(false);
 
-  // Backup
-  const [backupIncludeCsv, setBackupIncludeCsv] = useState(true);
-  const [backingUp, setBackingUp] = useState(false);
-
-  // Restore: picking a backup file opens a confirmation (it overwrites all
-  // current data); confirming runs the restore and reloads the app.
-  const [restorePath, setRestorePath] = useState<string | null>(null);
-  const [restoring, setRestoring] = useState(false);
-  const restoreFileName = restorePath?.split(/[\\/]/).pop() ?? null;
+  // Backup & Restore (shared with the Danger Zone "back up first" offer).
+  const {
+    backupIncludeCsv,
+    setBackupIncludeCsv,
+    backingUp,
+    runBackup,
+    restorePath,
+    setRestorePath,
+    restoring,
+    restoreFileName,
+    pickRestoreFile,
+    runRestore,
+  } = useBackupRestore();
 
   const load = useCallback(async () => {
     try {
@@ -647,65 +649,6 @@ export function SettingsPage({
   const deleteShortcut = (id: string) => {
     if (!settings) return;
     persistShortcuts(settings.user_shortcuts.filter((s) => s.id !== id));
-  };
-
-  const runBackup = async () => {
-    try {
-      const dir = await openDialog({
-        directory: true,
-        multiple: false,
-        title: "Choose a backup folder",
-      });
-      if (typeof dir !== "string") return;
-      setBackingUp(true);
-      const report = await backupAppData(dir, backupIncludeCsv);
-      toast.success(
-        report.csv_path
-          ? `Backed up database (${report.host_count} hosts) + hosts CSV`
-          : `Backed up database (${report.host_count} hosts)`,
-      );
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setBackingUp(false);
-    }
-  };
-
-  // Restore step 1: pick a backup .db file, then open the confirm dialog.
-  const pickRestoreFile = async () => {
-    try {
-      const path = await openDialog({
-        directory: false,
-        multiple: false,
-        title: "Choose a Broadside backup (.db)",
-        filters: [{ name: "Broadside backup", extensions: ["db"] }],
-      });
-      if (typeof path !== "string") return;
-      setRestorePath(path);
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
-  };
-
-  // Restore step 2: overwrite the live database with the chosen snapshot, then
-  // reload so every page re-reads the restored data from the (persistent) Rust
-  // connection. Credentials aren't in a backup, so restored hosts re-prompt.
-  const runRestore = async () => {
-    if (!restorePath) return;
-    setRestoring(true);
-    try {
-      const report = await restoreAppData(restorePath);
-      toast.success(
-        `Restored ${report.host_count} ${
-          report.host_count === 1 ? "host" : "hosts"
-        } — reloading…`,
-      );
-      setRestorePath(null);
-      setTimeout(() => window.location.reload(), 700);
-    } catch (e) {
-      toast.error(errorMessage(e));
-      setRestoring(false);
-    }
   };
 
   const probe = settings?.local_probe ?? null;
