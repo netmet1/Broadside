@@ -53,21 +53,20 @@ import {
   listHosts,
 } from "@/lib/tauri/hosts";
 import { HIDEABLE_COLUMNS, loadHiddenCols } from "@/lib/hostColumns";
-import { allTags, firstTag, parseTags } from "@/lib/hostTags";
+import { allTags, parseTags } from "@/lib/hostTags";
 import { nextColor } from "@/lib/palette";
 import { useHint, usePageStatus } from "@/lib/status";
 import {
   COLS,
   COL_WIDTHS_KEY,
   MIN_COL_W,
-  SORT_STORAGE_KEY,
-  type SortKey,
   TAG_FILTER_KEY,
   UNTAGGED_KEY,
   dtStamp,
 } from "@/pages/hosts/constants";
 import { SortHeader } from "@/pages/hosts/SortHeader";
 import { useHostConnTest } from "@/pages/hosts/useHostConnTest";
+import { useHostSort } from "@/pages/hosts/useHostSort";
 
 export function HostsPage({
   onOpenTerminal,
@@ -196,77 +195,11 @@ export function HostsPage({
     />
   );
 
-  // Column sorting. null = the order the backend returned (insertion order).
-  // Restored from sessionStorage so it survives tab switches, not restart.
-  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" } | null>(
-    () => {
-      try {
-        const raw = sessionStorage.getItem(SORT_STORAGE_KEY);
-        return raw ? JSON.parse(raw) : null;
-      } catch {
-        return null;
-      }
-    },
+  // Column sorting (persisted for the session) + the sorted view.
+  const { sort, toggleSort, sortedHosts } = useHostSort(
+    hosts,
+    connectedHostIds,
   );
-  useEffect(() => {
-    if (sort) sessionStorage.setItem(SORT_STORAGE_KEY, JSON.stringify(sort));
-    else sessionStorage.removeItem(SORT_STORAGE_KEY);
-  }, [sort]);
-  const toggleSort = useCallback((key: SortKey) => {
-    setSort((prev) =>
-      prev?.key === key
-        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
-        : { key, dir: "asc" },
-    );
-  }, []);
-
-  const sortedHosts = useMemo(() => {
-    if (!sort) return hosts;
-    const factor = sort.dir === "asc" ? 1 : -1;
-    const valueOf = (h: Host): string | number => {
-      switch (sort.key) {
-        case "label":
-          return h.label.toLowerCase();
-        case "status":
-          return connectedHostIds.has(h.id) ? 0 : 1; // connected first (asc)
-        case "hostname":
-          return h.hostname.toLowerCase();
-        case "port":
-          return h.port;
-        case "username":
-          return h.username.toLowerCase();
-        case "tag":
-          return firstTag(h.tag);
-        case "flavor":
-          return (h.linux_flavor ?? "").toLowerCase();
-      }
-    };
-    return [...hosts].sort((a, b) => {
-      // Tag sort: by FIRST tag (multi-tag hosts). Untagged hosts always rank
-      // after tagged ones, then `factor` flips that — so they sink to the
-      // bottom for A-Z and rise to the top for Z-A (user request) rather than
-      // clumping with the empty string.
-      if (sort.key === "tag") {
-        const ta = firstTag(a.tag);
-        const tb = firstTag(b.tag);
-        const ea = ta === "";
-        const eb = tb === "";
-        if (ea || eb) {
-          if (ea && eb) return a.label.localeCompare(b.label);
-          return (ea ? 1 : -1) * factor;
-        }
-        const cmp = ta.localeCompare(tb, undefined, { sensitivity: "base" });
-        if (cmp !== 0) return cmp * factor;
-        return a.label.localeCompare(b.label); // stable tiebreak, un-flipped
-      }
-      const va = valueOf(a);
-      const vb = valueOf(b);
-      if (va < vb) return -1 * factor;
-      if (va > vb) return 1 * factor;
-      // Stable, predictable tiebreak by label.
-      return a.label.localeCompare(b.label);
-    });
-  }, [hosts, sort, connectedHostIds]);
 
   // Tag filter (#8): the set of UNCHECKED tags (lowercase) plus UNTAGGED_KEY for
   // no-tag hosts. Empty = everything shown. Persists for the session only.
