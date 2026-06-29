@@ -52,7 +52,6 @@ import {
   exportHosts,
   listHosts,
 } from "@/lib/tauri/hosts";
-import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 import { HIDEABLE_COLUMNS, loadHiddenCols } from "@/lib/hostColumns";
 import { allTags, firstTag, parseTags } from "@/lib/hostTags";
 import { nextColor } from "@/lib/palette";
@@ -68,6 +67,7 @@ import {
   dtStamp,
 } from "@/pages/hosts/constants";
 import { SortHeader } from "@/pages/hosts/SortHeader";
+import { useHostConnTest } from "@/pages/hosts/useHostConnTest";
 
 export function HostsPage({
   onOpenTerminal,
@@ -93,15 +93,10 @@ export function HostsPage({
   const [editing, setEditing] = useState<Host | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState<Host | null>(null);
-  const [testingId, setTestingId] = useState<number | null>(null);
-  const [tofu, setTofu] = useState<{ host: Host; key: PresentedKey } | null>(
-    null,
-  );
-  const [mismatch, setMismatch] = useState<{
-    host: Host;
-    stored: string;
-    presented: PresentedKey;
-  } | null>(null);
+
+  // Per-host connection test + the TOFU / key-mismatch dialogs it can surface.
+  const { testingId, tofu, setTofu, mismatch, setMismatch, runTest } =
+    useHostConnTest();
 
   const defaultColor = useMemo(
     () => nextColor(hosts.map((h) => h.color)),
@@ -469,43 +464,6 @@ export function HostsPage({
       toast.success(`Exported ${count} ${count === 1 ? "host" : "hosts"}`);
     } catch (e) {
       toast.error(errorMessage(e));
-    }
-  }, []);
-
-  const runTest = useCallback(async (host: Host) => {
-    setTestingId(host.id);
-    try {
-      const result = await testConnection(host.id);
-      switch (result.status) {
-        case "ok":
-          toast.success(`${host.label}: connected (${result.latency_ms}ms)`);
-          break;
-        case "unknown_key":
-          setTofu({ host, key: result.key });
-          break;
-        case "key_mismatch":
-          setMismatch({
-            host,
-            stored: result.stored_fingerprint,
-            presented: result.presented,
-          });
-          break;
-        case "auth_failed":
-          toast.error(`${host.label}: authentication failed (${result.message})`);
-          break;
-        case "unreachable":
-          toast.error(`${host.label}: unreachable (${result.message})`);
-          break;
-        case "no_credentials":
-          toast.warning(
-            `${host.label}: no credentials stored. Edit the host to add them.`,
-          );
-          break;
-      }
-    } catch (e) {
-      toast.error(`${host.label}: ${errorMessage(e)}`);
-    } finally {
-      setTestingId(null);
     }
   }, []);
 
