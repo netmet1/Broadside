@@ -55,14 +55,12 @@ import { useUiPrefs } from "@/lib/uiPrefs";
 import {
   type AppSettings,
   type HostLatency,
-  type ShortcutCommand,
   type ShortcutScope,
   destroyAllHosts,
   getAppSettings,
   networkProbe,
   recalibrateProbe,
   resetAppSettings,
-  saveShortcuts,
   setAppSettings,
   setSudoAutofillEnabled,
   setUiSettings,
@@ -90,6 +88,7 @@ import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { useAdminLock } from "@/pages/settings/useAdminLock";
 import { useBackupRestore } from "@/pages/settings/useBackupRestore";
 import { useGuardRules } from "@/pages/settings/useGuardRules";
+import { useShortcuts } from "@/pages/settings/useShortcuts";
 
 export function SettingsPage({
   focusSection = null,
@@ -344,14 +343,25 @@ export function SettingsPage({
   // Audit
   const [auditOn, setAuditOn] = useState<boolean | null>(null);
 
-  // Shortcut commands (D-054)
-  const [shortcutFormOpen, setShortcutFormOpen] = useState(false);
-  const [shortcutCmd, setShortcutCmd] = useState("");
-  const [shortcutLabel, setShortcutLabel] = useState("");
-  const [shortcutScope, setShortcutScope] = useState<ShortcutScope>("ssh");
-  const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
-  const [shortcutSubmitAttempted, setShortcutSubmitAttempted] = useState(false);
+  // Shortcut commands (D-054). The ref stays here for the deep-link scroll.
   const shortcutsSectionRef = useRef<HTMLElement>(null);
+  const {
+    shortcutFormOpen,
+    setShortcutFormOpen,
+    shortcutCmd,
+    setShortcutCmd,
+    shortcutLabel,
+    setShortcutLabel,
+    shortcutScope,
+    setShortcutScope,
+    editingShortcutId,
+    shortcutSubmitAttempted,
+    shortcutCmdMissing,
+    submitShortcut,
+    editShortcut,
+    deleteShortcut,
+    cancelShortcutForm,
+  } = useShortcuts(settings, setSettings);
 
   // Appearance
   const [termFontFamily, setTermFontFamily] = useState("");
@@ -518,68 +528,6 @@ export function SettingsPage({
     } finally {
       setProbing(false);
     }
-  };
-
-  /** Wholesale-replace persistence for shortcuts (mirrors guard rules). */
-  const persistShortcuts = async (shortcuts: ShortcutCommand[]) => {
-    try {
-      await saveShortcuts(shortcuts);
-      setSettings((prev) => (prev ? { ...prev, user_shortcuts: shortcuts } : prev));
-      return true;
-    } catch (e) {
-      toast.error(errorMessage(e));
-      return false;
-    }
-  };
-
-  const shortcutCmdMissing = shortcutCmd.trim().length === 0;
-
-  const submitShortcut = async () => {
-    if (!settings) return;
-    if (shortcutCmdMissing) {
-      setShortcutSubmitAttempted(true);
-      toast.error("Command is required");
-      return;
-    }
-    const cmd = shortcutCmd.trim();
-    const label = shortcutLabel.trim() || null; // empty label = show the command
-    const next = editingShortcutId
-      ? settings.user_shortcuts.map((s) =>
-          s.id === editingShortcutId
-            ? { ...s, command: cmd, scope: shortcutScope, label }
-            : s,
-        )
-      : [
-          ...settings.user_shortcuts,
-          {
-            id: `shortcut-${crypto.randomUUID().slice(0, 8)}`,
-            command: cmd,
-            scope: shortcutScope,
-            label,
-          },
-        ];
-    if (await persistShortcuts(next)) {
-      setShortcutCmd("");
-      setShortcutLabel("");
-      setShortcutScope("ssh");
-      setEditingShortcutId(null);
-      setShortcutSubmitAttempted(false);
-      setShortcutFormOpen(false);
-    }
-  };
-
-  const editShortcut = (s: ShortcutCommand) => {
-    setEditingShortcutId(s.id);
-    setShortcutCmd(s.command);
-    setShortcutLabel(s.label ?? "");
-    setShortcutScope(s.scope);
-    setShortcutSubmitAttempted(false);
-    setShortcutFormOpen(true);
-  };
-
-  const deleteShortcut = (id: string) => {
-    if (!settings) return;
-    persistShortcuts(settings.user_shortcuts.filter((s) => s.id !== id));
   };
 
   const probe = settings?.local_probe ?? null;
@@ -1144,14 +1092,7 @@ export function SettingsPage({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setShortcutFormOpen(false);
-                  setEditingShortcutId(null);
-                  setShortcutCmd("");
-                  setShortcutLabel("");
-                  setShortcutScope("ssh");
-                  setShortcutSubmitAttempted(false);
-                }}
+                onClick={cancelShortcutForm}
               >
                 Cancel
               </Button>
