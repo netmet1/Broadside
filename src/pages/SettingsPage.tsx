@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArchiveIcon,
   CircleHelpIcon,
@@ -88,70 +88,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
-function SectionHeading({
-  title,
-  hint,
-}: {
-  title: string;
-  hint?: ReactNode;
-}) {
-  return (
-    <div>
-      <h2 className="font-heading text-sm font-semibold">{title}</h2>
-      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
-/** Leading icon for a shortcut's scope, shown on the Settings page: SSH/WSL use
- * the host/terminal icon, Command Prompt / PowerShell use the square terminal,
- * and a command that runs in both uses the square-asterisk (any shell). */
-function ScopeIcon({ scope }: { scope: ShortcutScope }) {
-  const Icon =
-    scope === "both"
-      ? SquareAsteriskIcon
-      : scope === "local"
-        ? SquareTerminalIcon
-        : TerminalIcon;
-  return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
-}
-
-/** Human-readable scope names for the add/edit form and row tooltips. */
-const SCOPE_LABELS: Record<ShortcutScope, string> = {
-  ssh: "SSH / WSL (Linux)",
-  local: "Command Prompt / PowerShell",
-  both: "Both (Linux and Windows)",
-};
-
-/** Stable DOM id for a settings section, used by the jump-to dropdown. */
-function sectionDomId(title: string): string {
-  return "settings-sec-" + title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-}
-
-/** Section render order — also the jump-to dropdown list. */
-const SECTION_TITLES = [
-  "Performance",
-  "Network probe",
-  "Destructive command guard",
-  "Shortcut commands",
-  "Appearance",
-  "Backup & Restore",
-  "Help",
-  "Audit log",
-  "Security",
-  "Reset",
-  "Danger Zone",
-];
-
-// The search filter and scroll position persist across tab switches (Settings
-// unmounts on navigation) but NOT across restarts — sessionStorage clears when
-// the app window closes. Matches the existing rail/sort persistence pattern.
-const SEARCH_STORAGE_KEY = "settings-search";
-const SECTION_SCROLL_KEY = "settings-scroll-section";
-/** Sticky-header height to discount when finding the section nearest the top
- * (matches the sections' scroll-margin-top: 4rem in index.css). */
-const STICKY_OFFSET_PX = 64;
+import {
+  SCOPE_LABELS,
+  SECTION_SCROLL_KEY,
+  SECTION_TITLES,
+  SEARCH_STORAGE_KEY,
+  STICKY_OFFSET_PX,
+  sectionDomId,
+} from "@/pages/settings/constants";
+import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 
 export function SettingsPage({
   focusSection = null,
