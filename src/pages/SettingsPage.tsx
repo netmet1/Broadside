@@ -57,13 +57,11 @@ import {
   type HostLatency,
   type ShortcutCommand,
   type ShortcutScope,
-  type UserRule,
   destroyAllHosts,
   getAppSettings,
   networkProbe,
   recalibrateProbe,
   resetAppSettings,
-  saveGuardRules,
   saveShortcuts,
   setAppSettings,
   setSudoAutofillEnabled,
@@ -91,6 +89,7 @@ import {
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { useAdminLock } from "@/pages/settings/useAdminLock";
 import { useBackupRestore } from "@/pages/settings/useBackupRestore";
+import { useGuardRules } from "@/pages/settings/useGuardRules";
 
 export function SettingsPage({
   focusSection = null,
@@ -345,24 +344,6 @@ export function SettingsPage({
   // Audit
   const [auditOn, setAuditOn] = useState<boolean | null>(null);
 
-  // Guard rule form
-  const [formOpen, setFormOpen] = useState(false);
-  const [ruleDesc, setRuleDesc] = useState("");
-  const [ruleCommands, setRuleCommands] = useState("");
-  const [ruleFlags, setRuleFlags] = useState("");
-  const [rulePaths, setRulePaths] = useState("");
-  const [ruleArgs, setRuleArgs] = useState("");
-  const [ruleTip, setRuleTip] = useState("");
-  // Drives the red outline on required fields after a failed submit.
-  const [ruleSubmitAttempted, setRuleSubmitAttempted] = useState(false);
-  // Backend rejection message shown inline in the form (keeps it open).
-  const [ruleError, setRuleError] = useState<string | null>(null);
-
-  // Help-tip modal (core + user rules)
-  const [helpRule, setHelpRule] = useState<{ title: string; tip: string } | null>(
-    null,
-  );
-
   // Shortcut commands (D-054)
   const [shortcutFormOpen, setShortcutFormOpen] = useState(false);
   const [shortcutCmd, setShortcutCmd] = useState("");
@@ -391,6 +372,37 @@ export function SettingsPage({
     pickRestoreFile,
     runRestore,
   } = useBackupRestore();
+
+  // Destructive-command guard rules (form + persistence into app settings).
+  const {
+    formOpen,
+    setFormOpen,
+    ruleDesc,
+    setRuleDesc,
+    ruleCommands,
+    setRuleCommands,
+    ruleFlags,
+    setRuleFlags,
+    rulePaths,
+    setRulePaths,
+    ruleArgs,
+    setRuleArgs,
+    ruleTip,
+    setRuleTip,
+    ruleSubmitAttempted,
+    setRuleSubmitAttempted,
+    ruleError,
+    setRuleError,
+    helpRule,
+    setHelpRule,
+    ruleDescMissing,
+    ruleCommandsMissing,
+    ruleCommandsHaveSpace,
+    ruleCommandsInvalid,
+    addRule,
+    toggleRule,
+    deleteRule,
+  } = useGuardRules(settings, setSettings);
 
   const load = useCallback(async () => {
     try {
@@ -506,87 +518,6 @@ export function SettingsPage({
     } finally {
       setProbing(false);
     }
-  };
-
-  /** Wholesale-replace persistence — the backend validates each rule.
-   * Returns whether the save succeeded; the caller decides what to do with a
-   * failure (the add-rule form keeps itself open so input isn't lost). */
-  const persistRules = async (rules: UserRule[]): Promise<string | null> => {
-    try {
-      await saveGuardRules(rules);
-      setSettings((prev) => (prev ? { ...prev, user_rules: rules } : prev));
-      return null;
-    } catch (e) {
-      return errorMessage(e);
-    }
-  };
-
-  const splitList = (raw: string): string[] =>
-    raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
-  const ruleDescMissing = ruleDesc.trim().length === 0;
-  const ruleCommandTokens = splitList(ruleCommands);
-  const ruleCommandsMissing = ruleCommandTokens.length === 0;
-  // The backend rejects command names containing whitespace; catch it here so
-  // the field can be highlighted instead of the save failing with a toast.
-  const ruleCommandsHaveSpace = ruleCommandTokens.some((c) => /\s/.test(c));
-  const ruleCommandsInvalid = ruleCommandsMissing || ruleCommandsHaveSpace;
-
-  const addRule = async () => {
-    if (!settings) return;
-    // Invalid input keeps the form open with everything intact and the
-    // offending field(s) highlighted — no reset, no disappearing form.
-    if (ruleDescMissing || ruleCommandsInvalid) {
-      setRuleSubmitAttempted(true);
-      setRuleError(null);
-      return;
-    }
-    const tip = ruleTip.trim();
-    const rule: UserRule = {
-      id: `user-${crypto.randomUUID().slice(0, 8)}`,
-      description: ruleDesc.trim(),
-      commands: ruleCommandTokens,
-      required_flags: splitList(ruleFlags),
-      path_patterns: splitList(rulePaths),
-      arg_all_of: splitList(ruleArgs),
-      help_tip: tip.length > 0 ? tip : null,
-      enabled: true,
-    };
-    const err = await persistRules([...settings.user_rules, rule]);
-    if (err) {
-      // Backend rejected it — keep the form open so the user can fix it.
-      setRuleError(err);
-      setRuleSubmitAttempted(true);
-      return;
-    }
-    setRuleDesc("");
-    setRuleCommands("");
-    setRuleFlags("");
-    setRulePaths("");
-    setRuleArgs("");
-    setRuleTip("");
-    setRuleSubmitAttempted(false);
-    setRuleError(null);
-    setFormOpen(false);
-  };
-
-  const toggleRule = async (id: string) => {
-    if (!settings) return;
-    const err = await persistRules(
-      settings.user_rules.map((r) =>
-        r.id === id ? { ...r, enabled: !r.enabled } : r,
-      ),
-    );
-    if (err) toast.error(err);
-  };
-
-  const deleteRule = async (id: string) => {
-    if (!settings) return;
-    const err = await persistRules(settings.user_rules.filter((r) => r.id !== id));
-    if (err) toast.error(err);
   };
 
   /** Wholesale-replace persistence for shortcuts (mirrors guard rules). */
