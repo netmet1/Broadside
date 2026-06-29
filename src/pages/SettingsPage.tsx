@@ -54,14 +54,10 @@ import { useTheme } from "next-themes";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import {
   type AppSettings,
-  type HostLatency,
   type ShortcutScope,
   destroyAllHosts,
   getAppSettings,
-  networkProbe,
-  recalibrateProbe,
   resetAppSettings,
-  setAppSettings,
   setSudoAutofillEnabled,
   setUiSettings,
 } from "@/lib/tauri/settings";
@@ -88,6 +84,7 @@ import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { useAdminLock } from "@/pages/settings/useAdminLock";
 import { useBackupRestore } from "@/pages/settings/useBackupRestore";
 import { useGuardRules } from "@/pages/settings/useGuardRules";
+import { usePerfSettings } from "@/pages/settings/usePerfSettings";
 import { useShortcuts } from "@/pages/settings/useShortcuts";
 
 export function SettingsPage({
@@ -330,15 +327,23 @@ export function SettingsPage({
     setPendingScroll(null);
   }, [pendingScroll]);
 
-  // Performance section (saved together via Save)
-  const [maxSessions, setMaxSessions] = useState("");
-  const [defaultTimeout, setDefaultTimeout] = useState("30");
-  const [savingPerf, setSavingPerf] = useState(false);
-  const [recalibrating, setRecalibrating] = useState(false);
-
-  // Network probe
-  const [probing, setProbing] = useState(false);
-  const [latencies, setLatencies] = useState<HostLatency[] | null>(null);
+  // Performance + network probe.
+  const {
+    maxSessions,
+    setMaxSessions,
+    defaultTimeout,
+    setDefaultTimeout,
+    savingPerf,
+    recalibrating,
+    probing,
+    latencies,
+    parsedMaxSessions,
+    parsedTimeout,
+    syncFromSettings,
+    savePerf,
+    recalibrate,
+    runNetworkProbe,
+  } = usePerfSettings(setSettings);
 
   // Audit
   const [auditOn, setAuditOn] = useState<boolean | null>(null);
@@ -418,10 +423,7 @@ export function SettingsPage({
     try {
       const s = await getAppSettings();
       setSettings(s);
-      setMaxSessions(
-        s.max_concurrent_sessions !== null ? String(s.max_concurrent_sessions) : "",
-      );
-      setDefaultTimeout(String(s.default_timeout_secs));
+      syncFromSettings(s);
       setTermFontFamily(s.terminal_font_family);
       setTermFontSize(String(s.terminal_font_size));
       setAppFontSize(String(s.app_font_size));
@@ -433,7 +435,7 @@ export function SettingsPage({
     } catch {
       // Audit info is non-critical for this page.
     }
-  }, []);
+  }, [syncFromSettings]);
 
   useEffect(() => {
     load();
@@ -447,15 +449,6 @@ export function SettingsPage({
     }
   }, [focusSection, settings, onFocusConsumed]);
 
-  const parsedMaxSessions = (() => {
-    if (maxSessions.trim() === "") return null; // follow suggestion
-    const n = Number(maxSessions);
-    return Number.isInteger(n) && n >= 1 && n <= 2048 ? n : undefined;
-  })();
-  const parsedTimeout = (() => {
-    const n = Number(defaultTimeout);
-    return Number.isInteger(n) && n >= 1 && n <= 3600 ? n : undefined;
-  })();
   const parsedTermFontSize = (() => {
     const n = Number(termFontSize);
     return Number.isInteger(n) && n >= 8 && n <= 32 ? n : undefined;
@@ -464,22 +457,6 @@ export function SettingsPage({
     const n = Number(appFontSize);
     return Number.isInteger(n) && n >= 12 && n <= 20 ? n : undefined;
   })();
-
-  const savePerf = async () => {
-    if (parsedMaxSessions === undefined || parsedTimeout === undefined) return;
-    setSavingPerf(true);
-    try {
-      await setAppSettings({
-        max_concurrent_sessions: parsedMaxSessions,
-        default_timeout_secs: parsedTimeout,
-      });
-      toast.success("Settings saved");
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setSavingPerf(false);
-    }
-  };
 
   const saveAppearance = async () => {
     if (parsedTermFontSize === undefined || parsedAppFontSize === undefined) {
@@ -503,30 +480,6 @@ export function SettingsPage({
       toast.error(errorMessage(e));
     } finally {
       setSavingUi(false);
-    }
-  };
-
-  const recalibrate = async () => {
-    setRecalibrating(true);
-    try {
-      const probe = await recalibrateProbe();
-      setSettings((prev) => (prev ? { ...prev, local_probe: probe } : prev));
-      toast.success(`Probe complete: suggests ${probe.suggested_max_sessions} sessions`);
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setRecalibrating(false);
-    }
-  };
-
-  const runNetworkProbe = async () => {
-    setProbing(true);
-    try {
-      setLatencies(await networkProbe());
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setProbing(false);
     }
   };
 
