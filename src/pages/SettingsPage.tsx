@@ -37,21 +37,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/tauri/hosts";
-import {
-  HIDEABLE_COLUMNS,
-  loadHiddenCols,
-  saveHiddenCols,
-} from "@/lib/hostColumns";
-import {
-  reconcileDisabledShells,
-  saveDisabledShells,
-} from "@/lib/localShellPrefs";
-import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
+import { HIDEABLE_COLUMNS } from "@/lib/hostColumns";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
 import { useHint, useStatus } from "@/lib/status";
 import { useTheme } from "next-themes";
 
-import { useUiPrefs } from "@/lib/uiPrefs";
 import {
   type AppSettings,
   type ShortcutScope,
@@ -59,7 +49,6 @@ import {
   getAppSettings,
   resetAppSettings,
   setSudoAutofillEnabled,
-  setUiSettings,
 } from "@/lib/tauri/settings";
 import { AdminUnlockDialog } from "@/components/AdminUnlockDialog";
 import {
@@ -82,6 +71,7 @@ import {
 } from "@/pages/settings/constants";
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { useAdminLock } from "@/pages/settings/useAdminLock";
+import { useAppearance } from "@/pages/settings/useAppearance";
 import { useBackupRestore } from "@/pages/settings/useBackupRestore";
 import { useGuardRules } from "@/pages/settings/useGuardRules";
 import { usePerfSettings } from "@/pages/settings/usePerfSettings";
@@ -98,46 +88,28 @@ export function SettingsPage({
 }) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const { hintsEnabled, setHintsEnabled } = useStatus();
-  const { prefs, apply: applyUiPrefs } = useUiPrefs();
   const { theme, setTheme } = useTheme();
   const hint = useHint();
 
-  // Host-table column visibility (Appearance). Read by the Hosts tab on mount;
-  // saved immediately on toggle.
-  const [hiddenCols, setHiddenCols] = useState(loadHiddenCols);
-  const toggleColumn = (id: string, visible: boolean) => {
-    setHiddenCols((prev) => {
-      const next = new Set(prev);
-      if (visible) next.delete(id);
-      else next.add(id);
-      saveHiddenCols(next);
-      return next;
-    });
-  };
-
-  // Local-shell launcher visibility (Appearance). The detected shells plus the
-  // user's hide list (stored by id); the Terminals "+" menu reads the same list.
-  const [shells, setShells] = useState<LocalShell[]>([]);
-  const [disabledShells, setDisabledShells] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    listLocalShells()
-      .then((s) => {
-        setShells(s);
-        setDisabledShells(reconcileDisabledShells(s.map((x) => x.id)));
-      })
-      .catch(() => {
-        // Non-fatal: the section just shows "no local shells detected".
-      });
-  }, []);
-  const toggleShell = (id: string, enabled: boolean) => {
-    setDisabledShells((prev) => {
-      const next = new Set(prev);
-      if (enabled) next.delete(id);
-      else next.add(id);
-      saveDisabledShells(next);
-      return next;
-    });
-  };
+  // Appearance: fonts, host-table column visibility, local-shell launcher list.
+  const {
+    hiddenCols,
+    toggleColumn,
+    shells,
+    disabledShells,
+    toggleShell,
+    termFontFamily,
+    setTermFontFamily,
+    termFontSize,
+    setTermFontSize,
+    appFontSize,
+    setAppFontSize,
+    savingUi,
+    parsedTermFontSize,
+    parsedAppFontSize,
+    syncFromSettings: syncAppearanceFromSettings,
+    saveAppearance,
+  } = useAppearance();
 
   // Opt-in admin lock (gates the sudo toggle, credential editing and Reset).
   // All lock/passcode/recovery state + handlers live in the hook, which loads
@@ -339,7 +311,7 @@ export function SettingsPage({
     latencies,
     parsedMaxSessions,
     parsedTimeout,
-    syncFromSettings,
+    syncFromSettings: syncPerfFromSettings,
     savePerf,
     recalibrate,
     runNetworkProbe,
@@ -367,12 +339,6 @@ export function SettingsPage({
     deleteShortcut,
     cancelShortcutForm,
   } = useShortcuts(settings, setSettings);
-
-  // Appearance
-  const [termFontFamily, setTermFontFamily] = useState("");
-  const [termFontSize, setTermFontSize] = useState("13");
-  const [appFontSize, setAppFontSize] = useState("16");
-  const [savingUi, setSavingUi] = useState(false);
 
   // Backup & Restore (shared with the Danger Zone "back up first" offer).
   const {
@@ -423,10 +389,8 @@ export function SettingsPage({
     try {
       const s = await getAppSettings();
       setSettings(s);
-      syncFromSettings(s);
-      setTermFontFamily(s.terminal_font_family);
-      setTermFontSize(String(s.terminal_font_size));
-      setAppFontSize(String(s.app_font_size));
+      syncPerfFromSettings(s);
+      syncAppearanceFromSettings(s);
     } catch (e) {
       toast.error(errorMessage(e));
     }
@@ -435,7 +399,7 @@ export function SettingsPage({
     } catch {
       // Audit info is non-critical for this page.
     }
-  }, [syncFromSettings]);
+  }, [syncPerfFromSettings, syncAppearanceFromSettings]);
 
   useEffect(() => {
     load();
@@ -448,40 +412,6 @@ export function SettingsPage({
       onFocusConsumed?.();
     }
   }, [focusSection, settings, onFocusConsumed]);
-
-  const parsedTermFontSize = (() => {
-    const n = Number(termFontSize);
-    return Number.isInteger(n) && n >= 8 && n <= 32 ? n : undefined;
-  })();
-  const parsedAppFontSize = (() => {
-    const n = Number(appFontSize);
-    return Number.isInteger(n) && n >= 12 && n <= 20 ? n : undefined;
-  })();
-
-  const saveAppearance = async () => {
-    if (parsedTermFontSize === undefined || parsedAppFontSize === undefined) {
-      return;
-    }
-    setSavingUi(true);
-    try {
-      await setUiSettings({
-        terminal_font_family: termFontFamily.trim(),
-        terminal_font_size: parsedTermFontSize,
-        app_font_size: parsedAppFontSize,
-      });
-      applyUiPrefs({
-        terminalFontFamily:
-          termFontFamily.trim() || prefs.terminalFontFamily,
-        terminalFontSize: parsedTermFontSize,
-        appFontSize: parsedAppFontSize,
-      });
-      toast.success("Appearance saved");
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setSavingUi(false);
-    }
-  };
 
   const probe = settings?.local_probe ?? null;
 
