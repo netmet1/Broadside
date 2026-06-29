@@ -44,7 +44,7 @@ import {
   HISTORY_RUNS,
   type RunGroup,
   blockKeyOf,
-  statusSummary,
+  otlogLinesFromRuns,
   wordInitials,
 } from "@/pages/broadcast/model";
 import { OutputBlock } from "@/pages/broadcast/OutputBlock";
@@ -448,30 +448,10 @@ export function BroadcastPage({
         .join(", ")
     : "";
 
-  /** Current output as .otlog lines (D-010): per output line, plus a status
-   * line per host so failures are part of the record. */
-  const buildOtlogLines = useCallback((): OtlogLine[] => {
-    const out: OtlogLine[] = [];
-    for (const run of runs) {
-      for (const block of run.blocks) {
-        out.push({
-          ts: block.receivedAt,
-          host: block.label,
-          stream: "status",
-          data: statusSummary(block.result).text,
-        });
-        if (block.result.status !== "completed") continue;
-        for (const stream of ["stdout", "stderr"] as const) {
-          const text = block.result[stream];
-          if (!text) continue;
-          for (const line of text.split("\n")) {
-            out.push({ ts: block.receivedAt, host: block.label, stream, data: line });
-          }
-        }
-      }
-    }
-    return out;
-  }, [runs]);
+  const buildOtlogLines = useCallback(
+    (): OtlogLine[] => otlogLinesFromRuns(runs),
+    [runs],
+  );
 
   const hasOutput = runs.length > 0;
 

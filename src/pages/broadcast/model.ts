@@ -2,6 +2,7 @@ import {
   type ExecResult,
   type HostExecReport,
 } from "@/lib/tauri/broadcast";
+import type { OtlogLine } from "@/lib/tauri/logs";
 import { type LineMatch, type Matcher, matchLine } from "@/lib/search";
 
 export const DEFAULT_TIMEOUT_SECS = 30;
@@ -83,6 +84,31 @@ export function statusSummary(result: ExecResult): {
     case "no_credentials":
       return { text: "no credentials", tone: "warn" };
   }
+}
+
+/** Current output as .otlog lines (D-010): per output line, plus a status
+ * line per host so failures are part of the record. */
+export function otlogLinesFromRuns(runs: RunGroup[]): OtlogLine[] {
+  const out: OtlogLine[] = [];
+  for (const run of runs) {
+    for (const block of run.blocks) {
+      out.push({
+        ts: block.receivedAt,
+        host: block.label,
+        stream: "status",
+        data: statusSummary(block.result).text,
+      });
+      if (block.result.status !== "completed") continue;
+      for (const stream of ["stdout", "stderr"] as const) {
+        const text = block.result[stream];
+        if (!text) continue;
+        for (const line of text.split("\n")) {
+          out.push({ ts: block.receivedAt, host: block.label, stream, data: line });
+        }
+      }
+    }
+  }
+  return out;
 }
 
 export function filteredLines(
