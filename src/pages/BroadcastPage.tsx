@@ -16,7 +16,7 @@ import {
   type UnknownKeyEntry,
 } from "@/components/BatchTofuDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
-import { SearchBar, type SearchMode } from "@/components/SearchBar";
+import { SearchBar } from "@/components/SearchBar";
 import {
   type GuardHit,
   broadcastCommand,
@@ -34,13 +34,6 @@ import {
   setAppSettings,
 } from "@/lib/tauri/settings";
 import type { PresentedKey } from "@/lib/tauri/ssh";
-import {
-  buildMatcher,
-  isMatcher,
-  matchLine,
-  type LineMatch,
-  type SearchOptions,
-} from "@/lib/search";
 import { SaveSessionDialog } from "@/components/SaveSessionDialog";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import type { OtlogLine } from "@/lib/tauri/logs";
@@ -49,7 +42,6 @@ import { useShortcuts } from "@/lib/useShortcuts";
 import {
   DEFAULT_TIMEOUT_SECS,
   HISTORY_RUNS,
-  type FindHit,
   type RunGroup,
   blockKeyOf,
   statusSummary,
@@ -57,6 +49,7 @@ import {
 } from "@/pages/broadcast/model";
 import { OutputBlock } from "@/pages/broadcast/OutputBlock";
 import { useBroadcastRail } from "@/pages/broadcast/useBroadcastRail";
+import { useOutputSearch } from "@/pages/broadcast/useOutputSearch";
 
 export function BroadcastPage({
   visible,
@@ -87,14 +80,6 @@ export function BroadcastPage({
   const [saveOpen, setSaveOpen] = useState(false);
   // Up/Down recall in the composer, newest first (persisted via migration 6).
   const [history, setHistory] = useState<string[]>([]);
-
-  // Search (D-015): Ctrl+F find, Ctrl+Shift+F filter.
-  const [searchMode, setSearchMode] = useState<SearchMode | null>(null);
-  const [searchPattern, setSearchPattern] = useState("");
-  const [searchOptions, setSearchOptions] = useState<SearchOptions | null>(
-    null,
-  );
-  const [activeHitIdx, setActiveHitIdx] = useState(0);
 
   // Host-selection rail: collapse + headers toggles, sort order, sorted list.
   const {
@@ -234,6 +219,22 @@ export function BroadcastPage({
     };
   }, []);
 
+  // Find / filter over the accumulated output (D-015): owns search state,
+  // scan, navigation and status.
+  const {
+    searchMode,
+    setSearchMode,
+    setSearchPattern,
+    setSearchOptions,
+    matcher,
+    scan,
+    navigate,
+    closeSearch,
+    searchStatus,
+    activeHit,
+    filterActive,
+  } = useOutputSearch(runs, visible);
+
   // Keep the output pinned to the bottom as results stream in. A ResizeObserver
   // on the content catches every height change (each host's block arrives
   // separately and the last one used to land below the fold), so the newest
@@ -259,104 +260,6 @@ export function BroadcastPage({
     if (!el) return;
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
   }, []);
-
-  // Keyboard entry points (D-015). Only while this page is the visible one —
-  // the component stays mounted in the background after navigation.
-  useEffect(() => {
-    if (!visible) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && (e.key === "f" || e.key === "F")) {
-        e.preventDefault();
-        setSearchMode(e.shiftKey ? "filter" : "find");
-        setActiveHitIdx(0);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [visible]);
-
-  const closeSearch = useCallback(() => {
-    setSearchMode(null);
-    setSearchPattern("");
-    setSearchOptions(null);
-    setActiveHitIdx(0);
-  }, []);
-
-  const matcherOrError = useMemo(
-    () =>
-      searchMode !== null && searchOptions !== null
-        ? buildMatcher(searchPattern, searchOptions)
-        : null,
-    [searchMode, searchPattern, searchOptions],
-  );
-  const matcher = isMatcher(matcherOrError) ? matcherOrError : null;
-
-  /** Per-stream line matches for every completed block across all runs, in
-   * display order. Keyed by `${runId}:${hostId}:${stream}`. */
-  const scan = useMemo(() => {
-    if (!matcher) return null;
-    const byRef = new Map<string, Map<number, LineMatch[]>>();
-    const hits: FindHit[] = [];
-    const blocksWithMatches = new Set<string>();
-    let total = 0;
-    for (const run of runs) {
-      for (const block of run.blocks) {
-        if (block.result.status !== "completed") continue;
-        const key = blockKeyOf(run.runId, block.host_id);
-        for (const stream of ["stdout", "stderr"] as const) {
-          const text = block.result[stream];
-          if (!text) continue;
-          const lines = text.split("\n");
-          const lineMap = new Map<number, LineMatch[]>();
-          for (let i = 0; i < lines.length; i++) {
-            const matches = matchLine(matcher, lines[i]);
-            if (matches.length > 0) {
-              lineMap.set(i, matches);
-              blocksWithMatches.add(key);
-              total += matches.length;
-              for (const m of matches) {
-                hits.push({ key, stream, line: i, ...m });
-              }
-            }
-          }
-          if (lineMap.size > 0) {
-            byRef.set(`${key}:${stream}`, lineMap);
-          }
-        }
-      }
-    }
-    return { byRef, hits, total, hostCount: blocksWithMatches.size };
-  }, [matcher, runs]);
-
-  const navigate = useCallback(
-    (direction: 1 | -1) => {
-      if (!scan || scan.hits.length === 0) return;
-      setActiveHitIdx(
-        (idx) => (idx + direction + scan.hits.length) % scan.hits.length,
-      );
-    },
-    [scan],
-  );
-
-  useEffect(() => {
-    setActiveHitIdx(0);
-  }, [searchPattern, searchOptions]);
-
-  const searchStatus = (() => {
-    if (matcherOrError && "error" in matcherOrError) {
-      return { text: matcherOrError.error, tone: "error" as const };
-    }
-    if (!scan || searchPattern === "") return { text: "", tone: "normal" as const };
-    if (scan.total === 0) return { text: "No matches", tone: "normal" as const };
-    const base = `${scan.total} ${scan.total === 1 ? "match" : "matches"} in ${scan.hostCount} ${scan.hostCount === 1 ? "block" : "blocks"}`;
-    return {
-      text:
-        searchMode === "find"
-          ? `${scan.hits.length === 0 ? 0 : activeHitIdx + 1}/${scan.hits.length} · ${base}`
-          : base,
-      tone: "normal" as const,
-    };
-  })();
 
   const allSelected = hosts.length > 0 && selected.size === hosts.length;
   const toggleAll = () => {
@@ -570,12 +473,6 @@ export function BroadcastPage({
     return out;
   }, [runs]);
 
-  const activeHit =
-    searchMode === "find" && scan && scan.hits.length > 0
-      ? scan.hits[Math.min(activeHitIdx, scan.hits.length - 1)]
-      : null;
-
-  const filterActive = searchMode === "filter" && matcher !== null && searchPattern !== "";
   const hasOutput = runs.length > 0;
 
   return (
