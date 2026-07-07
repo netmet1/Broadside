@@ -172,10 +172,6 @@ export function PtyBroadcastPage({
     visible,
   );
 
-  const allSelected = sessions.length > 0 && selected.size === sessions.length;
-  const toggleAll = () => {
-    setSelected(allSelected ? new Set() : new Set(sessions.map((s) => s.id)));
-  };
   const toggleSession = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -310,6 +306,31 @@ export function PtyBroadcastPage({
     [railSessions, railMatches],
   );
 
+  // Selection is always a subset of the filtered-visible sessions: hiding a
+  // session unchecks it, and it stays unchecked when the filter is cleared (the
+  // user re-selects deliberately). "Select all" + its counter use the visible set.
+  const visibleIds = useMemo(
+    () => new Set(visibleRailSessions.map((s) => s.id)),
+    [visibleRailSessions],
+  );
+  useEffect(() => {
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visibleIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [visibleIds]);
+
+  const allSelected =
+    visibleRailSessions.length > 0 && visibleRailSessions.every((s) => selected.has(s.id));
+  const toggleAll = () => {
+    setSelected(allSelected ? new Set() : new Set(visibleIds));
+  };
+
   const hasOutput = runs.length > 0;
 
   return (
@@ -355,11 +376,11 @@ export function PtyBroadcastPage({
                   className="accent-primary"
                   checked={allSelected}
                   onChange={toggleAll}
-                  disabled={sending || sessions.length === 0}
+                  disabled={sending || visibleRailSessions.length === 0}
                 />
                 Select all
                 <span className="ml-auto text-xs font-normal text-muted-foreground">
-                  {selected.size}/{sessions.length}
+                  {selected.size}/{visibleRailSessions.length}
                 </span>
               </label>
             )}

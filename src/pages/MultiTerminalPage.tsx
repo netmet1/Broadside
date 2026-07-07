@@ -297,11 +297,33 @@ export function MultiTerminalPage({
     outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
   }, [blocks]);
 
-  const connectedIds = sessions.filter((s) => connectedSessions.has(s.id));
-  const allSelected =
-    connectedIds.length > 0 && selectedConnectedCount === connectedIds.length;
+  // Selectable = visible (passes the rail filter) AND connected. Selection is
+  // always a subset of this: a session the filter hides is unchecked, and it
+  // stays unchecked when the filter is cleared (the user re-selects it). So
+  // "Select all" and its counter operate over the selectable set.
+  const selectableIds = useMemo(
+    () =>
+      new Set(
+        visibleSessions
+          .filter((s) => connectedSessions.has(s.id))
+          .map((s) => s.id),
+      ),
+    [visibleSessions, connectedSessions],
+  );
+  useEffect(() => {
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (selectableIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [selectableIds]);
+  const allSelected = selectableIds.size > 0 && selected.size === selectableIds.size;
   const toggleAll = () =>
-    setSelected(allSelected ? new Set() : new Set(connectedIds.map((s) => s.id)));
+    setSelected(allSelected ? new Set() : new Set(selectableIds));
   const toggleSession = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -478,11 +500,11 @@ export function MultiTerminalPage({
                   className="accent-primary"
                   checked={allSelected}
                   onChange={toggleAll}
-                  disabled={sending || connectedIds.length === 0}
+                  disabled={sending || selectableIds.size === 0}
                 />
                 Select all
                 <span className="ml-auto text-xs font-normal text-muted-foreground">
-                  {selected.size}/{sessions.length}
+                  {selected.size}/{selectableIds.size}
                 </span>
               </label>
             )}

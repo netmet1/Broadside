@@ -297,9 +297,30 @@ export function BroadcastPage({
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
   }, []);
 
-  const allSelected = hosts.length > 0 && selected.size === hosts.length;
+  // Selection is always a subset of the filtered-visible hosts: a host hidden by
+  // the filter is unchecked, and it stays unchecked when the filter is cleared
+  // (the user re-selects it deliberately). So "Select all" and its counter both
+  // operate over the visible set, not every host.
+  const visibleIds = useMemo(
+    () => new Set(visibleRailHosts.map((h) => h.id)),
+    [visibleRailHosts],
+  );
+  useEffect(() => {
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set<number>();
+      for (const id of prev) {
+        if (visibleIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [visibleIds]);
+
+  const allSelected =
+    visibleRailHosts.length > 0 && visibleRailHosts.every((h) => selected.has(h.id));
   const toggleAll = () => {
-    setSelected(allSelected ? new Set() : new Set(hosts.map((h) => h.id)));
+    setSelected(allSelected ? new Set() : new Set(visibleIds));
   };
   const toggleHost = (id: number) => {
     setSelected((prev) => {
@@ -545,11 +566,11 @@ export function BroadcastPage({
                 className="accent-primary"
                 checked={allSelected}
                 onChange={toggleAll}
-                disabled={running}
+                disabled={running || visibleRailHosts.length === 0}
               />
               Select all
               <span className="ml-auto text-xs font-normal text-muted-foreground">
-                {selected.size}/{hosts.length}
+                {selected.size}/{visibleRailHosts.length}
               </span>
             </label>
           )}

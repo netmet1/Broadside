@@ -61,12 +61,35 @@ export function BroadcastTab({
     [b.hosts, b.railSort],
   );
 
-  // Tag + label filter over the rail (view-only; selection is unaffected).
+  // Tag + label filter over the rail.
   const railFilter = useRailFilter(b.hosts, "sftp-broadcast-rail-filter");
   const visibleRailHosts = useMemo(
     () => railHosts.filter(railFilter.matches),
     [railHosts, railFilter.matches],
   );
+
+  // Selection is always a subset of the filtered-visible hosts: a host the
+  // filter hides is unchecked, and it stays unchecked when the filter is cleared
+  // (the user re-selects it). "Select all" and its counter use the visible set.
+  const { setSelected } = b;
+  const visibleIds = useMemo(
+    () => new Set(visibleRailHosts.map((h) => h.id)),
+    [visibleRailHosts],
+  );
+  useEffect(() => {
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set<number>();
+      for (const id of prev) {
+        if (visibleIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [visibleIds, setSelected]);
+  const allSelected =
+    visibleRailHosts.length > 0 && visibleRailHosts.every((h) => b.selected.has(h.id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(visibleIds));
 
   // Auto-scroll the output to the bottom as lines stream, but release the follow
   // when the user scrolls up to review earlier progress bars (mirrors Broadcast).
@@ -179,13 +202,13 @@ export function BroadcastTab({
                 <input
                   type="checkbox"
                   className="accent-primary"
-                  checked={b.allSelected}
-                  onChange={b.toggleAll}
-                  disabled={b.running || b.hosts.length === 0}
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  disabled={b.running || visibleRailHosts.length === 0}
                 />
                 Select all
                 <span className="ml-auto text-xs font-normal text-muted-foreground">
-                  {b.selected.size}/{b.hosts.length}
+                  {b.selected.size}/{visibleRailHosts.length}
                 </span>
               </label>
             )}

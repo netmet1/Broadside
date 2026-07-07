@@ -449,6 +449,7 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
   return {
     hosts,
     selected,
+    setSelected,
     allSelected,
     toggleAll,
     toggleHost,
