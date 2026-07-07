@@ -631,7 +631,7 @@ export function MultiTerminalPage({
                 checked={mirrorTyped}
                 onChange={toggleMirror}
               />
-              Mirror
+              Show Manual Activity
             </label>
             <label
               className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
@@ -817,7 +817,18 @@ function OmniBlock({
   return (
     <div
       className="group relative rounded-md border border-border/40 pl-3"
-      style={{ borderLeftColor: color, borderLeftWidth: 3 }}
+      style={{
+        borderLeftColor: color,
+        borderLeftWidth: 3,
+        // Off-screen blocks skip layout/paint so revealing the tab (or scrolling
+        // a long log) only lays out the blocks actually in view. Without this,
+        // showing the tab re-lays-out the whole persisted log every time — the
+        // multi-second MultiTerminal switch lag. `auto <len>` gives an estimated
+        // height so the scrollbar stays stable; the browser remembers the real
+        // size once a block has been rendered.
+        contentVisibility: "auto",
+        containIntrinsicSize: "auto 96px",
+      }}
     >
       <button
         type="button"

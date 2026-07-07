@@ -1,6 +1,7 @@
 import {
   ChevronDownIcon,
   ChevronRightIcon,
+  RotateCwIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 
@@ -24,6 +25,7 @@ export function OutputBlock({
   filterMatcher,
   onToggle,
   onReviewMismatch,
+  onRetry,
 }: {
   block: Block;
   blockKey: string;
@@ -33,6 +35,9 @@ export function OutputBlock({
   filterMatcher: Matcher | null;
   onToggle: () => void;
   onReviewMismatch: (stored: string, presented: PresentedKey) => void;
+  /** Re-run this host with the run's command. Undefined while a run is in
+   * flight (disables the per-block Retry button). */
+  onRetry?: () => void;
 }) {
   // With headers hidden there's no collapse affordance, so always show output;
   // a coloured left border keeps each host's block identifiable.
@@ -117,6 +122,7 @@ export function OutputBlock({
             blockKey={blockKey}
             findData={findData}
             onReviewMismatch={onReviewMismatch}
+            onRetry={onRetry}
           />
         </div>
       )}
@@ -158,16 +164,29 @@ function BlockHeader({
   );
 }
 
+/** Small "re-run just this host" button shown on failed/timed-out blocks. */
+function RetryButton({ onRetry }: { onRetry?: () => void }) {
+  if (!onRetry) return null;
+  return (
+    <Button variant="outline" size="sm" onClick={onRetry}>
+      <RotateCwIcon />
+      Retry
+    </Button>
+  );
+}
+
 function BlockBody({
   result,
   blockKey,
   findData,
   onReviewMismatch,
+  onRetry,
 }: {
   result: ExecResult;
   blockKey: string;
   findData: FindData | null;
   onReviewMismatch: (stored: string, presented: PresentedKey) => void;
+  onRetry?: () => void;
 }) {
   switch (result.status) {
     case "completed":
@@ -209,7 +228,10 @@ function BlockBody({
             <p className="text-muted-foreground">(no output)</p>
           )}
           {result.timed_out && (
-            <p className="text-red-400">[TIMEOUT: partial output above]</p>
+            <div className="space-y-2">
+              <p className="text-red-400">[TIMEOUT: partial output above]</p>
+              <RetryButton onRetry={onRetry} />
+            </div>
           )}
         </div>
       );
@@ -241,12 +263,20 @@ function BlockBody({
       );
     case "auth_failed":
     case "unreachable":
-      return <p className="text-xs text-red-400/90">{result.message}</p>;
+      return (
+        <div className="space-y-2">
+          <p className="text-xs text-red-400/90">{result.message}</p>
+          <RetryButton onRetry={onRetry} />
+        </div>
+      );
     case "no_credentials":
       return (
-        <p className="text-xs text-muted-foreground">
-          No credentials stored. Edit the host on the Hosts page.
-        </p>
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            No credentials stored. Edit the host on the Hosts page.
+          </p>
+          <RetryButton onRetry={onRetry} />
+        </div>
       );
   }
 }

@@ -356,6 +356,13 @@ export function TerminalsPage({
     onCloseSession(id);
   };
 
+  // Reconnect a closed/failed session: bump its retry nonce so TerminalView's
+  // connect effect re-runs and re-opens the PTY on the same session id (the
+  // backend id is free again once the old session ended).
+  const reconnectSession = (id: string) => {
+    setRetryNonces((prev) => new Map(prev).set(id, (prev.get(id) ?? 0) + 1));
+  };
+
   // Close-all guard rail (T-…): confirm before tearing down every session.
   const [closeAllOpen, setCloseAllOpen] = useState(false);
   const closeAll = () => {
@@ -704,6 +711,7 @@ export function TerminalsPage({
               retryNonce={retryNonces.get(s.id) ?? 0}
               onGate={handleGate}
               onClosed={closeSession}
+              onReconnect={reconnectSession}
               onSearchRequest={() => setSearchOpen(true)}
               onTabNav={navTab}
               onSearchResults={(index, count) =>

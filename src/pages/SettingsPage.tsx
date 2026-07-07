@@ -78,13 +78,22 @@ import { usePerfSettings } from "@/pages/settings/usePerfSettings";
 import { useShortcuts } from "@/pages/settings/useShortcuts";
 
 export function SettingsPage({
+  visible = true,
   focusSection = null,
   onFocusConsumed,
+  onReady,
 }: {
+  /** False while the tab is mounted but hidden (the page stays mounted between
+   * visits). Gates the shared-<main> scroll bookkeeping so a hidden Settings
+   * can't overwrite the saved section from another page's scrolling. */
+  visible?: boolean;
   /** Section to scroll to after mount (e.g. "shortcuts" from the
    * "Manage shortcuts…" entry on Broadcast/Terminals). */
   focusSection?: string | null;
   onFocusConsumed?: () => void;
+  /** Called once the initial settings load has settled — clears the branded
+   * loader the shell shows while this (large) page warms up. */
+  onReady?: () => void;
 }) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const { hintsEnabled, setHintsEnabled } = useStatus();
@@ -205,6 +214,30 @@ export function SettingsPage({
   );
   const anyVisible = SECTION_TITLES.some(sectionVisible);
 
+  // Progressive reveal: on first mount, render the first section right away then
+  // one more each frame. The first paint stays cheap (the page feels instant)
+  // and the cost of building this large tree is spread across frames instead of
+  // one long blocking commit. Because the page stays mounted between visits,
+  // this runs only once; later visits already have revealCount maxed. A search
+  // or deep-link (focusSection) needs every section at once, so those jump
+  // straight to fully revealed (and never step back, so nothing unmounts).
+  const [revealCount, setRevealCount] = useState(1);
+  useEffect(() => {
+    if (revealCount >= SECTION_TITLES.length) return;
+    if (query.trim() !== "" || focusSection !== null) {
+      setRevealCount(SECTION_TITLES.length);
+      return;
+    }
+    const id = requestAnimationFrame(() =>
+      setRevealCount((n) => Math.min(n + 1, SECTION_TITLES.length)),
+    );
+    return () => cancelAnimationFrame(id);
+  }, [revealCount, query, focusSection]);
+  const sectionReady = useCallback(
+    (title: string) => SECTION_TITLES.indexOf(title) < revealCount,
+    [revealCount],
+  );
+
   // The page scroll lives on the shared <main>; remember the section nearest
   // the top as the user scrolls so returning to Settings restores that spot.
   // Saving is gated until the restore below has run: when this tab remounts,
@@ -249,6 +282,13 @@ export function SettingsPage({
   // and never when a deep-link (focusSection) is steering the scroll instead.
   const didRestoreScroll = useRef(false);
   useEffect(() => {
+    // Hidden but still mounted: stop saving, and re-arm so the scroll is
+    // restored again the next time the tab is shown.
+    if (!visible) {
+      saveEnabled.current = false;
+      didRestoreScroll.current = false;
+      return;
+    }
     if (didRestoreScroll.current) return;
     // A deep-link (focusSection) owns the scroll — let it win, don't restore.
     if (focusSection) {
@@ -282,7 +322,7 @@ export function SettingsPage({
         saveEnabled.current = true;
       }),
     );
-  }, [settings, focusSection]);
+  }, [visible, settings, focusSection]);
 
   // Jump-to-section dropdown: picking a section clears any search filter (so
   // the target is mounted) and smooth-scrolls to it — no button needed.
@@ -399,7 +439,10 @@ export function SettingsPage({
     } catch {
       // Audit info is non-critical for this page.
     }
-  }, [syncPerfFromSettings, syncAppearanceFromSettings]);
+    // Data has settled (or failed non-fatally) — the page is now usable, so let
+    // the shell drop the branded loader.
+    onReady?.();
+  }, [syncPerfFromSettings, syncAppearanceFromSettings, onReady]);
 
   useEffect(() => {
     load();
@@ -476,7 +519,7 @@ export function SettingsPage({
       )}
 
       {/* Performance / probe */}
-      {sectionVisible("Performance") && (
+      {sectionVisible("Performance") && sectionReady("Performance") && (
       <section id={sectionDomId("Performance")} className="space-y-4">
         <SectionHeading
           title="Performance"
@@ -567,7 +610,7 @@ export function SettingsPage({
       )}
 
       {/* Network probe */}
-      {sectionVisible("Network probe") && (
+      {sectionVisible("Network probe") && sectionReady("Network probe") && (
       <section id={sectionDomId("Network probe")} className="space-y-4">
         <SectionHeading
           title="Network probe"
@@ -609,7 +652,8 @@ export function SettingsPage({
       )}
 
       {/* Destructive guard rules */}
-      {sectionVisible("Destructive command guard") && (
+      {sectionVisible("Destructive command guard") &&
+        sectionReady("Destructive command guard") && (
       <section id={sectionDomId("Destructive command guard")} className="space-y-4">
         <SectionHeading
           title="Destructive command guard"
@@ -841,7 +885,7 @@ export function SettingsPage({
       )}
 
       {/* Shortcut commands (D-054) */}
-      {sectionVisible("Shortcut commands") && (
+      {sectionVisible("Shortcut commands") && sectionReady("Shortcut commands") && (
       <section
         ref={shortcutsSectionRef}
         id={sectionDomId("Shortcut commands")}
@@ -1016,7 +1060,7 @@ export function SettingsPage({
       )}
 
       {/* Appearance */}
-      {sectionVisible("Appearance") && (
+      {sectionVisible("Appearance") && sectionReady("Appearance") && (
       <section id={sectionDomId("Appearance")} className="space-y-4">
         <SectionHeading
           title="Appearance"
@@ -1153,7 +1197,7 @@ export function SettingsPage({
       )}
 
       {/* Backup & Restore */}
-      {sectionVisible("Backup & Restore") && (
+      {sectionVisible("Backup & Restore") && sectionReady("Backup & Restore") && (
       <section id={sectionDomId("Backup & Restore")} className="space-y-3">
         <SectionHeading
           title="Backup & Restore"
@@ -1243,7 +1287,7 @@ export function SettingsPage({
       </AlertDialog>
 
       {/* Help */}
-      {sectionVisible("Help") && (
+      {sectionVisible("Help") && sectionReady("Help") && (
       <section id={sectionDomId("Help")} className="space-y-3">
         <SectionHeading
           title="Help"
@@ -1269,7 +1313,7 @@ export function SettingsPage({
       )}
 
       {/* Audit */}
-      {sectionVisible("Audit log") && (
+      {sectionVisible("Audit log") && sectionReady("Audit log") && (
       <section id={sectionDomId("Audit log")} className="space-y-3">
         <SectionHeading
           title="Audit log"
@@ -1297,7 +1341,7 @@ export function SettingsPage({
       )}
 
       {/* Security */}
-      {sectionVisible("Security") && (
+      {sectionVisible("Security") && sectionReady("Security") && (
       <section id={sectionDomId("Security")} className="space-y-4">
         <SectionHeading
           title="Security"
@@ -1452,7 +1496,7 @@ export function SettingsPage({
       )}
 
       {/* Reset everything to defaults (S) — guard-railed. */}
-      {sectionVisible("Reset") && (
+      {sectionVisible("Reset") && sectionReady("Reset") && (
       <section id={sectionDomId("Reset")} className="space-y-3">
         <SectionHeading
           title="Reset"
@@ -1489,7 +1533,7 @@ export function SettingsPage({
       )}
 
       {/* Danger Zone — wipe every host + its stored credentials. */}
-      {sectionVisible("Danger Zone") && (
+      {sectionVisible("Danger Zone") && sectionReady("Danger Zone") && (
       <section id={sectionDomId("Danger Zone")} className="space-y-3">
         <SectionHeading
           title="Danger Zone"

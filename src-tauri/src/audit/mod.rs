@@ -54,6 +54,17 @@ pub enum AuditEvent {
         encrypted: bool,
         lines: usize,
     },
+    /// A file was transferred over SFTP. `direction` is `"put" | "get"`. Records
+    /// the endpoints and byte count; never carries file contents.
+    SftpTransfer {
+        host_label: String,
+        hostname: String,
+        port: u16,
+        direction: String,
+        local_path: String,
+        remote_path: String,
+        bytes: u64,
+    },
 }
 
 #[derive(Serialize)]

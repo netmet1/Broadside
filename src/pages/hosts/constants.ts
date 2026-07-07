@@ -33,12 +33,14 @@ export const TAG_FILTER_KEY = "hosts-tag-filter";
 // with a real tag name.
 export const UNTAGGED_KEY = "\u0000untagged";
 
-/** Local-time `YYYYMMDD-HHMMSS` stamp for default export filenames (H6). */
+/** UTC `YYYYMMDD-HHMMSS` stamp for default export filenames (H6). UTC keeps the
+ * stamp unambiguous and machine-comparable, matching the rest of the app's
+ * export filenames (e.g. the .otlog session save). */
 export function dtStamp(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   return (
-    `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` +
-    `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
+    `-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`
   );
 }

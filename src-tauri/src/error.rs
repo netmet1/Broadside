@@ -27,6 +27,8 @@ pub enum AppError {
     DestructiveBlocked(String),
     #[error("crypto error: {0}")]
     Crypto(String),
+    #[error("local filesystem error: {0}")]
+    LocalFs(String),
 }
 
 impl Serialize for AppError {
@@ -49,6 +51,7 @@ impl Serialize for AppError {
             AppError::Ssh(_) => "ssh",
             AppError::DestructiveBlocked(_) => "destructive_blocked",
             AppError::Crypto(_) => "crypto",
+            AppError::LocalFs(_) => "local_fs",
         };
         s.serialize_field("kind", kind)?;
         s.serialize_field("message", &self.to_string())?;

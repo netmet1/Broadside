@@ -115,8 +115,16 @@ pub fn run() {
 
             app.manage(ssh::pty::PtyState::default());
 
+            // Live SFTP browser sessions (kept open between operations).
+            app.manage(ssh::sftp::SftpState::default());
+
             // Admin lock unlock state — fresh (locked) on every launch.
             app.manage(admin_lock::AdminLockState::default());
+
+            // Detect local shells now, in the background, so the first page
+            // that asks (Terminals launcher, Settings) gets an instant cache
+            // hit instead of paying the wsl.exe spawn (seconds when cold).
+            local::prewarm_shells();
 
             // Restore size + position now (while the window is still hidden, so
             // there is no flash), but NOT the maximized flag — that is applied
@@ -167,6 +175,24 @@ pub fn run() {
             commands::pty::omni_blocks_list,
             commands::pty::omni_blocks_clear,
             commands::pty::omni_blocks_delete,
+            commands::sftp::sftp_connect,
+            commands::sftp::sftp_list,
+            commands::sftp::sftp_mkdir,
+            commands::sftp::sftp_ensure_remote_dir,
+            commands::sftp::sftp_delete,
+            commands::sftp::sftp_upload,
+            commands::sftp::sftp_download,
+            commands::sftp::sftp_scan_dir,
+            commands::sftp::sftp_upload_dir,
+            commands::sftp::sftp_download_dir,
+            commands::sftp::sftp_cancel_transfer,
+            commands::sftp::sftp_disconnect,
+            commands::localfs::local_home_dir,
+            commands::localfs::local_list_dir,
+            commands::localfs::local_list_drives,
+            commands::localfs::local_mkdir,
+            commands::localfs::local_delete,
+            commands::localfs::local_scan_dir,
             commands::session::save_session,
             commands::session::session_is_encrypted,
             commands::session::load_session,

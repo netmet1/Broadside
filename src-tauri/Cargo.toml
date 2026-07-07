@@ -39,7 +39,10 @@ keyring = { version = "3", features = ["windows-native"] }
 age = "0.11"
 # default-features off to swap aws-lc-rs (needs CMake/NASM on Windows) for ring
 russh = { version = "0.61", default-features = false, features = ["flate2", "ring", "rsa"] }
-tokio = { version = "1", features = ["time", "sync", "net"] }
+# SFTP subsystem client (russh itself has no file transfer). Stream-agnostic —
+# wraps russh's ChannelStream; independent of russh's version.
+russh-sftp = "2"
+tokio = { version = "1", features = ["time", "sync", "net", "io-util", "fs"] }
 base64 = "0.22"
 sysinfo = "0.39.3"
 csv = "1.4.0"
@@ -52,6 +55,9 @@ rust_xlsxwriter = "0.95.0"
 vte = "0.13"
 argon2 = "0.5.3"
 portable-pty = "0.9.0"
+# Local-side deletes go to the Recycle Bin (recoverable) rather than std::fs
+# permanent removal. Pure-Rust Windows shell bindings, no C deps.
+trash = "5"
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,4 +1,12 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 
 import { AppShell, type Page } from "@/components/AppShell";
@@ -12,6 +20,7 @@ import {
 import type { LocalShell } from "@/lib/tauri/local";
 import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
 import { MultiTerminalPage } from "@/pages/MultiTerminalPage";
+import { SftpPage } from "@/pages/SftpPage";
 import { LogsPage } from "@/pages/LogsPage";
 // Settings (~2k lines) and Help (static docs) mount only when their tab is
 // active, so they are code-split into their own chunks to shrink the initial
@@ -23,6 +32,7 @@ const HelpPage = lazy(() =>
   import("@/pages/HelpPage").then((m) => ({ default: m.HelpPage })),
 );
 import { UnlockDialog } from "@/components/UnlockDialog";
+import { SettingsLoading } from "@/components/SettingsLoading";
 import { Toaster } from "@/components/ui/sonner";
 import { StatusProvider } from "@/components/StatusProvider";
 import { UiPrefsProvider } from "@/components/UiPrefsProvider";
@@ -48,6 +58,16 @@ function App() {
   );
   // Set when "Manage shortcuts…" is picked — Settings scrolls there on open.
   const [settingsFocus, setSettingsFocus] = useState<string | null>(null);
+  // Latch: once Settings has been opened it stays mounted (hidden) like the
+  // other heavy pages, so re-visiting it doesn't pay the ~5s cost of remounting
+  // its large Radix tree every time. The lazy chunk still loads only on first
+  // open (kept out of the startup payload); after that the page persists.
+  const [settingsMounted, setSettingsMounted] = useState(false);
+  // True once Settings has mounted AND loaded its data — drives whether we show
+  // the branded loader over the tab. Pre-warming (below) usually flips this
+  // before the user ever clicks Settings, so the loader is rarely seen.
+  const [settingsReady, setSettingsReady] = useState(false);
+  const handleSettingsReady = useCallback(() => setSettingsReady(true), []);
   // Maximized terminal: the id of the session filling the whole window (null =
   // normal view). Tracking the id (not a bool) lets us drop back to the tabbed
   // view automatically when that specific terminal is closed.
@@ -227,6 +247,21 @@ function App() {
     setPage("settings");
   }, []);
 
+  // Mount Settings the first time it's opened, then leave it mounted (below) so
+  // re-visits are instant. We deliberately do NOT pre-warm at startup: mounting
+  // this large tree is genuinely expensive, and doing it during launch (which
+  // already mounts every other page) made the whole app hitch — worse on slow
+  // machines. Instead we defer the mount two frames so the branded loader paints
+  // first; its spinner is GPU-composited, so it keeps animating smoothly even
+  // while the heavy first render blocks the main thread. One-time, per launch.
+  useEffect(() => {
+    if (page !== "settings" || settingsMounted) return;
+    const outer = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setSettingsMounted(true));
+    });
+    return () => cancelAnimationFrame(outer);
+  }, [page, settingsMounted]);
+
   const maximizeTerminal = useCallback((id: string) => {
     setActiveSessionId(id);
     setMaxSessionId(id);
@@ -361,18 +396,31 @@ function App() {
           onJumpToHostTerminal={jumpToHostTerminal}
         />
       </div>
+      {/* SFTP stays mounted so an open browser session survives navigation. */}
+      <div className={page === "sftp" ? "block h-full" : "hidden"}>
+        <SftpPage visible={page === "sftp"} />
+      </div>
       {/* Logs stay mounted so a loaded session survives navigation. */}
       <div className={page === "logs" ? "block h-full" : "hidden"}>
         <LogsPage visible={page === "logs"} />
       </div>
-      {page === "settings" && (
-        <Suspense fallback={null}>
-          <SettingsPage
-            focusSection={settingsFocus}
-            onFocusConsumed={() => setSettingsFocus(null)}
-          />
-        </Suspense>
+      {/* Settings stays mounted after first open so re-visits are instant; the
+          hidden div keeps it out of view while another tab is active. */}
+      {settingsMounted && (
+        <div className={page === "settings" ? "block" : "hidden"}>
+          <Suspense fallback={null}>
+            <SettingsPage
+              visible={page === "settings"}
+              focusSection={settingsFocus}
+              onFocusConsumed={() => setSettingsFocus(null)}
+              onReady={handleSettingsReady}
+            />
+          </Suspense>
+        </div>
       )}
+      {/* Branded loader while Settings warms up (only seen if the tab is opened
+          before the background pre-warm finishes). */}
+      {page === "settings" && !settingsReady && <SettingsLoading />}
       {page === "help" && (
         <Suspense fallback={null}>
           <HelpPage />

@@ -76,6 +76,9 @@ type Props = {
   retryNonce: number;
   onGate: (sessionId: string, gate: ConnectionGate) => void;
   onClosed: (sessionId: string) => void;
+  /** Re-open the PTY on this same session id (Reconnect button on the closed
+   * banner). Bumps the parent's retry nonce, which re-runs the connect effect. */
+  onReconnect: (sessionId: string) => void;
   /** Ctrl+F pressed while the terminal has focus. */
   onSearchRequest: () => void;
   /** Alt+Left/Right pressed while the terminal has focus — switch tabs. */
@@ -98,6 +101,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       retryNonce,
       onGate,
       onClosed,
+      onReconnect,
       onSearchRequest,
       onTabNav,
       onSearchResults,
@@ -205,6 +209,23 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     });
     if (containerRef.current) observer.observe(containerRef.current);
 
+    // Right-click to paste (Windows Terminal / PuTTY convention): read the
+    // clipboard and send it to the shell as if typed. Suppresses the native
+    // context menu. A no-op on a closed session (ptyWrite swallows the error).
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      navigator.clipboard
+        ?.readText()
+        .then((text) => {
+          if (text) ptyWrite(sessionId, text).catch(() => {});
+        })
+        .catch(() => {
+          // Clipboard unreadable (empty or permission denied) — ignore.
+        });
+    };
+    const contextMenuEl = containerRef.current;
+    contextMenuEl?.addEventListener("contextmenu", onContextMenu);
+
     const unlistenData = onPtyData((id, bytes) => {
       if (id === sessionId) term.write(bytes);
     });
@@ -232,6 +253,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       resultsSub.dispose();
       resizeSub.dispose();
       observer.disconnect();
+      contextMenuEl?.removeEventListener("contextmenu", onContextMenu);
       unlistenData.then((fn) => fn());
       unlistenClosed.then((fn) => fn());
       term.dispose();
@@ -379,9 +401,16 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
 
   // Re-theme the live terminal when the app theme changes (S1). The CSS vars
   // recompute from the html class, so re-reading them gives the new colours.
+  // Deferred to the next frame: next-themes flips the <html> class in its own
+  // effect, and a deep child's effect runs *before* the provider's, so reading
+  // the computed vars synchronously here would lag one switch behind (a live
+  // terminal kept the previous theme). rAF runs after the class + style recalc.
   useEffect(() => {
-    const term = termRef.current;
-    if (term) term.options.theme = readTerminalTheme();
+    const raf = requestAnimationFrame(() => {
+      const term = termRef.current;
+      if (term) term.options.theme = readTerminalTheme();
+    });
+    return () => cancelAnimationFrame(raf);
   }, [resolvedTheme]);
 
   // Refit + focus when this pane becomes visible.
@@ -440,13 +469,22 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           <span className="text-xs text-muted-foreground">
             {phase.message}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onClosed(sessionId)}
-          >
-            Close tab
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onReconnect(sessionId)}
+            >
+              Reconnect
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onClosed(sessionId)}
+            >
+              Close tab
+            </Button>
+          </div>
         </div>
       )}
     </div>

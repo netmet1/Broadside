@@ -410,9 +410,10 @@ export function LogsPage({ visible }: { visible: boolean }) {
     try {
       const d = new Date();
       const p = (n: number) => String(n).padStart(2, "0");
+      // UTC to match the rest of the app's export filenames (H6 / .otlog save).
       const stamp =
-        `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` +
-        `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+        `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
+        `-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`;
       const path = await saveDialog({
         title: kind === "audit" ? "Export audit log" : "Export error log",
         defaultPath: `${stamp}-broadside-${kind}.jsonl`,

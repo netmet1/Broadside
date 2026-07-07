@@ -31,7 +31,6 @@ import {
   clearCommandHistory,
   commandHistory,
   getAppSettings,
-  setAppSettings,
 } from "@/lib/tauri/settings";
 import type { PresentedKey } from "@/lib/tauri/ssh";
 import { SaveSessionDialog } from "@/components/SaveSessionDialog";
@@ -66,6 +65,9 @@ export function BroadcastPage({
   const [command, setCommand] = useState("");
   const [timeoutSecs, setTimeoutSecs] = useState(String(DEFAULT_TIMEOUT_SECS));
   const [running, setRunning] = useState(false);
+  // Seconds left on the current run's timeout (null when idle) — drives the
+  // live countdown shown in place of the timeout field while a run is in flight.
+  const [remaining, setRemaining] = useState<number | null>(null);
   // All runs, oldest first (newest appended at the bottom).
   const [runs, setRuns] = useState<RunGroup[]>([]);
   const [guardHits, setGuardHits] = useState<GuardHit[]>([]);
@@ -114,6 +116,12 @@ export function BroadcastPage({
   // auto-follows; set false when the user scrolls up to read scrollback, true
   // again when they return to the bottom or dispatch a new command.
   const atBottomRef = useRef(true);
+  // Timestamp (ms) until which scroll events are treated as our own auto-scroll
+  // and ignored — a programmatic scroll fires a *deferred* scroll event, and if
+  // the content grew taller in between, reading scrollTop back would wrongly
+  // mark us "not at bottom" and freeze the follow (prompts21: a late timed-out
+  // block landed below the fold).
+  const autoScrollUntilRef = useRef(0);
 
   const hostsById = useMemo(() => {
     const map = new Map<number, Host>();
@@ -125,11 +133,11 @@ export function BroadcastPage({
   // the selected-by-default treatment) from "existing host the user
   // deselected" (selection preserved) when re-syncing on page return.
   const knownHostIds = useRef<Set<number>>(new Set());
-  // The default timeout is a persisted setting (D-…); the broadcast-tab field
-  // edits it in place. These refs hold the last-saved value (so we don't re-save
-  // on load) and max_concurrent_sessions (set_app_settings writes both at once).
+  // Source of truth for the default timeout is Settings -> Performance (Option
+  // A). This ref mirrors the last-synced default so the Broadcast field can be
+  // a per-run override that snaps back to it after each run, and so a change
+  // made in Settings can be told apart from a user override on re-sync.
   const savedTimeoutRef = useRef<number | null>(null);
-  const maxSessionsRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -152,20 +160,33 @@ export function BroadcastPage({
       .catch((e) => toast.error(errorMessage(e)));
   }, [visible]);
 
+  // Re-sync the default timeout from Settings whenever the page is shown again
+  // (Option A). The page stays mounted in the background, so a default changed
+  // on the Settings tab would otherwise leave a stale value here (prompts21 C2).
+  // Only overwrite the field when it still shows the previously-synced default —
+  // a per-run override the user typed but hasn't sent yet is preserved.
+  useEffect(() => {
+    if (!visible) return;
+    getAppSettings()
+      .then((s) => {
+        const prev = savedTimeoutRef.current;
+        savedTimeoutRef.current = s.default_timeout_secs;
+        setTimeoutSecs((cur) =>
+          prev === null || cur === String(prev)
+            ? String(s.default_timeout_secs)
+            : cur,
+        );
+      })
+      .catch(() => {
+        // Keep the built-in default if settings can't load.
+      });
+  }, [visible]);
+
   useEffect(() => {
     commandHistory(100)
       .then((entries) => setHistory(entries.map((e) => e.command)))
       .catch(() => {
         // Recall is a convenience; the composer works without it.
-      });
-    getAppSettings()
-      .then((s) => {
-        setTimeoutSecs(String(s.default_timeout_secs));
-        savedTimeoutRef.current = s.default_timeout_secs;
-        maxSessionsRef.current = s.max_concurrent_sessions;
-      })
-      .catch(() => {
-        // Keep the built-in 30s default if settings can't load.
       });
     // Reload persisted result history so output survives restarts (D-059).
     broadcastHistoryList(HISTORY_RUNS)
@@ -245,6 +266,9 @@ export function BroadcastPage({
     if (!scroller || !content) return;
     const stickToBottom = () => {
       if (searchMode !== null || !atBottomRef.current) return;
+      // Suppress the scroll event this assignment queues (fires async, after
+      // the content may have grown again) so onOutputScroll doesn't misread it.
+      autoScrollUntilRef.current = performance.now() + 150;
       scroller.scrollTop = scroller.scrollHeight;
     };
     const ro = new ResizeObserver(stickToBottom);
@@ -258,6 +282,9 @@ export function BroadcastPage({
   const onOutputScroll = useCallback(() => {
     const el = outputRef.current;
     if (!el) return;
+    // Ignore the scroll events our own auto-scroll produces; only a genuine
+    // user scroll should be allowed to detach the view from the bottom.
+    if (performance.now() < autoScrollUntilRef.current) return;
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
   }, []);
 
@@ -282,22 +309,17 @@ export function BroadcastPage({
     return Number.isFinite(n) && n >= 1 && n <= 3600 ? Math.floor(n) : null;
   })();
 
-  // Persist a valid timeout change as the default so it survives restart (6.4).
-  // Debounced; skips the no-op save right after the initial settings load.
+  // Tick the countdown down once a second while a run is in flight (C2). The
+  // run itself resolves when every host finishes or the timeout elapses, which
+  // clears `remaining` — this only drives the visual.
   useEffect(() => {
-    if (parsedTimeout === null || savedTimeoutRef.current === null) return;
-    if (parsedTimeout === savedTimeoutRef.current) return;
-    const t = window.setTimeout(() => {
-      savedTimeoutRef.current = parsedTimeout;
-      setAppSettings({
-        max_concurrent_sessions: maxSessionsRef.current,
-        default_timeout_secs: parsedTimeout,
-      }).catch(() => {
-        // Persisting the default is best-effort; the run still uses the value.
-      });
-    }, 600);
+    if (!running || remaining === null || remaining <= 0) return;
+    const t = window.setTimeout(
+      () => setRemaining((r) => (r === null ? null : Math.max(0, r - 1))),
+      1000,
+    );
     return () => window.clearTimeout(t);
-  }, [parsedTimeout]);
+  }, [running, remaining]);
 
   const runBroadcast = useCallback(
     async (hostIds: number[], cmd: string, confirmed: boolean) => {
@@ -308,6 +330,8 @@ export function BroadcastPage({
       // Mirror the backend's history write (consecutive duplicates collapse).
       setHistory((prev) => (prev[0] === cmd ? prev : [cmd, ...prev]));
       setRunning(true);
+      // Kick off the visible countdown from the timeout this run will use.
+      setRemaining(parsedTimeout ?? DEFAULT_TIMEOUT_SECS);
       // A fresh dispatch always follows its own output to the bottom, even if
       // the user had scrolled up in the previous run's results.
       atBottomRef.current = true;
@@ -358,6 +382,10 @@ export function BroadcastPage({
         );
       } finally {
         setRunning(false);
+        setRemaining(null);
+        // Option A: the field is a per-run override — snap it back to the
+        // Settings default once the run finishes (or times out).
+        setTimeoutSecs(String(savedTimeoutRef.current ?? DEFAULT_TIMEOUT_SECS));
       }
     },
     [hostsById, parsedTimeout],
@@ -399,6 +427,17 @@ export function BroadcastPage({
   const retryHosts = useCallback(
     (hostIds: number[]) => {
       runBroadcast(hostIds, lastCommandRef.current, lastConfirmedRef.current);
+    },
+    [runBroadcast],
+  );
+
+  /** Re-run a single host from a specific run's failed block (the per-block
+   * Retry button). Uses that run's own command so retrying an older run is
+   * correct, and passes confirmed=true — the command already cleared the guard
+   * when it was first dispatched. Lands as a fresh one-host run. */
+  const retryHostInRun = useCallback(
+    (command: string, hostId: number) => {
+      runBroadcast([hostId], command, true);
     },
     [runBroadcast],
   );
@@ -718,6 +757,11 @@ export function BroadcastPage({
                           const host = hostsById.get(block.host_id);
                           if (host) setMismatch({ host, stored, presented });
                         }}
+                        onRetry={
+                          running
+                            ? undefined
+                            : () => retryHostInRun(run.command, block.host_id)
+                        }
                       />
                     );
                   })}
@@ -726,6 +770,11 @@ export function BroadcastPage({
                   <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
                     <Loader2Icon className="h-3.5 w-3.5 animate-spin" />
                     Waiting on {run.pending.size}: {waitingLabels}
+                    {running && remaining !== null && (
+                      <span className="tabular-nums text-muted-foreground/80">
+                        · {remaining}s left
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -747,12 +796,26 @@ export function BroadcastPage({
           />
           <div className="flex items-center gap-1.5">
             <Input
-              value={timeoutSecs}
+              value={
+                running && remaining !== null ? String(remaining) : timeoutSecs
+              }
               onChange={(e) => setTimeoutSecs(e.target.value)}
               disabled={running}
-              aria-label="Timeout in seconds"
-              className={`h-10 w-16 text-center font-mono text-sm ${parsedTimeout === null ? "border-destructive" : ""}`}
-              {...hint("Per-command timeout in seconds (1-3600), saved as the default. Partial output is kept if it elapses.")}
+              aria-label={running ? "Timeout countdown (seconds)" : "Timeout in seconds"}
+              className={`h-10 w-16 text-center font-mono text-sm ${
+                running
+                  ? remaining !== null && remaining <= 3
+                    ? "text-red-400"
+                    : "text-amber-400"
+                  : parsedTimeout === null
+                    ? "border-destructive"
+                    : ""
+              }`}
+              {...hint(
+                running
+                  ? "Time left before this run times out."
+                  : "Per-command timeout in seconds (1-3600). Overrides this run only; resets to the Settings → Performance default afterward. Partial output is kept if it elapses.",
+              )}
             />
             <span className="text-xs text-muted-foreground">s</span>
           </div>

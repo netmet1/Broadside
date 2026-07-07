@@ -133,10 +133,13 @@ pub fn pty_resize(
 }
 
 /// Lists the local shells available on this machine (PowerShell / pwsh / Command
-/// Prompt / installed WSL distros) for the "New local shell" launcher.
+/// Prompt / installed WSL distros) for the "New local shell" launcher. Async and
+/// cached: detection spawns wsl.exe (seconds when the WSL service is cold), and
+/// running that inside a sync command blocked the main thread — freezing every
+/// other IPC call (the Settings-spinner stall) and the event loop itself.
 #[tauri::command]
-pub fn list_local_shells() -> Vec<crate::local::LocalShell> {
-    crate::local::list_local_shells()
+pub async fn list_local_shells() -> Vec<crate::local::LocalShell> {
+    crate::local::list_local_shells_cached().await
 }
 
 /// Opens a local shell tab over ConPTY. Mirrors `pty_open` but the source is a

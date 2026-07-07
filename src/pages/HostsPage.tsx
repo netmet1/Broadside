@@ -92,8 +92,16 @@ export function HostsPage({
   const [deleting, setDeleting] = useState<Host | null>(null);
 
   // Per-host connection test + the TOFU / key-mismatch dialogs it can surface.
-  const { testingId, tofu, setTofu, mismatch, setMismatch, runTest } =
-    useHostConnTest();
+  const {
+    testingId,
+    failedIds,
+    clearFailed,
+    tofu,
+    setTofu,
+    mismatch,
+    setMismatch,
+    runTest,
+  } = useHostConnTest();
 
   const defaultColor = useMemo(
     () => nextColor(hosts.map((h) => h.color)),
@@ -226,6 +234,9 @@ export function HostsPage({
   };
 
   const openEdit = (host: Host) => {
+    // Editing the host is the operator's chance to fix bad details/credentials,
+    // so drop any stale failed-test mark on its Test button.
+    clearFailed(host.id);
     setEditing(host);
     setFormOpen(true);
   };
@@ -718,12 +729,18 @@ export function HostsPage({
                       onClick={() => runTest(h)}
                       disabled={testingId !== null}
                       aria-label="Test connection"
-                      {...hint(`Test SSH connectivity and host key for ${h.label}`)}
+                      {...hint(
+                        failedIds.has(h.id)
+                          ? `Last connection test for ${h.label} failed — retry, or edit the host to fix it`
+                          : `Test SSH connectivity and host key for ${h.label}`,
+                      )}
                     >
                       {testingId === h.id ? (
                         <Loader2Icon className="animate-spin" />
                       ) : (
-                        <PlugZapIcon />
+                        <PlugZapIcon
+                          className={failedIds.has(h.id) ? "text-red-500" : undefined}
+                        />
                       )}
                     </Button>
                     <Button

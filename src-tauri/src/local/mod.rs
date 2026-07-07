@@ -30,9 +30,41 @@ pub struct LocalShell {
     pub kind: String,
 }
 
-/// Lists the local shells available on this machine: PowerShell (always present
-/// on Windows), pwsh if installed, Command Prompt, and each installed WSL distro.
-pub fn list_local_shells() -> Vec<LocalShell> {
+/// Shell detection result, computed once per launch (below). Detection spawns
+/// `wsl.exe`, which can take seconds when the WSL service is cold — so it must
+/// only ever run on a blocking thread, never on the main/IPC thread (a sync
+/// command doing this froze every in-flight IPC call AND the event loop, which
+/// was the multi-second Settings-spinner / launch-hitch bug).
+static SHELLS: tokio::sync::OnceCell<Vec<LocalShell>> = tokio::sync::OnceCell::const_new();
+
+/// Lists the local shells available on this machine, cached for the app's
+/// lifetime (the set effectively never changes mid-run; re-detecting per call
+/// paid the wsl.exe cost every time). Concurrent first callers share one
+/// detection run. Call `prewarm_shells` at startup so this is already resolved
+/// by the time any page asks.
+pub async fn list_local_shells_cached() -> Vec<LocalShell> {
+    SHELLS
+        .get_or_init(|| async {
+            tauri::async_runtime::spawn_blocking(detect_local_shells)
+                .await
+                .unwrap_or_default()
+        })
+        .await
+        .clone()
+}
+
+/// Kicks off shell detection in the background at startup, so the first real
+/// caller (Terminals launcher, Settings Appearance) gets a cache hit.
+pub fn prewarm_shells() {
+    tauri::async_runtime::spawn(async {
+        let _ = list_local_shells_cached().await;
+    });
+}
+
+/// Detects the local shells: PowerShell (always present on Windows), pwsh if
+/// installed, Command Prompt, and each installed WSL distro. Blocking — spawns
+/// wsl.exe; only run via `list_local_shells_cached`.
+fn detect_local_shells() -> Vec<LocalShell> {
     let mut shells = vec![LocalShell {
         id: "powershell".into(),
         label: "PowerShell".into(),
@@ -60,19 +92,24 @@ pub fn list_local_shells() -> Vec<LocalShell> {
     shells
 }
 
-/// Whether `exe` resolves on PATH (via `where.exe`).
+/// Whether `exe` resolves on PATH — searched in-process (no `where.exe` spawn;
+/// process spawns from a GUI app pay conhost startup and AV scanning).
 fn on_path(exe: &str) -> bool {
-    std::process::Command::new("where.exe")
-        .arg(exe)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path).any(|dir| !dir.as_os_str().is_empty() && dir.join(exe).is_file())
 }
 
 /// Installed WSL distro names, from `wsl.exe -l -q` (which emits UTF-16LE).
 fn list_wsl_distros() -> Vec<String> {
+    use std::os::windows::process::CommandExt;
+    // Don't create a console for the child: avoids conhost startup cost and a
+    // possible window flash (this app is a windows-subsystem GUI process).
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let output = match std::process::Command::new("wsl.exe")
         .args(["-l", "-q"])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
     {
         Ok(o) if o.status.success() => o.stdout,

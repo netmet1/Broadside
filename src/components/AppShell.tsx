@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   CastIcon,
   CircleHelpIcon,
+  FolderTreeIcon,
   InfoIcon,
   LayersIcon,
   Minimize2Icon,
@@ -16,7 +17,7 @@ import {
 
 import { AboutDialog } from "@/components/AboutDialog";
 import { StatusBar } from "@/components/StatusBar";
-import logoUrl from "@/assets/broadside-logo.png";
+import logoUrl from "@/assets/rail_image.png";
 import { useHint, useStatus } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ export type Page =
   | "ptybroadcast"
   | "terminals"
   | "multiterminal"
+  | "sftp"
   | "logs"
   | "settings"
   | "help";
@@ -65,6 +67,12 @@ const NAV_ITEMS: {
     label: "MultiTerminal",
     icon: LayersIcon,
     hint: "Run a command across all terminals and see every host's output, color-tinted (needs 2+ open)",
+  },
+  {
+    page: "sftp",
+    label: "SFTP",
+    icon: FolderTreeIcon,
+    hint: "Browse and transfer files over SFTP",
   },
   {
     page: "logs",
@@ -386,7 +394,7 @@ export function AppShell({
             maximized && "hidden",
           )}
         />
-        <main className="min-w-0 flex-1 overflow-auto">{children}</main>
+        <main className="relative min-w-0 flex-1 overflow-auto">{children}</main>
       </div>
       {!maximized && <StatusBar />}
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
