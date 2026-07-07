@@ -129,6 +129,18 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     ),
   },
   {
+    term: "sftp",
+    label: "SFTP (SSH File Transfer Protocol)",
+    def: (
+      <>
+        A way to browse and copy files over an <Term term="SSH" /> connection,
+        using the same login and encrypted channel as a remote shell. Broadside's
+        SFTP tab uses it to move files to and from your hosts; nothing travels
+        outside the SSH session.
+      </>
+    ),
+  },
+  {
     term: "PTY",
     label: "PTY (pseudo-terminal)",
     def: (
@@ -296,8 +308,9 @@ const SECTIONS: HelpSection[] = [
           <p>
             The buttons down the left side switch between the main areas of the
             app: <Nav>Hosts</Nav>, <Nav>Terminals</Nav>, <Nav>Broadcast</Nav>,{" "}
-            <Nav>PTY Broadcast</Nav>, <Nav>MultiTerminal</Nav>, <Nav>Logs</Nav>{" "}
-            and <Nav>Settings</Nav>. <Nav>Help</Nav> and <Nav>About</Nav> sit at
+            <Nav>PTY Broadcast</Nav>, <Nav>MultiTerminal</Nav>, <Nav>SFTP</Nav>,{" "}
+            <Nav>Logs</Nav> and <Nav>Settings</Nav>. <Nav>Help</Nav> and{" "}
+            <Nav>About</Nav> sit at
             the bottom. The rail collapses to icons only on narrow windows, or
             with the collapse button at the top. Drag its right edge to resize
             it, or double-click that edge to reset the width.
@@ -528,7 +541,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-broadcast",
     title: "Broadcast",
     keywords:
-      "broadcast many hosts one command exec non-interactive output history autoscroll headers timeout guard destructive parallel concurrency",
+      "broadcast many hosts one command exec non-interactive output history autoscroll headers timeout guard destructive parallel concurrency rail filter tag label search find select all sort collapse",
     body: (
       <>
         <Lead>
@@ -556,6 +569,34 @@ const SECTIONS: HelpSection[] = [
               you can hide the per-host headers if you prefer a compact view.
             </li>
           </Bullets>
+          <H3>Choosing and filtering hosts</H3>
+          <Bullets>
+            <li>
+              Pick targets in the host rail on the left. It collapses to color
+              dots with the arrow button, has a <Nav>Sort</Nav> dropdown and a{" "}
+              <Nav>Select all</Nav> box, and its collapse state is remembered.
+            </li>
+            <li>
+              Two filters narrow the rail: a <Nav>Find by label…</Nav> box that
+              matches host labels as you type (like a find bar), and a{" "}
+              <Nav>Filter tags</Nav> dropdown that works exactly like the tag
+              filter on the <SectionLink id="help-sec-hosts">Hosts</SectionLink>{" "}
+              table — uncheck tags (or the untagged bucket) to hide hosts, with{" "}
+              <Nav>All</Nav> / <Nav>None</Nav> shortcuts. The two combine, and each
+              filter lasts for the session and resets on restart.
+            </li>
+            <li>
+              Filtering only ever narrows what you can act on:{" "}
+              <strong className="font-semibold">a host the filter hides is
+              unchecked automatically</strong>, and it comes back{" "}
+              <em>unchecked</em> when you clear the filter — so a hidden host can
+              never be swept into a broadcast. <Nav>Select all</Nav> and the
+              counter apply to the visible hosts only. This same rail filter is on{" "}
+              <SectionLink id="help-sec-ptybroadcast">PTY Broadcast</SectionLink>,{" "}
+              <SectionLink id="help-sec-multiterminal">MultiTerminal</SectionLink>{" "}
+              and <SectionLink id="help-sec-sftp">SFTP Broadcast</SectionLink>.
+            </li>
+          </Bullets>
           <H3>Safety</H3>
           <p>
             A destructive-command guard can warn you before sending commands that
@@ -570,7 +611,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-ptybroadcast",
     title: "PTY Broadcast",
     keywords:
-      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference",
+      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all",
     body: (
       <>
         <Lead>
@@ -597,6 +638,13 @@ const SECTIONS: HelpSection[] = [
               <Nav>Broadcast</Nav> for one-shot commands and{" "}
               <Nav>PTY Broadcast</Nav> for interactive ones.
             </li>
+            <li>
+              The session rail has the same <Nav>Find by label…</Nav> box and{" "}
+              <Nav>Filter tags</Nav> dropdown as{" "}
+              <SectionLink id="help-sec-broadcast">Broadcast</SectionLink>{" "}
+              (filtering a session out unchecks it), applied to each session's
+              host.
+            </li>
           </Bullets>
         </Detail>
       </>
@@ -606,7 +654,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-multiterminal",
     title: "MultiTerminal",
     keywords:
-      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror typed composer",
+      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror output here typed composer filter tag label search find selectable connected",
     body: (
       <>
         <Lead>
@@ -624,11 +672,18 @@ const SECTIONS: HelpSection[] = [
               color dots; its actions shrink to icons when collapsed.
             </li>
             <li>
+              The rail carries the same <Nav>Find by label…</Nav> box and{" "}
+              <Nav>Filter tags</Nav> dropdown as{" "}
+              <SectionLink id="help-sec-broadcast">Broadcast</SectionLink>. Only{" "}
+              connected, unfiltered sessions are selectable, and hiding a session
+              with the filter unchecks it.
+            </li>
+            <li>
               Each command produces a block in the log, labeled with the command
               that ran. You can delete an individual block to keep the view tidy.
             </li>
             <li>
-              Turn on <Nav>Mirror typed commands</Nav> to also capture commands you
+              Turn on <Nav>Mirror Output Here</Nav> to also capture commands you
               type by hand inside a <Nav>Terminals</Nav> tab; with it off, only
               commands sent from <Nav>MultiTerminal</Nav> appear here.
             </li>
@@ -656,6 +711,84 @@ const SECTIONS: HelpSection[] = [
               tears down every open terminal after a confirmation.
             </li>
           </Bullets>
+        </Detail>
+      </>
+    ),
+  },
+  {
+    id: "help-sec-sftp",
+    title: "SFTP",
+    keywords:
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember",
+    body: (
+      <>
+        <Lead>
+          <Nav>SFTP</Nav> browses and moves files over the same secure{" "}
+          <Term term="SSH" /> connection as the rest of the app (see{" "}
+          <Term term="sftp" />). It has two tabs: <Nav>Commander</Nav>, a two-pane
+          file manager for a single host, and <Nav>Broadcast</Nav>, which sends or
+          pulls one path across many hosts at once.
+        </Lead>
+        <Detail>
+          <H3>Commander (one host)</H3>
+          <Bullets>
+            <li>
+              A two-pane view — your PC on the left, the remote host on the right.
+              Open folders to navigate, and use the path bar to jump around; both
+              sides show the same columns so they read alike.
+            </li>
+            <li>
+              Transfer by dragging an item from one side to the other, or with the
+              transfer buttons. Folders copy recursively, with a progress bar and a
+              running byte count.
+            </li>
+            <li>
+              You can make a new folder on either side and delete items. Local
+              deletes go to the Windows <Nav>Recycle Bin</Nav> so they are
+              recoverable; a non-empty remote folder is refused with a clear
+              message rather than failing silently.
+            </li>
+          </Bullets>
+          <H3>Broadcast (many hosts)</H3>
+          <Bullets>
+            <li>
+              The <Nav>PUT / GET</Nav> toggle sets the direction: <Nav>PUT</Nav>{" "}
+              sends one local file or folder to every selected host;{" "}
+              <Nav>GET</Nav> pulls one remote path from every host into its own
+              subfolder on your PC (one folder per host label, so files from
+              different hosts never collide). Each host gets its own progress bar,
+              and a few hosts transfer at a time so many targets are queued rather
+              than opened all at once.
+            </li>
+            <li>
+              Because a broadcast write can overwrite data on many machines at
+              once, it is gated: an amber banner explains the risk and you must
+              type <Nav>CONFIRM</Nav> before <em>every</em> run. By default no
+              hosts are selected, and the rail has the same tag + label filter as{" "}
+              <SectionLink id="help-sec-broadcast">Broadcast</SectionLink>.
+            </li>
+            <li>
+              <Nav>Create path if it doesn't exist</Nav> (PUT only) makes the
+              destination directory on each host when it is missing; it is a
+              session-only toggle that resets on restart.
+            </li>
+            <li>
+              First contact with a host is verified with <Term term="TOFU" /> just
+              like elsewhere: unknown keys are gathered into one <Nav>trust</Nav>{" "}
+              dialog after the run, and trusting them retries those hosts. A host
+              whose key has <em>changed</em> is refused, never offered for trust.
+            </li>
+          </Bullets>
+          <H3>When a file already exists</H3>
+          <p>
+            The selector on the tab row applies to <em>both</em> tabs:{" "}
+            <Nav>Overwrite all</Nav> always replaces, <Nav>Newer only</Nav>{" "}
+            replaces only when the source is newer, and <Nav>Skip existing</Nav>{" "}
+            leaves same-named files untouched. It governs recursive folder
+            transfers (a single file always overwrites), is remembered across
+            restarts, and so is the tab — Commander or Broadcast — you last had
+            open.
+          </p>
         </Detail>
       </>
     ),
@@ -845,7 +978,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-glossary",
     title: "Glossary",
     keywords:
-      "glossary definitions terms ssh pty conptr conpty sudo tofu host key passphrase credential manager argon2 csv exec ansi xterm shell meaning",
+      "glossary definitions terms ssh sftp file transfer pty conptr conpty sudo tofu host key passphrase credential manager argon2 csv exec ansi xterm shell meaning",
     body: (
       <>
         <Lead>
