@@ -30,6 +30,8 @@ import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog"
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
+import { useRailFilter } from "@/lib/useRailFilter";
+import { RailFilterControls } from "@/components/RailFilterControls";
 import {
   omniBlocksAdd,
   omniBlocksClear,
@@ -130,6 +132,20 @@ export function MultiTerminalPage({
 
   // Gating: the tab is always present but inert until 2+ terminals are open.
   const ready = sessions.length >= 2;
+
+  // Tag + label filter over the rail (view-only; selection is unaffected). Rows
+  // are sessions, filtered against each session's live host (label/tag may have
+  // been edited since the terminal opened, so prefer the resolved host).
+  const railFilterHosts = useMemo(
+    () => sessions.map((s) => hostsById.get(s.host.id) ?? s.host),
+    [sessions, hostsById],
+  );
+  const railFilter = useRailFilter(railFilterHosts, "omni-rail-filter");
+  const railMatches = railFilter.matches;
+  const visibleSessions = useMemo(
+    () => sessions.filter((s) => railMatches(hostsById.get(s.host.id) ?? s.host)),
+    [sessions, hostsById, railMatches],
+  );
 
   const selectedConnectedCount = useMemo(
     () =>
@@ -471,10 +487,12 @@ export function MultiTerminalPage({
               </label>
             )}
           </div>
+          {/* Tag + label filter (mirrors the Hosts table's tag filter). */}
+          {!railCollapsed && <RailFilterControls f={railFilter} />}
           {/* pt-2 (not just pb-2) so the first item's selection ring isn't
               clipped by the scroll container's top edge when collapsed. */}
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {sessions.map((s) => {
+            {visibleSessions.map((s) => {
               const isConnected = connectedSessions.has(s.id);
               const color = hostsById.get(s.host.id)?.color ?? s.host.color;
               const label = hostsById.get(s.host.id)?.label ?? s.host.label;
@@ -539,6 +557,14 @@ export function MultiTerminalPage({
                 first.
               </p>
             )}
+            {sessions.length > 0 &&
+              visibleSessions.length === 0 &&
+              !railCollapsed &&
+              railFilter.filterActive && (
+                <p className="px-2 py-4 text-xs text-muted-foreground">
+                  No sessions match the current filter.
+                </p>
+              )}
           </div>
           {/* Bottom-pinned actions — stay visible while the host list above
               scrolls. When the rail is collapsed they shrink to icon-only

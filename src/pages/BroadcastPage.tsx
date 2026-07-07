@@ -49,6 +49,8 @@ import {
 import { OutputBlock } from "@/pages/broadcast/OutputBlock";
 import { useBroadcastRail } from "@/pages/broadcast/useBroadcastRail";
 import { useOutputSearch } from "@/pages/broadcast/useOutputSearch";
+import { useRailFilter } from "@/lib/useRailFilter";
+import { RailFilterControls } from "@/components/RailFilterControls";
 
 export function BroadcastPage({
   visible,
@@ -94,6 +96,13 @@ export function BroadcastPage({
     railHosts,
     showRailTag,
   } = useBroadcastRail(hosts, connectedHostIds);
+
+  // Tag + label filter over the rail (view-only; selection is unaffected).
+  const railFilter = useRailFilter(hosts, "broadcast-rail-filter");
+  const visibleRailHosts = useMemo(
+    () => railHosts.filter(railFilter.matches),
+    [railHosts, railFilter.matches],
+  );
 
   const hint = useHint();
   const shortcuts = useShortcuts(visible);
@@ -562,10 +571,12 @@ export function BroadcastPage({
             </select>
           </div>
         )}
+        {/* Tag + label filter (mirrors the Hosts table's tag filter). */}
+        {!railCollapsed && <RailFilterControls f={railFilter} />}
         {/* pt-2 (not just pb-2) so the first item's selection ring isn't
             clipped by the scroll container's top edge when collapsed. */}
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {railHosts.map((h) =>
+          {visibleRailHosts.map((h) =>
             railCollapsed ? (
               <button
                 key={h.id}
@@ -632,6 +643,14 @@ export function BroadcastPage({
               No hosts configured. Add hosts on the Hosts page first.
             </p>
           )}
+          {hosts.length > 0 &&
+            visibleRailHosts.length === 0 &&
+            !railCollapsed &&
+            railFilter.filterActive && (
+              <p className="px-2 py-4 text-xs text-muted-foreground">
+                No hosts match the current filter.
+              </p>
+            )}
         </div>
         {/* Bottom-pinned clear actions — stay visible while the host list
             above scrolls (work queue 2026-06-13). Hidden when collapsed. */}

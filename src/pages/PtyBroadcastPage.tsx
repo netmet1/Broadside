@@ -16,6 +16,8 @@ import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { RAIL_SORT_OPTIONS, sortForRail } from "@/lib/railSort";
+import { useRailFilter } from "@/lib/useRailFilter";
+import { RailFilterControls } from "@/components/RailFilterControls";
 import {
   ptyHistoryAdd,
   ptyHistoryClear,
@@ -298,6 +300,16 @@ export function PtyBroadcastPage({
     [sessions, railSort, connectedSessions],
   );
 
+  // Tag + label filter over the rail (view-only; selection is unaffected). The
+  // rail rows are sessions, so the filter runs against each session's host.
+  const railFilterHosts = useMemo(() => sessions.map((s) => s.host), [sessions]);
+  const railFilter = useRailFilter(railFilterHosts, "pty-broadcast-rail-filter");
+  const railMatches = railFilter.matches;
+  const visibleRailSessions = useMemo(
+    () => railSessions.filter((s) => railMatches(s.host)),
+    [railSessions, railMatches],
+  );
+
   const hasOutput = runs.length > 0;
 
   return (
@@ -369,10 +381,12 @@ export function PtyBroadcastPage({
               </select>
             </div>
           )}
+          {/* Tag + label filter (mirrors the Hosts table's tag filter). */}
+          {!railCollapsed && <RailFilterControls f={railFilter} />}
           {/* pt-2 (not just pb-2) so the first item's selection ring isn't
               clipped by the scroll container's top edge when collapsed. */}
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {railSessions.map((s) =>
+            {visibleRailSessions.map((s) =>
               railCollapsed ? (
                 <button
                   key={s.id}
@@ -430,6 +444,14 @@ export function PtyBroadcastPage({
                 first.
               </p>
             )}
+            {sessions.length > 0 &&
+              visibleRailSessions.length === 0 &&
+              !railCollapsed &&
+              railFilter.filterActive && (
+                <p className="px-2 py-4 text-xs text-muted-foreground">
+                  No sessions match the current filter.
+                </p>
+              )}
           </div>
           {/* Bottom-pinned clear actions — stay visible while the session list
               above scrolls (work queue 2026-06-13). Hidden when collapsed. */}

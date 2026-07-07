@@ -34,6 +34,8 @@ import { cn } from "@/lib/utils";
 import { wordInitials } from "@/pages/broadcast/model";
 import { BroadcastOutputLine } from "@/pages/sftp/BroadcastOutputLine";
 import { useSftpBroadcast } from "@/pages/sftp/useSftpBroadcast";
+import { useRailFilter } from "@/lib/useRailFilter";
+import { RailFilterControls } from "@/components/RailFilterControls";
 
 /** Persisted Local↔Remote split (percent width of the Local box). */
 const SPLIT_KEY = "sftp-broadcast-split";
@@ -57,6 +59,13 @@ export function BroadcastTab({
   const railHosts = useMemo(
     () => sortForRail(b.hosts, (h) => h, b.railSort),
     [b.hosts, b.railSort],
+  );
+
+  // Tag + label filter over the rail (view-only; selection is unaffected).
+  const railFilter = useRailFilter(b.hosts, "sftp-broadcast-rail-filter");
+  const visibleRailHosts = useMemo(
+    () => railHosts.filter(railFilter.matches),
+    [railHosts, railFilter.matches],
   );
 
   // Auto-scroll the output to the bottom as lines stream, but release the follow
@@ -197,8 +206,10 @@ export function BroadcastTab({
               </select>
             </div>
           )}
+          {/* Tag + label filter (mirrors the Hosts table's tag filter). */}
+          {!b.railCollapsed && <RailFilterControls f={railFilter} />}
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {railHosts.map((h) => {
+            {visibleRailHosts.map((h) => {
               const st = b.results.get(h.id)?.status;
               const dot =
                 st === "ok"
@@ -256,6 +267,14 @@ export function BroadcastTab({
                 No hosts yet. Add hosts on the Hosts page first.
               </p>
             )}
+            {b.hosts.length > 0 &&
+              visibleRailHosts.length === 0 &&
+              !b.railCollapsed &&
+              railFilter.filterActive && (
+                <p className="px-2 py-4 text-xs text-muted-foreground">
+                  No hosts match the current filter.
+                </p>
+              )}
           </div>
           {!b.railCollapsed && (
             <div className="shrink-0 border-t border-border/50 p-2">
