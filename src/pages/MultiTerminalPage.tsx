@@ -161,22 +161,22 @@ export function MultiTerminalPage({
     visible,
   );
 
-  // Selection only ever contains CONNECTED sessions — disconnected ones are
-  // ghosted in the rail and can never be a dispatch target (O5). Newly-connected
-  // sessions are pre-selected (broadcast-to-all default); the user's unchecks
-  // are preserved; a disconnect removes the session from the selection.
-  const knownConnected = useRef<Set<string>>(new Set());
+  // Nothing is pre-selected — the user opts in. Selection only ever contains
+  // CONNECTED, open sessions: a disconnect or close removes a session from the
+  // selection (disconnected ones are ghosted in the rail and can't be a dispatch
+  // target). The user's checks are otherwise preserved.
   useEffect(() => {
     setSelected((prev) => {
-      const next = new Set<string>();
-      for (const s of sessions) {
-        if (!connectedSessions.has(s.id)) continue; // ghost: never selectable
-        if (!knownConnected.current.has(s.id) || prev.has(s.id)) next.add(s.id);
-      }
-      knownConnected.current = new Set(
+      const connectedOpen = new Set(
         sessions.filter((s) => connectedSessions.has(s.id)).map((s) => s.id),
       );
-      return next;
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (connectedOpen.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
     });
   }, [sessions, connectedSessions]);
 

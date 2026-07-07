@@ -117,18 +117,14 @@ export function PtyBroadcastPage({
     });
   }, []);
 
-  // New sessions arrive pre-selected (mirrors Broadcast's select-all default);
-  // sessions the user already unchecked stay unchecked. State persists across
-  // tab switches (the page stays mounted) but not restarts.
-  const knownIds = useRef<Set<string>>(new Set());
+  // Nothing is pre-selected — the user opts into each broadcast. Keep the
+  // user's choices; drop any selected id whose session has closed. State
+  // persists across tab switches (the page stays mounted) but not restarts.
   useEffect(() => {
     setSelected((prev) => {
-      const next = new Set<string>();
-      for (const s of sessions) {
-        if (!knownIds.current.has(s.id) || prev.has(s.id)) next.add(s.id);
-      }
-      knownIds.current = new Set(sessions.map((s) => s.id));
-      return next;
+      const live = new Set(sessions.map((s) => s.id));
+      const next = new Set([...prev].filter((id) => live.has(id)));
+      return next.size === prev.size ? prev : next;
     });
   }, [sessions]);
 

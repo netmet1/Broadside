@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { allTags } from "@/lib/hostTags";
+import { cn } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -239,6 +240,62 @@ export function HostFormPanel({
     () => allTags(existingHosts.map((h) => h.tag)),
     [existingHosts],
   );
+
+  // Per-segment tag autocomplete. The field holds a comma-separated list; the
+  // dropdown suggests existing tags that match the segment *currently being
+  // typed* (after the last comma), excluding ones already in the field. A native
+  // <datalist> can't do this — it only matches the whole value — so this is a
+  // small custom popover over the same suggestion list.
+  const tagValue = watch("tag") ?? "";
+  const [tagMenuOpen, setTagMenuOpen] = useState(false);
+  const [tagHighlight, setTagHighlight] = useState(0);
+  const tagInputRef = useRef<HTMLInputElement | null>(null);
+  const tagReg = register("tag");
+  const tagMatches = useMemo(() => {
+    const parts = tagValue.split(",");
+    const current = (parts[parts.length - 1] ?? "").trim().toLowerCase();
+    const priorKeys = new Set(
+      parts
+        .slice(0, -1)
+        .map((p) => p.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    return tagSuggestions.filter((t) => {
+      const key = t.toLowerCase();
+      if (priorKeys.has(key) || key === current) return false;
+      return current === "" || key.includes(current);
+    });
+  }, [tagValue, tagSuggestions]);
+  const applyTag = (tag: string) => {
+    const prior = tagValue
+      .split(",")
+      .slice(0, -1)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    setValue("tag", [...prior, tag].join(", "), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    setTagMenuOpen(false);
+    setTagHighlight(0);
+    tagInputRef.current?.focus();
+  };
+  const onTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!tagMenuOpen || tagMatches.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setTagHighlight((i) => Math.min(i + 1, tagMatches.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setTagHighlight((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      applyTag(tagMatches[Math.min(tagHighlight, tagMatches.length - 1)]);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setTagMenuOpen(false);
+    }
+  };
 
   // Reset form whenever the host being edited changes (or we open in add mode).
   useEffect(() => {
@@ -483,21 +540,58 @@ export function HostFormPanel({
 
           <div className="grid gap-1">
             <Label htmlFor="tag">Tags</Label>
-            <Input
-              id="tag"
-              list="host-tag-suggestions"
-              autoComplete="off"
-              {...register("tag")}
-              placeholder="e.g. prod, db, us-east"
-            />
-            <datalist id="host-tag-suggestions">
-              {tagSuggestions.map((t) => (
-                <option key={t} value={t} />
-              ))}
-            </datalist>
+            <div className="relative">
+              <Input
+                id="tag"
+                autoComplete="off"
+                {...tagReg}
+                ref={(el) => {
+                  tagReg.ref(el);
+                  tagInputRef.current = el;
+                }}
+                onChange={(e) => {
+                  tagReg.onChange(e);
+                  setTagMenuOpen(true);
+                  setTagHighlight(0);
+                }}
+                onFocus={() => setTagMenuOpen(true)}
+                onBlur={(e) => {
+                  tagReg.onBlur(e);
+                  setTagMenuOpen(false);
+                }}
+                onKeyDown={onTagKeyDown}
+                placeholder="e.g. prod, db, us-east"
+              />
+              {tagMenuOpen && tagMatches.length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+                  {tagMatches.map((t, idx) => (
+                    <button
+                      key={t}
+                      type="button"
+                      // mousedown (not click) + preventDefault so selecting an
+                      // option doesn't blur the input first and close the menu.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applyTag(t);
+                      }}
+                      onMouseEnter={() => setTagHighlight(idx)}
+                      className={cn(
+                        "block w-full truncate rounded-sm px-2 py-1 text-left text-sm",
+                        idx === Math.min(tagHighlight, tagMatches.length - 1)
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent/60",
+                      )}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <p className="min-h-4 text-xs text-muted-foreground">
               Optional. Separate multiple tags with commas; used for grouping,
-              sorting and filtering.
+              sorting and filtering. Matching existing tags are suggested as you
+              type.
             </p>
           </div>
 

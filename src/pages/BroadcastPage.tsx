@@ -138,10 +138,6 @@ export function BroadcastPage({
     return map;
   }, [hosts]);
 
-  // Hosts known from the previous refresh — lets us tell "new host" (gets
-  // the selected-by-default treatment) from "existing host the user
-  // deselected" (selection preserved) when re-syncing on page return.
-  const knownHostIds = useRef<Set<number>>(new Set());
   // Source of truth for the default timeout is Settings -> Performance (Option
   // A). This ref mirrors the last-synced default so the Broadcast field can be
   // a per-run override that snaps back to it after each run, and so a change
@@ -153,17 +149,12 @@ export function BroadcastPage({
     listHosts()
       .then((all) => {
         setHosts(all);
+        // Nothing is pre-selected — the user opts into each broadcast. Only
+        // drop selected ids whose host no longer exists.
         setSelected((prev) => {
-          const next = new Set<number>();
-          for (const h of all) {
-            // Pre-select everything new — broadcast-to-all is the common
-            // case; keep the user's choices for hosts they've already seen.
-            if (!knownHostIds.current.has(h.id) || prev.has(h.id)) {
-              next.add(h.id);
-            }
-          }
-          knownHostIds.current = new Set(all.map((h) => h.id));
-          return next;
+          const live = new Set(all.map((h) => h.id));
+          const next = new Set([...prev].filter((id) => live.has(id)));
+          return next.size === prev.size ? prev : next;
         });
       })
       .catch((e) => toast.error(errorMessage(e)));

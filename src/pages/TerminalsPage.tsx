@@ -111,6 +111,8 @@ type Props = {
   sessions: TermSession[];
   activeId: string | null;
   visible: boolean;
+  /** Session ids with a live connection — a disconnected SSH tab shows a red label. */
+  connectedSessions: Set<string>;
   onConnectionChange: (sessionId: string, connected: boolean) => void;
   onManageShortcuts: () => void;
   onActivate: (id: string) => void;
@@ -129,6 +131,7 @@ export function TerminalsPage({
   sessions,
   activeId,
   visible,
+  connectedSessions,
   onConnectionChange,
   onManageShortcuts,
   onActivate,
@@ -574,17 +577,28 @@ export function TerminalsPage({
                 className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
               />
             )}
-            {tabsCompact ? (
-              <span className="font-mono">
-                {labelInitials(sessionLabel(s))}
-                {tabSuffix.get(s.id)}
-              </span>
-            ) : (
-              <span className="max-w-40 truncate">
-                {sessionLabel(s)}
-                {tabSuffix.get(s.id)}
-              </span>
-            )}
+            {(() => {
+              // A remote tab that's open but not connected (connecting, dropped
+              // or failed) shows its label in red; local shells are never "remote
+              // disconnected", so they're left as-is.
+              const disconnected =
+                s.type === "ssh" && !connectedSessions.has(s.id);
+              return tabsCompact ? (
+                <span
+                  className={cn("font-mono", disconnected && "text-red-500 dark:text-red-400")}
+                >
+                  {labelInitials(sessionLabel(s))}
+                  {tabSuffix.get(s.id)}
+                </span>
+              ) : (
+                <span
+                  className={cn("max-w-40 truncate", disconnected && "text-red-500 dark:text-red-400")}
+                >
+                  {sessionLabel(s)}
+                  {tabSuffix.get(s.id)}
+                </span>
+              );
+            })()}
             <button
               type="button"
               className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"

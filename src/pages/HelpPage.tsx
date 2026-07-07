@@ -413,7 +413,8 @@ const SECTIONS: HelpSection[] = [
               Give a host one or more tags to group machines (for example prod,
               web, eu). Separate multiple tags with commas. Each tag shows as its
               own small chip in the <Nav>Tag</Nav> column; untagged hosts show a
-              dash.
+              dash. As you type a tag on the host form, a dropdown suggests
+              matching tags already used elsewhere, so spellings stay consistent.
             </li>
             <li>
               Click the <Nav>Tag</Nav> header to sort by the host's first tag
@@ -490,6 +491,12 @@ const SECTIONS: HelpSection[] = [
           <H3>Working with tabs</H3>
           <Bullets>
             <li>Drag tabs to reorder them. Their identity stays stable, so reordering never disconnects a session.</li>
+            <li>
+              A remote tab whose connection is down (still connecting, dropped or
+              failed) shows its label in <span className="font-medium text-red-600 dark:text-red-400">red</span>; use{" "}
+              <Nav>Reconnect</Nav> to bring it back. Local shell tabs never show
+              this.
+            </li>
             <li>
               Switch tabs from the keyboard with <Nav>Alt+Right</Nav> (next tab)
               and <Nav>Alt+Left</Nav> (previous), even while a terminal is
@@ -574,7 +581,9 @@ const SECTIONS: HelpSection[] = [
             <li>
               Pick targets in the host rail on the left. It collapses to color
               dots with the arrow button, has a <Nav>Sort</Nav> dropdown and a{" "}
-              <Nav>Select all</Nav> box, and its collapse state is remembered.
+              <Nav>Select all</Nav> box, and its collapse state is remembered. No
+              hosts are selected by default — you choose the targets for each
+              broadcast.
             </li>
             <li>
               Two filters narrow the rail: a <Nav>Find by label…</Nav> box that
@@ -642,7 +651,7 @@ const SECTIONS: HelpSection[] = [
               The session rail has the same <Nav>Find by label…</Nav> box and{" "}
               <Nav>Filter tags</Nav> dropdown as{" "}
               <SectionLink id="help-sec-broadcast">Broadcast</SectionLink>{" "}
-              (filtering a session out unchecks it), applied to each session's
+              (filtering a session out unchecks it), applied to each session'sShow Manual Activity
               host.
             </li>
           </Bullets>
@@ -654,7 +663,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-multiterminal",
     title: "MultiTerminal",
     keywords:
-      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror output here typed composer filter tag label search find selectable connected",
+      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror show manual activity typed composer filter tag label search find selectable connected",
     body: (
       <>
         <Lead>
@@ -671,7 +680,7 @@ const SECTIONS: HelpSection[] = [
               open for the combined view to be meaningful. The rail collapses to
               color dots; its actions shrink to icons when collapsed.
             </li>
-            <li>
+            <li>Show Manual Activity
               The rail carries the same <Nav>Find by label…</Nav> box and{" "}
               <Nav>Filter tags</Nav> dropdown as{" "}
               <SectionLink id="help-sec-broadcast">Broadcast</SectionLink>. Only{" "}
@@ -683,7 +692,7 @@ const SECTIONS: HelpSection[] = [
               that ran. You can delete an individual block to keep the view tidy.
             </li>
             <li>
-              Turn on <Nav>Mirror Output Here</Nav> to also capture commands you
+              Turn on <Nav>Show Manual Activity</Nav> to also capture commands you
               type by hand inside a <Nav>Terminals</Nav> tab; with it off, only
               commands sent from <Nav>MultiTerminal</Nav> appear here.
             </li>

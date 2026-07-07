@@ -374,6 +374,7 @@ function App() {
           sessions={sessions}
           activeId={activeSessionId}
           visible={page === "terminals"}
+          connectedSessions={connectedSessions}
           onConnectionChange={handleConnectionChange}
           onActivate={setActiveSessionId}
           onCloseSession={closeSession}
