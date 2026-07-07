@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-import { getVersion } from "@tauri-apps/api/app";
 import { HeartIcon } from "lucide-react";
 
 import {
@@ -10,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useAppVersion } from "@/lib/useAppVersion";
 
 /**
  * About dialog (D-019): version, donations link slot, NOTICE reference.
@@ -24,11 +23,7 @@ export function AboutDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [version, setVersion] = useState("");
-
-  useEffect(() => {
-    getVersion().then(setVersion).catch(() => setVersion("unknown"));
-  }, []);
+  const version = useAppVersion("unknown");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

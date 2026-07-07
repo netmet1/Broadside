@@ -19,6 +19,7 @@ import { AboutDialog } from "@/components/AboutDialog";
 import { StatusBar } from "@/components/StatusBar";
 import logoUrl from "@/assets/rail_image.png";
 import { useHint, useStatus } from "@/lib/status";
+import { useAppVersion } from "@/lib/useAppVersion";
 import { cn } from "@/lib/utils";
 
 export type Page =
@@ -140,6 +141,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const [aboutOpen, setAboutOpen] = useState(false);
+  const version = useAppVersion();
   // null = no manual override; the width breakpoint decides.
   const [manualCollapsed, setManualCollapsed] = useState<boolean | null>(
     loadManualPref,
@@ -221,7 +223,9 @@ export function AppShell({
           <span className="font-heading text-sm font-semibold tracking-tight">
             Broadside
           </span>
-          <span className="text-xs text-muted-foreground">v0.1a</span>
+          {version && (
+            <span className="text-xs text-muted-foreground">v{version}</span>
+          )}
           {maximizedHost && (
             <span className="ml-2 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               <span
@@ -263,9 +267,11 @@ export function AppShell({
                 <span className="truncate font-heading text-base font-semibold tracking-tight">
                   Broadside
                 </span>
-                <span className="ml-2 shrink-0 text-xs text-muted-foreground">
-                  v0.1a
-                </span>
+                {version && (
+                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                    v{version}
+                  </span>
+                )}
               </>
             )}
             <button

@@ -524,7 +524,7 @@ dependencies = [
 
 [[package]]
 name = "broadside"
-version = "0.1.0-alpha.0"
+version = "1.0.0"
 dependencies = [
  "age",
  "argon2 0.5.3",
