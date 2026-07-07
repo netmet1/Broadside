@@ -589,6 +589,31 @@ pub async fn upload_dir(
     Ok(stats)
 }
 
+/// Joins a server-supplied directory-entry name onto the local destination dir,
+/// rejecting anything that isn't a single, ordinary path component.
+///
+/// SECURITY: `entry.file_name()` on a remote listing is controlled by the remote
+/// host, not us. A malicious or compromised SFTP server can return an entry named
+/// `..`, `..\..\evil`, `/etc/...`, `C:foo` etc.; `Path::join` honours `..` and
+/// resets on an absolute/drive component, so joining it unchecked would let a
+/// directory GET write *outside* the folder the user picked (path traversal →
+/// arbitrary local file write). Any such name aborts the transfer for that host.
+fn safe_local_child(ldir: &Path, name: &str) -> AppResult<PathBuf> {
+    let unsafe_name = name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains(':') // Windows drive / alternate-data-stream separator
+        || name.contains('\0');
+    if unsafe_name {
+        return Err(AppError::Ssh(format!(
+            "refusing unsafe remote entry name {name:?} (possible path traversal)"
+        )));
+    }
+    Ok(ldir.join(name))
+}
+
 /// Recursively downloads a remote directory to `local_root` (which is created).
 /// `on_progress(files_done, bytes_done)` is called periodically + at the end.
 pub async fn download_dir(
@@ -625,7 +650,7 @@ pub async fn download_dir(
             if md.is_symlink() {
                 continue;
             }
-            let child_local = ldir.join(entry.file_name());
+            let child_local = safe_local_child(&ldir, &entry.file_name())?;
             if md.is_dir() {
                 stack.push((entry.path(), child_local));
                 continue;
@@ -710,4 +735,43 @@ pub async fn scan_remote_dir(
         }
     }
     Ok(stats)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_local_child_accepts_ordinary_names() {
+        let dir = Path::new("/downloads/host-a");
+        for name in ["file.txt", "a b.log", "archive.tar.gz", ".hidden", "..foo"] {
+            let got = safe_local_child(dir, name).expect("ordinary name should be accepted");
+            assert_eq!(got, dir.join(name));
+        }
+    }
+
+    #[test]
+    fn safe_local_child_rejects_traversal_and_separators() {
+        let dir = Path::new("/downloads/host-a");
+        // `..`, dot, empty, separators, drive/ADS colon and NUL are all refused so
+        // a hostile server can't escape the chosen destination folder.
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../evil",
+            "..\\evil",
+            "sub/evil",
+            "sub\\evil",
+            "/etc/passwd",
+            "C:evil",
+            "C:\\Windows\\System32",
+            "name\0.txt",
+        ] {
+            assert!(
+                safe_local_child(dir, bad).is_err(),
+                "expected rejection for {bad:?}",
+            );
+        }
+    }
 }
