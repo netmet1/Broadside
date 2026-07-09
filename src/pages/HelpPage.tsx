@@ -522,7 +522,7 @@ const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               <strong className="font-semibold">Copy</strong> by selecting text
-              with the mouse — the selection is copied to the clipboard as soon
+              with the mouse, and the selection is copied to the clipboard as soon
               as you release the button (no menu, no shortcut needed). You can
               also press <Nav>Ctrl+Shift+C</Nav> to copy the current selection.
             </li>
@@ -604,7 +604,7 @@ const SECTIONS: HelpSection[] = [
               Pick targets in the host rail on the left. It collapses to color
               dots with the arrow button, has a <Nav>Sort</Nav> dropdown and a{" "}
               <Nav>Select all</Nav> box, and its collapse state is remembered. No
-              hosts are selected by default — you choose the targets for each
+              hosts are selected by default; you choose the targets for each
               broadcast.
             </li>
             <li>
@@ -612,7 +612,7 @@ const SECTIONS: HelpSection[] = [
               matches host labels as you type (like a find bar), and a{" "}
               <Nav>Filter tags</Nav> dropdown that works exactly like the tag
               filter on the <SectionLink id="help-sec-hosts">Hosts</SectionLink>{" "}
-              table — uncheck tags (or the untagged bucket) to hide hosts, with{" "}
+              table: uncheck tags (or the untagged bucket) to hide hosts, with{" "}
               <Nav>All</Nav> / <Nav>None</Nav> shortcuts. The two combine, and each
               filter lasts for the session and resets on restart.
             </li>
@@ -620,7 +620,7 @@ const SECTIONS: HelpSection[] = [
               Filtering only ever narrows what you can act on:{" "}
               <strong className="font-semibold">a host the filter hides is
               unchecked automatically</strong>, and it comes back{" "}
-              <em>unchecked</em> when you clear the filter — so a hidden host can
+              <em>unchecked</em> when you clear the filter, so a hidden host can
               never be swept into a broadcast. <Nav>Select all</Nav> and the
               counter apply to the visible hosts only. This same rail filter is on{" "}
               <SectionLink id="help-sec-ptybroadcast">PTY Broadcast</SectionLink>,{" "}
@@ -764,7 +764,7 @@ const SECTIONS: HelpSection[] = [
           <H3>Commander (one host)</H3>
           <Bullets>
             <li>
-              A two-pane view — your PC on the left, the remote host on the right.
+              A two-pane view: your PC on the left, the remote host on the right.
               Open folders to navigate, and use the path bar to jump around; both
               sides show the same columns so they read alike.
             </li>
@@ -824,7 +824,7 @@ const SECTIONS: HelpSection[] = [
             replaces only when the source is newer, and <Nav>Skip existing</Nav>{" "}
             leaves same-named files untouched. It governs recursive folder
             transfers (a single file always overwrites), is remembered across
-            restarts, and so is the tab — Commander or Broadcast — you last had
+            restarts, and so is the tab (Commander or Broadcast) you last had
             open.
           </p>
         </Detail>
