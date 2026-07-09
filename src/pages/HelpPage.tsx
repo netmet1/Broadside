@@ -443,7 +443,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center",
     body: (
       <>
         <Lead>
@@ -516,6 +516,28 @@ const SECTIONS: HelpSection[] = [
               Maximize a single terminal to fill the window (also <Nav>F11</Nav>),
               and close a single tab or use <Nav>Close all</Nav> to clear them
               with a confirmation.
+            </li>
+          </Bullets>
+          <H3>Copy, paste and jumping to a tab</H3>
+          <Bullets>
+            <li>
+              <strong className="font-semibold">Copy</strong> by selecting text
+              with the mouse — the selection is copied to the clipboard as soon
+              as you release the button (no menu, no shortcut needed). You can
+              also press <Nav>Ctrl+Shift+C</Nav> to copy the current selection.
+            </li>
+            <li>
+              <strong className="font-semibold">Paste</strong> with a{" "}
+              <Nav>right-click</Nav> in the terminal, or with{" "}
+              <Nav>Ctrl+Shift+V</Nav>. Plain <Nav>Ctrl+C</Nav> and{" "}
+              <Nav>Ctrl+V</Nav> are left alone so the shell still receives them
+              (for example Ctrl+C to interrupt a running command).
+            </li>
+            <li>
+              With many tabs open, use the <Nav>Go to session…</Nav> picker at
+              the top right to jump to any terminal. If its tab is scrolled out
+              of view, the tab strip scrolls to bring it to the center so you do
+              not have to hunt for it.
             </li>
           </Bullets>
           <H3>Shortcut commands</H3>
@@ -728,7 +750,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group",
     body: (
       <>
         <Lead>
@@ -750,6 +772,13 @@ const SECTIONS: HelpSection[] = [
               Transfer by dragging an item from one side to the other, or with the
               transfer buttons. Folders copy recursively, with a progress bar and a
               running byte count.
+            </li>
+            <li>
+              Select several items to move at once, the same way Windows Explorer
+              works: <Nav>Ctrl+click</Nav> to add or remove individual files, and{" "}
+              <Nav>Shift+click</Nav> to select a whole range between two rows. A
+              plain click selects a single file (or opens a folder). Dragging any
+              selected item then transfers the whole selection in one go.
             </li>
             <li>
               You can make a new folder on either side and delete items. Local

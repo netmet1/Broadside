@@ -173,6 +173,24 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         onSearchRequestRef.current();
         return false;
       }
+      // Ctrl+Shift+C copies the current selection; Ctrl+Shift+V pastes. These
+      // are the explicit keyboard counterparts to copy-on-select (mouseup) and
+      // right-click-paste — Ctrl+C/Ctrl+V alone stay reserved for the shell
+      // (SIGINT / literal paste-through the shell may want).
+      if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
+        const sel = term.getSelection();
+        if (sel) navigator.clipboard?.writeText(sel).catch(() => {});
+        return false;
+      }
+      if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) {
+        navigator.clipboard
+          ?.readText()
+          .then((text) => {
+            if (text) ptyWrite(sessionId, text).catch(() => {});
+          })
+          .catch(() => {});
+        return false;
+      }
       // Alt+Left/Right switch terminal tabs even while the terminal is focused.
       // Intercept here so the shell never receives the escape sequence (and so
       // the webview doesn't treat Alt+Left/Right as back/forward navigation).
@@ -226,6 +244,16 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const contextMenuEl = containerRef.current;
     contextMenuEl?.addEventListener("contextmenu", onContextMenu);
 
+    // Copy-on-select (PuTTY / xterm convention): when a mouse selection ends,
+    // copy it to the clipboard. Pairs with right-click-paste so the mouse alone
+    // does both copy and paste. Fires once per drag (on mouseup) rather than on
+    // every onSelectionChange tick, so we don't spam the clipboard mid-drag.
+    const onMouseUp = () => {
+      const sel = term.getSelection();
+      if (sel) navigator.clipboard?.writeText(sel).catch(() => {});
+    };
+    contextMenuEl?.addEventListener("mouseup", onMouseUp);
+
     const unlistenData = onPtyData((id, bytes) => {
       if (id === sessionId) term.write(bytes);
     });
@@ -254,6 +282,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       resizeSub.dispose();
       observer.disconnect();
       contextMenuEl?.removeEventListener("contextmenu", onContextMenu);
+      contextMenuEl?.removeEventListener("mouseup", onMouseUp);
       unlistenData.then((fn) => fn());
       unlistenClosed.then((fn) => fn());
       term.dispose();

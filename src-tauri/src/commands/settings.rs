@@ -47,8 +47,8 @@ pub const CORE_SHORTCUTS_SSH: [&str; 6] = [
     "ls -la",
     "uptime",
     "sudo apt update",
-    "sudo apt upgrade",
-    "sudo apt update && sudo apt upgrade",
+    "sudo apt -y upgrade",
+    "sudo apt update && sudo apt -y upgrade",
     "htop",
 ];
 

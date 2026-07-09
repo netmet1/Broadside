@@ -245,6 +245,26 @@ export function TerminalsPage({
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
+  // The horizontally-scrolling tab list + a live map of each tab's element, so
+  // activating a session (e.g. via the "Go to session" picker) can scroll its
+  // tab into view when it's off-screen.
+  const tabScrollRef = useRef<HTMLDivElement>(null);
+  const tabElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // When the active session changes, center its tab in the strip — but only if
+  // it isn't already fully visible, so activating an on-screen tab never jumps.
+  useEffect(() => {
+    if (activeId === null) return;
+    const container = tabScrollRef.current;
+    const target = tabElRefs.current.get(activeId);
+    if (!container || !target) return;
+    const c = container.getBoundingClientRect();
+    const t = target.getBoundingClientRect();
+    if (t.left >= c.left && t.right <= c.right) return; // already visible
+    const delta = t.left + t.width / 2 - (c.left + c.width / 2);
+    container.scrollTo({ left: container.scrollLeft + delta, behavior: "smooth" });
+  }, [activeId, sessions]);
+
   const [gates, setGates] = useState<Map<string, ConnectionGate>>(new Map());
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
     new Map(),
@@ -526,10 +546,17 @@ export function TerminalsPage({
           overflow container. (overflow-x:auto forces overflow-y to compute to
           auto too, which silently cropped the menu and made "+" look dead.) */}
       <div className="flex items-center gap-1 border-b border-border/50 px-2 pt-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+        <div
+          ref={tabScrollRef}
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+        >
         {sessions.map((s) => (
           <div
             key={s.id}
+            ref={(el) => {
+              if (el) tabElRefs.current.set(s.id, el);
+              else tabElRefs.current.delete(s.id);
+            }}
             draggable
             onDragStart={(e) => {
               setDragId(s.id);

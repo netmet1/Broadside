@@ -76,7 +76,11 @@ type PaneEntry = {
   mtime: number | null;
 };
 
-type DragPayload = { side: PaneSide; path: string; name: string; kind: string };
+/** One file/folder being dragged. */
+type DragItem = { path: string; name: string; kind: string };
+/** A drag carries every selected item from the originating pane (Windows-style
+ *  Ctrl/Shift multi-select), so one drag can transfer many files at once. */
+type DragPayload = { side: PaneSide; items: DragItem[] };
 
 const DND_MIME = "application/x-broadside-file";
 const SPLIT_KEY = "sftp-split-pct";
@@ -268,15 +272,19 @@ export function CommanderTab({
   // A file/folder dropped onto a pane came from the *other* side, so it's a
   // transfer into this pane's directory.
   const onDropInto = useCallback(
-    (side: PaneSide, payload: DragPayload) => {
+    async (side: PaneSide, payload: DragPayload) => {
       if (payload.side === side) return;
       const direction = side === "remote" ? "put" : "get";
-      if (payload.kind === "dir") {
-        void handleDirDrop(direction, payload.path, payload.name);
-      } else if (side === "remote") {
-        void putToRemote(payload.path);
-      } else {
-        void getToLocal({ path: payload.path, name: payload.name });
+      // Transfer the dropped items one at a time — a single SFTP session can't
+      // safely run several uploads/downloads concurrently.
+      for (const item of payload.items) {
+        if (item.kind === "dir") {
+          await handleDirDrop(direction, item.path, item.name);
+        } else if (side === "remote") {
+          await putToRemote(item.path);
+        } else {
+          await getToLocal({ path: item.path, name: item.name });
+        }
       }
     },
     [handleDirDrop, putToRemote, getToLocal],
@@ -596,6 +604,56 @@ function FilePane({
   const hint = useHint();
   const [dropActive, setDropActive] = useState(false);
 
+  // Windows Explorer–style selection: a set of selected paths plus the anchor
+  // row index for Shift-range selection. Cleared whenever the directory changes.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const anchorRef = useRef(-1);
+  useEffect(() => {
+    setSelected(new Set());
+    anchorRef.current = -1;
+  }, [pathLabel]);
+
+  // Click on a row, honoring Ctrl (toggle), Shift (range), or plain (single).
+  // Folders still open on a plain click; drives always just open.
+  const onRowClick = (
+    e: React.MouseEvent,
+    index: number,
+    entry: PaneEntry,
+    isDrive: boolean,
+  ) => {
+    if (isDrive) {
+      onNavigate(entry.path);
+      return;
+    }
+    if (e.shiftKey && anchorRef.current >= 0) {
+      const lo = Math.min(anchorRef.current, index);
+      const hi = Math.max(anchorRef.current, index);
+      const range = entries
+        .slice(lo, hi + 1)
+        .filter((en) => !(side === "local" && /^[A-Za-z]:\\?$/.test(en.path)))
+        .map((en) => en.path);
+      setSelected(new Set(range));
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(entry.path)) next.delete(entry.path);
+        else next.add(entry.path);
+        return next;
+      });
+      anchorRef.current = index;
+      return;
+    }
+    anchorRef.current = index;
+    if (entry.kind === "dir") {
+      setSelected(new Set());
+      onNavigate(entry.path);
+    } else {
+      setSelected(new Set([entry.path]));
+    }
+  };
+
   const readPayload = (e: React.DragEvent): DragPayload | null => {
     const raw = e.dataTransfer.getData(DND_MIME);
     if (!raw) return null;
@@ -690,32 +748,44 @@ function FilePane({
             {emptyText}
           </p>
         )}
-        <ul className="divide-y divide-border/30">
-          {entries.map((entry) => {
+        {/* select-none so Shift-click selects rows, not native text. */}
+        <ul className="divide-y divide-border/30 select-none">
+          {entries.map((entry, index) => {
             const isDir = entry.kind === "dir";
             const isLink = entry.kind === "symlink";
             const isDrive = side === "local" && /^[A-Za-z]:\\?$/.test(entry.path);
+            const isSelected = selected.has(entry.path);
             return (
               <li
                 key={entry.path}
                 // Files and folders both drag to the other pane; drives don't.
                 draggable={!isDrive}
+                onClick={(e) => onRowClick(e, index, entry, isDrive)}
                 onDragStart={(e) => {
                   if (isDrive) {
                     e.preventDefault();
                     return;
                   }
-                  const payload: DragPayload = {
-                    side,
-                    path: entry.path,
-                    name: entry.name,
-                    kind: entry.kind,
-                  };
+                  // Drag every selected row when this row is part of a multi-
+                  // selection; otherwise this row alone (and make it the
+                  // selection, so the highlight matches what's being dragged).
+                  let items: DragItem[];
+                  if (isSelected && selected.size > 1) {
+                    items = entries
+                      .filter((en) => selected.has(en.path))
+                      .map((en) => ({ path: en.path, name: en.name, kind: en.kind }));
+                  } else {
+                    setSelected(new Set([entry.path]));
+                    items = [{ path: entry.path, name: entry.name, kind: entry.kind }];
+                  }
+                  const payload: DragPayload = { side, items };
                   e.dataTransfer.setData(DND_MIME, JSON.stringify(payload));
                   e.dataTransfer.effectAllowed = "copy";
                 }}
+                aria-selected={isSelected}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-1.5 text-sm hover:bg-accent/40",
+                  "flex items-center gap-3 px-3 py-1.5 text-sm",
+                  isSelected ? "bg-primary/15" : "hover:bg-accent/40",
                   !isDrive && "cursor-grab active:cursor-grabbing",
                 )}
                 title={
@@ -723,13 +793,10 @@ function FilePane({
                     ? entry.name
                     : isDir
                       ? `${entry.name} — open it, or drag to the other pane to transfer the folder`
-                      : `${entry.name} — drag to the other pane to transfer`
+                      : `${entry.name} — click to select, Ctrl/Shift-click for many, drag to transfer`
                 }
               >
-                <button
-                  type="button"
-                  onClick={() => isDir && onNavigate(entry.path)}
-                  disabled={!isDir}
+                <div
                   className={cn(
                     "flex min-w-0 flex-1 items-center gap-2 text-left",
                     isDir ? "cursor-pointer" : "cursor-grab",
@@ -745,7 +812,7 @@ function FilePane({
                     <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
                   )}
                   <span className="truncate">{entry.name}</span>
-                </button>
+                </div>
                 <span className="w-16 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
                   {isDir ? "" : formatSize(entry.size)}
                 </span>
