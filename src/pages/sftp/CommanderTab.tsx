@@ -608,10 +608,13 @@ function FilePane({
   // row index for Shift-range selection. Cleared whenever the directory changes.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const anchorRef = useRef(-1);
+  // Clear the selection whenever the listing reloads: a new reference lands on
+  // navigation *and* on an explicit Refresh (same folder, fresh entries), so a
+  // stale selection never survives either.
   useEffect(() => {
     setSelected(new Set());
     anchorRef.current = -1;
-  }, [pathLabel]);
+  }, [entries]);
 
   // Click on a row, honoring Ctrl (toggle), Shift (range), or plain (single).
   // Folders still open on a plain click; drives always just open.
@@ -625,14 +628,22 @@ function FilePane({
       onNavigate(entry.path);
       return;
     }
-    if (e.shiftKey && anchorRef.current >= 0) {
-      const lo = Math.min(anchorRef.current, index);
-      const hi = Math.max(anchorRef.current, index);
-      const range = entries
-        .slice(lo, hi + 1)
-        .filter((en) => !(side === "local" && /^[A-Za-z]:\\?$/.test(en.path)))
-        .map((en) => en.path);
-      setSelected(new Set(range));
+    // Shift-click never opens a folder: it extends a range from the anchor, or
+    // (with no anchor yet) begins the selection right here so a folder can be
+    // the start of a range instead of being navigated into.
+    if (e.shiftKey) {
+      if (anchorRef.current >= 0) {
+        const lo = Math.min(anchorRef.current, index);
+        const hi = Math.max(anchorRef.current, index);
+        const range = entries
+          .slice(lo, hi + 1)
+          .filter((en) => !(side === "local" && /^[A-Za-z]:\\?$/.test(en.path)))
+          .map((en) => en.path);
+        setSelected(new Set(range));
+      } else {
+        anchorRef.current = index;
+        setSelected(new Set([entry.path]));
+      }
       return;
     }
     if (e.ctrlKey || e.metaKey) {

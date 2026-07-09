@@ -251,7 +251,7 @@ export function TerminalsPage({
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const tabElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // When the active session changes, center its tab in the strip — but only if
+  // When the active session changes, center its tab in the strip, but only if
   // it isn't already fully visible, so activating an on-screen tab never jumps.
   useEffect(() => {
     if (activeId === null) return;
@@ -550,13 +550,39 @@ export function TerminalsPage({
           ref={tabScrollRef}
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
         >
-        {sessions.map((s) => (
+        {sessions.map((s) => {
+          const isActive = s.id === activeId;
+          // A remote tab that's open but not connected (connecting, dropped or
+          // failed) reads as disconnected; local shells never are.
+          const disconnected =
+            s.type === "ssh" && !connectedSessions.has(s.id);
+          const hostColor = s.type === "ssh" ? s.host.color : null;
+          // The active tab tints with the host's own dot color when it's a
+          // connected SSH tab with a valid hex color. Local shells and
+          // disconnected tabs have no usable hue, so they fall back to a
+          // theme-aware fill (bg-accent) with the foreground color as the bar.
+          const hostTint =
+            isActive &&
+            !disconnected &&
+            hostColor !== null &&
+            /^#[0-9a-fA-F]{6}$/.test(hostColor);
+          // ~20% alpha body fill + a full-strength top bar in the host color;
+          // the theme-aware fallback just paints the 2px top bar. The top bar
+          // rides the reserved transparent top border so nothing shifts. Set
+          // inline (not via a border-t-* class) so it beats border-border/60.
+          const activeStyle: React.CSSProperties | undefined = !isActive
+            ? undefined
+            : hostTint
+              ? { backgroundColor: `${hostColor}33`, borderTopColor: hostColor! }
+              : { borderTopColor: "var(--foreground)" };
+          return (
           <div
             key={s.id}
             ref={(el) => {
               if (el) tabElRefs.current.set(s.id, el);
               else tabElRefs.current.delete(s.id);
             }}
+            style={activeStyle}
             draggable
             onDragStart={(e) => {
               setDragId(s.id);
@@ -581,9 +607,16 @@ export function TerminalsPage({
               setDragOverId(null);
             }}
             className={cn(
-              "group flex shrink-0 cursor-pointer items-center gap-2 rounded-t-md border border-b-0 px-3 py-1.5 text-sm",
-              s.id === activeId
-                ? "border-border/60 bg-accent/40 text-foreground"
+              // border-t-2/transparent is reserved on every tab so the active
+              // top bar (painted via inline borderTopColor) never nudges layout.
+              "group flex shrink-0 cursor-pointer items-center gap-2 rounded-t-md border border-b-0 border-t-2 border-t-transparent px-3 py-1.5 text-sm",
+              isActive
+                ? cn(
+                    "border-border/60 font-semibold text-foreground",
+                    // Theme-aware fill for local/disconnected tabs; the host-
+                    // tinted case paints its background via inline style.
+                    !hostTint && "bg-accent",
+                  )
                 : "border-transparent text-muted-foreground hover:bg-accent/20 hover:text-foreground",
               dragId === s.id && "opacity-40",
               dragOverId === s.id && "border-l-2 border-l-primary",
@@ -605,11 +638,9 @@ export function TerminalsPage({
               />
             )}
             {(() => {
-              // A remote tab that's open but not connected (connecting, dropped
-              // or failed) shows its label in red; local shells are never "remote
-              // disconnected", so they're left as-is.
-              const disconnected =
-                s.type === "ssh" && !connectedSessions.has(s.id);
+              // Disconnected (connecting/dropped/failed) SSH tabs show their
+              // label in red; when active it inherits the tab's bold weight, so
+              // the active-disconnected tab reads as bold red on the theme tint.
               return tabsCompact ? (
                 <span
                   className={cn("font-mono", disconnected && "text-red-500 dark:text-red-400")}
@@ -650,7 +681,8 @@ export function TerminalsPage({
               <XIcon className="h-3.5 w-3.5" />
             </button>
           </div>
-        ))}
+          );
+        })}
         {sessions.length === 0 && (
           <p className="px-3 py-2 text-sm text-muted-foreground">
             No open terminals. Open an SSH host from the Hosts page, or a local
