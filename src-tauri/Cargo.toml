@@ -1,6 +1,6 @@
 [package]
 name = "broadside"
-version = "1.0.0"
+version = "1.1.0"
 description = "Windows desktop SSH broadcast console"
 authors = ["netmet1"]
 # No `license` field by design. NOTICE.md is the authoritative statement.

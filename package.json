@@ -1,7 +1,7 @@
 {
   "name": "broadside",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Windows desktop SSH broadcast console (Tauri 2 + Rust + React)",
   "type": "module",
   "scripts": {
