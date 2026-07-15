@@ -534,6 +534,7 @@ dependencies = [
  "csv",
  "keyring",
  "portable-pty",
+ "regex",
  "rusqlite",
  "russh",
  "russh-sftp",

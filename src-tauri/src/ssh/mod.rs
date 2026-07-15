@@ -11,6 +11,7 @@ use crate::error::{AppError, AppResult};
 pub mod exec;
 pub mod pty;
 pub mod sftp;
+pub mod skill_run;
 pub mod sudo_inject;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);

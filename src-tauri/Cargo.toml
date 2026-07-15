@@ -53,6 +53,11 @@ rust_xlsxwriter = "0.95.0"
 # completion-delimited command blocks + TUI detection. Alacritty's parser core
 # (chosen over alacritty_terminal for its small, stable API). Pure-Rust, MIT/Apache.
 vte = "0.13"
+# Skill expect/send patterns (skills-feature-plan Phase 1): user-authored
+# regexes matched against the ANSI-stripped PTY view, plus the engine's own
+# completion sentinel. Pure-Rust, no C deps; linear-time matching means a
+# user-authored pattern can't catastrophically backtrack a run.
+regex = "1"
 argon2 = "0.5.3"
 portable-pty = "0.9.0"
 # Local-side deletes go to the Recycle Bin (recoverable) rather than std::fs
@@ -61,5 +66,7 @@ trash = "5"
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net"] }
+# test-util powers the skill engine's paused-clock tests: timeouts and settle
+# windows resolve instantly and deterministically instead of sleeping.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "test-util"] }
 zip = { version = "8.6.0", default-features = false }
