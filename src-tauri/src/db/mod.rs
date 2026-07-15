@@ -191,3 +191,76 @@ fn add_column_if_missing(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Brings a fresh connection up to `version` the way a shipped database
+    /// would have got there, so an upgrade can be exercised from that point.
+    fn database_at_version(version: usize) -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in MIGRATIONS.iter().take(version) {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", version as i64)
+            .unwrap();
+        conn
+    }
+
+    fn user_version(conn: &Connection) -> i64 {
+        conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn an_existing_database_gains_skills_without_losing_data() {
+        // The upgrade path every real installation takes. The unit tests all
+        // start from a fresh schema, so this is the only place the *migration*
+        // (rather than the final shape) is exercised.
+        let conn = database_at_version(12);
+        conn.execute(
+            "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at)
+             VALUES ('web01', 'example.test', 22, 'joe', '#aabbcc', 'then', 'then')",
+            [],
+        )
+        .unwrap();
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        // The new table works…
+        skills::create(
+            &conn,
+            &skills::SkillInput {
+                name: "after upgrade".into(),
+                description: String::new(),
+                icon: None,
+                kind: skills::KIND_SEQUENCE.into(),
+                config_json: "{}".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(skills::list(&conn).unwrap().len(), 1);
+        // …and the row that was already there is untouched.
+        let label: String = conn
+            .query_row("SELECT label FROM hosts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(label, "web01");
+    }
+
+    #[test]
+    fn bootstrap_is_idempotent() {
+        // Every launch runs it; a second pass must not re-run a migration.
+        let conn = open_in_memory().unwrap();
+        let version = user_version(&conn);
+        bootstrap(&conn).unwrap();
+        bootstrap(&conn).unwrap();
+        assert_eq!(user_version(&conn), version);
+    }
+
+    #[test]
+    fn a_fresh_database_lands_on_the_latest_version() {
+        let conn = open_in_memory().unwrap();
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+    }
+}
