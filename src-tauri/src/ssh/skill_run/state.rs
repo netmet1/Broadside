@@ -3,7 +3,7 @@
 //!
 //! Dropping a host's control sender is itself a signal: the engine's waits
 //! treat a closed control channel as an abort, so cancelling a run needs only
-//! to drop its entry (and close the PTYs) — there is no separate flag for a
+//! to drop its entry (and close the PTYs); there is no separate flag for a
 //! parked host to miss.
 
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ use crate::error::{AppError, AppResult};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ctl {
     /// Wait for the current step's pattern again, with a fresh timeout. Does
-    /// **not** re-send a `run` step's command — the command is still running;
+    /// **not** re-send a `run` step's command: the command is still running;
     /// re-sending it could double-execute an upgrade.
     Resume,
     /// Treat the current step as satisfied and take its success branch.
@@ -106,8 +106,8 @@ impl SkillRunState {
     }
 
     /// Drops the whole run and returns the PTY session ids to close. Dropping
-    /// the entry closes every control channel, which every engine — waiting or
-    /// parked — reads as an abort.
+    /// the entry closes every control channel, which every engine, waiting or
+    /// parked, reads as an abort.
     pub fn cancel(&self, run_id: &str) -> Vec<String> {
         self.0
             .lock()

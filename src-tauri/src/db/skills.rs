@@ -1,7 +1,7 @@
 //! Skill definitions (migration 13). A skill is a reusable multi-step
 //! operation driven over a live PTY on each selected host.
 //!
-//! `config_json` is an opaque blob here — the kind-specific shape (steps,
+//! `config_json` is an opaque blob here: the kind-specific shape (steps,
 //! declared params) is owned by [`crate::ssh::skill_run`] and its TS mirror.
 //! Storing it as text keeps the schema stable as the step vocabulary grows.
 //! It can contain command text, so it shares the at-rest exposure class of
@@ -66,7 +66,7 @@ fn validate(input: &SkillInput) -> AppResult<()> {
             input.kind
         )));
     }
-    // Reject a config that isn't even JSON at the door — a malformed blob would
+    // Reject a config that isn't even JSON at the door: a malformed blob would
     // otherwise only fail at run time, long after the user pressed Save.
     if serde_json::from_str::<serde_json::Value>(&input.config_json).is_err() {
         return Err(AppError::InvalidInput("config is not valid JSON".into()));
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn duplicate_names_are_allowed() {
-        // Unlike hosts.label there is no UNIQUE constraint — two skills may
+        // Unlike hosts.label there is no UNIQUE constraint: two skills may
         // share a name (they're picked from a list, not addressed by name).
         let conn = open_in_memory().unwrap();
         create(&conn, &input("same")).unwrap();

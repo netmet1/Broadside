@@ -174,7 +174,7 @@ export function StepEditor({
           <label
             className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
             {...hint(
-              "For a command that never returns to the prompt on its own — sudo -i opens a nested shell, an interactive program stops on a question. The step advances once output settles; drive the rest with Wait-for-output steps.",
+              "For a command that never returns to the prompt on its own. sudo -i opens a nested shell, an interactive program stops on a question. The step advances once output settles; drive the rest with Wait-for-output steps.",
             )}
           >
             <input
@@ -185,7 +185,7 @@ export function StepEditor({
                 onChange({ ...step, interactive: e.target.checked })
               }
             />
-            Interactive (no exit code — use for sudo -i or a program that asks
+            Interactive (no exit code; use for sudo -i or a program that asks
             questions)
           </label>
           {step.interactive ? (
@@ -325,7 +325,7 @@ function TimeoutFields({
   timeoutSecs?: number;
   onTimeout?: "fail" | "pause";
   onChange: (t: { timeoutSecs: number; onTimeout: "fail" | "pause" }) => void;
-  /** What "fail" does for this step kind — they differ. */
+  /** What "fail" does for this step kind, which differ. */
   failLabel: string;
 }) {
   const hint = useHint();
@@ -336,7 +336,7 @@ function TimeoutFields({
       <label
         className="flex items-center gap-1.5"
         {...hint(
-          "How long to wait before giving up on this step. Raise it for long upgrades or prunes — an hour is the ceiling.",
+          "How long to wait before giving up on this step. Raise it for long upgrades or prunes. An hour is the ceiling.",
         )}
       >
         <span className="shrink-0 text-muted-foreground">Wait up to</span>

@@ -15,7 +15,7 @@ export type Skill = {
   description: string;
   icon: string | null;
   kind: SkillKind;
-  /** Kind-specific blob — {@link SequenceConfig} for `sequence`. Opaque to the
+  /** Kind-specific blob: {@link SequenceConfig} for `sequence`. Opaque to the
    * store; parsed here and in the Rust engine. */
   config_json: string;
   created_at: string;
@@ -89,7 +89,7 @@ export function emptySequence(): SequenceConfig {
 }
 
 /** Parses a stored config, falling back to an empty sequence rather than
- * throwing — a skill row that predates a field shouldn't break the list. */
+ * throwing: a skill row that predates a field shouldn't break the list. */
 export function parseSequence(configJson: string): SequenceConfig {
   try {
     const parsed = JSON.parse(configJson) as Partial<SequenceConfig>;
@@ -147,8 +147,8 @@ export type SkillPane = {
   sessionId: string;
 };
 
-/** Dispatches the skill. Resolves once the runs are launched — not when they
- * finish — handing back the panes to mount. */
+/** Dispatches the skill. Resolves once the runs are launched, not when they
+ * finish, handing back the panes to mount. */
 export function runSkill(args: {
   runId: string;
   hostIds: number[];
@@ -161,7 +161,7 @@ export function runSkill(args: {
   return invoke<SkillPane[]>("run_skill", args);
 }
 
-/** Emergency stop: kills the sequence on every host at once. Irreversible —
+/** Emergency stop: kills the sequence on every host at once. Irreversible:
  * it can leave a host mid-`apt`. Per-host {@link skillAbort} is the graceful one. */
 export function skillCancel(runId: string): Promise<void> {
   return invoke<void>("skill_cancel", { runId });

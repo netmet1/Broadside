@@ -78,7 +78,7 @@ export function ParamForm({
       cancelled = true;
     };
     // `missing` is derived from values, so depend on its length rather than the
-    // array — a fresh array identity every render would loop.
+    // array: a fresh array identity every render would loop.
   }, [skill.id, values, hosts, missing.length]);
 
   const ready = missing.length === 0 && preflight != null && !starting;
@@ -117,7 +117,7 @@ export function ParamForm({
       )}
 
       {/* Confirm what the values actually are before anything is typed at a
-          host — the last chance to catch a wrong repo name or path. */}
+          host: the last chance to catch a wrong repo name or path. */}
       {config.params.length > 0 && missing.length === 0 && (
         <div className="space-y-1 rounded-md border border-border/60 bg-muted/20 p-3">
           <h3 className="text-xs font-medium text-muted-foreground">

@@ -20,7 +20,7 @@ export type HostRunState = {
   status: "running" | "paused" | "done" | "failed";
   /** The step the engine is on, for the pane overlay. */
   step: string;
-  /** Set while paused — why the engine stopped and handed over. */
+  /** Set while paused: why the engine stopped and handed over. */
   pausedReason: string | null;
   /** Whether the operator has taken the keyboard for this pane. */
   takenOver: boolean;
@@ -36,7 +36,7 @@ const MAX_LINES = 500;
  * The live state of one skill run, assembled from `skill:progress` /
  * `skill:paused` / `skill:done`.
  *
- * The page stays mounted, so a run survives tab switches — but not a restart
+ * The page stays mounted, so a run survives tab switches, but not a restart
  * (v1 decision). Listeners are registered for the page's whole life rather than
  * per run: events for a finished run are simply ignored.
  */
@@ -68,7 +68,7 @@ export function useSkillRun() {
         patch(p.hostId, (prev) => ({
           ...prev,
           // A progress event means the engine is driving again, so a pause is
-          // over — resuming clears the takeover banner without a round trip.
+          // over. Resuming clears the takeover banner without a round trip.
           status: prev.status === "paused" ? "running" : prev.status,
           pausedReason: null,
           takenOver: false,
@@ -152,7 +152,7 @@ export function useSkillRun() {
     if (!id) return;
     try {
       await skillCancel(id);
-      toast.warning("Emergency stop — every host was killed mid-sequence");
+      toast.warning("Emergency stop. Every host was killed mid-sequence.");
     } catch (e) {
       toast.error(errorMessage(e));
     }

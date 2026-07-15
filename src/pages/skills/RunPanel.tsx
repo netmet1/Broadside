@@ -46,6 +46,8 @@ export function RunPanel({
   const [focused, setFocused] = useState<number | null>(null);
   const shown = focused == null ? hosts : hosts.filter((h) => h.pane.hostId === focused);
   const paused = hosts.filter((h) => h.status === "paused");
+  /** Exactly one pane on screen, so it should fill the panel. */
+  const single = focused != null || hosts.length === 1;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -54,7 +56,7 @@ export function RunPanel({
       <div className="flex shrink-0 items-center gap-2 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
         <EyeIcon className="h-3.5 w-3.5 shrink-0" />
         <span>
-          <span className="font-semibold">Not set-and-forget — watch it.</span>{" "}
+          <span className="font-semibold">Not set-and-forget. Watch it.</span>{" "}
           {skillName} is driving a live shell on{" "}
           {hosts.length === 1 ? "1 host" : `${hosts.length} hosts`}. A step whose
           prompt never arrives pauses and waits for you.
@@ -90,13 +92,13 @@ export function RunPanel({
         )}
       </div>
 
+      {/* One pane fills the panel; several tile. `flex-col` (not bare `flex`)
+          with a `flex-1` child is what makes the single pane take the full width
+          and height: a flex row child with no grow sizes to its own content,
+          which had the terminal shrinking to the width of its header text. */}
       <div
         className={`min-h-0 flex-1 gap-2 overflow-auto p-2 ${
-          focused != null
-            ? "flex"
-            : hosts.length === 1
-              ? "flex"
-              : "grid grid-cols-1 lg:grid-cols-2"
+          single ? "flex flex-col" : "grid grid-cols-1 lg:grid-cols-2"
         }`}
       >
         {shown.map((h) => (
@@ -104,7 +106,7 @@ export function RunPanel({
             key={h.pane.hostId}
             runId={runId}
             host={h}
-            focused={focused != null}
+            fill={single}
             onFocus={() => setFocused(h.pane.hostId)}
             setTakenOver={setTakenOver}
           />
@@ -117,13 +119,15 @@ export function RunPanel({
 function HostPane({
   runId,
   host,
-  focused,
+  fill,
   onFocus,
   setTakenOver,
 }: {
   runId: string;
   host: HostRunState;
-  focused: boolean;
+  /** This pane is the only one on screen, so it fills the panel and its own
+   * focus control is spent. */
+  fill: boolean;
   onFocus: () => void;
   setTakenOver: (hostId: number, takenOver: boolean) => void;
 }) {
@@ -147,19 +151,21 @@ function HostPane({
           : status === "failed"
             ? "border-red-400/60"
             : "border-border/50"
-      } ${focused ? "flex-1" : "min-h-[18rem]"}`}
+      } ${fill ? "w-full flex-1" : "min-h-[18rem]"}`}
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-border/40 bg-muted/30 px-2 py-1.5">
         <span
           className="h-2.5 w-2.5 shrink-0 rounded-full"
           style={{ backgroundColor: pane.color }}
         />
+        {/* Zooming to a pane that already fills the panel would only strand a
+            "Back to all hosts" button with nothing to go back to. */}
         <button
           type="button"
           onClick={onFocus}
-          disabled={focused}
+          disabled={fill}
           className="min-w-0 truncate text-sm font-medium hover:underline disabled:no-underline"
-          title={focused ? pane.label : `Focus ${pane.label}`}
+          title={fill ? pane.label : `Focus ${pane.label}`}
         >
           {pane.label}
         </button>

@@ -9,7 +9,7 @@ import {
   type SkillParam,
 } from "@/lib/tauri/skills";
 
-/** A fresh id for a new step. Short and readable — it shows up in the branch
+/** A fresh id for a new step. Short and readable, since it shows up in the branch
  * dropdowns, so `s3` beats a uuid. */
 function nextStepId(steps: SeqStep[]): string {
   for (let n = 1; ; n++) {
@@ -123,7 +123,7 @@ export function useSequenceForm(editing: Skill | null) {
   }, []);
 
   /** Local checks that give a better message than the backend's would. The
-   * backend re-validates regardless — this is UX, that's the gate. */
+   * backend re-validates regardless; this is UX, that's the gate. */
   const problems = useMemo(() => {
     const out: string[] = [];
     if (!name.trim()) out.push("Give the skill a name.");
@@ -147,7 +147,7 @@ export function useSequenceForm(editing: Skill | null) {
     for (const p of params) {
       if (!/^[A-Za-z0-9_]+$/.test(p.key))
         out.push(
-          `Input key "${p.key}" must be letters, numbers or underscores — it's used as {{${p.key}}}.`,
+          `Input key "${p.key}" must be letters, numbers or underscores, since it's used as {{${p.key}}}.`,
         );
     }
     return out;

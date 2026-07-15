@@ -1,7 +1,7 @@
 //! The expect/send engine that drives one skill against one host's live PTY.
 //!
 //! A skill run opens a real, persistent shell per host through
-//! [`pty`](crate::ssh::pty) — the same machinery as a terminal tab — and types
+//! [`pty`](crate::ssh::pty), the same machinery as a terminal tab, and types
 //! into it. That's the whole point: a persistent shell means `sudo -i` in an
 //! early step keeps every later step as root, an interactive `(y/n)` question
 //! can actually be answered, and the operator watches the real terminal while
@@ -16,7 +16,7 @@
 //! here would be a hang: with `-p ''` sudo prints no prompt, so the
 //! [`SudoInjector`](crate::ssh::sudo_inject) already wired into every PTY
 //! session would have nothing to answer, and `-S` would consume the engine's
-//! next keystrokes as the password. On a PTY, a bare `sudo` is correct — the
+//! next keystrokes as the password. On a PTY, a bare `sudo` is correct: the
 //! injector answers the prompt exactly as it does when the operator types it
 //! by hand (D-065). `rewrite_for_sudo` is still used, but only as a *detector*,
 //! to warn before the run when a host has no sudo password stored.
@@ -54,7 +54,7 @@ pub const DONE_EVENT: &str = "skill:done";
 /// PTY, so the marker text appears twice: once in the echo (as the literal
 /// format string, `__bsdone_%s__`) and once in the output (with the real code,
 /// `__bsdone_0__`). Matching on `(\d+)` means the echo can never be mistaken
-/// for the result — `%s` has no digits.
+/// for the result, because `%s` has no digits.
 const DONE_MARKER: &str = "__bsdone_";
 /// Same trick for shell detection: the capture class excludes `%`, so the
 /// echoed `__bsshell_%s__` cannot match while `__bsshell_-bash__` does.
@@ -64,12 +64,12 @@ const SHELL_MARKER: &str = "__bsshell_";
 /// screens (a repainting monitor, a progress table) can flash text that is
 /// gone a frame later; a short settle means we answer the screen the operator
 /// would actually see. Timed from the *first* sighting, not reset by later
-/// output — a continuously repainting program would otherwise never settle.
+/// output, since a continuously repainting program would otherwise never settle.
 const SETTLE: Duration = Duration::from_millis(400);
 /// How long an interactive `run` step waits for output to go quiet before
 /// advancing (it has no completion marker to wait for).
 const INTERACTIVE_QUIET: Duration = Duration::from_millis(1200);
-/// Bound on shell detection — a shell that hasn't identified itself by now
+/// Bound on shell detection. A shell that hasn't identified itself by now
 /// isn't going to.
 const SHELL_DETECT_SECS: u64 = 15;
 
@@ -155,7 +155,7 @@ pub enum TapMsg {
 type PtyWrite = Box<dyn Fn(&[u8]) -> AppResult<()> + Send>;
 
 /// The engine's handle on one PTY: bytes in, bytes out. Abstracted so the
-/// state machine can be driven by a fake in tests — the expect/send logic is
+/// state machine can be driven by a fake in tests: the expect/send logic is
 /// the riskiest part of the feature and shouldn't need a live host to exercise.
 pub struct PtyLink {
     pub rx: mpsc::UnboundedReceiver<TapMsg>,
@@ -244,7 +244,7 @@ impl<E: SkillEvents> Engine<E> {
     /// is refused up front rather than silently mis-executing.
     pub async fn detect_shell(&mut self) -> Result<String, String> {
         // A leading space keeps this out of shell history on the Debian/Ubuntu
-        // default (HISTCONTROL=ignoreboth) — an operator pressing Up in the
+        // default (HISTCONTROL=ignoreboth), since an operator pressing Up in the
         // pane afterwards shouldn't find our plumbing.
         let probe = format!(" printf '{SHELL_MARKER}%s__\\n' \"$0\"\n");
         if let Err(e) = self.send_bytes(&probe) {
@@ -313,7 +313,7 @@ impl<E: SkillEvents> Engine<E> {
                 return HostOutcome {
                     ok: false,
                     message: format!(
-                        "stopped after {MAX_STEP_EXECUTIONS} steps — the skill's branches loop without finishing"
+                        "stopped after {MAX_STEP_EXECUTIONS} steps: the skill's branches loop without finishing"
                     ),
                 };
             }
@@ -416,9 +416,9 @@ impl<E: SkillEvents> Engine<E> {
         if interactive {
             // No completion marker: the command never returns to the prompt on
             // its own (`sudo -i` opens a nested shell; `cpilot` stops on a
-            // question). Send it, let the output settle — which also gives the
+            // question). Send it, let the output settle, which also gives the
             // sudo injector time to answer a password prompt before we type
-            // anything else at it — then hand over to expect/send steps.
+            // anything else at it, then hand over to expect/send steps.
             if let Err(e) = self.send_bytes(&format!(" {cmd}\n")) {
                 return StepOutcome::Failed(format!("could not send: {e}"));
             }
@@ -484,7 +484,7 @@ impl<E: SkillEvents> Engine<E> {
             Ok(Wait::Skipped) => StepOutcome::Goto(on_success.to_string()),
             Ok(Wait::Timeout) => {
                 // onTimeout: "fail" on a run step takes the failure branch
-                // rather than ending the host — the skill author gets to
+                // rather than ending the host: the skill author gets to
                 // handle it.
                 self.emit(
                     "timeout",
@@ -503,7 +503,7 @@ impl<E: SkillEvents> Engine<E> {
     /// returns [`Wait::Timeout`] for the caller to branch on, `pause` hands the
     /// host to the operator and then honours what they choose.
     ///
-    /// On resume the wait is re-entered but **nothing is re-sent** — a `run`
+    /// On resume the wait is re-entered but **nothing is re-sent**. A `run`
     /// step's command is still running out there, and re-issuing an `apt
     /// upgrade` because it was slow would be its own disaster.
     async fn wait_with_pause(
@@ -558,7 +558,7 @@ impl<E: SkillEvents> Engine<E> {
 /// Strips the echoed command line and the trailing marker line, leaving what
 /// the command actually printed.
 ///
-/// Without this, a `match` pattern would happily match the command's own echo —
+/// Without this, a `match` pattern would happily match the command's own echo:
 /// a step running `grep error log` and branching on `error` would take the
 /// match branch every time, whether or not the file contained anything.
 fn command_output(consumed: &str) -> &str {
@@ -566,7 +566,7 @@ fn command_output(consumed: &str) -> &str {
     // The echo is identifiable by the literal format string, which only ever
     // appears there (real output carries digits). A long command wraps across
     // tty lines, so cutting at the first newline after the marker can strand
-    // the rest of the echo in the output — anchor on the wrapper's tail (`"$?"`,
+    // the rest of the echo in the output, so anchor on the wrapper's tail (`"$?"`,
     // always the last thing on the line) and cut after the line *that* lands on.
     // Searching forward from the marker means a user command containing its own
     // `"$?"` can't be mistaken for the wrapper's.
@@ -587,8 +587,8 @@ fn command_output(consumed: &str) -> &str {
 
 /// Waits until `re` matches the screen, or the deadline passes.
 ///
-/// Matching is event-driven — evaluated on entry (text may already have
-/// arrived) and after each chunk — not polled. Free-standing rather than a
+/// Matching is event-driven: evaluated on entry (text may already have
+/// arrived) and after each chunk, not polled. Free-standing rather than a
 /// method so the three borrows it needs are provably disjoint.
 async fn wait_for(
     screen: &mut Screen,
@@ -615,7 +615,7 @@ async fn wait_for(
                 if re.is_match(screen.view()) {
                     return take_match(screen, re);
                 }
-                // The text was transient — a repaint blew it away. Keep waiting.
+                // The text was transient: a repaint blew it away. Keep waiting.
                 settle_at = None;
             }
             _ = tokio::time::sleep_until(deadline) => return Wait::Timeout,
@@ -683,7 +683,7 @@ async fn wait_quiet(
 }
 
 /// Holds the host while the operator takes over the live pane. Automation is
-/// suspended for the duration — the engine sends nothing until they choose —
+/// suspended for the duration (the engine sends nothing until they choose),
 /// so there is no race between their keystrokes and the engine's next send.
 /// Their traffic still feeds the screen (and the pane), and is cleared on
 /// resume.
@@ -759,7 +759,7 @@ pub fn tap(
     (link, SkillTap { app, tx })
 }
 
-/// Hosts whose steps need a sudo password but have none stored — surfaced as a
+/// Hosts whose steps need a sudo password but have none stored, surfaced as a
 /// pre-run warning, since those steps will fail on the far side.
 pub fn needs_sudo_password(cfg: &SequenceConfig) -> bool {
     cfg.dispatched_text()
@@ -768,7 +768,7 @@ pub fn needs_sudo_password(cfg: &SequenceConfig) -> bool {
 }
 
 fn guard_needs_password(text: &str) -> bool {
-    // Only a detector — see the module docs on why the PTY path never applies
+    // Only a detector. See the module docs on why the PTY path never applies
     // the rewrite itself.
     crate::guard::rewrite_for_sudo(text).needs_password
 }

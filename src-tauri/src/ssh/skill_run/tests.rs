@@ -1,11 +1,11 @@
 //! Engine tests. [`PtyLink`] is a pair of channels, so the whole expect/send
-//! state machine runs against a scripted fake host — no SSH, no live shell.
+//! state machine runs against a scripted fake host: no SSH, no live shell.
 //!
 //! Every test runs on a paused clock (`start_paused`): timeouts and settle
 //! windows resolve instantly and deterministically. Responses are queued into
 //! the data channel *before* the engine starts, which is also the real
-//! ordering — a host's output routinely lands while the previous step is still
-//! finishing — and it means no test races the engine to feed it.
+//! ordering (a host's output routinely lands while the previous step is still
+//! finishing), and it means no test races the engine to feed it.
 
 use std::sync::{Arc, Mutex};
 
@@ -77,7 +77,7 @@ impl Host {
     fn writes(&self) -> Vec<String> {
         self.writes.lock().unwrap().clone()
     }
-    /// Everything the engine has typed, joined — for "did it send X at all".
+    /// Everything the engine has typed, joined, for "did it send X at all".
     fn typed(&self) -> String {
         self.writes().join("")
     }
@@ -216,7 +216,7 @@ async fn run_step_takes_the_failure_branch_on_nonzero_exit() {
 #[tokio::test(start_paused = true)]
 async fn command_echo_is_never_mistaken_for_the_result() {
     // The echo carries `__bsdone_%s__`. If the engine matched that, the step
-    // would "finish" — and take its success branch — before the command had
+    // would "finish", and take its success branch, before the command had
     // even run.
     let (mut engine, host) = harness();
     let c = cfg(vec![
@@ -326,10 +326,43 @@ async fn expect_step_answers_an_interactive_prompt() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn an_authored_answer_reaches_the_host_as_a_real_newline() {
+    // The C8 regression. Every other test here builds its steps with a real
+    // "\n" in the Rust source, which is why they all passed while the feature
+    // was broken: a step authored in the builder holds the two characters
+    // `\` and `n`, and nothing unescaped them, so the prompt never submitted.
+    // Go through prepare(), the way a real run does.
+    let (mut engine, host) = harness();
+    let authored = cfg(vec![expect_step(
+        "a",
+        r"\(y/n\)",
+        Some(r"y\n"), // exactly what the builder stores
+        STOP,
+    )]);
+    let c = prepare(&authored, &std::collections::HashMap::new()).unwrap();
+    host.say("continue? (y/n) ");
+    assert!(engine.run_sequence(&c).await.ok);
+    assert_eq!(host.typed(), "y\n", "the answer was typed without an Enter");
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_authored_send_step_reaches_the_host_as_a_real_newline() {
+    let (mut engine, host) = harness();
+    let authored = cfg(vec![SeqStep::Send {
+        id: "a".into(),
+        input: r"q\n".into(),
+        next: STOP.into(),
+    }]);
+    let c = prepare(&authored, &std::collections::HashMap::new()).unwrap();
+    assert!(engine.run_sequence(&c).await.ok);
+    assert_eq!(host.typed(), "q\n");
+}
+
+#[tokio::test(start_paused = true)]
 async fn expect_matches_a_prompt_with_no_trailing_newline() {
     let (mut engine, host) = harness();
     let c = cfg(vec![expect_step("a", "join now\\?", Some("y\n"), STOP)]);
-    host.say("join now? "); // no newline — a real prompt never sends one
+    host.say("join now? "); // no newline: a real prompt never sends one
     assert!(engine.run_sequence(&c).await.ok);
     assert_eq!(host.typed(), "y\n");
 }
@@ -361,7 +394,7 @@ async fn a_prompt_arriving_early_is_still_matched() {
 
 #[tokio::test(start_paused = true)]
 async fn matched_output_cannot_satisfy_a_later_step() {
-    // Two identical prompts must each be answered once — the first match is
+    // Two identical prompts must each be answered once: the first match is
     // consumed, so it can't stand in for the second.
     let (mut engine, host) = harness();
     let c = cfg(vec![
@@ -411,7 +444,7 @@ async fn run_step_timeout_with_fail_takes_the_failure_branch() {
         run_step("a", "hangs", STOP, "b"),
         run_step("b", "echo recovered", STOP, STOP),
     ]);
-    // Step b's reply has to wait until step a has actually timed out —
+    // Step b's reply has to wait until step a has actually timed out:
     // queueing it up front would let step a match b's completion marker and
     // "succeed", which is a different bug than the one under test.
     let data = host.data.clone();
@@ -637,7 +670,7 @@ async fn shell_probe_echo_alone_is_not_a_detection() {
 async fn the_shell_is_persistent_across_steps() {
     // The feature's core promise: `sudo -i` in an early step leaves every later
     // step running as root, because it is one long-lived shell rather than a
-    // command per step. The engine models that by simply never reconnecting —
+    // command per step. The engine models that by simply never reconnecting.
     // this pins the interactive-step handoff that makes it usable.
     let (mut engine, host) = harness();
     let c = cfg(vec![

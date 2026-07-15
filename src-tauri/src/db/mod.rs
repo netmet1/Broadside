@@ -138,11 +138,11 @@ const MIGRATIONS: &[&str] = &[
     // grouping/sorting hosts in the table; autocompleted in the form from tags
     // already in use. Surfaces before linux_flavor in the UI.
     "ALTER TABLE hosts ADD COLUMN tag TEXT;",
-    // 13: skills — reusable multi-step operations driven over a live PTY per
+    // 13: skills. Reusable multi-step operations driven over a live PTY per
     // host (skills-feature-plan, Phase 1). `config_json` is the kind-specific
     // blob (steps + declared params); it can hold command text, so it shares
     // the at-rest exposure class of command_history (D-011). No secrets ever
-    // live here — the credential store owns those.
+    // live here; the credential store owns those.
     "CREATE TABLE IF NOT EXISTS skills (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         name         TEXT NOT NULL,

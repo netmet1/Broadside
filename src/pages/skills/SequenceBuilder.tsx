@@ -17,7 +17,7 @@ export function SequenceBuilder({
 }: {
   /** The skill being edited, or null for a new one. */
   editing: Skill | null;
-  /** Resolves true when the save landed — the backend refuses a broken graph. */
+  /** Resolves true when the save landed: the backend refuses a broken graph. */
   onSave: (id: number | null, input: SkillInput) => Promise<boolean>;
   onCancel: () => void;
 }) {
@@ -171,7 +171,7 @@ export function SequenceBuilder({
               The shell stays open for the whole run, so a{" "}
               <code className="rounded bg-muted px-1">sudo -i</code> early on
               leaves every later step running as root. Mark it{" "}
-              <span className="font-medium">interactive</span> — it opens a
+              <span className="font-medium">interactive</span>, since it opens a
               nested shell and never returns an exit code.
             </p>
             <p>
@@ -180,7 +180,7 @@ export function SequenceBuilder({
                 DEBIAN_FRONTEND=noninteractive
               </code>{" "}
               and <code className="rounded bg-muted px-1">-y</code> so a config
-              dialog can't block the run, and raise the timeout — an upgrade can
+              dialog can't block the run, and raise the timeout, since an upgrade can
               take a while.
             </p>
           </div>

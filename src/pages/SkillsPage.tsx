@@ -26,16 +26,18 @@ import {
 import { useSkillRun } from "@/pages/skills/useSkillRun";
 import { useSkillsModel } from "@/pages/skills/useSkillsModel";
 
-/** What the main panel is showing. */
+/** What the main panel is showing. The run is deliberately not carried here:
+ * it outlives whatever you happen to be looking at, so it lives in its own
+ * state and this only decides whether it is the thing on screen. */
 type View =
   | { kind: "idle" }
   | { kind: "edit"; skill: Skill | null }
   | { kind: "params"; skill: Skill }
-  | { kind: "run"; skill: Skill };
+  | { kind: "run" };
 
 /**
  * Skills: reusable multi-step operations that open a live shell on each checked
- * host and drive it — running commands, watching for prompts, answering them —
+ * host and drive it (running commands, watching for prompts, answering them)
  * while the operator watches the real terminal.
  *
  * A thin shell: the rail is host selection + the skill list, the main panel is
@@ -48,6 +50,9 @@ export function SkillsPage({ visible }: { visible: boolean }) {
   const model = useSkillsModel();
   const run = useSkillRun();
   const [view, setView] = useState<View>({ kind: "idle" });
+  /** The skill the live run belongs to. Held apart from `view` so wandering off
+   * to build another skill doesn't lose track of what's running. */
+  const [runningSkill, setRunningSkill] = useState<Skill | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Skill | null>(null);
   // Set when a run needs the typed-CONFIRM gate (D-014).
   const [confirming, setConfirming] = useState<{
@@ -81,7 +86,10 @@ export function SkillsPage({ visible }: { visible: boolean }) {
         cols: 120,
         rows: 32,
       });
-      if (ok) setView({ kind: "run", skill });
+      if (ok) {
+        setRunningSkill(skill);
+        setView({ kind: "run" });
+      }
     },
     [run, sel.selectedHosts],
   );
@@ -93,7 +101,7 @@ export function SkillsPage({ visible }: { visible: boolean }) {
       preflight: SkillPreflight,
     ) => {
       // Destructive steps get the same typed-CONFIRM gate as a broadcast. The
-      // backend re-checks and refuses an unconfirmed hit regardless — this is
+      // backend re-checks and refuses an unconfirmed hit regardless; this is
       // the UX half.
       if (preflight.matchedRules.length > 0) {
         setConfirming({ skill, params, preflight });
@@ -181,9 +189,18 @@ export function SkillsPage({ visible }: { visible: boolean }) {
         <SkillList
           skills={model.skills}
           loading={model.loading}
-          selectedId={view.kind === "idle" ? null : view.skill?.id ?? null}
+          selectedId={
+            view.kind === "edit" || view.kind === "params"
+              ? view.skill?.id ?? null
+              : view.kind === "run"
+                ? runningSkill?.id ?? null
+                : null
+          }
+          runningSkillId={run.runId ? (runningSkill?.id ?? null) : null}
+          watching={view.kind === "run"}
           canRun={sel.selected.size > 0 && !run.active}
           onRun={(skill) => setView({ kind: "params", skill })}
+          onWatch={() => setView({ kind: "run" })}
           onEdit={(skill) => setView({ kind: "edit", skill })}
           onNew={() => setView({ kind: "edit", skill: null })}
           onDelete={setPendingDelete}
@@ -197,19 +214,29 @@ export function SkillsPage({ visible }: { visible: boolean }) {
 
       {/* Main panel. */}
       <div className="min-w-0 flex-1 overflow-y-auto">
-        {view.kind === "run" && run.runId ? (
-          <RunPanel
-            runId={run.runId}
-            hosts={run.hosts}
-            skillName={view.skill.name}
-            active={run.active}
-            setTakenOver={run.setTakenOver}
-            onDone={() => {
-              run.reset();
-              setView({ kind: "idle" });
-            }}
-          />
-        ) : view.kind === "edit" ? (
+        {/* The run panel stays mounted for as long as the run exists, and is
+            only hidden when you look at something else. Swapping it out
+            destroys the xterm panes with it: the run itself would carry on
+            (the backend owns those PTYs) but its scrollback would be gone and
+            there would be no way back to it. The eye button on the rail brings
+            it forward again. */}
+        {run.runId && runningSkill && (
+          <div className={view.kind === "run" ? "block h-full" : "hidden"}>
+            <RunPanel
+              runId={run.runId}
+              hosts={run.hosts}
+              skillName={runningSkill.name}
+              active={run.active}
+              setTakenOver={run.setTakenOver}
+              onDone={() => {
+                run.reset();
+                setRunningSkill(null);
+                setView({ kind: "idle" });
+              }}
+            />
+          </div>
+        )}
+        {view.kind === "edit" ? (
           <SequenceBuilder
             editing={view.skill}
             onSave={model.save}
@@ -223,21 +250,21 @@ export function SkillsPage({ visible }: { visible: boolean }) {
             onCancel={() => setView({ kind: "idle" })}
             onRun={(params, preflight) => startRun(view.skill, params, preflight)}
           />
-        ) : (
+        ) : view.kind === "idle" ? (
           <div className="mx-auto max-w-lg px-6 py-16 text-center">
             <h2 className="text-lg font-semibold">Skills</h2>
             <p className="mt-2 text-sm text-muted-foreground">
               A skill opens a live shell on each host you check and drives it:
               running commands, waiting for prompts, and answering them. Because
               it's a real shell, it can become root and stay root, work through
-              questions, and handle programs that repaint the screen — and you
+              questions, and handle programs that repaint the screen, and you
               watch every host's terminal while it happens.
             </p>
             <p className="mt-3 text-sm text-muted-foreground">
               Check some hosts on the left, then press play on a skill.
             </p>
           </div>
-        )}
+        ) : null}
       </div>
 
       {confirming && (

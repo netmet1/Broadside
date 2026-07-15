@@ -61,7 +61,7 @@ pub fn delete_skill(id: i64, state: State<'_, DbState>) -> AppResult<usize> {
 }
 
 /// Rejects a broken step graph at save time, so the operator hears about a
-/// dangling branch or an uncompilable pattern then — not halfway through an
+/// dangling branch or an uncompilable pattern then, not halfway through an
 /// upgrade on twelve hosts.
 fn validate_config(input: &skill_repo::SkillInput) -> AppResult<()> {
     if input.kind != skill_repo::KIND_SEQUENCE {
@@ -108,18 +108,18 @@ fn prepared(
     if skill.kind != skill_repo::KIND_SEQUENCE {
         // Phase 2 lands the AI engine on this same substrate.
         return Err(AppError::InvalidInput(
-            "AI skills aren't runnable yet — this build ships sequence skills only".into(),
+            "AI skills aren't runnable yet: this build ships sequence skills only".into(),
         ));
     }
     let cfg = skill_run::parse_sequence(&skill.config_json)?;
-    // Substitution happens here, backend-side: everything downstream — the
-    // guard, the audit log, the host — sees the real command text.
+    // Substitution happens here, backend-side: everything downstream (the
+    // guard, the audit log, the host) sees the real command text.
     let prepared = skill_run::prepare(&cfg, params)?;
     Ok((skill, prepared))
 }
 
 /// The frontend's pre-run check, driving the CONFIRM dialog and the warnings.
-/// `run_skill` re-runs the same guard check — this one is UX, that one is the
+/// `run_skill` re-runs the same guard check; this one is UX, that one is the
 /// gate.
 #[tauri::command]
 pub fn skill_preflight(
@@ -158,7 +158,7 @@ pub fn skill_preflight(
 
 /// Dispatches a skill against every selected host.
 ///
-/// Returns as soon as the runs are launched, handing back the panes to mount —
+/// Returns as soon as the runs are launched, handing back the panes to mount.
 /// a skill run is watched, not awaited, and can last as long as an `apt
 /// upgrade`. Everything after this point arrives as `skill:progress` /
 /// `skill:paused` / `skill:done`.
@@ -188,7 +188,7 @@ pub async fn run_skill(
 
     // Defense in depth (D-014): the frontend modal is the UX, this is the gate.
     // A destructive step without the confirmed flag is refused whatever the IPC
-    // caller claims — and it is checked against the *substituted* text, so a
+    // caller claims, and it is checked against the *substituted* text, so a
     // parameter can't smuggle one past.
     let user_rules = with_db(&state, load_user_rules)?;
     let mut hits: Vec<GuardHit> = Vec::new();
@@ -305,7 +305,7 @@ pub async fn run_skill(
                 }
                 Some(auth) => {
                     // The tap forwards every byte to the live pane *and* to the
-                    // engine — pty.rs is untouched, and what the engine matches
+                    // engine: pty.rs is untouched, and what the engine matches
                     // is what the operator is watching.
                     let (link, tap) = skill_run::tap(app.clone(), session_id.clone());
                     let opened = crate::ssh::pty::open(
@@ -359,11 +359,11 @@ pub async fn run_skill(
 fn open_failure_message(result: &crate::ssh::pty::PtyOpenResult) -> String {
     use crate::ssh::pty::PtyOpenResult as R;
     match result {
-        R::AuthFailed { message } => format!("authentication failed — {message}"),
-        R::Unreachable { message } => format!("unreachable — {message}"),
-        R::KeyMismatch { .. } => "host key mismatch — connection refused".into(),
+        R::AuthFailed { message } => format!("authentication failed: {message}"),
+        R::Unreachable { message } => format!("unreachable: {message}"),
+        R::KeyMismatch { .. } => "host key mismatch: connection refused".into(),
         R::UnknownKey { .. } => {
-            "this host's key isn't trusted yet — open a terminal to it once to review the key".into()
+            "this host's key isn't trusted yet. Open a terminal to it once to review the key".into()
         }
         R::NoCredentials => "no credentials stored".into(),
         R::Opened => "opened".into(),
@@ -371,7 +371,7 @@ fn open_failure_message(result: &crate::ssh::pty::PtyOpenResult) -> String {
 }
 
 /// Emergency stop: kills the sequence on **every** host at once by closing each
-/// PTY. Irreversible and abrupt by design — it can leave a host mid-`apt`. The
+/// PTY. Irreversible and abrupt by design: it can leave a host mid-`apt`. The
 /// graceful controls are per-host (`skill_abort`).
 #[tauri::command]
 pub fn skill_cancel(
@@ -380,7 +380,7 @@ pub fn skill_cancel(
     pty_state: State<'_, PtyState>,
 ) -> AppResult<()> {
     // Dropping the run's entry closes every control channel, which each engine
-    // — waiting or parked — reads as an abort.
+    // (waiting or parked) reads as an abort.
     for session_id in run_state.cancel(&run_id) {
         let _ = pty_state.close(&session_id);
     }

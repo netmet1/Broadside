@@ -32,7 +32,7 @@ export function useSkillsModel() {
   }, [reload]);
 
   /** Saves a new skill or updates an existing one. Resolves to true on success
-   * so the caller can close its form only when the save actually landed — the
+   * so the caller can close its form only when the save actually landed: the
    * backend rejects a broken step graph here. */
   const save = useCallback(
     async (id: number | null, input: SkillInput): Promise<boolean> => {

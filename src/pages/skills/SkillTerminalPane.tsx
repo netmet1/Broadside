@@ -27,11 +27,11 @@ function readTerminalTheme() {
  * Deliberately *not* TerminalView: that component owns its session's whole
  * lifecycle (it calls `pty_open` on mount and `pty_close` on unmount), whereas
  * a skill run's PTY is opened and closed by the backend for the duration of the
- * run. This pane only binds to a session that already exists — watch it, and
+ * run. This pane only binds to a session that already exists: watch it, and
  * type into it when the operator takes over.
  *
  * Keystrokes go through `onInput` (which routes to `skill_send_input`) and only
- * while `interactive` — the run's own controls decide when the operator has the
+ * while `interactive`: the run's own controls decide when the operator has the
  * keyboard, so a stray click on a pane can't inject a keystroke into a shell
  * the engine is mid-step on.
  */

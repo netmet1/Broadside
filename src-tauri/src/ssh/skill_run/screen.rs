@@ -1,6 +1,6 @@
 //! The ANSI-stripped view of a PTY stream that expect patterns match against.
 //!
-//! Raw bytes still stream to the live pane untouched (`pty:data`) — this is a
+//! Raw bytes still stream to the live pane untouched (`pty:data`); this is a
 //! parallel, display-free interpretation used *only* for matching, so that a
 //! program which repaints its screen with colour and carriage returns (the
 //! `cpilot` monitor is the motivating case) doesn't defeat a pattern that would
@@ -127,7 +127,7 @@ impl Perform for Interp {
                 _ => self.line.truncate(self.col.min(self.line.len())),
             },
             // Erase in display. We model a stream, not a grid, so a clear-screen
-            // only drops the line being drawn — frozen lines stay matchable
+            // only drops the line being drawn. Frozen lines stay matchable
             // (a program that clears and repaints must not erase the prompt we
             // are waiting to answer).
             'J' => {
@@ -151,7 +151,7 @@ impl Perform for Interp {
     }
 
     // Colour, OSC (including the OSC 133 shell-integration markers pty.rs
-    // injects), DCS and charset selection carry no text — dropping them *is*
+    // injects), DCS and charset selection carry no text, so dropping them *is*
     // the strip.
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell: bool) {}
     fn hook(&mut self, _p: &Params, _i: &[u8], _ig: bool, _a: char) {}
@@ -193,7 +193,7 @@ impl Screen {
 
     /// Consumes the view through byte offset `end` (the end of a match) and
     /// returns the consumed text, so the same output can never satisfy a later
-    /// step. A match reaching into the current line consumes that line whole —
+    /// step. A match reaching into the current line consumes that line whole:
     /// the cursor state of a half-eaten line is not worth modelling, and the
     /// line in question has just been answered anyway.
     pub fn consume_through(&mut self, end: usize) -> String {

@@ -14,7 +14,7 @@ export const SKILL_SORT_OPTIONS = RAIL_SORT_OPTIONS.filter(
  * pages use (selection + sort + tag/label filter), over saved hosts.
  *
  * Skills target saved hosts rather than open sessions: a run opens its own
- * shell per host, drives it, and closes it. Nothing is pre-selected — the user
+ * shell per host, drives it, and closes it. Nothing is pre-selected: the user
  * opts into every run.
  */
 export function useSkillSelection(visible: boolean) {

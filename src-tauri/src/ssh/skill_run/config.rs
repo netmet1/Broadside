@@ -1,7 +1,7 @@
 //! Skill configuration: the serde mirror of `src/lib/tauri/skills.ts`, plus
 //! parameter substitution and save/run-time validation.
 //!
-//! Field names are camelCase to match the TS types verbatim — this shape is
+//! Field names are camelCase to match the TS types verbatim: this shape is
 //! what lands in `skills.config_json`.
 
 use std::collections::HashMap;
@@ -42,7 +42,7 @@ pub struct SkillParam {
 pub enum TimeoutAction {
     /// Take the failure branch.
     Fail,
-    /// Hand the host to the operator (the default — expect automation is
+    /// Hand the host to the operator (the default, because expect automation is
     /// brittle, and silently failing a half-done run is worse than waiting).
     #[default]
     Pause,
@@ -66,7 +66,7 @@ pub enum SeqStep {
     /// Non-interactive commands are sentinel-wrapped so the engine recovers
     /// both completion and the exit code. `interactive` skips the wrapper for
     /// a command that never returns to the prompt on its own (`sudo -i` starts
-    /// a nested shell; `cpilot` waits on a question) — those advance once the
+    /// a nested shell; `cpilot` waits on a question). Those advance once the
     /// output goes quiet and are then driven with `expect`/`send`.
     Run {
         id: String,
@@ -192,7 +192,7 @@ fn escape(s: &str) -> String {
 ///
 /// **Multi-line mode is on**, and that is not a detail. The view is a stream of
 /// terminal lines, so an author writing `^Ready$` plainly means *a line that
-/// says Ready* — but Rust's regex anchors `^`/`$` to the whole haystack by
+/// says Ready*, but Rust's regex anchors `^`/`$` to the whole haystack by
 /// default, where `^Ready$` can only match if `Ready` is the entire buffer.
 /// That pattern would silently never fire, and the step would sit there until
 /// it timed out and paused: a bug that reads as "the host is being slow"
@@ -206,6 +206,47 @@ pub fn compile_pattern(pattern: &str) -> AppResult<Regex> {
         .map_err(|e| AppError::InvalidInput(format!("invalid pattern: {e}")))
 }
 
+/// Turns the escape sequences a step author types into the bytes they mean.
+///
+/// A `send` step's text is keystrokes, and the single most common one is Enter.
+/// There is no way to type a real newline into a single-line form field, so the
+/// builder asks for `\n` and this is what honours it. Without it the host
+/// receives a literal backslash and an `n`, the prompt never submits, and the
+/// step sits there until it times out.
+///
+/// Applies to keystrokes only, never to a `run` command: `printf 'a\nb'` means
+/// its backslash-n for printf to interpret, not for us to.
+///
+/// An unknown escape is left exactly as written, so a Windows-ish path typed
+/// into a prompt (`C:\data`) survives. A literal backslash before one of the
+/// recognised letters is written `\\`.
+pub fn unescape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            // Escape itself, for driving a program with a control sequence.
+            Some('e') => out.push('\x1b'),
+            Some('\\') => out.push('\\'),
+            // Not an escape we know: leave it as the author wrote it.
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            // Trailing backslash.
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
 /// Wraps a value so a shell reads it as exactly one argument, whatever it
 /// contains. Single quotes suspend every expansion; the only character needing
 /// care is a single quote itself, closed and re-opened around an escaped one.
@@ -216,7 +257,7 @@ pub fn shell_quote(value: &str) -> String {
 /// Replaces `{{key}}` with the user's value for every **declared** parameter.
 ///
 /// Substitution is a single left-to-right scan, so a value that itself contains
-/// `{{other}}` is never re-scanned — a parameter cannot smuggle in another
+/// `{{other}}` is never re-scanned: a parameter cannot smuggle in another
 /// parameter's expansion.
 ///
 /// A `{{...}}` whose contents aren't a declared key is left **exactly as
@@ -227,7 +268,7 @@ pub fn shell_quote(value: &str) -> String {
 /// `quote` shell-quotes each substituted value. It is on for `run` commands
 /// (the text lands in a shell, so a value must not be able to break out of its
 /// argument and become a second command) and off for `send`/`sendOnMatch`,
-/// whose text is keystrokes typed at whatever is on the far side — often not a
+/// whose text is keystrokes typed at whatever is on the far side, often not a
 /// shell at all, where literal quotes would be typed as-is. Those are covered
 /// by the destructive guard sweep instead.
 pub fn substitute(text: &str, values: &HashMap<String, String>, quote: bool) -> String {
@@ -297,7 +338,7 @@ impl Quoting {
 ///
 /// Wrapping every value in fresh quotes only works when the placeholder is bare.
 /// Quoting your variables is an ingrained shell habit, so an author will write
-/// `echo '{{msg}}'` sooner or later — and adding another layer of quotes inside
+/// `echo '{{msg}}'` sooner or later, and adding another layer of quotes inside
 /// theirs produces broken shell (worse, a value carrying a quote would escape
 /// their quotes entirely). Matching the escaping to the context means all three
 /// natural ways of writing the step do the same, safe thing.
@@ -356,15 +397,20 @@ pub fn substituted_config(
                 on_match,
             } => SeqStep::Expect {
                 id,
+                // The pattern is a regex, not keystrokes: its `\n` is regex
+                // syntax and must reach the regex engine as written.
                 pattern: substitute(&pattern, values, false),
-                send_on_match: send_on_match.map(|s| substitute(&s, values, false)),
+                // Unescape the author's text FIRST, then substitute. The other
+                // order would run the user's *value* through the unescaper, so
+                // a path like `C:\new` would sprout a newline.
+                send_on_match: send_on_match.map(|s| substitute(&unescape(&s), values, false)),
                 timeout_secs,
                 on_timeout,
                 on_match,
             },
             SeqStep::Send { id, input, next } => SeqStep::Send {
                 id,
-                input: substitute(&input, values, false),
+                input: substitute(&unescape(&input), values, false),
                 next,
             },
         })
@@ -378,7 +424,7 @@ pub fn substituted_config(
 
 /// Fills declared parameters from the user's values, applying defaults and
 /// rejecting a missing required one. Undeclared keys are dropped rather than
-/// honoured — the caller is the frontend, and a skill's parameter list is the
+/// honoured: the caller is the frontend, and a skill's parameter list is the
 /// contract.
 pub fn resolve_params(
     params: &[SkillParam],
@@ -546,7 +592,7 @@ mod tests {
             &vals(&[("msg", "hi; rm -rf /")]),
             true,
         );
-        // The semicolon is inside the quotes — one argument to echo, not a
+        // The semicolon is inside the quotes: one argument to echo, not a
         // command separator.
         assert_eq!(out, "echo 'hi; rm -rf /'");
     }
@@ -590,7 +636,7 @@ mod tests {
 
     #[test]
     fn a_value_in_double_quotes_cannot_expand() {
-        // Inside double quotes the shell still runs $(…), `…` and expands $VAR —
+        // Inside double quotes the shell still runs $(…), `…` and expands $VAR,
         // so those are what must be escaped there.
         let out = substitute(
             r#"echo "{{msg}}""#,
@@ -653,6 +699,110 @@ mod tests {
     fn undeclared_placeholder_is_left_alone() {
         let out = substitute("echo {{nope}}", &vals(&[("other", "x")]), true);
         assert_eq!(out, "echo {{nope}}");
+    }
+
+    #[test]
+    fn unescape_turns_backslash_n_into_a_real_newline() {
+        // The bug this exists for: the builder asks for `y\n` because a
+        // single-line field can't hold a real newline, and without this the
+        // host received a backslash and an `n`, so the prompt never submitted.
+        assert_eq!(unescape(r"y\n"), "y\n");
+        assert_eq!(unescape(r"\r\n"), "\r\n");
+        assert_eq!(unescape(r"a\tb"), "a\tb");
+        assert_eq!(unescape(r"\e[A"), "\x1b[A");
+    }
+
+    #[test]
+    fn unescape_leaves_an_unknown_escape_alone() {
+        // A path typed at a prompt must survive intact.
+        assert_eq!(unescape(r"C:\data"), r"C:\data");
+        assert_eq!(unescape(r"\q"), r"\q");
+        assert_eq!(unescape(r"trailing\"), r"trailing\");
+    }
+
+    #[test]
+    fn unescape_handles_a_literal_backslash() {
+        assert_eq!(unescape(r"a\\nb"), r"a\nb");
+        assert_eq!(unescape(r"\\"), r"\");
+    }
+
+    #[test]
+    fn send_steps_get_their_escapes_honoured() {
+        let c = cfg(
+            vec![SeqStep::Send {
+                id: "a".into(),
+                input: r"y\n".into(),
+                next: STOP.into(),
+            }],
+            "a",
+        );
+        let out = substituted_config(&c, &vals(&[]));
+        match &out.steps[0] {
+            SeqStep::Send { input, .. } => assert_eq!(input, "y\n"),
+            _ => panic!("wrong step"),
+        }
+    }
+
+    #[test]
+    fn expect_answers_get_their_escapes_honoured_but_patterns_do_not() {
+        // The answer is keystrokes, so `\n` is Enter. The pattern is a regex, so
+        // its `\n` is regex syntax and has to reach the engine as written.
+        let c = cfg(
+            vec![SeqStep::Expect {
+                id: "a".into(),
+                pattern: r"ready\n".into(),
+                send_on_match: Some(r"y\n".into()),
+                timeout_secs: None,
+                on_timeout: TimeoutAction::Pause,
+                on_match: STOP.into(),
+            }],
+            "a",
+        );
+        let out = substituted_config(&c, &vals(&[]));
+        match &out.steps[0] {
+            SeqStep::Expect {
+                pattern,
+                send_on_match,
+                ..
+            } => {
+                assert_eq!(send_on_match.as_deref(), Some("y\n"));
+                assert_eq!(pattern, r"ready\n");
+            }
+            _ => panic!("wrong step"),
+        }
+    }
+
+    #[test]
+    fn a_run_command_keeps_its_backslashes() {
+        // `printf 'a\nb'` means its backslash-n for printf, not for us.
+        let c = cfg(vec![run_step("a", r"printf 'a\nb'")], "a");
+        let out = substituted_config(&c, &vals(&[]));
+        match &out.steps[0] {
+            SeqStep::Run { command, .. } => assert_eq!(command, r"printf 'a\nb'"),
+            _ => panic!("wrong step"),
+        }
+    }
+
+    #[test]
+    fn a_param_value_is_not_run_through_the_unescaper() {
+        // Unescape the template, then substitute: the other order would turn a
+        // value like `C:\new` into one with a real newline in it.
+        let c = cfg(
+            vec![SeqStep::Send {
+                id: "a".into(),
+                input: r"{{path}}\n".into(),
+                next: STOP.into(),
+            }],
+            "a",
+        );
+        let out = substituted_config(&c, &vals(&[("path", r"C:\new\table")]));
+        match &out.steps[0] {
+            SeqStep::Send { input, .. } => {
+                // The value survived literally; only the author's \n became Enter.
+                assert_eq!(input, "C:\\new\\table\n");
+            }
+            _ => panic!("wrong step"),
+        }
     }
 
     #[test]
@@ -786,7 +936,7 @@ mod tests {
     fn anchors_are_line_anchors_not_buffer_anchors() {
         // What a skill author means by `^Ready$` while watching a terminal. The
         // regex crate's default would only match if `Ready` were the entire
-        // buffer — the pattern would silently never fire.
+        // buffer, so the pattern would silently never fire.
         let re = compile_pattern("^Ready$").unwrap();
         assert!(re.is_match("Attempt 9: waiting\nReady\n"));
         assert!(re.is_match("Ready")); // still matches an unterminated line
