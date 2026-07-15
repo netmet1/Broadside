@@ -28,7 +28,7 @@ use crate::ssh::skill_run::{
 
 #[tauri::command]
 pub fn list_skills(state: State<'_, DbState>) -> AppResult<Vec<skill_repo::Skill>> {
-    with_db(&state, |conn| skill_repo::list(conn))
+    with_db(&state, skill_repo::list)
 }
 
 #[tauri::command]
@@ -129,7 +129,7 @@ pub fn skill_preflight(
     state: State<'_, DbState>,
 ) -> AppResult<SkillPreflight> {
     let (_, cfg) = prepared(&state, skill_id, &params)?;
-    let user_rules = with_db(&state, |conn| load_user_rules(conn))?;
+    let user_rules = with_db(&state, load_user_rules)?;
     let mut matched_rules: Vec<GuardHit> = Vec::new();
     for text in cfg.dispatched_text() {
         for hit in guard::check_with_user(&text, &user_rules) {
@@ -190,7 +190,7 @@ pub async fn run_skill(
     // A destructive step without the confirmed flag is refused whatever the IPC
     // caller claims — and it is checked against the *substituted* text, so a
     // parameter can't smuggle one past.
-    let user_rules = with_db(&state, |conn| load_user_rules(conn))?;
+    let user_rules = with_db(&state, load_user_rules)?;
     let mut hits: Vec<GuardHit> = Vec::new();
     for text in cfg.dispatched_text() {
         for hit in guard::check_with_user(&text, &user_rules) {
@@ -244,7 +244,7 @@ pub async fn run_skill(
     // blocks the run.
     let _ = audit.append(&AuditEvent::SkillRun {
         skill_name: skill.name.clone(),
-        kind: skill.kind.clone(),
+        skill_kind: skill.kind.clone(),
         host_labels: jobs.iter().map(|j| j.host.label.clone()).collect(),
         matched_rules: hits.iter().map(|h| h.rule_id.clone()).collect(),
         confirmed: confirmed == Some(true),

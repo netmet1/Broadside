@@ -42,6 +42,18 @@ pub enum AuditEvent {
         hostname: String,
         port: u16,
     },
+    /// A skill was dispatched against a set of hosts, opening a live shell on
+    /// each. Enriched with guard info the same way a broadcast is (D-014).
+    /// Records the definition that ran, not the step-by-step transcript.
+    /// `skill_kind` rather than `kind`: the enum is internally tagged on
+    /// `kind`, which every record already uses for the event type.
+    SkillRun {
+        skill_name: String,
+        skill_kind: String,
+        host_labels: Vec<String>,
+        matched_rules: Vec<String>,
+        confirmed: bool,
+    },
     /// The stored sudo password was auto-filled at an interactive sudo prompt
     /// in a PTY session (D-065). Never carries the password itself.
     SudoInjected {

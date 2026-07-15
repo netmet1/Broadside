@@ -150,12 +150,16 @@ pub enum TapMsg {
     Closed,
 }
 
+/// Writes bytes to a host's PTY. Boxed rather than a concrete `PtyState` call
+/// so tests can substitute a recorder.
+type PtyWrite = Box<dyn Fn(&[u8]) -> AppResult<()> + Send>;
+
 /// The engine's handle on one PTY: bytes in, bytes out. Abstracted so the
 /// state machine can be driven by a fake in tests — the expect/send logic is
 /// the riskiest part of the feature and shouldn't need a live host to exercise.
 pub struct PtyLink {
     pub rx: mpsc::UnboundedReceiver<TapMsg>,
-    pub write: Box<dyn Fn(&[u8]) -> AppResult<()> + Send>,
+    pub write: PtyWrite,
 }
 
 /// Which host this engine is driving, for event payloads.
