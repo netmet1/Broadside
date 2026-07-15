@@ -233,6 +233,7 @@ pub fn shell_quote(value: &str) -> String {
 pub fn substitute(text: &str, values: &HashMap<String, String>, quote: bool) -> String {
     let mut out = String::with_capacity(text.len());
     let bytes = text.as_bytes();
+    let mut ctx = Quoting::Bare;
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i..].starts_with(b"{{") {
@@ -240,7 +241,7 @@ pub fn substitute(text: &str, values: &HashMap<String, String>, quote: bool) -> 
                 let key = &text[i + 2..i + 2 + close];
                 if let Some(value) = values.get(key) {
                     out.push_str(&if quote {
-                        shell_quote(value)
+                        quote_for(value, ctx)
                     } else {
                         value.clone()
                     });
@@ -249,12 +250,70 @@ pub fn substitute(text: &str, values: &HashMap<String, String>, quote: bool) -> 
                 }
             }
         }
-        // Not a declared placeholder: copy this char through untouched.
+        // Not a declared placeholder: copy this char through untouched, tracking
+        // the quoting it puts the *next* placeholder in.
         let ch = text[i..].chars().next().expect("index on a char boundary");
+        // A backslash outside single quotes escapes the next character, which
+        // must not be read as a quote delimiter.
+        if ch == '\\' && ctx != Quoting::Single {
+            out.push(ch);
+            i += 1;
+            if let Some(next) = text[i..].chars().next() {
+                out.push(next);
+                i += next.len_utf8();
+            }
+            continue;
+        }
+        ctx = ctx.advance(ch);
         out.push(ch);
         i += ch.len_utf8();
     }
     out
+}
+
+/// The shell quoting a placeholder sits inside, which decides how its value has
+/// to be escaped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Quoting {
+    Bare,
+    Single,
+    Double,
+}
+
+impl Quoting {
+    fn advance(self, ch: char) -> Self {
+        match (self, ch) {
+            (Quoting::Bare, '\'') => Quoting::Single,
+            (Quoting::Single, '\'') => Quoting::Bare,
+            (Quoting::Bare, '"') => Quoting::Double,
+            (Quoting::Double, '"') => Quoting::Bare,
+            _ => self,
+        }
+    }
+}
+
+/// Escapes `value` so a shell reads it as literal text *in the quoting it lands
+/// in*.
+///
+/// Wrapping every value in fresh quotes only works when the placeholder is bare.
+/// Quoting your variables is an ingrained shell habit, so an author will write
+/// `echo '{{msg}}'` sooner or later — and adding another layer of quotes inside
+/// theirs produces broken shell (worse, a value carrying a quote would escape
+/// their quotes entirely). Matching the escaping to the context means all three
+/// natural ways of writing the step do the same, safe thing.
+fn quote_for(value: &str, ctx: Quoting) -> String {
+    match ctx {
+        Quoting::Bare => shell_quote(value),
+        // Already inside single quotes: only a single quote can end them.
+        Quoting::Single => value.replace('\'', r"'\''"),
+        // Inside double quotes the shell still expands these, so they're what
+        // has to be escaped.
+        Quoting::Double => value
+            .replace('\\', r"\\")
+            .replace('"', "\\\"")
+            .replace('$', "\\$")
+            .replace('`', "\\`"),
+    }
 }
 
 /// Applies the user's parameter values to every field that can carry one.
@@ -496,6 +555,76 @@ mod tests {
     fn a_value_cannot_break_out_with_its_own_quote() {
         let out = substitute("echo {{msg}}", &vals(&[("msg", "'; rm -rf /; echo '")]), true);
         assert_eq!(out, r#"echo ''\''; rm -rf /; echo '\'''"#);
+    }
+
+    #[test]
+    fn a_placeholder_the_author_already_quoted_is_not_double_quoted() {
+        // Quoting your variables is an ingrained shell habit, so this is written
+        // sooner or later. Adding our own quotes inside the author's would
+        // produce broken shell.
+        let out = substitute("echo '{{msg}}'", &vals(&[("msg", "hello world")]), true);
+        assert_eq!(out, "echo 'hello world'");
+    }
+
+    #[test]
+    fn a_value_cannot_escape_the_authors_single_quotes() {
+        // The breakout the naive version allowed: the value's own quote would
+        // close the author's, leaving the rest as shell code.
+        let out = substitute(
+            "echo '{{msg}}'",
+            &vals(&[("msg", "'; rm -rf /; echo '")]),
+            true,
+        );
+        assert_eq!(out, r#"echo ''\''; rm -rf /; echo '\'''"#);
+    }
+
+    #[test]
+    fn a_value_cannot_escape_the_authors_double_quotes() {
+        let out = substitute(
+            r#"echo "{{msg}}""#,
+            &vals(&[("msg", r#""; rm -rf /; echo ""#)]),
+            true,
+        );
+        assert_eq!(out, r#"echo "\"; rm -rf /; echo \"""#);
+    }
+
+    #[test]
+    fn a_value_in_double_quotes_cannot_expand() {
+        // Inside double quotes the shell still runs $(…), `…` and expands $VAR —
+        // so those are what must be escaped there.
+        let out = substitute(
+            r#"echo "{{msg}}""#,
+            &vals(&[("msg", "$(whoami) `id` $HOME")]),
+            true,
+        );
+        assert_eq!(out, r#"echo "\$(whoami) \`id\` \$HOME""#);
+    }
+
+    #[test]
+    fn quoting_context_resets_after_the_authors_quotes_close() {
+        // A later bare placeholder still gets fully quoted.
+        let out = substitute(
+            "cp '{{from}}' {{to}}",
+            &vals(&[("from", "a b"), ("to", "c d")]),
+            true,
+        );
+        assert_eq!(out, "cp 'a b' 'c d'");
+    }
+
+    #[test]
+    fn an_escaped_quote_does_not_open_a_quoting_context() {
+        // \" is a literal quote outside quotes, so the placeholder after it is
+        // still bare and must be quoted.
+        let out = substitute(r#"echo \" {{msg}}"#, &vals(&[("msg", "a b")]), true);
+        assert_eq!(out, r#"echo \" 'a b'"#);
+    }
+
+    #[test]
+    fn a_quote_inside_the_other_quoting_is_literal() {
+        // The apostrophe inside double quotes doesn't open a single-quoted
+        // region, so the placeholder is still in double-quote context.
+        let out = substitute(r#"echo "it's {{msg}}""#, &vals(&[("msg", "$X")]), true);
+        assert_eq!(out, r#"echo "it's \$X""#);
     }
 
     #[test]
