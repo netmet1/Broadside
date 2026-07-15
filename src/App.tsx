@@ -20,6 +20,7 @@ import {
 import type { LocalShell } from "@/lib/tauri/local";
 import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
 import { MultiTerminalPage } from "@/pages/MultiTerminalPage";
+import { SkillsPage } from "@/pages/SkillsPage";
 import { SftpPage } from "@/pages/SftpPage";
 import { LogsPage } from "@/pages/LogsPage";
 // Settings (~2k lines) and Help (static docs) mount only when their tab is
@@ -396,6 +397,12 @@ function App() {
           onCloseAllTerminals={closeAllTerminals}
           onJumpToHostTerminal={jumpToHostTerminal}
         />
+      </div>
+      {/* Skills stays mounted so a running skill — and its live per-host panes —
+          survive tab switches. A run can last as long as an apt upgrade, and
+          unmounting would tear down the xterm panes mid-run. */}
+      <div className={page === "skills" ? "block h-full" : "hidden"}>
+        <SkillsPage visible={page === "skills"} />
       </div>
       {/* SFTP stays mounted so an open browser session survives navigation. */}
       <div className={page === "sftp" ? "block h-full" : "hidden"}>

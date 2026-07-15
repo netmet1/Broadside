@@ -13,6 +13,7 @@ import {
   ServerIcon,
   SettingsIcon,
   TerminalIcon,
+  WandSparklesIcon,
 } from "lucide-react";
 
 import { AboutDialog } from "@/components/AboutDialog";
@@ -28,6 +29,7 @@ export type Page =
   | "ptybroadcast"
   | "terminals"
   | "multiterminal"
+  | "skills"
   | "sftp"
   | "logs"
   | "settings"
@@ -68,6 +70,12 @@ const NAV_ITEMS: {
     label: "MultiTerminal",
     icon: LayersIcon,
     hint: "Run a command across all terminals and see every host's output, color-tinted (needs 2+ open)",
+  },
+  {
+    page: "skills",
+    label: "Skills",
+    icon: WandSparklesIcon,
+    hint: "Run a saved multi-step operation on many hosts, answering prompts as it goes",
   },
   {
     page: "sftp",
