@@ -208,6 +208,9 @@ export type SkillProgress = {
   sessionId: string;
   stepId: string | null;
   phase: "started" | "step" | "matched" | "sent" | "timeout" | "info" | "failed";
+  /** The kind of the step now running, on the `step` phase. Lets the run panel
+   * offer step-specific controls (ending a wait early). */
+  stepKind: SeqStep["kind"] | null;
   detail: string;
 };
 

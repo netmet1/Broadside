@@ -272,10 +272,32 @@ function HostPane({
             The skill is driving this shell. Typing here does nothing until it
             pauses for you, or you stop it.
           </span>
+          {/* A wait step is just a timer, so end it early once you have seen
+              what you were waiting for. This moves to the step's Then branch,
+              exactly as the timer running out would, so a Wait -> Send key ->
+              stop skill sends the key and finishes. */}
+          {host.stepKind === "wait" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto h-5 shrink-0 px-1.5 text-[11px]"
+              onClick={() =>
+                control(() => skillSkipStep(runId, pane.hostId), "Continue failed")
+              }
+              {...hint(
+                "End the wait now and go to its Then branch, the same as the timer finishing.",
+              )}
+            >
+              <SkipForwardIcon className="mr-1 h-3 w-3" />
+              Continue now
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
-            className="ml-auto h-5 shrink-0 px-1.5 text-[11px] text-muted-foreground"
+            className={`h-5 shrink-0 px-1.5 text-[11px] text-muted-foreground ${
+              host.stepKind === "wait" ? "" : "ml-auto"
+            }`}
             onClick={() =>
               control(() => skillAbort(runId, pane.hostId), "Stop failed")
             }

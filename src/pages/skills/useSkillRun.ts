@@ -20,6 +20,8 @@ export type HostRunState = {
   status: "running" | "paused" | "done" | "failed";
   /** The step the engine is on, for the pane overlay. */
   step: string;
+  /** The kind of that step, so the panel can offer step-specific controls. */
+  stepKind: SkillProgress["stepKind"];
   /** Set while paused: why the engine stopped and handed over. */
   pausedReason: string | null;
   /** Whether the operator has taken the keyboard for this pane. */
@@ -89,6 +91,7 @@ export function useSkillRun() {
           pausedReason: null,
           takenOver: false,
           step: p.phase === "step" ? p.detail : prev.step,
+          stepKind: p.phase === "step" ? p.stepKind : prev.stepKind,
           lines: [...prev.lines, { phase: p.phase, detail: p.detail }].slice(
             -MAX_LINES,
           ),
@@ -148,6 +151,7 @@ export function useSkillRun() {
               pane,
               status: "running" as const,
               step: "starting…",
+              stepKind: null,
               pausedReason: null,
               takenOver: false,
               message: null,

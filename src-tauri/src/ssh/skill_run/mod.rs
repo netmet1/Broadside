@@ -88,6 +88,9 @@ pub struct SkillProgress {
     pub step_id: Option<String>,
     /// `started` | `step` | `matched` | `sent` | `timeout` | `info` | `failed`
     pub phase: String,
+    /// The kind of the step now running (`run`/`expect`/`send`/`wait`), set on
+    /// the `step` phase so the run panel can offer step-specific controls.
+    pub step_kind: Option<String>,
     pub detail: String,
 }
 
@@ -225,6 +228,16 @@ impl<E: SkillEvents> Engine<E> {
     }
 
     fn emit(&self, phase: &str, step_id: Option<&str>, detail: impl Into<String>) {
+        self.emit_kind(phase, step_id, None, detail);
+    }
+
+    fn emit_kind(
+        &self,
+        phase: &str,
+        step_id: Option<&str>,
+        step_kind: Option<&str>,
+        detail: impl Into<String>,
+    ) {
         self.events.progress(SkillProgress {
             run_id: self.meta.run_id.clone(),
             host_id: self.meta.host_id,
@@ -232,6 +245,7 @@ impl<E: SkillEvents> Engine<E> {
             session_id: self.meta.session_id.clone(),
             step_id: step_id.map(str::to_string),
             phase: phase.into(),
+            step_kind: step_kind.map(str::to_string),
             detail: detail.into(),
         });
     }
@@ -334,7 +348,7 @@ impl<E: SkillEvents> Engine<E> {
                     ),
                 };
             }
-            self.emit("step", Some(step.id()), step.summary());
+            self.emit_kind("step", Some(step.id()), Some(step.kind_str()), step.summary());
             match self.exec_step(step).await {
                 StepOutcome::Goto(next) => current = next,
                 StepOutcome::Failed(message) => {

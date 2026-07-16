@@ -345,8 +345,11 @@ export function StepEditor({
             </span>
           </label>
           <p className="text-[10px] text-muted-foreground">
-            The live screen keeps rendering while it waits. You can Skip step
-            during the wait to move on early.
+            The live screen keeps rendering while it waits. While it counts down
+            you get a Continue now button to end the wait early, so this doubles
+            as "wait up to N seconds, or until I say so". To dismiss a monitor
+            when you continue, point Then at a Send-keys step (e.g. q) before
+            stop.
           </p>
           <TargetSelect
             value={step.next}

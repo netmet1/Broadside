@@ -122,6 +122,17 @@ impl SeqStep {
         }
     }
 
+    /// The step's kind as the frontend names it, so the run panel can offer the
+    /// right control (e.g. "end the wait early" only on a `wait`).
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            SeqStep::Run { .. } => "run",
+            SeqStep::Expect { .. } => "expect",
+            SeqStep::Send { .. } => "send",
+            SeqStep::Wait { .. } => "wait",
+        }
+    }
+
     /// A short human label for progress events.
     pub fn summary(&self) -> String {
         match self {
