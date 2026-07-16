@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import {
+  NEXT,
   parseSequence,
   STOP,
   type SeqStep,
@@ -8,6 +9,23 @@ import {
   type SkillInput,
   type SkillParam,
 } from "@/lib/tauri/skills";
+
+/** The branch targets a step points at, for warnings. */
+function branchTargets(s: SeqStep): string[] {
+  switch (s.kind) {
+    case "run":
+      return [
+        s.onSuccess,
+        s.onFailure,
+        ...(s.match ? [s.match.ifMatch, s.match.ifNoMatch] : []),
+      ];
+    case "expect":
+      return [s.onMatch];
+    case "send":
+    case "wait":
+      return [s.next];
+  }
+}
 
 /** A fresh id for a new step. Short and readable, since it shows up in the branch
  * dropdowns, so `s3` beats a uuid. */
@@ -26,7 +44,8 @@ function blankStep(id: string): SeqStep {
     interactive: false,
     timeoutSecs: 60,
     onTimeout: "pause",
-    onSuccess: STOP,
+    // Flow onward by default so a linear skill needs no branch wiring.
+    onSuccess: NEXT,
     onFailure: STOP,
   };
 }
@@ -51,6 +70,18 @@ export function useSequenceForm(editing: Skill | null) {
 
   const addStep = useCallback(() => {
     setSteps((prev) => [...prev, blankStep(nextStepId(prev))]);
+  }, []);
+
+  /** Adds a step and returns its id, for the branch dropdowns' "add a new step".
+   * The id is captured inside the updater (React runs it synchronously), so it
+   * reflects the true current steps, never a stale closure. */
+  const addStepReturningId = useCallback((): string => {
+    let created = "";
+    setSteps((prev) => {
+      created = nextStepId(prev);
+      return [...prev, blankStep(created)];
+    });
+    return created;
   }, []);
 
   const updateStep = useCallback((index: number, step: SeqStep) => {
@@ -133,8 +164,8 @@ export function useSequenceForm(editing: Skill | null) {
     const ids = new Set<string>();
     for (const s of steps) {
       if (!s.id.trim()) out.push("A step has an empty id.");
-      else if (s.id === STOP)
-        out.push(`"${STOP}" is reserved as a branch target and can't be a step id.`);
+      else if (s.id === STOP || s.id === NEXT)
+        out.push(`"${s.id}" is reserved as a branch target and can't be a step id.`);
       else if (ids.has(s.id)) out.push(`Two steps share the id "${s.id}".`);
       ids.add(s.id);
       if (s.kind === "run" && !s.command.trim())
@@ -154,6 +185,20 @@ export function useSequenceForm(editing: Skill | null) {
     }
     return out;
   }, [name, steps, startStepId, params]);
+
+  /** Soft warnings that don't block saving. A `next` on the last step is valid
+   * (it resolves to stop), but it's usually a sign the operator meant to add
+   * another step, so say so rather than silently finishing the host. */
+  const warnings = useMemo(() => {
+    const out: string[] = [];
+    const last = steps[steps.length - 1];
+    if (last && branchTargets(last).includes(NEXT)) {
+      out.push(
+        `Step ${last.id} continues to the next step, but nothing follows it, so it will finish the host there. Add a step after it, or point it somewhere specific.`,
+      );
+    }
+    return out;
+  }, [steps]);
 
   const toInput = useCallback(
     (): SkillInput => ({
@@ -177,12 +222,14 @@ export function useSequenceForm(editing: Skill | null) {
     removeParam,
     steps,
     addStep,
+    addStepReturningId,
     updateStep,
     removeStep,
     moveStep,
     startStepId,
     setStartStepId,
     problems,
+    warnings,
     toInput,
   };
 }

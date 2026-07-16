@@ -172,7 +172,9 @@ export function SequenceBuilder({
               <code className="rounded bg-muted px-1">sudo -i</code> early on
               leaves every later step running as root. Mark it{" "}
               <span className="font-medium">interactive</span>, since it opens a
-              nested shell and never returns an exit code.
+              nested shell and never returns an exit code. A sudo password prompt
+              is answered automatically from the host's stored sudo password, the
+              same as in a terminal tab.
             </p>
             <p>
               For apt and dpkg, use{" "}
@@ -194,16 +196,27 @@ export function SequenceBuilder({
             steps={f.steps}
             isStart={s.id === f.startStepId}
             onChange={(next) => f.updateStep(i, next)}
+            onAddStep={f.addStepReturningId}
             onRemove={() => f.removeStep(i)}
             onMove={(dir) => f.moveStep(i, dir)}
           />
         ))}
       </section>
 
+      {/* Blocking problems: Create/Save is disabled until these clear. */}
       {f.problems.length > 0 && (
-        <ul className="space-y-0.5 rounded-md border border-amber-300/70 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
+        <ul className="space-y-0.5 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive">
           {f.problems.map((p) => (
             <li key={p}>· {p}</li>
+          ))}
+        </ul>
+      )}
+
+      {/* Soft warnings: worth flagging, but they don't block saving. */}
+      {f.warnings.length > 0 && (
+        <ul className="space-y-0.5 rounded-md border border-amber-300/70 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
+          {f.warnings.map((w) => (
+            <li key={w}>· {w}</li>
           ))}
         </ul>
       )}

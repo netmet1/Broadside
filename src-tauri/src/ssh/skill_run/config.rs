@@ -15,6 +15,12 @@ use crate::error::{AppError, AppResult};
 /// an id (enforced in [`validate_sequence`]).
 pub const STOP: &str = "stop";
 
+/// The branch target meaning "the next step in list order". Resolved to a
+/// concrete step id by [`resolve_next`] before a run, so linear skills never
+/// have to name ids and the builder's up/down arrows actually change the flow.
+/// Like [`STOP`], it is reserved and may not be a step id.
+pub const NEXT: &str = "next";
+
 /// Default per-step match timeout when the step doesn't set one.
 pub const DEFAULT_STEP_TIMEOUT_SECS: u64 = 60;
 /// Ceiling on a per-step timeout: an `apt upgrade` can legitimately run for
@@ -469,6 +475,95 @@ pub fn substituted_config(
     }
 }
 
+/// Rewrites every `next` branch target to the id of the step that follows it in
+/// list order (or `stop` for the last step), so the engine only ever sees
+/// concrete ids. Run once before a run; list order is fixed by then.
+///
+/// This is what lets a linear skill be built without touching ids at all: each
+/// step just says "continue to next step", and reordering with the up/down
+/// arrows reorders the flow, because the flow now follows list order.
+pub fn resolve_next(cfg: &SequenceConfig) -> SequenceConfig {
+    // The concrete target `next` means for the step at each index.
+    let following: Vec<String> = (0..cfg.steps.len())
+        .map(|i| {
+            cfg.steps
+                .get(i + 1)
+                .map(|s| s.id().to_string())
+                .unwrap_or_else(|| STOP.to_string())
+        })
+        .collect();
+
+    let steps = cfg
+        .steps
+        .iter()
+        .enumerate()
+        .map(|(i, step)| {
+            let resolve = |target: &str| {
+                if target == NEXT {
+                    following[i].clone()
+                } else {
+                    target.to_string()
+                }
+            };
+            match step.clone() {
+                SeqStep::Run {
+                    id,
+                    command,
+                    interactive,
+                    timeout_secs,
+                    on_timeout,
+                    on_success,
+                    on_failure,
+                    r#match,
+                } => SeqStep::Run {
+                    id,
+                    command,
+                    interactive,
+                    timeout_secs,
+                    on_timeout,
+                    on_success: resolve(&on_success),
+                    on_failure: resolve(&on_failure),
+                    r#match: r#match.map(|m| MatchBranch {
+                        if_match: resolve(&m.if_match),
+                        if_no_match: resolve(&m.if_no_match),
+                        ..m
+                    }),
+                },
+                SeqStep::Expect {
+                    id,
+                    pattern,
+                    send_on_match,
+                    timeout_secs,
+                    on_timeout,
+                    on_match,
+                } => SeqStep::Expect {
+                    id,
+                    pattern,
+                    send_on_match,
+                    timeout_secs,
+                    on_timeout,
+                    on_match: resolve(&on_match),
+                },
+                SeqStep::Send { id, input, next } => SeqStep::Send {
+                    id,
+                    input,
+                    next: resolve(&next),
+                },
+                SeqStep::Wait { id, seconds, next } => SeqStep::Wait {
+                    id,
+                    seconds,
+                    next: resolve(&next),
+                },
+            }
+        })
+        .collect();
+    SequenceConfig {
+        params: cfg.params.clone(),
+        start_step_id: cfg.start_step_id.clone(),
+        steps,
+    }
+}
+
 /// Fills declared parameters from the user's values, applying defaults and
 /// rejecting a missing required one. Undeclared keys are dropped rather than
 /// honoured: the caller is the frontend, and a skill's parameter list is the
@@ -510,9 +605,9 @@ pub fn validate_sequence(cfg: &SequenceConfig) -> AppResult<()> {
         if id.trim().is_empty() {
             return Err(AppError::InvalidInput("a step has an empty id".into()));
         }
-        if id == STOP {
+        if id == STOP || id == NEXT {
             return Err(AppError::InvalidInput(format!(
-                r#""{STOP}" is reserved as a branch target and can't be a step id"#
+                r#""{id}" is reserved as a branch target and can't be a step id"#
             )));
         }
         if !seen.insert(id) {
@@ -527,7 +622,9 @@ pub fn validate_sequence(cfg: &SequenceConfig) -> AppResult<()> {
     }
     for step in &cfg.steps {
         for target in branch_targets(step) {
-            if target != STOP && cfg.step(target).is_none() {
+            // STOP and NEXT are the reserved targets; NEXT is resolved to a real
+            // id before a run, so it needs no matching step here.
+            if target != STOP && target != NEXT && cfg.step(target).is_none() {
                 return Err(AppError::InvalidInput(format!(
                     "step {} branches to a step that doesn't exist: {target}",
                     step.id()
@@ -972,6 +1069,111 @@ mod tests {
         let c = cfg(vec![run_step("a", "true"), run_step("a", "false")], "a");
         let err = validate_sequence(&c).unwrap_err().to_string();
         assert!(err.contains("duplicate"), "got: {err}");
+    }
+
+    #[test]
+    fn resolve_next_points_each_next_at_the_following_step() {
+        let c = cfg(
+            vec![
+                run_full("a", "one", NEXT, NEXT, None),
+                run_full("b", "two", NEXT, "a", None),
+                run_full("c", "three", NEXT, NEXT, None),
+            ],
+            "a",
+        );
+        let r = resolve_next(&c);
+        // a -> b, b -> c (its explicit "a" failure branch is untouched),
+        // c -> stop (it is last).
+        match (&r.steps[0], &r.steps[1], &r.steps[2]) {
+            (
+                SeqStep::Run {
+                    on_success: a_ok, ..
+                },
+                SeqStep::Run {
+                    on_success: b_ok,
+                    on_failure: b_fail,
+                    ..
+                },
+                SeqStep::Run {
+                    on_success: c_ok, ..
+                },
+            ) => {
+                assert_eq!(a_ok, "b");
+                assert_eq!(b_ok, "c");
+                assert_eq!(b_fail, "a"); // an explicit id survives
+                assert_eq!(c_ok, STOP); // last step's next is stop
+            }
+            _ => panic!("wrong steps"),
+        }
+    }
+
+    #[test]
+    fn resolve_next_covers_every_step_kind() {
+        let c = cfg(
+            vec![
+                SeqStep::Expect {
+                    id: "a".into(),
+                    pattern: "x".into(),
+                    send_on_match: None,
+                    timeout_secs: None,
+                    on_timeout: TimeoutAction::Pause,
+                    on_match: NEXT.into(),
+                },
+                SeqStep::Send {
+                    id: "b".into(),
+                    input: "y".into(),
+                    next: NEXT.into(),
+                },
+                SeqStep::Wait {
+                    id: "c".into(),
+                    seconds: 5,
+                    next: NEXT.into(),
+                },
+            ],
+            "a",
+        );
+        let r = resolve_next(&c);
+        match &r.steps[0] {
+            SeqStep::Expect { on_match, .. } => assert_eq!(on_match, "b"),
+            _ => panic!(),
+        }
+        match &r.steps[1] {
+            SeqStep::Send { next, .. } => assert_eq!(next, "c"),
+            _ => panic!(),
+        }
+        match &r.steps[2] {
+            SeqStep::Wait { next, .. } => assert_eq!(next, STOP),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_next_as_a_target() {
+        let c = cfg(vec![run_full("a", "true", NEXT, NEXT, None)], "a");
+        assert!(validate_sequence(&c).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_next_as_a_step_id() {
+        let c = cfg(vec![run_step(NEXT, "true")], NEXT);
+        assert!(validate_sequence(&c).is_err());
+    }
+
+    #[test]
+    fn prepared_next_reaches_the_engine_as_a_concrete_id() {
+        // The whole point: a linear skill authored with only `next` runs.
+        let c = cfg(
+            vec![
+                run_full("a", "echo one", NEXT, NEXT, None),
+                run_full("b", "echo two", NEXT, NEXT, None),
+            ],
+            "a",
+        );
+        let out = super::super::prepare(&c, &std::collections::HashMap::new()).unwrap();
+        match &out.steps[0] {
+            SeqStep::Run { on_success, .. } => assert_eq!(on_success, "b"),
+            _ => panic!(),
+        }
     }
 
     #[test]

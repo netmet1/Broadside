@@ -7,6 +7,11 @@ import type { GuardHit } from "@/lib/tauri/broadcast";
  * as an id (the backend rejects that at save time). */
 export const STOP = "stop";
 
+/** The branch target meaning "the next step in list order". Reserved like STOP;
+ * the backend resolves it to a concrete id before a run. Lets a linear skill be
+ * built without naming ids, so reordering steps reorders the flow. */
+export const NEXT = "next";
+
 export type SkillKind = "sequence" | "ai";
 
 export type Skill = {

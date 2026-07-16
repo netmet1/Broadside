@@ -918,7 +918,9 @@ pub fn prepare(
     let values = config::resolve_params(&cfg.params, supplied)?;
     let substituted = config::substituted_config(cfg, &values);
     config::validate_sequence(&substituted)?;
-    Ok(substituted)
+    // Turn every `next` target into the concrete id of the following step, so
+    // the engine only ever branches to real ids.
+    Ok(config::resolve_next(&substituted))
 }
 
 pub fn parse_sequence(config_json: &str) -> AppResult<SequenceConfig> {
