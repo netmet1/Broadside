@@ -144,7 +144,7 @@ fn on_timeout(mut step: SeqStep, action: TimeoutAction) -> SeqStep {
         SeqStep::Run { on_timeout, .. } | SeqStep::Expect { on_timeout, .. } => {
             *on_timeout = action
         }
-        SeqStep::Send { .. } => {}
+        SeqStep::Send { .. } | SeqStep::Wait { .. } => {}
     }
     step
 }
@@ -405,6 +405,62 @@ async fn matched_output_cannot_satisfy_a_later_step() {
     host.say("\r\nsecond? (y/n) ");
     assert!(engine.run_sequence(&c).await.ok);
     assert_eq!(host.writes(), vec!["y\n", "n\n"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn wait_step_holds_then_advances() {
+    // The redrawing-status-screen case: hold on the current screen for a fixed
+    // time, sending nothing, then move on. On the paused clock the delay
+    // resolves instantly and deterministically.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        SeqStep::Wait {
+            id: "a".into(),
+            seconds: 40,
+            next: "b".into(),
+        },
+        run_step("b", "echo after", STOP, STOP),
+    ]);
+    host.say(&echo_of("echo after"));
+    host.say("after\r\n__bsdone_0__\r\n");
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    // It sent nothing during the wait, then ran the next step.
+    assert!(host.typed().contains("echo after"));
+    assert!(!host.typed().contains("40"), "the wait typed something");
+}
+
+#[tokio::test(start_paused = true)]
+async fn wait_step_can_be_skipped_early() {
+    let (mut engine, host) = harness();
+    let c = cfg(vec![SeqStep::Wait {
+        id: "a".into(),
+        seconds: 3600,
+        next: STOP.into(),
+    }]);
+    let ctl = host.ctl.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let _ = ctl.send(Ctl::SkipStep);
+    });
+    // Skipping a full-hour wait returns at once rather than after an hour.
+    assert!(engine.run_sequence(&c).await.ok);
+}
+
+#[tokio::test(start_paused = true)]
+async fn wait_step_keeps_draining_output_while_it_holds() {
+    // A redrawing monitor keeps sending bytes during the wait; they must be
+    // consumed, not left to pile up in the unbounded tap channel.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![SeqStep::Wait {
+        id: "a".into(),
+        seconds: 30,
+        next: STOP.into(),
+    }]);
+    for _ in 0..100 {
+        host.say("\rAttempt n: redrawing status");
+    }
+    assert!(engine.run_sequence(&c).await.ok);
 }
 
 #[tokio::test(start_paused = true)]

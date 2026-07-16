@@ -369,6 +369,30 @@ impl<E: SkillEvents> Engine<E> {
                 }
                 Err(e) => StepOutcome::Failed(format!("could not send: {e}")),
             },
+            SeqStep::Wait { next, .. } => {
+                let duration = step.wait_duration().expect("wait step has a duration");
+                // Keep draining output into the screen while we hold, so the
+                // buffer stays bounded and the live pane keeps rendering the
+                // previous step's screen (a redrawing monitor keeps moving).
+                match wait_fixed(
+                    &mut self.screen,
+                    &mut self.link.rx,
+                    &mut self.ctl,
+                    duration,
+                )
+                .await
+                {
+                    // Elapsed, or the operator skipped ahead: move on.
+                    Wait::Timeout | Wait::Skipped => {
+                        self.emit("info", Some(step.id()), "done waiting");
+                        StepOutcome::Goto(next.clone())
+                    }
+                    Wait::Aborted => StepOutcome::Aborted,
+                    Wait::Closed => StepOutcome::Closed,
+                    // wait_fixed never matches a pattern.
+                    Wait::Matched { .. } => StepOutcome::Goto(next.clone()),
+                }
+            }
             SeqStep::Expect {
                 pattern,
                 send_on_match,
@@ -693,6 +717,33 @@ async fn wait_quiet(
             c = ctl.recv() => match c {
                 Some(Ctl::SkipStep) => return Wait::Skipped,
                 Some(Ctl::Abort) | None => return Wait::Aborted,
+                Some(Ctl::Resume) => {}
+            },
+        }
+    }
+}
+
+/// Waits a fixed duration, draining output the whole time so the buffer stays
+/// bounded and the live pane keeps rendering. Skip jumps to the end early;
+/// abort and a closed shell end the host.
+async fn wait_fixed(
+    screen: &mut Screen,
+    rx: &mut mpsc::UnboundedReceiver<TapMsg>,
+    ctl: &mut mpsc::UnboundedReceiver<Ctl>,
+    duration: Duration,
+) -> Wait {
+    let deadline = Instant::now() + duration;
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep_until(deadline) => return Wait::Timeout,
+            msg = rx.recv() => match msg {
+                Some(TapMsg::Data(bytes)) => screen.feed(&bytes),
+                Some(TapMsg::Closed) | None => return Wait::Closed,
+            },
+            c = ctl.recv() => match c {
+                Some(Ctl::SkipStep) => return Wait::Skipped,
+                Some(Ctl::Abort) | None => return Wait::Aborted,
+                // A resume during a plain wait has nothing to resume.
                 Some(Ctl::Resume) => {}
             },
         }

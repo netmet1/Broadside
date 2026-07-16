@@ -55,6 +55,7 @@ const KIND_LABEL: Record<SeqStep["kind"], string> = {
   run: "Run a command",
   expect: "Wait for output",
   send: "Send keys",
+  wait: "Wait a set time",
 };
 
 /** One step's fields. The three kinds cover the whole vocabulary: run a command
@@ -102,7 +103,9 @@ export function StepEditor({
         onTimeout: "pause",
         onMatch: STOP,
       });
-    else onChange({ ...base, kind: "send", input: "", next: STOP });
+    else if (kind === "send")
+      onChange({ ...base, kind: "send", input: "", next: STOP });
+    else onChange({ ...base, kind: "wait", seconds: 30, next: STOP });
   };
 
   return (
@@ -308,6 +311,50 @@ export function StepEditor({
             onChange={(v) => onChange({ ...step, next: v })}
             label="Then"
             hintText="Where to go next"
+          />
+        </div>
+      )}
+
+      {step.kind === "wait" && (
+        <div className="space-y-2">
+          <label
+            className="flex flex-wrap items-center gap-1.5 text-xs"
+            {...hint(
+              "Hold on the current screen for this long, sending nothing, then move on. Good for letting a redrawing status screen keep running before the skill finishes. An hour is the ceiling.",
+            )}
+          >
+            <span className="shrink-0 text-muted-foreground">Wait</span>
+            <Input
+              type="number"
+              min={1}
+              max={3600}
+              value={step.seconds}
+              onChange={(e) =>
+                onChange({
+                  ...step,
+                  seconds: Math.min(
+                    3600,
+                    Math.max(1, Number(e.target.value) || 30),
+                  ),
+                })
+              }
+              className="h-7 w-24 text-xs"
+            />
+            <span className="shrink-0 text-muted-foreground">
+              seconds, doing nothing, then
+            </span>
+          </label>
+          <p className="text-[10px] text-muted-foreground">
+            The live screen keeps rendering while it waits. You can Skip step
+            during the wait to move on early.
+          </p>
+          <TargetSelect
+            value={step.next}
+            steps={steps}
+            selfId={step.id}
+            onChange={(v) => onChange({ ...step, next: v })}
+            label="Then"
+            hintText="Where to go once the wait is up"
           />
         </div>
       )}

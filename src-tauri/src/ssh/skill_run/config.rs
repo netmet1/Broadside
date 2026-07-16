@@ -100,12 +100,25 @@ pub enum SeqStep {
         input: String,
         next: String,
     },
+    /// Wait a fixed number of seconds, doing nothing, while the live pane keeps
+    /// rendering whatever the previous step left running. This is the primitive
+    /// for letting a redrawing status screen sit for a while before the skill
+    /// moves on (or finishes), which nothing else could do: `sleep` in a `run`
+    /// step goes to a full-screen program that has the terminal, not the shell.
+    Wait {
+        id: String,
+        seconds: u64,
+        next: String,
+    },
 }
 
 impl SeqStep {
     pub fn id(&self) -> &str {
         match self {
-            SeqStep::Run { id, .. } | SeqStep::Expect { id, .. } | SeqStep::Send { id, .. } => id,
+            SeqStep::Run { id, .. }
+            | SeqStep::Expect { id, .. }
+            | SeqStep::Send { id, .. }
+            | SeqStep::Wait { id, .. } => id,
         }
     }
 
@@ -115,6 +128,7 @@ impl SeqStep {
             SeqStep::Run { command, .. } => format!("run: {}", truncate(command, 80)),
             SeqStep::Expect { pattern, .. } => format!("wait for: {}", truncate(pattern, 80)),
             SeqStep::Send { input, .. } => format!("send: {}", truncate(&escape(input), 40)),
+            SeqStep::Wait { seconds, .. } => format!("wait {}s", wait_secs(*seconds)),
         }
     }
 
@@ -123,17 +137,35 @@ impl SeqStep {
             SeqStep::Run { timeout_secs, .. } | SeqStep::Expect { timeout_secs, .. } => {
                 timeout_secs.unwrap_or(DEFAULT_STEP_TIMEOUT_SECS)
             }
-            SeqStep::Send { .. } => DEFAULT_STEP_TIMEOUT_SECS,
+            // Not a match timeout: Send fires at once, Wait has its own duration.
+            SeqStep::Send { .. } | SeqStep::Wait { .. } => DEFAULT_STEP_TIMEOUT_SECS,
         };
         raw.clamp(1, MAX_STEP_TIMEOUT_SECS)
+    }
+
+    /// The delay a `wait` step holds for, clamped to a sane range (a 0 would be
+    /// a no-op, an unbounded one a foot-gun).
+    pub fn wait_duration(&self) -> Option<std::time::Duration> {
+        match self {
+            SeqStep::Wait { seconds, .. } => {
+                Some(std::time::Duration::from_secs(wait_secs(*seconds)))
+            }
+            _ => None,
+        }
     }
 
     pub fn on_timeout(&self) -> TimeoutAction {
         match self {
             SeqStep::Run { on_timeout, .. } | SeqStep::Expect { on_timeout, .. } => *on_timeout,
-            SeqStep::Send { .. } => TimeoutAction::Fail,
+            SeqStep::Send { .. } | SeqStep::Wait { .. } => TimeoutAction::Fail,
         }
     }
+}
+
+/// Clamp for a `wait` step's duration: at least a second (a 0 is pointless),
+/// at most an hour (the same ceiling as a step timeout).
+fn wait_secs(seconds: u64) -> u64 {
+    seconds.clamp(1, MAX_STEP_TIMEOUT_SECS)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -164,6 +196,8 @@ impl SequenceConfig {
                         out.push(s.clone());
                     }
                 }
+                // A wait dispatches nothing, so there is nothing to guard.
+                SeqStep::Wait { .. } => {}
             }
         }
         out
@@ -413,6 +447,8 @@ pub fn substituted_config(
                 input: substitute(&unescape(&input), values, false),
                 next,
             },
+            // A wait carries no substitutable text.
+            other @ SeqStep::Wait { .. } => other,
         })
         .collect();
     SequenceConfig {
@@ -515,6 +551,7 @@ fn branch_targets(step: &SeqStep) -> Vec<&str> {
         }
         SeqStep::Expect { on_match, .. } => vec![on_match.as_str()],
         SeqStep::Send { next, .. } => vec![next.as_str()],
+        SeqStep::Wait { next, .. } => vec![next.as_str()],
     }
 }
 
@@ -522,7 +559,7 @@ fn patterns(step: &SeqStep) -> Vec<&str> {
     match step {
         SeqStep::Run { r#match, .. } => r#match.iter().map(|m| m.pattern.as_str()).collect(),
         SeqStep::Expect { pattern, .. } => vec![pattern.as_str()],
-        SeqStep::Send { .. } => vec![],
+        SeqStep::Send { .. } | SeqStep::Wait { .. } => vec![],
     }
 }
 

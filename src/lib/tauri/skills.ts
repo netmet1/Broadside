@@ -76,7 +76,16 @@ export type SeqStep =
       onTimeout?: TimeoutAction;
       onMatch: string;
     }
-  | { kind: "send"; id: string; input: string; next: string };
+  | { kind: "send"; id: string; input: string; next: string }
+  | {
+      // Hold on the current screen for a fixed time, sending nothing, while the
+      // live pane keeps rendering. For letting a redrawing status screen sit
+      // before the skill moves on or finishes.
+      kind: "wait";
+      id: string;
+      seconds: number;
+      next: string;
+    };
 
 export type SequenceConfig = {
   params: SkillParam[];

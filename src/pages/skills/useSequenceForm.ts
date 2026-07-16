@@ -85,6 +85,8 @@ export function useSequenceForm(editing: Skill | null) {
               return { ...s, onMatch: repoint(s.onMatch) };
             case "send":
               return { ...s, next: repoint(s.next) };
+            case "wait":
+              return { ...s, next: repoint(s.next) };
           }
         });
         setStartStepId((cur) =>
