@@ -50,6 +50,7 @@ import { OutputBlock } from "@/pages/broadcast/OutputBlock";
 import { useBroadcastRail } from "@/pages/broadcast/useBroadcastRail";
 import { useOutputSearch } from "@/pages/broadcast/useOutputSearch";
 import { useRailFilter } from "@/lib/useRailFilter";
+import { railTooltip } from "@/lib/hostTags";
 import { RailFilterControls } from "@/components/RailFilterControls";
 
 export function BroadcastPage({
@@ -595,7 +596,10 @@ export function BroadcastPage({
                 type="button"
                 onClick={() => toggleHost(h.id)}
                 disabled={running}
-                title={`${h.label}${connectedHostIds.has(h.id) ? "" : " (no connected terminal)"}`}
+                title={
+                  railTooltip(h) +
+                  (connectedHostIds.has(h.id) ? "" : "\n(no connected terminal)")
+                }
                 className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 ${
                   selected.has(h.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""
                 }`}
@@ -624,7 +628,7 @@ export function BroadcastPage({
                   className="h-2.5 w-2.5 shrink-0 rounded-full"
                   style={{ backgroundColor: h.color }}
                 />
-                <span className="min-w-0 truncate" title={h.label}>
+                <span className="min-w-0 truncate" title={railTooltip(h)}>
                   {h.label}
                 </span>
                 {showRailTag && (

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useHint, usePageStatus } from "@/lib/status";
 import type { Skill, SkillPreflight } from "@/lib/tauri/skills";
+import { railTooltip } from "@/lib/hostTags";
 import { EmergencyCancel } from "@/pages/skills/EmergencyCancel";
 import { ParamForm } from "@/pages/skills/ParamForm";
 import { RunPanel } from "@/pages/skills/RunPanel";
@@ -171,7 +172,7 @@ export function SkillsPage({ visible }: { visible: boolean }) {
                   className="h-2.5 w-2.5 shrink-0 rounded-full"
                   style={{ backgroundColor: h.color }}
                 />
-                <span className="min-w-0 truncate" title={h.label}>
+                <span className="min-w-0 truncate" title={railTooltip(h)}>
                   {h.label}
                 </span>
               </label>

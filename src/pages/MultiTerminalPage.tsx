@@ -31,6 +31,7 @@ import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { useRailFilter } from "@/lib/useRailFilter";
+import { railTooltip } from "@/lib/hostTags";
 import { RailFilterControls } from "@/components/RailFilterControls";
 import {
   omniBlocksAdd,
@@ -525,7 +526,10 @@ export function MultiTerminalPage({
                     type="button"
                     onClick={() => isConnected && toggleSession(s.id)}
                     disabled={sending || !isConnected}
-                    title={`${label}${isConnected ? "" : " (disconnected)"}`}
+                    title={
+                      railTooltip(hostsById.get(s.host.id) ?? s.host) +
+                      (isConnected ? "" : "\n(disconnected)")
+                    }
                     className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 ${
                       isConnected
                         ? "cursor-pointer hover:bg-accent/50"
@@ -563,7 +567,12 @@ export function MultiTerminalPage({
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: color }}
                   />
-                  <span className="min-w-0 truncate">{label}</span>
+                  <span
+                    className="min-w-0 truncate"
+                    title={railTooltip(hostsById.get(s.host.id) ?? s.host)}
+                  >
+                    {label}
+                  </span>
                   <span
                     className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
                       isConnected ? "bg-emerald-500" : "bg-red-500/70"

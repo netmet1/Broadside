@@ -35,6 +35,7 @@ import { wordInitials } from "@/pages/broadcast/model";
 import { BroadcastOutputLine } from "@/pages/sftp/BroadcastOutputLine";
 import { useSftpBroadcast } from "@/pages/sftp/useSftpBroadcast";
 import { useRailFilter } from "@/lib/useRailFilter";
+import { railTooltip } from "@/lib/hostTags";
 import { RailFilterControls } from "@/components/RailFilterControls";
 
 /** Persisted Local↔Remote split (percent width of the Local box). */
@@ -248,7 +249,7 @@ export function BroadcastTab({
                   type="button"
                   onClick={() => b.toggleHost(h.id)}
                   disabled={b.running}
-                  title={h.label}
+                  title={railTooltip(h)}
                   className={cn(
                     "mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50",
                     b.selected.has(h.id) ? "bg-accent/40 ring-1 ring-primary/50" : "",
@@ -278,7 +279,7 @@ export function BroadcastTab({
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: h.color }}
                   />
-                  <span className="min-w-0 truncate" title={h.label}>
+                  <span className="min-w-0 truncate" title={railTooltip(h)}>
                     {h.label}
                   </span>
                   {dot && <span className={cn("ml-auto h-2 w-2 shrink-0 rounded-full", dot)} />}
