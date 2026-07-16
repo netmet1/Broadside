@@ -408,6 +408,52 @@ async fn matched_output_cannot_satisfy_a_later_step() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_fixed_gap_separates_completed_steps() {
+    // The 30ms breather between steps. On the paused clock the sleep advances
+    // virtual time, so two back-to-back run steps take at least one gap.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "true", "b", "fail"),
+        run_step("b", "true", STOP, "fail"),
+    ]);
+    host.say("__bsdone_0__\r\n"); // step a
+    host.say("__bsdone_0__\r\n"); // step b
+    let start = tokio::time::Instant::now();
+    assert!(engine.run_sequence(&c).await.ok);
+    assert!(
+        start.elapsed() >= super::STEP_GAP,
+        "no gap between the two steps",
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn no_gap_is_added_after_a_wait_step() {
+    // A wait was already a deliberate delay; it must not also pay the breather.
+    // wait 100s then a run step: the total should be the wait and nothing more.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        SeqStep::Wait {
+            id: "a".into(),
+            seconds: 100,
+            next: "b".into(),
+        },
+        run_step("b", "true", STOP, "fail"),
+    ]);
+    host.say("__bsdone_0__\r\n");
+    let start = tokio::time::Instant::now();
+    assert!(engine.run_sequence(&c).await.ok);
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed >= Duration::from_secs(100),
+        "the wait did not hold: {elapsed:?}",
+    );
+    assert!(
+        elapsed < Duration::from_secs(100) + super::STEP_GAP,
+        "a breather was stacked onto the wait: {elapsed:?}",
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn wait_step_holds_then_advances() {
     // The redrawing-status-screen case: hold on the current screen for a fixed
     // time, sending nothing, then move on. On the paused clock the delay

@@ -69,6 +69,12 @@ const SETTLE: Duration = Duration::from_millis(400);
 /// How long an interactive `run` step waits for output to go quiet before
 /// advancing (it has no completion marker to wait for).
 const INTERACTIVE_QUIET: Duration = Duration::from_millis(1200);
+/// A fixed breather inserted between one step finishing and the next starting,
+/// so the finished step's last bytes have landed and the shell is back at a
+/// prompt before the next command is typed. Deliberately not configurable: it
+/// is part of the engine's default pacing, not a knob. Not applied after a
+/// `wait` step (already a delay) or when a run reaches `stop`.
+const STEP_GAP: Duration = Duration::from_millis(30);
 /// Bound on shell detection. A shell that hasn't identified itself by now
 /// isn't going to.
 const SHELL_DETECT_SECS: u64 = 15;
@@ -349,8 +355,20 @@ impl<E: SkillEvents> Engine<E> {
                 };
             }
             self.emit_kind("step", Some(step.id()), Some(step.kind_str()), step.summary());
+            let was_wait = matches!(step, SeqStep::Wait { .. });
             match self.exec_step(step).await {
-                StepOutcome::Goto(next) => current = next,
+                StepOutcome::Goto(next) => {
+                    // A small, fixed breather between steps, so a step's last
+                    // bytes have landed and the shell is back at a prompt before
+                    // the next command is typed. Not configurable by design;
+                    // it is part of how the engine paces itself. Skipped after a
+                    // wait step (it was already a deliberate delay) and when the
+                    // run is finishing (`stop` has no next step to pace into).
+                    if next != STOP && !was_wait {
+                        tokio::time::sleep(STEP_GAP).await;
+                    }
+                    current = next;
+                }
                 StepOutcome::Failed(message) => {
                     self.emit("failed", Some(step.id()), message.clone());
                     return HostOutcome {
