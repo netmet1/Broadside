@@ -31,6 +31,7 @@ export function RunPanel({
   hosts,
   skillName,
   active,
+  visible,
   setTakenOver,
   finishHost,
   onDone,
@@ -39,6 +40,9 @@ export function RunPanel({
   hosts: HostRunState[];
   skillName: string;
   active: boolean;
+  /** Whether this panel is the thing on screen (it is kept mounted while
+   * hidden, so its terminals need to refit when it returns). */
+  visible: boolean;
   setTakenOver: (hostId: number, takenOver: boolean) => void;
   /** Settle a host the backend has already forgotten about. */
   finishHost: (hostId: number, message: string) => void;
@@ -111,6 +115,7 @@ export function RunPanel({
             runId={runId}
             host={h}
             fill={single}
+            visible={visible}
             onFocus={() => setFocused(h.pane.hostId)}
             onFinished={(m) => finishHost(h.pane.hostId, m)}
             setTakenOver={setTakenOver}
@@ -125,6 +130,7 @@ function HostPane({
   runId,
   host,
   fill,
+  visible,
   onFocus,
   onFinished,
   setTakenOver,
@@ -134,6 +140,8 @@ function HostPane({
   /** This pane is the only one on screen, so it fills the panel and its own
    * focus control is spent. */
   fill: boolean;
+  /** Whether the run panel is on screen (for the terminal's refit). */
+  visible: boolean;
   onFocus: () => void;
   /** Settle this pane when the backend says its run is already over. */
   onFinished: (message: string) => void;
@@ -282,6 +290,7 @@ function HostPane({
         <SkillTerminalPane
           sessionId={pane.sessionId}
           interactive={host.takenOver && status === "paused"}
+          visible={visible}
           onInput={(data) => {
             skillSendInput(runId, pane.hostId, data).catch(() => {
               // The run ended under us; the status chip already says so.

@@ -227,6 +227,7 @@ export function SkillsPage({ visible }: { visible: boolean }) {
               hosts={run.hosts}
               skillName={runningSkill.name}
               active={run.active}
+              visible={view.kind === "run"}
               setTakenOver={run.setTakenOver}
               finishHost={run.finishHost}
               onDone={() => {

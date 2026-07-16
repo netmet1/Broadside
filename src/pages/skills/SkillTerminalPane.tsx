@@ -5,7 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useTheme } from "next-themes";
 
 import { useUiPrefs } from "@/lib/uiPrefs";
-import { onPtyData } from "@/lib/tauri/pty";
+import { onPtyData, ptyResize } from "@/lib/tauri/pty";
 
 /** xterm colours from the theme-aware CSS variables, so the pane matches the
  * app theme (same source as TerminalView). */
@@ -38,11 +38,16 @@ function readTerminalTheme() {
 export function SkillTerminalPane({
   sessionId,
   interactive,
+  visible,
   onInput,
 }: {
   sessionId: string;
   /** Whether the operator currently has the keyboard for this pane. */
   interactive: boolean;
+  /** Whether the run panel is on screen. A pane mounts briefly hidden during
+   * the params-to-run transition, and a terminal sized while hidden fits to a
+   * zero-height box; this triggers a refit once it is shown. */
+  visible: boolean;
   onInput: (data: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,6 +81,16 @@ export function SkillTerminalPane({
       if (interactiveRef.current) onInputRef.current(data);
     });
 
+    // Keep the remote PTY the same size as this xterm. Without it the shell
+    // stays at whatever size the run opened it with (a fixed 32 rows) while the
+    // pane fits to a taller container, so the remote redraws inside its own
+    // shorter screen and the output sticks near the bottom instead of scrolling
+    // (the reported "stops scrolling, redraws at the bottom" bug). fit() below
+    // fires this with the real dimensions.
+    const resizeSub = term.onResize(({ cols, rows }) => {
+      ptyResize(sessionId, cols, rows).catch(() => {});
+    });
+
     // Copy-on-select, matching the terminal tabs.
     const onMouseUp = () => {
       const sel = term.getSelection();
@@ -93,8 +108,16 @@ export function SkillTerminalPane({
       if (id === sessionId) term.write(bytes);
     });
 
+    // Fit once now the pane is in the DOM, so the remote is sized to match from
+    // the first byte rather than waiting on the first ResizeObserver tick.
+    const raf = requestAnimationFrame(() => {
+      if (containerRef.current?.offsetParent) fit.fit();
+    });
+
     return () => {
+      cancelAnimationFrame(raf);
       dataSub.dispose();
+      resizeSub.dispose();
       observer.disconnect();
       el?.removeEventListener("mouseup", onMouseUp);
       void unlistenData.then((fn) => fn());
@@ -133,6 +156,17 @@ export function SkillTerminalPane({
   useEffect(() => {
     if (interactive) termRef.current?.focus();
   }, [interactive]);
+
+  // Refit when the run panel comes back on screen. A pane sized while its
+  // container was display:none fitted to nothing; this corrects it (and resizes
+  // the remote to match) the moment it is shown.
+  useEffect(() => {
+    if (!visible) return;
+    const raf = requestAnimationFrame(() => {
+      if (containerRef.current?.offsetParent) fitRef.current?.fit();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [visible]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
