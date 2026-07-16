@@ -288,20 +288,25 @@ pub async fn run_skill(
         let semaphore = semaphore.clone();
         let run_state = run_state.inner().clone();
         let pty_state = app.state::<PtyState>().inner().clone();
-        let run_id_for_task = run_id.clone();
         tauri::async_runtime::spawn(async move {
             let _permit = semaphore.acquire().await;
-            let host_id = job.host.id;
+            // Whatever happens below, this host reports an outcome, gives up its
+            // registry entry and closes its shell. Cleanup by Drop rather than by
+            // falling off the end, because Drop also runs while a panic unwinds:
+            // a panicking engine task used to take the run to the grave with it,
+            // leaving the pane frozen on its last state, the registry holding a
+            // dead entry (so every control answered "already ended"), and a live
+            // root shell on the host. Only restarting the app cleared it.
+            let mut guard = HostGuard {
+                events: events.clone(),
+                run_state: run_state.clone(),
+                pty_state: pty_state.clone(),
+                meta: meta.clone(),
+                reported: false,
+            };
             match job.auth {
                 None => {
-                    events.done(SkillDone {
-                        run_id: run_id_for_task.clone(),
-                        host_id,
-                        label: meta.label.clone(),
-                        session_id: session_id.clone(),
-                        ok: false,
-                        message: "no credentials stored".into(),
-                    });
+                    guard.report(false, "no credentials stored".into());
                 }
                 Some(auth) => {
                     // The tap forwards every byte to the live pane *and* to the
@@ -326,34 +331,70 @@ pub async fn run_skill(
                     match opened {
                         Ok(crate::ssh::pty::PtyOpenResult::Opened) => {
                             let engine = Engine::new(link, ctl_rx, events.clone(), meta.clone());
-                            skill_run::run_host(engine, &cfg, events.clone()).await;
+                            let outcome = skill_run::run_host(engine, &cfg).await;
+                            guard.report(outcome.ok, outcome.message);
                         }
-                        Ok(other) => events.done(SkillDone {
-                            run_id: run_id_for_task.clone(),
-                            host_id,
-                            label: meta.label.clone(),
-                            session_id: session_id.clone(),
-                            ok: false,
-                            message: open_failure_message(&other),
-                        }),
-                        Err(e) => events.done(SkillDone {
-                            run_id: run_id_for_task.clone(),
-                            host_id,
-                            label: meta.label.clone(),
-                            session_id: session_id.clone(),
-                            ok: false,
-                            message: format!("could not open a shell: {e}"),
-                        }),
+                        Ok(other) => guard.report(false, open_failure_message(&other)),
+                        Err(e) => guard.report(false, format!("could not open a shell: {e}")),
                     }
-                    // The run owns this session start to finish; leaving it open
-                    // would strand a shell (and a root shell at that).
-                    let _ = pty_state.close(&session_id);
                 }
             }
-            run_state.finish_host(&run_id_for_task, host_id);
+            drop(guard);
         });
     }
     Ok(panes)
+}
+
+/// Guarantees one host of a run always reports an outcome, releases its
+/// registry entry and closes its shell, on every exit path including a panic.
+///
+/// The cleanup lives in `Drop` rather than at the end of the task on purpose.
+/// Drop runs while a panic unwinds; code at the end of the task does not. A
+/// panicking engine task previously left the operator with a pane frozen on its
+/// last state, a registry entry whose receiver was dead (so resume, skip and
+/// stop all answered "already ended"), and a live root shell on the host, with
+/// no way out short of restarting the app.
+struct HostGuard {
+    events: Arc<AppHandle>,
+    run_state: SkillRunState,
+    pty_state: PtyState,
+    meta: HostMeta,
+    reported: bool,
+}
+
+impl HostGuard {
+    /// Reports this host's outcome, once. Later calls are ignored so the Drop
+    /// fallback can't overwrite a real result.
+    fn report(&mut self, ok: bool, message: String) {
+        if self.reported {
+            return;
+        }
+        self.reported = true;
+        self.events.done(SkillDone {
+            run_id: self.meta.run_id.clone(),
+            host_id: self.meta.host_id,
+            label: self.meta.label.clone(),
+            session_id: self.meta.session_id.clone(),
+            ok,
+            message,
+        });
+    }
+}
+
+impl Drop for HostGuard {
+    fn drop(&mut self) {
+        // Nothing reported means we are unwinding out of a panic. Say so rather
+        // than leaving the pane waiting for an event that will never come.
+        self.report(
+            false,
+            "the run stopped unexpectedly on this host; see the error log".into(),
+        );
+        self.run_state
+            .finish_host(&self.meta.run_id, self.meta.host_id);
+        // The run owns this session start to finish; leaving it open would
+        // strand a shell, and a root shell at that.
+        let _ = self.pty_state.close(&self.meta.session_id);
+    }
 }
 
 fn open_failure_message(result: &crate::ssh::pty::PtyOpenResult) -> String {

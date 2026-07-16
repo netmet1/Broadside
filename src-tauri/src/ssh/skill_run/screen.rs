@@ -57,12 +57,19 @@ impl Interp {
     /// (where possible) at a line break so a pattern never matches across a
     /// severed line.
     fn trim_pending(&mut self) {
+        // Get onto a character boundary BEFORE slicing. Slicing a String at a
+        // byte that lands inside a character panics, and half of a buffer is
+        // mid-character as soon as the output isn't pure ASCII: any box drawing,
+        // accented text or emoji will do it. This ran in the engine's task, so
+        // the panic took the whole run down silently.
         let mut cut = self.pending.len() / 2;
-        if let Some(nl) = self.pending[cut..].find('\n') {
-            cut += nl + 1;
-        }
         while cut < self.pending.len() && !self.pending.is_char_boundary(cut) {
             cut += 1;
+        }
+        // Prefer to cut at a line break so a pattern can't match across a
+        // severed line.
+        if let Some(nl) = self.pending[cut..].find('\n') {
+            cut += nl + 1;
         }
         self.pending.drain(..cut);
     }
@@ -357,6 +364,49 @@ mod tests {
             s.feed(b"a line of noise that repeats forever\r\n");
         }
         assert!(s.view().len() <= MAX_PENDING + MAX_LINE);
+    }
+
+    #[test]
+    fn trim_pending_never_slices_mid_character() {
+        // Trimming cut at len()/2 and sliced there, which panics the moment that
+        // offset lands inside a character. Driven straight at the trim because
+        // whether a *run* hits it depends on how its line lengths happen to add
+        // up, and "usually fine" is the worst kind of bug here: a panicked
+        // engine task never reports done and never cleans up its registry
+        // entry, so the pane freezes on its last state with every control
+        // erroring and only an app restart clears it.
+        //
+        // 3 x "é" is 6 bytes, so the midpoint is byte 3, inside the second one.
+        let mut i = Interp {
+            pending: "é".repeat(3),
+            ..Default::default()
+        };
+        i.trim_pending();
+        assert!(i.pending.chars().count() <= 3);
+
+        // A few more alignments across 1-, 2-, 3- and 4-byte characters.
+        for text in ["ééé", "───", "🙂🙂🙂", "a─b─c─", "é─🙂"] {
+            for n in 1..12 {
+                let mut i = Interp {
+                    pending: text.repeat(n),
+                    ..Default::default()
+                };
+                i.trim_pending();
+                // The survivor is still valid UTF-8 and a suffix of the input.
+                assert!(text.repeat(n).ends_with(&i.pending), "{text} x{n}");
+            }
+        }
+    }
+
+    #[test]
+    fn trimming_keeps_the_view_valid_utf8_and_matchable() {
+        let mut s = Screen::new();
+        for _ in 0..20_000 {
+            s.feed("café ☕ warming up\r\n".as_bytes());
+        }
+        s.feed("READY\r\n".as_bytes());
+        // The tail survives intact and is still matchable after a trim.
+        assert!(s.view().contains("READY"));
     }
 
     #[test]

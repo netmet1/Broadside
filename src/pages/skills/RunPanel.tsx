@@ -3,6 +3,7 @@ import {
   CheckIcon,
   EyeIcon,
   KeyboardIcon,
+  LockIcon,
   PlayIcon,
   SkipForwardIcon,
   SquareIcon,
@@ -31,6 +32,7 @@ export function RunPanel({
   skillName,
   active,
   setTakenOver,
+  finishHost,
   onDone,
 }: {
   runId: string;
@@ -38,6 +40,8 @@ export function RunPanel({
   skillName: string;
   active: boolean;
   setTakenOver: (hostId: number, takenOver: boolean) => void;
+  /** Settle a host the backend has already forgotten about. */
+  finishHost: (hostId: number, message: string) => void;
   onDone: () => void;
 }) {
   const hint = useHint();
@@ -108,6 +112,7 @@ export function RunPanel({
             host={h}
             fill={single}
             onFocus={() => setFocused(h.pane.hostId)}
+            onFinished={(m) => finishHost(h.pane.hostId, m)}
             setTakenOver={setTakenOver}
           />
         ))}
@@ -121,6 +126,7 @@ function HostPane({
   host,
   fill,
   onFocus,
+  onFinished,
   setTakenOver,
 }: {
   runId: string;
@@ -129,6 +135,8 @@ function HostPane({
    * focus control is spent. */
   fill: boolean;
   onFocus: () => void;
+  /** Settle this pane when the backend says its run is already over. */
+  onFinished: (message: string) => void;
   setTakenOver: (hostId: number, takenOver: boolean) => void;
 }) {
   const hint = useHint();
@@ -139,7 +147,16 @@ function HostPane({
     try {
       await fn();
     } catch (e) {
-      toast.error(`${what}: ${errorMessage(e)}`);
+      const message = errorMessage(e);
+      // The backend has no record of this host, so its run is over however it
+      // ended. Settle the pane rather than leaving the operator pressing
+      // buttons that all answer the same way.
+      if (/already ended|no active skill run/i.test(message)) {
+        onFinished("this host's run had already ended");
+        toast.info("That host's run had already ended.");
+        return;
+      }
+      toast.error(`${what}: ${message}`);
     }
   };
 
@@ -236,13 +253,21 @@ function HostPane({
         </div>
       )}
 
-      {/* Running: stopping one host gracefully shouldn't need a pause first. */}
+      {/* Running: say plainly that the keyboard isn't yours yet. The pane looks
+          exactly like a terminal you could type into, and typing into it does
+          nothing, which reads as the app being broken rather than as the skill
+          holding the keyboard. */}
       {status === "running" && (
-        <div className="flex shrink-0 items-center justify-end border-b border-border/30 px-2 py-1">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border/30 px-2 py-1">
+          <LockIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+            The skill is driving this shell. Typing here does nothing until it
+            pauses for you, or you stop it.
+          </span>
           <Button
             size="sm"
             variant="ghost"
-            className="h-5 px-1.5 text-[11px] text-muted-foreground"
+            className="ml-auto h-5 shrink-0 px-1.5 text-[11px] text-muted-foreground"
             onClick={() =>
               control(() => skillAbort(runId, pane.hostId), "Stop failed")
             }

@@ -228,6 +228,7 @@ export function SkillsPage({ visible }: { visible: boolean }) {
               skillName={runningSkill.name}
               active={run.active}
               setTakenOver={run.setTakenOver}
+              finishHost={run.finishHost}
               onDone={() => {
                 run.reset();
                 setRunningSkill(null);

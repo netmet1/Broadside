@@ -47,9 +47,25 @@ export function useSkillRun() {
   // Read inside event handlers that must not re-subscribe on every run.
   const runIdRef = useRef<string | null>(null);
   runIdRef.current = runId;
+  /** Hosts whose panes have landed, so patch knows what it can apply now. */
+  const knownRef = useRef<Set<number>>(new Set());
+  /** Updates for a host whose pane hasn't arrived yet, replayed once it does. */
+  const pendingRef = useRef<Map<number, ((prev: HostRunState) => HostRunState)[]>>(
+    new Map(),
+  );
 
   const patch = useCallback(
     (hostId: number, fn: (prev: HostRunState) => HostRunState) => {
+      // An event can beat its own pane here: the backend starts driving hosts
+      // inside run_skill, before the call that hands back the panes has
+      // returned. Dropping those would leave a host that fails instantly
+      // sitting on "running" with no way to close the run, so hold them.
+      if (!knownRef.current.has(hostId)) {
+        const queued = pendingRef.current.get(hostId) ?? [];
+        queued.push(fn);
+        pendingRef.current.set(hostId, queued);
+        return;
+      }
       setHosts((prev) => {
         const cur = prev.get(hostId);
         if (!cur) return prev;
@@ -115,26 +131,38 @@ export function useSkillRun() {
       rows: number;
     }): Promise<boolean> => {
       const id = crypto.randomUUID();
+      // Claim the id before the call, not after. The backend spawns its host
+      // tasks inside run_skill and they can emit before the invoke has even
+      // resolved; a ref that only catches up on the next render would drop
+      // those events, and a host whose very first event is its last (a
+      // credentials failure, say) would sit on "running" forever.
+      runIdRef.current = id;
       setStarting(true);
       try {
         const panes = await runSkill({ runId: id, ...args });
         setRunId(id);
-        setHosts(
-          new Map(
-            panes.map((pane) => [
-              pane.hostId,
-              {
-                pane,
-                status: "running" as const,
-                step: "starting…",
-                pausedReason: null,
-                takenOver: false,
-                message: null,
-                lines: [],
-              },
-            ]),
-          ),
+        const seeded = new Map<number, HostRunState>(
+          panes.map((pane) => [
+            pane.hostId,
+            {
+              pane,
+              status: "running" as const,
+              step: "starting…",
+              pausedReason: null,
+              takenOver: false,
+              message: null,
+              lines: [],
+            },
+          ]),
         );
+        knownRef.current = new Set(seeded.keys());
+        // Replay anything that arrived while we were still waiting for the panes.
+        for (const [hostId, queued] of pendingRef.current) {
+          const cur = seeded.get(hostId);
+          if (cur) seeded.set(hostId, queued.reduce((acc, fn) => fn(acc), cur));
+        }
+        pendingRef.current.clear();
+        setHosts(seeded);
         return true;
       } catch (e) {
         toast.error(errorMessage(e));
@@ -144,6 +172,43 @@ export function useSkillRun() {
       }
     },
     [],
+  );
+
+  /** Marks every unfinished host as finished, so the UI can always be escaped.
+   *
+   * The backend is meant to report every host, but "meant to" is how an
+   * operator ends up staring at a pane that says it is waiting for them while
+   * every button answers that the run already ended. Nothing here can strand
+   * the run; the worst case is a pane marked finished slightly early. */
+  const forceFinish = useCallback((message: string) => {
+    setHosts((prev) => {
+      const next = new Map(prev);
+      for (const [hostId, h] of prev) {
+        if (h.status === "running" || h.status === "paused") {
+          next.set(hostId, {
+            ...h,
+            status: "failed",
+            pausedReason: null,
+            takenOver: false,
+            message,
+          });
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  /** Marks one host finished, for when its controls report it already ended. */
+  const finishHost = useCallback(
+    (hostId: number, message: string) =>
+      patch(hostId, (prev) => ({
+        ...prev,
+        status: "failed",
+        pausedReason: null,
+        takenOver: false,
+        message,
+      })),
+    [patch],
   );
 
   /** Emergency stop. Irreversible: kills every host mid-step. */
@@ -156,7 +221,12 @@ export function useSkillRun() {
     } catch (e) {
       toast.error(errorMessage(e));
     }
-  }, []);
+    // Whatever the backend had left to kill, this run is over as far as the
+    // operator is concerned. Settling the panes here means an emergency stop
+    // always gets them out, even if the backend had already lost track of the
+    // run and had nothing left to cancel.
+    forceFinish("stopped by the emergency stop");
+  }, [forceFinish]);
 
   const setTakenOver = useCallback(
     (hostId: number, takenOver: boolean) =>
@@ -168,6 +238,9 @@ export function useSkillRun() {
   const reset = useCallback(() => {
     setRunId(null);
     setHosts(new Map());
+    runIdRef.current = null;
+    knownRef.current = new Set();
+    pendingRef.current.clear();
   }, []);
 
   const hostList = [...hosts.values()];
@@ -182,6 +255,7 @@ export function useSkillRun() {
     starting,
     start,
     cancelAll,
+    finishHost,
     setTakenOver,
     reset,
   };

@@ -287,6 +287,23 @@ impl<E: SkillEvents> Engine<E> {
         Ok(name)
     }
 
+    /// Keeps reading until the host goes quiet, so whatever the last step
+    /// provoked reaches the pane before the shell is closed.
+    ///
+    /// The pane renders from the raw `pty:data` stream and does not need the
+    /// engine to be listening, but it does need the session to still be open,
+    /// and the caller closes it the moment this returns.
+    pub async fn linger(&mut self) {
+        let _ = wait_quiet(
+            &mut self.screen,
+            &mut self.link.rx,
+            &mut self.ctl,
+            LINGER_QUIET,
+            LINGER_MAX,
+        )
+        .await;
+    }
+
     /// Drives the sequence to completion, from `startStepId` until a branch
     /// reaches `stop` (or something goes wrong).
     pub async fn run_sequence(&mut self, cfg: &SequenceConfig) -> HostOutcome {
@@ -773,31 +790,38 @@ fn guard_needs_password(text: &str) -> bool {
     crate::guard::rewrite_for_sudo(text).needs_password
 }
 
-/// Runs one host end to end: identify the shell, drive the sequence, report.
+/// How long to keep reading after the last step, so the host's reply to it
+/// actually reaches the pane before the shell is closed.
+const LINGER_QUIET: Duration = Duration::from_millis(700);
+const LINGER_MAX: Duration = Duration::from_secs(5);
+
+/// Runs one host end to end: identify the shell, drive the sequence, and hand
+/// back what happened.
+///
+/// Deliberately does not emit `done`: the caller owns that, so that a panic in
+/// here still reports an outcome rather than stranding the run.
 pub async fn run_host<E: SkillEvents>(
     mut engine: Engine<E>,
     cfg: &SequenceConfig,
-    events: std::sync::Arc<E>,
 ) -> HostOutcome {
-    let meta = engine.meta.clone();
     let outcome = match engine.detect_shell().await {
         Ok(shell) => {
             engine.emit("started", None, format!("shell: {shell}"));
             engine.run_sequence(cfg).await
         }
-        Err(message) => HostOutcome {
-            ok: false,
-            message,
-        },
+        Err(message) => {
+            return HostOutcome {
+                ok: false,
+                message,
+            }
+        }
     };
-    events.done(SkillDone {
-        run_id: meta.run_id,
-        host_id: meta.host_id,
-        label: meta.label,
-        session_id: meta.session_id,
-        ok: outcome.ok,
-        message: outcome.message.clone(),
-    });
+    // The last step's answer only just went out, and the shell is closed the
+    // moment we return. Without this the reply to it never arrives: a sequence
+    // ending in "answer the prompt" showed the operator the prompt and nothing
+    // else, and the only way to see the result was to add a throwaway step
+    // after it.
+    engine.linger().await;
     outcome
 }
 
