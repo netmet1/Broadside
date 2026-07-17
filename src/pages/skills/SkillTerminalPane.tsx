@@ -58,6 +58,9 @@ export function SkillTerminalPane({
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  // Whether term.open() has run. It must not run until the container is
+  // visible and sized (see the ResizeObserver below).
+  const openedRef = useRef(false);
   // Read from the data handler so it never re-subscribes (and so the pane never
   // misses bytes between renders).
   const interactiveRef = useRef(interactive);
@@ -78,20 +81,17 @@ export function SkillTerminalPane({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    if (containerRef.current) term.open(containerRef.current);
     termRef.current = term;
     fitRef.current = fit;
+    openedRef.current = false;
 
     const dataSub = term.onData((data) => {
       if (interactiveRef.current) onInputRef.current(data);
     });
 
-    // Keep the remote PTY the same size as this xterm. Without it the shell
-    // stays at whatever size the run opened it with (a fixed 32 rows) while the
-    // pane fits to a taller container, so the remote redraws inside its own
-    // shorter screen and the output sticks near the bottom instead of scrolling
-    // (the reported "stops scrolling, redraws at the bottom" bug). fit() below
-    // fires this with the real dimensions.
+    // Keep the remote PTY the same size as this xterm, so the shell doesn't
+    // stay at the size the run opened it with while the pane fits a different
+    // one. fit() below fires this with the real dimensions.
     const resizeSub = term.onResize(({ cols, rows }) => {
       ptyResize(sessionId, cols, rows).catch(() => {});
     });
@@ -104,8 +104,21 @@ export function SkillTerminalPane({
     const el = containerRef.current;
     el?.addEventListener("mouseup", onMouseUp);
 
+    // Open the terminal only once its container actually has a size, and refit
+    // on every later resize. Opening while the pane is hidden (display:none
+    // during the params-to-run transition) makes xterm measure a zero-height
+    // character cell, and every later fit then renders the pane at a fraction
+    // of its true height (the reported half-viewport bug). The ResizeObserver
+    // fires when the element gains a real size, which is exactly when it's safe
+    // to open; writes made before open() are buffered and drawn on open.
     const observer = new ResizeObserver(() => {
-      if (containerRef.current?.offsetParent) fit.fit();
+      const node = containerRef.current;
+      if (!node?.offsetParent) return;
+      if (!openedRef.current) {
+        term.open(node);
+        openedRef.current = true;
+      }
+      fit.fit();
     });
     if (el) observer.observe(el);
 
@@ -113,20 +126,14 @@ export function SkillTerminalPane({
       if (id === sessionId) term.write(bytes);
     });
 
-    // Fit once now the pane is in the DOM, so the remote is sized to match from
-    // the first byte rather than waiting on the first ResizeObserver tick.
-    const raf = requestAnimationFrame(() => {
-      if (containerRef.current?.offsetParent) fit.fit();
-    });
-
     return () => {
-      cancelAnimationFrame(raf);
       dataSub.dispose();
       resizeSub.dispose();
       observer.disconnect();
       el?.removeEventListener("mouseup", onMouseUp);
       void unlistenData.then((fn) => fn());
       term.dispose();
+      openedRef.current = false;
       // No ptyClose here: the run owns this session and closes it when the host
       // finishes. Closing it on unmount would kill a live run.
     };
@@ -142,7 +149,8 @@ export function SkillTerminalPane({
     ) {
       term.options.fontFamily = prefs.terminalFontFamily;
       term.options.fontSize = prefs.terminalFontSize;
-      if (containerRef.current?.offsetParent) fitRef.current?.fit();
+      if (openedRef.current && containerRef.current?.offsetParent)
+        fitRef.current?.fit();
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
 
@@ -167,18 +175,19 @@ export function SkillTerminalPane({
   // behind, so the pane scrolls normally again. The remote is untouched; its
   // next output renders into the fresh view. Skips the first render (nonce 0).
   useEffect(() => {
-    if (resetNonce === 0) return;
+    if (resetNonce === 0 || !openedRef.current) return;
     termRef.current?.reset();
     if (containerRef.current?.offsetParent) fitRef.current?.fit();
   }, [resetNonce]);
 
-  // Refit when the run panel comes back on screen. A pane sized while its
-  // container was display:none fitted to nothing; this corrects it (and resizes
-  // the remote to match) the moment it is shown.
+  // Refit when the run panel comes back on screen (the ResizeObserver also
+  // catches the display flip, but this covers a show that doesn't change the
+  // element's box size). Only once opened, so it never fits an unopened term.
   useEffect(() => {
     if (!visible) return;
     const raf = requestAnimationFrame(() => {
-      if (containerRef.current?.offsetParent) fitRef.current?.fit();
+      if (openedRef.current && containerRef.current?.offsetParent)
+        fitRef.current?.fit();
     });
     return () => cancelAnimationFrame(raf);
   }, [visible]);
