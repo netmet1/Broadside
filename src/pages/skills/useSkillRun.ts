@@ -22,6 +22,10 @@ export type HostRunState = {
   step: string;
   /** The kind of that step, so the panel can offer step-specific controls. */
   stepKind: SkillProgress["stepKind"];
+  /** The step's countdown budget in seconds, and when it started (epoch ms), so
+   * the panel can show time remaining. Null while there's nothing to count. */
+  stepSecs: number | null;
+  stepStartedAt: number;
   /** Set while paused: why the engine stopped and handed over. */
   pausedReason: string | null;
   /** Whether the operator has taken the keyboard for this pane. */
@@ -92,6 +96,8 @@ export function useSkillRun() {
           takenOver: false,
           step: p.phase === "step" ? p.detail : prev.step,
           stepKind: p.phase === "step" ? p.stepKind : prev.stepKind,
+          stepSecs: p.phase === "step" ? p.stepSecs : prev.stepSecs,
+          stepStartedAt: p.phase === "step" ? Date.now() : prev.stepStartedAt,
           lines: [...prev.lines, { phase: p.phase, detail: p.detail }].slice(
             -MAX_LINES,
           ),
@@ -152,6 +158,8 @@ export function useSkillRun() {
               status: "running" as const,
               step: "starting…",
               stepKind: null,
+              stepSecs: null,
+              stepStartedAt: Date.now(),
               pausedReason: null,
               takenOver: false,
               message: null,

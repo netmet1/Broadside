@@ -160,6 +160,16 @@ impl SeqStep {
         raw.clamp(1, MAX_STEP_TIMEOUT_SECS)
     }
 
+    /// The seconds the run panel should count down for this step: a run/expect
+    /// timeout, or a wait's duration. `None` for a send (it fires at once).
+    pub fn countdown_secs(&self) -> Option<u64> {
+        match self {
+            SeqStep::Send { .. } => None,
+            SeqStep::Wait { seconds, .. } => Some(wait_secs(*seconds)),
+            _ => Some(self.timeout_secs()),
+        }
+    }
+
     /// The delay a `wait` step holds for, clamped to a sane range (a 0 would be
     /// a no-op, an unbounded one a foot-gun).
     pub fn wait_duration(&self) -> Option<std::time::Duration> {

@@ -97,6 +97,9 @@ pub struct SkillProgress {
     /// The kind of the step now running (`run`/`expect`/`send`/`wait`), set on
     /// the `step` phase so the run panel can offer step-specific controls.
     pub step_kind: Option<String>,
+    /// The step's countdown budget in seconds, set on the `step` phase: a
+    /// run/expect timeout, or a wait's duration. The panel counts down from it.
+    pub step_secs: Option<u64>,
     pub detail: String,
 }
 
@@ -234,14 +237,15 @@ impl<E: SkillEvents> Engine<E> {
     }
 
     fn emit(&self, phase: &str, step_id: Option<&str>, detail: impl Into<String>) {
-        self.emit_kind(phase, step_id, None, detail);
+        self.emit_step(phase, step_id, None, None, detail);
     }
 
-    fn emit_kind(
+    fn emit_step(
         &self,
         phase: &str,
         step_id: Option<&str>,
         step_kind: Option<&str>,
+        step_secs: Option<u64>,
         detail: impl Into<String>,
     ) {
         self.events.progress(SkillProgress {
@@ -252,6 +256,7 @@ impl<E: SkillEvents> Engine<E> {
             step_id: step_id.map(str::to_string),
             phase: phase.into(),
             step_kind: step_kind.map(str::to_string),
+            step_secs,
             detail: detail.into(),
         });
     }
@@ -354,7 +359,13 @@ impl<E: SkillEvents> Engine<E> {
                     ),
                 };
             }
-            self.emit_kind("step", Some(step.id()), Some(step.kind_str()), step.summary());
+            self.emit_step(
+                "step",
+                Some(step.id()),
+                Some(step.kind_str()),
+                step.countdown_secs(),
+                step.summary(),
+            );
             let was_wait = matches!(step, SeqStep::Wait { .. });
             match self.exec_step(step).await {
                 StepOutcome::Goto(next) => {

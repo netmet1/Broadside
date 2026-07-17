@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckIcon,
   EyeIcon,
@@ -195,6 +195,9 @@ function HostPane({
           {pane.label}
         </button>
         <StatusChip host={host} />
+        {status === "running" && host.stepSecs != null && (
+          <Countdown secs={host.stepSecs} startedAt={host.stepStartedAt} />
+        )}
         <span
           className="ml-auto min-w-0 shrink truncate font-mono text-[11px] text-muted-foreground"
           title={host.step}
@@ -321,6 +324,32 @@ function HostPane({
         />
       </div>
     </div>
+  );
+}
+
+/** A live "time left" chip for the current step. Ticks once a second off the
+ * step's budget and the moment it started; the value is approximate (frontend
+ * clock, not the backend's), which is fine for a readout. Reds gently in the
+ * last few seconds so a step about to time out or a wait about to end is
+ * obvious. */
+function Countdown({ secs, startedAt }: { secs: number; startedAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const remaining = Math.max(0, secs - Math.floor((now - startedAt) / 1000));
+  const mm = Math.floor(remaining / 60);
+  const ss = remaining % 60;
+  return (
+    <span
+      className={`shrink-0 font-mono text-[10px] tabular-nums ${
+        remaining <= 5 ? "text-red-500" : "text-muted-foreground"
+      }`}
+      title="Time left before this step times out or its wait ends"
+    >
+      {mm > 0 ? `${mm}:${String(ss).padStart(2, "0")}` : `${ss}s`}
+    </span>
   );
 }
 

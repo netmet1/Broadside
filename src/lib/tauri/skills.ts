@@ -216,6 +216,9 @@ export type SkillProgress = {
   /** The kind of the step now running, on the `step` phase. Lets the run panel
    * offer step-specific controls (ending a wait early). */
   stepKind: SeqStep["kind"] | null;
+  /** The step's countdown budget in seconds, on the `step` phase (a run/expect
+   * timeout or a wait duration). The panel counts down from it. */
+  stepSecs: number | null;
   detail: string;
 };
 
