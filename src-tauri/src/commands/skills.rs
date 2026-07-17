@@ -60,6 +60,73 @@ pub fn delete_skill(id: i64, state: State<'_, DbState>) -> AppResult<usize> {
     with_db(&state, |conn| skill_repo::delete(conn, id))
 }
 
+/// The on-disk shape for import/export: the definition only, and never a
+/// credential. `config` is the parsed config object rather than a stringified
+/// blob so the file is readable and hand-editable.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PortableSkill {
+    /// File format version, so a future change can be detected rather than
+    /// silently mis-parsed.
+    broadside_skill: u32,
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    icon: Option<String>,
+    kind: String,
+    config: serde_json::Value,
+}
+
+const PORTABLE_VERSION: u32 = 1;
+
+/// Writes a skill to `path` as a portable JSON file (definition only).
+#[tauri::command]
+pub fn export_skill(id: i64, path: String, state: State<'_, DbState>) -> AppResult<()> {
+    let skill = with_db(&state, |conn| skill_repo::get(conn, id))?;
+    let config: serde_json::Value =
+        serde_json::from_str(&skill.config_json).unwrap_or_else(|_| serde_json::json!({}));
+    let portable = PortableSkill {
+        broadside_skill: PORTABLE_VERSION,
+        name: skill.name,
+        description: skill.description,
+        icon: skill.icon,
+        kind: skill.kind,
+        config,
+    };
+    std::fs::write(&path, serde_json::to_string_pretty(&portable)?)?;
+    Ok(())
+}
+
+/// Reads a portable skill file and returns it as a [`SkillInput`], validated the
+/// same way a save is, so the frontend can preview it before creating it. Does
+/// NOT save: import is a create through the normal path, so the guard and the
+/// typed-CONFIRM gate still apply to every later run.
+#[tauri::command]
+pub fn read_skill_file(path: String) -> AppResult<skill_repo::SkillInput> {
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| AppError::InvalidInput(format!("could not read the file: {e}")))?;
+    let portable: PortableSkill = serde_json::from_str(&text)
+        .map_err(|_| AppError::InvalidInput("this isn't a Broadside skill file".into()))?;
+    if portable.broadside_skill != PORTABLE_VERSION {
+        return Err(AppError::InvalidInput(format!(
+            "this skill file is version {}, which this build doesn't understand",
+            portable.broadside_skill
+        )));
+    }
+    let input = skill_repo::SkillInput {
+        name: portable.name,
+        description: portable.description,
+        icon: portable.icon,
+        kind: portable.kind,
+        config_json: serde_json::to_string(&portable.config)?,
+    };
+    // Same gate as Save: a file with a broken graph or unknown kind is refused
+    // here, not at run time.
+    validate_config(&input)?;
+    Ok(input)
+}
+
 /// Rejects a broken step graph at save time, so the operator hears about a
 /// dangling branch or an uncompilable pattern then, not halfway through an
 /// upgrade on twelve hosts.
@@ -497,6 +564,62 @@ mod tests {
                 .into(),
         };
         let err = validate_config(&input).unwrap_err().to_string();
+        assert!(err.contains("ghost"), "got: {err}");
+    }
+
+    #[test]
+    fn a_portable_file_round_trips_through_read_skill_file() {
+        // Write the portable shape to a temp file and read it back as a
+        // SkillInput, the way export then import would.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("skill.json");
+        let portable = super::PortableSkill {
+            broadside_skill: super::PORTABLE_VERSION,
+            name: "Restart validator".into(),
+            description: "does a thing".into(),
+            icon: Some("wrench".into()),
+            kind: skill_repo::KIND_SEQUENCE.into(),
+            config: serde_json::json!({
+                "params": [],
+                "startStepId": "s1",
+                "steps": [{"kind":"send","id":"s1","input":"q","next":"stop"}],
+            }),
+        };
+        std::fs::write(&path, serde_json::to_string_pretty(&portable).unwrap()).unwrap();
+
+        let input = super::read_skill_file(path.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(input.name, "Restart validator");
+        assert_eq!(input.kind, skill_repo::KIND_SEQUENCE);
+        assert!(input.config_json.contains("\"startStepId\":\"s1\""));
+    }
+
+    #[test]
+    fn read_skill_file_rejects_a_non_skill_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("junk.json");
+        std::fs::write(&path, "{\"hello\":true}").unwrap();
+        assert!(super::read_skill_file(path.to_string_lossy().into_owned()).is_err());
+    }
+
+    #[test]
+    fn read_skill_file_rejects_a_broken_graph() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("broken.json");
+        let portable = super::PortableSkill {
+            broadside_skill: super::PORTABLE_VERSION,
+            name: "broken".into(),
+            description: String::new(),
+            icon: None,
+            kind: skill_repo::KIND_SEQUENCE.into(),
+            config: serde_json::json!({
+                "startStepId": "a",
+                "steps": [{"kind":"send","id":"a","input":"x","next":"ghost"}],
+            }),
+        };
+        std::fs::write(&path, serde_json::to_string(&portable).unwrap()).unwrap();
+        let err = super::read_skill_file(path.to_string_lossy().into_owned())
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("ghost"), "got: {err}");
     }
 

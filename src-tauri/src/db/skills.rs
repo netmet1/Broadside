@@ -30,7 +30,7 @@ pub struct Skill {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillInput {
     pub name: String,
     #[serde(default)]

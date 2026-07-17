@@ -236,6 +236,8 @@ pub fn run() {
             commands::skills::create_skill,
             commands::skills::update_skill,
             commands::skills::delete_skill,
+            commands::skills::export_skill,
+            commands::skills::read_skill_file,
             commands::skills::skill_preflight,
             commands::skills::run_skill,
             commands::skills::skill_cancel,

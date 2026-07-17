@@ -137,6 +137,18 @@ export function deleteSkill(id: number): Promise<number> {
   return invoke<number>("delete_skill", { id });
 }
 
+/** Writes a skill to `path` as a portable JSON file (definition only, never
+ * credentials). */
+export function exportSkill(id: number, path: string): Promise<void> {
+  return invoke<void>("export_skill", { id, path });
+}
+
+/** Reads a portable skill file and returns it as a {@link SkillInput}, validated
+ * but NOT saved, so the UI can preview it before creating it. */
+export function readSkillFile(path: string): Promise<SkillInput> {
+  return invoke<SkillInput>("read_skill_file", { path });
+}
+
 /** What the operator should know before dispatching. */
 export type SkillPreflight = {
   matchedRules: GuardHit[];

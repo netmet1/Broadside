@@ -1,4 +1,6 @@
 import { useCallback, useState } from "react";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import { RailFilterControls } from "@/components/RailFilterControls";
@@ -13,7 +15,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useHint, usePageStatus } from "@/lib/status";
-import type { Skill, SkillPreflight } from "@/lib/tauri/skills";
+import {
+  exportSkill,
+  parseSequence,
+  readSkillFile,
+  type Skill,
+  type SkillInput,
+  type SkillPreflight,
+} from "@/lib/tauri/skills";
+import { errorMessage } from "@/lib/tauri/hosts";
 import { railTooltip } from "@/lib/hostTags";
 import { EmergencyCancel } from "@/pages/skills/EmergencyCancel";
 import { ParamForm } from "@/pages/skills/ParamForm";
@@ -55,6 +65,8 @@ export function SkillsPage({ visible }: { visible: boolean }) {
    * to build another skill doesn't lose track of what's running. */
   const [runningSkill, setRunningSkill] = useState<Skill | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Skill | null>(null);
+  // A skill read from a file, awaiting the operator's confirmation to save.
+  const [importing, setImporting] = useState<SkillInput | null>(null);
   // Set when a run needs the typed-CONFIRM gate (D-014).
   const [confirming, setConfirming] = useState<{
     skill: Skill;
@@ -112,6 +124,37 @@ export function SkillsPage({ visible }: { visible: boolean }) {
     },
     [dispatch],
   );
+
+  const exportOne = useCallback(async (skill: Skill) => {
+    try {
+      const path = await saveDialog({
+        title: "Export skill",
+        defaultPath: `${skill.name.replace(/[^\w.-]+/g, "-")}.skill.json`,
+        filters: [{ name: "Broadside skill", extensions: ["json"] }],
+      });
+      if (typeof path !== "string") return;
+      await exportSkill(skill.id, path);
+      toast.success(`Exported "${skill.name}"`);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  }, []);
+
+  const startImport = useCallback(async () => {
+    try {
+      const path = await openDialog({
+        title: "Import skill",
+        multiple: false,
+        filters: [{ name: "Broadside skill", extensions: ["json"] }],
+      });
+      if (typeof path !== "string") return;
+      // Read and validate, but don't save yet: the operator previews the steps
+      // first. Import is a normal create, so the guard still gates every run.
+      setImporting(await readSkillFile(path));
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  }, []);
 
   return (
     <div className="flex h-full min-h-0">
@@ -204,6 +247,8 @@ export function SkillsPage({ visible }: { visible: boolean }) {
           onWatch={() => setView({ kind: "run" })}
           onEdit={(skill) => setView({ kind: "edit", skill })}
           onNew={() => setView({ kind: "edit", skill: null })}
+          onImport={startImport}
+          onExport={exportOne}
           onDelete={setPendingDelete}
         />
 
@@ -286,6 +331,62 @@ export function SkillsPage({ visible }: { visible: boolean }) {
           }}
         />
       )}
+
+      {/* Import preview: show the steps before anything is saved. Import is a
+          normal create, so the destructive guard and typed-CONFIRM gate still
+          apply to every run of this skill. */}
+      <AlertDialog
+        open={importing != null}
+        onOpenChange={(open) => {
+          if (!open) setImporting(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Import "{importing?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This is someone else's skill. Look over its steps before you save
+              it. Nothing runs until you choose to run it, and the destructive
+              guard still applies then.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {importing && (
+            <div className="space-y-2 text-xs">
+              {importing.description && (
+                <p className="text-muted-foreground">{importing.description}</p>
+              )}
+              <ol className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/60 bg-muted/20 p-2 font-mono">
+                {parseSequence(importing.config_json).steps.map((s) => (
+                  <li key={s.id} className="flex gap-2">
+                    <span className="shrink-0 text-muted-foreground">{s.id}</span>
+                    <span className="min-w-0 break-all">
+                      {s.kind === "run"
+                        ? `run: ${s.command}`
+                        : s.kind === "expect"
+                          ? `wait for: ${s.pattern}${s.sendOnMatch ? ` then send ${JSON.stringify(s.sendOnMatch)}` : ""}`
+                          : s.kind === "send"
+                            ? `send: ${JSON.stringify(s.input)}`
+                            : `wait ${s.seconds}s`}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogAction
+              onClick={() => {
+                const input = importing;
+                setImporting(null);
+                if (input) void model.save(null, input);
+              }}
+            >
+              Import
+            </AlertDialogAction>
+            <AlertDialogCancel autoFocus>Cancel</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={pendingDelete != null}
