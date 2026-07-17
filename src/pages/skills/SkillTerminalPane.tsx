@@ -39,6 +39,7 @@ export function SkillTerminalPane({
   sessionId,
   interactive,
   visible,
+  resetNonce,
   onInput,
 }: {
   sessionId: string;
@@ -48,6 +49,10 @@ export function SkillTerminalPane({
    * the params-to-run transition, and a terminal sized while hidden fits to a
    * zero-height box; this triggers a refit once it is shown. */
   visible: boolean;
+  /** Bumped to re-initialize the xterm view, for recovering a display a
+   * full-screen program left garbled (alternate screen, a stray scroll region).
+   * Local only: it clears this pane's buffer, the remote keeps running. */
+  resetNonce: number;
   onInput: (data: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -156,6 +161,16 @@ export function SkillTerminalPane({
   useEffect(() => {
     if (interactive) termRef.current?.focus();
   }, [interactive]);
+
+  // Re-initialize the view on demand. reset() clears xterm's buffer and any
+  // alternate-screen / scroll-region state a rogue full-screen program left
+  // behind, so the pane scrolls normally again. The remote is untouched; its
+  // next output renders into the fresh view. Skips the first render (nonce 0).
+  useEffect(() => {
+    if (resetNonce === 0) return;
+    termRef.current?.reset();
+    if (containerRef.current?.offsetParent) fitRef.current?.fit();
+  }, [resetNonce]);
 
   // Refit when the run panel comes back on screen. A pane sized while its
   // container was display:none fitted to nothing; this corrects it (and resizes

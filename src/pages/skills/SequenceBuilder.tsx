@@ -190,13 +190,23 @@ export function SequenceBuilder({
               same as in a terminal tab.
             </p>
             <p>
-              For apt and dpkg, use{" "}
+              For apt upgrades, prefix the command with{" "}
               <code className="rounded bg-muted px-1">
-                DEBIAN_FRONTEND=noninteractive
+                DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
               </code>{" "}
-              and <code className="rounded bg-muted px-1">-y</code> so a config
-              dialog can't block the run, and raise the timeout, since an upgrade can
-              take a while.
+              and pass <code className="rounded bg-muted px-1">-y</code>.{" "}
+              <code className="rounded bg-muted px-1">DEBIAN_FRONTEND</code> alone
+              is not enough: a kernel upgrade triggers needrestart, whose
+              full-screen prompt takes over the terminal and stops the pane
+              scrolling.{" "}
+              <code className="rounded bg-muted px-1">NEEDRESTART_MODE=a</code>{" "}
+              stops that.
+            </p>
+            <p>
+              Run a long command like an upgrade as a <em>normal</em> (not
+              interactive) step with a big timeout. Then it waits for the command
+              to actually finish, and if something unexpected blocks it, the step
+              pauses for you rather than the engine typing over a prompt.
             </p>
           </div>
         </div>

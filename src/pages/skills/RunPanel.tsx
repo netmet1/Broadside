@@ -5,6 +5,7 @@ import {
   KeyboardIcon,
   LockIcon,
   PlayIcon,
+  RotateCcwIcon,
   SkipForwardIcon,
   SquareIcon,
   TriangleAlertIcon,
@@ -150,6 +151,8 @@ function HostPane({
   const hint = useHint();
   const { pane, status } = host;
   const finished = status === "done" || status === "failed";
+  // Bumped by the Reset display button to re-init a garbled xterm view.
+  const [resetNonce, setResetNonce] = useState(0);
 
   const control = async (fn: () => Promise<void>, what: string) => {
     try {
@@ -204,6 +207,17 @@ function HostPane({
         >
           {finished ? host.message : host.step}
         </span>
+        <button
+          type="button"
+          onClick={() => setResetNonce((n) => n + 1)}
+          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          aria-label="Reset display"
+          {...hint(
+            "Reset this pane's display if a full-screen program (like an upgrade's restart prompt) left it garbled or stuck. Clears the pane only; the run keeps going.",
+          )}
+        >
+          <RotateCcwIcon className="h-3 w-3" />
+        </button>
       </div>
 
       {/* Paused: the engine has stopped sending and handed the shell over. */}
@@ -316,6 +330,7 @@ function HostPane({
           sessionId={pane.sessionId}
           interactive={host.takenOver && status === "paused"}
           visible={visible}
+          resetNonce={resetNonce}
           onInput={(data) => {
             skillSendInput(runId, pane.hostId, data).catch(() => {
               // The run ended under us; the status chip already says so.
