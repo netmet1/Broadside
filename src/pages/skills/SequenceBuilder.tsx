@@ -1,4 +1,4 @@
-import { InfoIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { InfoIcon, ListOrderedIcon, PlusIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -157,6 +157,19 @@ export function SequenceBuilder({
                 ))}
               </select>
             </label>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={f.renumberSteps}
+              disabled={f.steps.length < 2}
+              {...hint(
+                "Renames the step ids to s1, s2, ... in their current order and updates every branch to match, so the flow is unchanged. Tidies ids after reordering.",
+              )}
+            >
+              <ListOrderedIcon className="mr-1 h-3 w-3" />
+              Renumber
+            </Button>
             <Button variant="outline" size="sm" className="h-7" onClick={f.addStep}>
               <PlusIcon className="mr-1 h-3 w-3" />
               Add step

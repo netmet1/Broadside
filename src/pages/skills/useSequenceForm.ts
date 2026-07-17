@@ -129,6 +129,44 @@ export function useSequenceForm(editing: Skill | null) {
     [],
   );
 
+  /** Renames every step id to s1, s2, ... in list order and rewrites every
+   * branch reference (and the start step) to match, so the flow is unchanged.
+   * This is the safe form of "renumber": ids and the branches that point at
+   * them move together, so nothing desyncs. Manual, not automatic, so ids don't
+   * shift under you mid-drag. `next`/`stop` targets are untouched. */
+  const renumberSteps = useCallback(() => {
+    const map = new Map(steps.map((s, i) => [s.id, `s${i + 1}`]));
+    const remap = (target: string) => map.get(target) ?? target;
+    setSteps(
+      steps.map((s, i): SeqStep => {
+        const id = `s${i + 1}`;
+        switch (s.kind) {
+          case "run":
+            return {
+              ...s,
+              id,
+              onSuccess: remap(s.onSuccess),
+              onFailure: remap(s.onFailure),
+              match: s.match
+                ? {
+                    ...s.match,
+                    ifMatch: remap(s.match.ifMatch),
+                    ifNoMatch: remap(s.match.ifNoMatch),
+                  }
+                : undefined,
+            };
+          case "expect":
+            return { ...s, id, onMatch: remap(s.onMatch) };
+          case "send":
+            return { ...s, id, next: remap(s.next) };
+          case "wait":
+            return { ...s, id, next: remap(s.next) };
+        }
+      }),
+    );
+    setStartStepId((cur) => map.get(cur) ?? cur);
+  }, [steps]);
+
   const moveStep = useCallback((index: number, dir: -1 | 1) => {
     setSteps((prev) => {
       const to = index + dir;
@@ -226,6 +264,7 @@ export function useSequenceForm(editing: Skill | null) {
     updateStep,
     removeStep,
     moveStep,
+    renumberSteps,
     startStepId,
     setStartStepId,
     problems,
