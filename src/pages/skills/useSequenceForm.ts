@@ -195,6 +195,10 @@ export function useSequenceForm(editing: Skill | null) {
       ids.add(s.id);
       if (s.kind === "run" && !s.command.trim())
         out.push(`Step ${s.id} has no command.`);
+      // An empty output test matches everything, so it would silently take the
+      // match branch every time rather than doing nothing.
+      if (s.kind === "run" && s.match && !s.match.pattern.trim())
+        out.push(`Step ${s.id} branches on its output but has no pattern.`);
       if (s.kind === "expect" && !s.pattern.trim())
         out.push(`Step ${s.id} has no pattern to wait for.`);
       if (s.kind === "send" && !s.input)
