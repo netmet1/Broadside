@@ -126,6 +126,30 @@ function App() {
     setPage("terminals");
   }, [nextSeq]);
 
+  /** Adopt a skill run's live shell as a terminal tab. The tab reuses the
+   * backend session id as its own, so the very shell the skill was driving (its
+   * root state, cwd and scrollback) carries over; TerminalView skips pty_open
+   * for an adopted session. `snapshot` is the skill pane's scrollback as an ANSI
+   * string, seeded into the new terminal so the run's history is visible. */
+  const adoptTerminal = useCallback(
+    (sessionId: string, host: Host, snapshot: string | null) => {
+      const session: TermSession = {
+        id: sessionId,
+        type: "ssh",
+        seq: nextSeq(),
+        host,
+        adopted: true,
+        adoptSnapshot: snapshot ?? undefined,
+      };
+      setSessions((prev) =>
+        prev.some((s) => s.id === sessionId) ? prev : [...prev, session],
+      );
+      setActiveSessionId(sessionId);
+      setPage("terminals");
+    },
+    [nextSeq],
+  );
+
   /** Open a terminal tab for every host at once (Hosts multi-select). */
   const openTerminals = useCallback((hostsToOpen: Host[]) => {
     if (hostsToOpen.length === 0) return;
@@ -402,7 +426,7 @@ function App() {
           survive tab switches. A run can last as long as an apt upgrade, and
           unmounting would tear down the xterm panes mid-run. */}
       <div className={page === "skills" ? "block h-full" : "hidden"}>
-        <SkillsPage visible={page === "skills"} />
+        <SkillsPage visible={page === "skills"} onAdoptTerminal={adoptTerminal} />
       </div>
       {/* SFTP stays mounted so an open browser session survives navigation. */}
       <div className={page === "sftp" ? "block h-full" : "hidden"}>

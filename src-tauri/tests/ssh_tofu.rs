@@ -58,7 +58,9 @@ async fn trust_then_connect_succeeds() {
     .await
     .unwrap();
     match second {
-        ProbeResult::Ok { latency_ms } => assert!(latency_ms > 0),
+        // `login_shell` is best-effort and this fixture server doesn't run one,
+        // so the probe reads nothing: that must still be a successful connect.
+        ProbeResult::Ok { latency_ms, .. } => assert!(latency_ms > 0),
         other => panic!("expected Ok, got {other:?}"),
     }
 }

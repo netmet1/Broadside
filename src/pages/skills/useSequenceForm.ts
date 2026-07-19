@@ -9,23 +9,7 @@ import {
   type SkillInput,
   type SkillParam,
 } from "@/lib/tauri/skills";
-
-/** The branch targets a step points at, for warnings. */
-function branchTargets(s: SeqStep): string[] {
-  switch (s.kind) {
-    case "run":
-      return [
-        s.onSuccess,
-        s.onFailure,
-        ...(s.match ? [s.match.ifMatch, s.match.ifNoMatch] : []),
-      ];
-    case "expect":
-      return [s.onMatch];
-    case "send":
-    case "wait":
-      return [s.next];
-  }
-}
+import { branchTargetIds } from "@/pages/skills/flowGraph";
 
 /** A fresh id for a new step. Short and readable, since it shows up in the branch
  * dropdowns, so `s3` beats a uuid. */
@@ -66,6 +50,9 @@ export function useSequenceForm(editing: Skill | null) {
   );
   const [startStepId, setStartStepId] = useState(
     initial?.startStepId || "s1",
+  );
+  const [allowTransfer, setAllowTransfer] = useState(
+    initial?.allowTransfer ?? false,
   );
 
   const addStep = useCallback(() => {
@@ -230,7 +217,7 @@ export function useSequenceForm(editing: Skill | null) {
   const warnings = useMemo(() => {
     const out: string[] = [];
     const last = steps[steps.length - 1];
-    if (last && branchTargets(last).includes(NEXT)) {
+    if (last && branchTargetIds(last).includes(NEXT)) {
       out.push(
         `Step ${last.id} continues to the next step, but nothing follows it, so it will finish the host there. Add a step after it, or point it somewhere specific.`,
       );
@@ -244,9 +231,9 @@ export function useSequenceForm(editing: Skill | null) {
       description: description.trim(),
       icon: null,
       kind: "sequence",
-      config_json: JSON.stringify({ params, startStepId, steps }),
+      config_json: JSON.stringify({ params, startStepId, steps, allowTransfer }),
     }),
-    [name, description, params, startStepId, steps],
+    [name, description, params, startStepId, steps, allowTransfer],
   );
 
   return {
@@ -267,6 +254,8 @@ export function useSequenceForm(editing: Skill | null) {
     renumberSteps,
     startStepId,
     setStartStepId,
+    allowTransfer,
+    setAllowTransfer,
     problems,
     warnings,
     toInput,

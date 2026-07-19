@@ -126,7 +126,7 @@ async fn pty_shell_round_trip_and_close() {
     .await
     .unwrap();
     assert!(
-        matches!(result, broadside_lib::ssh::pty::PtyOpenResult::Opened),
+        matches!(result, broadside_lib::ssh::pty::PtyOpenResult::Opened { .. }),
         "expected Opened, got {result:?}"
     );
 
@@ -191,7 +191,7 @@ async fn pty_reopen_same_id_replaces_session() {
         .await
         .unwrap();
         assert!(
-            matches!(result, broadside_lib::ssh::pty::PtyOpenResult::Opened),
+            matches!(result, broadside_lib::ssh::pty::PtyOpenResult::Opened { .. }),
             "expected Opened, got {result:?}"
         );
     }

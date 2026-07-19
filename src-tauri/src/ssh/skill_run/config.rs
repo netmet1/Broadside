@@ -202,6 +202,12 @@ pub struct SequenceConfig {
     pub params: Vec<SkillParam>,
     pub start_step_id: String,
     pub steps: Vec<SeqStep>,
+    /// When set, each host's shell is kept open after the run finishes so the
+    /// operator can hand it to a terminal tab intact (same root state, cwd and
+    /// scrollback). Off by default: leaving a shell open, especially a root one,
+    /// is a standing exposure, so it is the skill author's explicit choice.
+    #[serde(default)]
+    pub allow_transfer: bool,
 }
 
 impl SequenceConfig {
@@ -482,6 +488,7 @@ pub fn substituted_config(
         params: cfg.params.clone(),
         start_step_id: cfg.start_step_id.clone(),
         steps,
+        allow_transfer: cfg.allow_transfer,
     }
 }
 
@@ -571,6 +578,7 @@ pub fn resolve_next(cfg: &SequenceConfig) -> SequenceConfig {
         params: cfg.params.clone(),
         start_step_id: cfg.start_step_id.clone(),
         steps,
+        allow_transfer: cfg.allow_transfer,
     }
 }
 
@@ -720,6 +728,7 @@ mod tests {
             params: vec![],
             start_step_id: start.into(),
             steps,
+            allow_transfer: false,
         }
     }
 
@@ -1026,6 +1035,7 @@ mod tests {
                     next: STOP.into(),
                 },
             ],
+            allow_transfer: false,
         };
         let out = substituted_config(&c, &vals(&[("v", "hi")]));
         match &out.steps[0] {

@@ -8,6 +8,7 @@ import {
   RotateCcwIcon,
   SkipForwardIcon,
   SquareIcon,
+  TerminalIcon,
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
@@ -33,8 +34,10 @@ export function RunPanel({
   skillName,
   active,
   visible,
+  allowTransfer,
   setTakenOver,
   finishHost,
+  onSendToTerminal,
   onDone,
 }: {
   runId: string;
@@ -44,9 +47,13 @@ export function RunPanel({
   /** Whether this panel is the thing on screen (it is kept mounted while
    * hidden, so its terminals need to refit when it returns). */
   visible: boolean;
+  /** The running skill allows handing a host's shell to a terminal tab. */
+  allowTransfer: boolean;
   setTakenOver: (hostId: number, takenOver: boolean) => void;
   /** Settle a host the backend has already forgotten about. */
   finishHost: (hostId: number, message: string) => void;
+  /** Send one host's shell to a terminal tab (confirms first if it is root). */
+  onSendToTerminal: (pane: HostRunState["pane"], isRoot: boolean) => void;
   onDone: () => void;
 }) {
   const hint = useHint();
@@ -117,9 +124,11 @@ export function RunPanel({
             host={h}
             fill={single}
             visible={visible}
+            allowTransfer={allowTransfer}
             onFocus={() => setFocused(h.pane.hostId)}
             onFinished={(m) => finishHost(h.pane.hostId, m)}
             setTakenOver={setTakenOver}
+            onSendToTerminal={onSendToTerminal}
           />
         ))}
       </div>
@@ -132,9 +141,11 @@ function HostPane({
   host,
   fill,
   visible,
+  allowTransfer,
   onFocus,
   onFinished,
   setTakenOver,
+  onSendToTerminal,
 }: {
   runId: string;
   host: HostRunState;
@@ -143,10 +154,13 @@ function HostPane({
   fill: boolean;
   /** Whether the run panel is on screen (for the terminal's refit). */
   visible: boolean;
+  /** The running skill allows handing this shell to a terminal tab. */
+  allowTransfer: boolean;
   onFocus: () => void;
   /** Settle this pane when the backend says its run is already over. */
   onFinished: (message: string) => void;
   setTakenOver: (hostId: number, takenOver: boolean) => void;
+  onSendToTerminal: (pane: HostRunState["pane"], isRoot: boolean) => void;
 }) {
   const hint = useHint();
   const { pane, status } = host;
@@ -207,6 +221,26 @@ function HostPane({
         >
           {finished ? host.message : host.step}
         </span>
+        {allowTransfer && (
+          <button
+            type="button"
+            onClick={() => onSendToTerminal(pane, host.isRoot === true)}
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            {...hint(
+              finished
+                ? "Open this host's shell as a terminal tab, keeping its root state, working directory and scrollback."
+                : "Stop the skill on this host and open its shell as a terminal tab. The other hosts keep running.",
+            )}
+          >
+            <TerminalIcon className="h-3 w-3" />
+            To terminal
+            {host.isRoot === true && (
+              <span className="rounded bg-amber-500/20 px-1 font-semibold text-amber-700 dark:text-amber-300">
+                root
+              </span>
+            )}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setResetNonce((n) => n + 1)}
@@ -245,7 +279,7 @@ function HostPane({
               control(() => skillResume(runId, pane.hostId), "Resume failed")
             }
             {...hint(
-              "Wait for this step's prompt again, with a fresh timeout. Does not re-run the command.",
+              "Check the screen again and keep waiting for this step, with a fresh timeout. Does not re-run the command. If you typed here, what you typed is ignored for matching; use Skip step if you already handled it.",
             )}
           >
             <PlayIcon className="mr-1 h-3 w-3" />

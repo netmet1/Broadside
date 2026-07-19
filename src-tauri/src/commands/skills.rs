@@ -23,7 +23,7 @@ use crate::error::{AppError, AppResult};
 use crate::guard::{self, GuardHit};
 use crate::ssh::pty::PtyState;
 use crate::ssh::skill_run::{
-    self, state::Ctl, state::SkillRunState, Engine, HostMeta, SkillDone, SkillEvents,
+    self, state::Ctl, state::SkillRunState, Disposition, Engine, HostMeta, SkillDone, SkillEvents,
 };
 
 #[tauri::command]
@@ -370,6 +370,11 @@ pub async fn run_skill(
                 pty_state: pty_state.clone(),
                 meta: meta.clone(),
                 reported: false,
+                // Safe default: an unwinding panic never sets this, and
+                // `Aborted` is the disposition that closes the shell.
+                disposition: Disposition::Aborted,
+                is_root: None,
+                allow_transfer: cfg.allow_transfer,
             };
             match job.auth {
                 None => {
@@ -396,9 +401,15 @@ pub async fn run_skill(
                     )
                     .await;
                     match opened {
-                        Ok(crate::ssh::pty::PtyOpenResult::Opened) => {
-                            let engine = Engine::new(link, ctl_rx, events.clone(), meta.clone());
+                        Ok(crate::ssh::pty::PtyOpenResult::Opened { login_shell }) => {
+                            // Hand the connect-time shell name to the engine so a
+                            // refusal can name it (X4): the in-shell `$0` probe
+                            // can't answer on fish, so it would say "unknown".
+                            let engine = Engine::new(link, ctl_rx, events.clone(), meta.clone())
+                                .with_known_shell(login_shell);
                             let outcome = skill_run::run_host(engine, &cfg).await;
+                            guard.disposition = outcome.disposition;
+                            guard.is_root = outcome.is_root;
                             guard.report(outcome.ok, outcome.message);
                         }
                         Ok(other) => guard.report(false, open_failure_message(&other)),
@@ -427,6 +438,14 @@ struct HostGuard {
     pty_state: PtyState,
     meta: HostMeta,
     reported: bool,
+    /// How this host ended, deciding whether its shell is closed, kept open, or
+    /// handed off. `Aborted` by default so an unwinding panic still closes.
+    disposition: Disposition,
+    /// The shell's effective uid == 0 at the end, forwarded to the panel.
+    is_root: Option<bool>,
+    /// The skill permits keeping the shell open on a natural finish. When false,
+    /// a finished shell is closed exactly as it always was.
+    allow_transfer: bool,
 }
 
 impl HostGuard {
@@ -444,6 +463,7 @@ impl HostGuard {
             session_id: self.meta.session_id.clone(),
             ok,
             message,
+            is_root: self.is_root,
         });
     }
 }
@@ -456,11 +476,28 @@ impl Drop for HostGuard {
             false,
             "the run stopped unexpectedly on this host; see the error log".into(),
         );
-        self.run_state
-            .finish_host(&self.meta.run_id, self.meta.host_id);
-        // The run owns this session start to finish; leaving it open would
-        // strand a shell, and a root shell at that.
-        let _ = self.pty_state.close(&self.meta.session_id);
+        match self.disposition {
+            // Handed to a terminal tab: drop it from the run's tracking without
+            // closing. The terminal owns the shell (and its close) now.
+            Disposition::Detached => {
+                self.run_state
+                    .adopt_host(&self.meta.run_id, self.meta.host_id);
+            }
+            // A natural end. A transfer-enabled skill keeps the shell open and
+            // lingering so the operator can send it to a terminal; otherwise it
+            // closes exactly as it always did.
+            Disposition::Finished if self.allow_transfer => {
+                self.run_state
+                    .linger_host(&self.meta.run_id, self.meta.host_id);
+            }
+            // Operator abort, a panic, or a non-transfer finish: close the shell
+            // so it can't strand, and a root shell at that.
+            Disposition::Finished | Disposition::Aborted => {
+                self.run_state
+                    .finish_host(&self.meta.run_id, self.meta.host_id);
+                let _ = self.pty_state.close(&self.meta.session_id);
+            }
+        }
     }
 }
 
@@ -474,7 +511,7 @@ fn open_failure_message(result: &crate::ssh::pty::PtyOpenResult) -> String {
             "this host's key isn't trusted yet. Open a terminal to it once to review the key".into()
         }
         R::NoCredentials => "no credentials stored".into(),
-        R::Opened => "opened".into(),
+        R::Opened { .. } => "opened".into(),
     }
 }
 
@@ -496,14 +533,16 @@ pub fn skill_cancel(
 }
 
 /// Wait for the current step's pattern again, with a fresh timeout. Does not
-/// re-send a command that is still running.
+/// re-send a command that is still running. The engine keeps what the host
+/// printed while parked unless the operator typed (see [`Ctl::Resume`]), so a
+/// value that arrived during the pause satisfies the retried wait at once.
 #[tauri::command]
 pub fn skill_resume(
     run_id: String,
     host_id: i64,
     run_state: State<'_, SkillRunState>,
 ) -> AppResult<()> {
-    run_state.send(&run_id, host_id, Ctl::Resume)
+    run_state.resume(&run_id, host_id)
 }
 
 /// Treat the paused step as satisfied and take its success branch.
@@ -526,6 +565,37 @@ pub fn skill_abort(
     run_state.send(&run_id, host_id, Ctl::Abort)
 }
 
+/// Send one host's live shell to a terminal tab. If the host is still being
+/// driven this stops its engine without closing the PTY; if it already finished
+/// (a transfer-enabled skill leaves it open) it just releases the run's claim on
+/// it. Either way the frontend adopts the existing session by its id. Only
+/// offered for skills with `allowTransfer` set, but the backend does not need
+/// to re-check: the session lifecycle is the same regardless.
+#[tauri::command]
+pub fn skill_detach(
+    run_id: String,
+    host_id: i64,
+    run_state: State<'_, SkillRunState>,
+) -> AppResult<()> {
+    run_state.detach(&run_id, host_id)
+}
+
+/// Close a finished run, closing every shell it still owns (lingering ones a
+/// transfer-enabled skill left open). Shells already handed off to a terminal
+/// tab were released from the run and are untouched. Distinct from the emergency
+/// stop only in intent: this runs when the operator dismisses a completed run.
+#[tauri::command]
+pub fn skill_close_run(
+    run_id: String,
+    run_state: State<'_, SkillRunState>,
+    pty_state: State<'_, PtyState>,
+) -> AppResult<()> {
+    for session_id in run_state.close_run(&run_id) {
+        let _ = pty_state.close(&session_id);
+    }
+    Ok(())
+}
+
 /// Manual takeover: routes the operator's keystrokes to the host's PTY through
 /// the same `SessionCmd::Write` channel the engine uses. Safe against races
 /// because a paused engine sends nothing until the operator resumes it.
@@ -537,7 +607,7 @@ pub fn skill_send_input(
     run_state: State<'_, SkillRunState>,
     pty_state: State<'_, PtyState>,
 ) -> AppResult<()> {
-    let session_id = run_state.session_id(&run_id, host_id)?;
+    let session_id = run_state.session_id_for_input(&run_id, host_id)?;
     pty_state.write(&session_id, data.as_bytes())
 }
 

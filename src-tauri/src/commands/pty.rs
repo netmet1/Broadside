@@ -82,7 +82,15 @@ pub async fn pty_open(
     )
     .await?;
     match &result {
-        PtyOpenResult::Opened => {
+        PtyOpenResult::Opened { login_shell } => {
+            // Remember what we saw so the Hosts table can flag an unsupported
+            // shell without anyone having to open a terminal first (X4). Purely
+            // informational, so a write failure never fails the open.
+            if let Some(shell) = login_shell {
+                let _ = with_db(&state, |conn| {
+                    host_repo::set_login_shell(conn, host.id, shell)
+                });
+            }
             let _ = audit.append(&AuditEvent::PtyOpened {
                 host_label: host.label,
                 hostname: host.hostname,

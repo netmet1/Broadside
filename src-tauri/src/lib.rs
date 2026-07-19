@@ -245,6 +245,8 @@ pub fn run() {
             commands::skills::skill_skip_step,
             commands::skills::skill_abort,
             commands::skills::skill_send_input,
+            commands::skills::skill_detach,
+            commands::skills::skill_close_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

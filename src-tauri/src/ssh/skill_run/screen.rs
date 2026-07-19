@@ -200,18 +200,35 @@ impl Screen {
 
     /// Consumes the view through byte offset `end` (the end of a match) and
     /// returns the consumed text, so the same output can never satisfy a later
-    /// step. A match reaching into the current line consumes that line whole:
-    /// the cursor state of a half-eaten line is not worth modelling, and the
-    /// line in question has just been answered anyway.
+    /// step. A match reaching into the current line consumes only through the
+    /// match end: a repainting program (cpilot) keeps several values on one
+    /// unterminated line, and consuming the line whole ate the *next* step's
+    /// value along with this step's match. The value stayed plainly visible in
+    /// the pane, was never reprinted, and the next expect timed out on text
+    /// the operator could see.
     pub fn consume_through(&mut self, end: usize) -> String {
         if end <= self.interp.pending.len() {
             let tail = self.interp.pending.split_off(end);
             return std::mem::replace(&mut self.interp.pending, tail);
         }
         let mut out = std::mem::take(&mut self.interp.pending);
-        out.extend(self.interp.line.iter());
-        self.interp.line.clear();
-        self.interp.col = 0;
+        // How far the match reaches into the line, bytes to chars. `end` comes
+        // from a regex over the view so it lands on a char boundary; the `>=`
+        // still rounds a stray mid-char offset up rather than splitting one.
+        let line_bytes = end - out.len();
+        let mut bytes = 0usize;
+        let mut chars = 0usize;
+        for c in &self.interp.line {
+            if bytes >= line_bytes {
+                break;
+            }
+            bytes += c.len_utf8();
+            chars += 1;
+        }
+        out.extend(self.interp.line.drain(..chars));
+        // The cursor keeps its place relative to the surviving text, so a
+        // later `\r` repaint still overwrites from the true start of line.
+        self.interp.col = self.interp.col.saturating_sub(chars);
         out
     }
 
@@ -337,6 +354,39 @@ mod tests {
         let end = s.view().find("first\n").unwrap() + "first\n".len();
         assert_eq!(s.consume_through(end), "first\n");
         assert_eq!(s.view(), "second\n");
+    }
+
+    #[test]
+    fn consume_mid_line_keeps_the_rest_of_the_line_matchable() {
+        // The GL0/GL1 bug: two step values sharing one unterminated line. The
+        // first match must not eat the second value.
+        let mut s = Screen::new();
+        s.feed(b"GL0: pass  GL1: pass");
+        let end = s.view().find("GL0: pass").unwrap() + "GL0: pass".len();
+        assert_eq!(s.consume_through(end), "GL0: pass");
+        assert_eq!(s.view(), "  GL1: pass");
+    }
+
+    #[test]
+    fn consume_mid_line_survives_multibyte_text() {
+        let mut s = Screen::new();
+        s.feed("état: ✓  suivant: ✓".as_bytes());
+        let end = s.view().find('\u{2713}').unwrap() + "✓".len();
+        let eaten = s.consume_through(end);
+        assert_eq!(eaten, "état: ✓");
+        assert_eq!(s.view(), "  suivant: ✓");
+    }
+
+    #[test]
+    fn repaint_after_a_mid_line_consume_overwrites_from_line_start() {
+        // After a partial consume, a `\r` repaint must land at the true start
+        // of the surviving text, not at a stale cursor offset.
+        let mut s = Screen::new();
+        s.feed(b"GL0: pass  GL1: ....");
+        let end = s.view().find("GL0: pass").unwrap() + "GL0: pass".len();
+        s.consume_through(end);
+        s.feed(b"\rGL0: pass  GL1: pass");
+        assert_eq!(s.view(), "GL0: pass  GL1: pass");
     }
 
     #[test]

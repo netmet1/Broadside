@@ -16,6 +16,10 @@ export type Host = {
   auth_method: string | null;
   key_path: string | null;
   has_sudo_password: boolean;
+  /** The login shell seen on the last successful connect, e.g. "bash" or
+   * "fish". Backend-written, so it is absent from {@link HostInput}. Null means
+   * not probed yet, never "unsupported". */
+  login_shell: string | null;
 };
 
 export type HostInput = {

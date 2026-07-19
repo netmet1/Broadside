@@ -262,9 +262,16 @@ impl Perform for Performer {
 /// One-time shell setup, sent over the PTY right after the shell opens, that
 /// makes the remote shell emit the OSC 133 markers this module parses (D-061
 /// Option B). It detects the shell at runtime and installs the right prompt
-/// hooks; bash and zsh are fully supported, other shells (POSIX sh / ash / dash
-/// / fish) fall through to a no-op and rely on the [`OmniParser::flush`]
-/// fallback — so this line is always safe to send to any shell.
+/// hooks; bash and zsh are fully supported, and the other Bourne-family shells
+/// (POSIX sh / ash / dash / ksh) parse the whole `if/elif/fi` without error,
+/// take neither branch, and rely on the [`OmniParser::flush`] fallback.
+///
+/// It is **not** safe to send to every shell. fish, csh and tcsh are not
+/// Bourne-family: they fail on this at parse time and abort the entire command
+/// line, so the tab shows a parse error *and* loses the `clear`, MOTD reprint
+/// and last-login re-echo that [`shell_setup_command`] appends to the same
+/// line. Gate on [`crate::ssh::shell_can_parse_integration`] before sending it
+/// (X4).
 ///
 /// Why it's shaped this way:
 /// - One single line (`;`-joined) so it's a single command — the hooks it
@@ -291,13 +298,21 @@ pub fn shell_integration_command() -> String {
 /// real captured `Last login:` line — so the terminal looks like a fresh login
 /// without the visible setup command. It's a single line, so the integration's
 /// preexec guard suppresses any MultiTerminal block for the clear/MOTD/echo.
-pub fn shell_setup_command(last_login: Option<&str>) -> String {
+///
+/// `with_integration` false drops the OSC 133 line and sends only the
+/// clear/MOTD/last-login tail, which is valid in fish and csh too. That keeps
+/// the fresh-login presentation on a shell that cannot parse the integration,
+/// instead of the parse error that used to eat the whole line (X4).
+pub fn shell_setup_command(last_login: Option<&str>, with_integration: bool) -> String {
     // Leading space so shells with `ignorespace`/`ignoreboth` in HISTCONTROL
     // (the Debian/Ubuntu default) don't record this long line in shell history
     // — otherwise an Up-arrow in the terminal recalls the whole setup line.
     let mut cmd = String::from(" ");
-    cmd.push_str(SHELL_INTEGRATION);
-    cmd.push_str("; clear; cat /run/motd.dynamic /etc/motd 2>/dev/null");
+    if with_integration {
+        cmd.push_str(SHELL_INTEGRATION);
+        cmd.push_str("; ");
+    }
+    cmd.push_str("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null");
     if let Some(ll) = last_login {
         // Single-quote the captured line, escaping any single quotes, so any
         // content is shell-safe. `\\n` reaches printf literally as `\n`.
@@ -572,7 +587,7 @@ mod tests {
 
     #[test]
     fn setup_command_clears_reprints_motd_and_last_login() {
-        let c = shell_setup_command(Some("Last login: Mon Jun 15 from 1.2.3.4"));
+        let c = shell_setup_command(Some("Last login: Mon Jun 15 from 1.2.3.4"), true);
         assert!(c.starts_with(' ')); // leading space keeps it out of shell history
         assert!(c.contains("133;A")); // integration is in there
         assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
@@ -584,14 +599,27 @@ mod tests {
 
     #[test]
     fn setup_command_without_last_login_omits_printf() {
-        let c = shell_setup_command(None);
+        let c = shell_setup_command(None, true);
         assert!(c.contains("clear; cat /run/motd.dynamic"));
         assert!(!c.contains("printf '%s"));
     }
 
     #[test]
+    fn setup_command_without_integration_keeps_the_fish_safe_tail() {
+        // X4: a shell that can't parse the integration still gets the clear,
+        // the MOTD and its last-login line, because that tail is valid there.
+        let c = shell_setup_command(Some("Last login: Mon Jun 15"), false);
+        assert!(!c.contains("133;A"));
+        assert!(!c.contains("BASH_VERSION"));
+        assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
+        assert!(c.contains("printf '%s\\n' 'Last login: Mon Jun 15'"));
+        assert!(c.ends_with('\n'));
+        assert!(!c.trim_end_matches('\n').contains('\n'));
+    }
+
+    #[test]
     fn setup_command_escapes_single_quotes() {
-        let c = shell_setup_command(Some("it's here"));
+        let c = shell_setup_command(Some("it's here"), true);
         assert!(c.contains(r"'it'\''s here'"));
     }
 

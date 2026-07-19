@@ -22,7 +22,7 @@ export function SkillList({
   canRun,
   onRun,
   onWatch,
-  onEdit,
+  onOpen,
   onNew,
   onImport,
   onExport,
@@ -39,7 +39,9 @@ export function SkillList({
   canRun: boolean;
   onRun: (skill: Skill) => void;
   onWatch: () => void;
-  onEdit: (skill: Skill) => void;
+  /** Opens the skill's overview: its flow map and what it does, with Edit one
+   * click further in. Deliberately not straight into the editor. */
+  onOpen: (skill: Skill) => void;
   onNew: () => void;
   onImport: () => void;
   onExport: (skill: Skill) => void;
@@ -96,9 +98,15 @@ export function SkillList({
                 }`}
               >
                 <div className="flex items-center gap-1.5">
-                  <span className="min-w-0 flex-1 truncate text-sm" title={s.name}>
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 truncate text-left text-sm"
+                    title={s.name}
+                    onClick={() => onOpen(s)}
+                    {...hint(`Open "${s.name}" to see its flow`)}
+                  >
                     {s.name}
-                  </span>
+                  </button>
                   {running ? (
                     <Button
                       variant="ghost"
@@ -145,9 +153,11 @@ export function SkillList({
                     variant="ghost"
                     size="sm"
                     className="h-6 w-6 shrink-0 p-0"
-                    onClick={() => onEdit(s)}
-                    aria-label={`Edit ${s.name}`}
-                    {...hint(`Edit "${s.name}"`)}
+                    onClick={() => onOpen(s)}
+                    aria-label={`Open ${s.name}`}
+                    {...hint(
+                      `Open "${s.name}": see its flow, then edit it from there`,
+                    )}
                   >
                     <PencilIcon className="h-3.5 w-3.5" />
                   </Button>

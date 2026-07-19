@@ -96,10 +96,14 @@ export type SequenceConfig = {
   params: SkillParam[];
   startStepId: string;
   steps: SeqStep[];
+  /** Keep each host's shell open after the run so it can be handed to a
+   * terminal tab intact. Off by default (leaving a shell open, especially a
+   * root one, is a standing exposure). */
+  allowTransfer: boolean;
 };
 
 export function emptySequence(): SequenceConfig {
-  return { params: [], startStepId: "", steps: [] };
+  return { params: [], startStepId: "", steps: [], allowTransfer: false };
 }
 
 /** Parses a stored config, falling back to an empty sequence rather than
@@ -111,6 +115,7 @@ export function parseSequence(configJson: string): SequenceConfig {
       params: parsed.params ?? [],
       startStepId: parsed.startStepId ?? "",
       steps: parsed.steps ?? [],
+      allowTransfer: parsed.allowTransfer ?? false,
     };
   } catch {
     return emptySequence();
@@ -218,6 +223,18 @@ export function skillSendInput(
   return invoke<void>("skill_send_input", { runId, hostId, data });
 }
 
+/** Send one host's live shell to a terminal tab. Stops the skill for that host
+ * (if still running) but leaves the PTY open for a terminal tab to adopt. */
+export function skillDetach(runId: string, hostId: number): Promise<void> {
+  return invoke<void>("skill_detach", { runId, hostId });
+}
+
+/** Close a finished run, closing any shells it still owns (lingering ones a
+ * transfer-enabled skill left open). Shells already handed off are untouched. */
+export function skillCloseRun(runId: string): Promise<void> {
+  return invoke<void>("skill_close_run", { runId });
+}
+
 export type SkillProgress = {
   runId: string;
   hostId: number;
@@ -232,6 +249,10 @@ export type SkillProgress = {
    * timeout or a wait duration). The panel counts down from it. */
   stepSecs: number | null;
   detail: string;
+  /** The host's effective uid == 0, once probed (after shell detection). `null`
+   * until known; rides on every event so the panel can warn about a root shell
+   * before it is handed off or left open. */
+  isRoot: boolean | null;
 };
 
 export type SkillPaused = {
@@ -250,6 +271,9 @@ export type SkillDone = {
   sessionId: string;
   ok: boolean;
   message: string;
+  /** The shell's effective uid == 0 at the end of the run, if probed. Flags a
+   * lingering root shell after a transfer-enabled run finishes. */
+  isRoot: boolean | null;
 };
 
 export function onSkillProgress(

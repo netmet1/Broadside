@@ -1,11 +1,16 @@
 import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import "@xterm/xterm/css/xterm.css";
 import { useTheme } from "next-themes";
 
 import { useUiPrefs } from "@/lib/uiPrefs";
 import { onPtyData, ptyResize } from "@/lib/tauri/pty";
+import {
+  registerPaneSnapshot,
+  unregisterPaneSnapshot,
+} from "@/pages/skills/paneSnapshots";
 
 /** xterm colours from the theme-aware CSS variables, so the pane matches the
  * app theme (same source as TerminalView). */
@@ -81,6 +86,12 @@ export function SkillTerminalPane({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    // Serialize the buffer on demand, so a handoff to a terminal tab can carry
+    // this pane's scrollback across (see paneSnapshots). Registered by session
+    // id and torn down on unmount below.
+    const serialize = new SerializeAddon();
+    term.loadAddon(serialize);
+    registerPaneSnapshot(sessionId, () => serialize.serialize());
     termRef.current = term;
     fitRef.current = fit;
     openedRef.current = false;
@@ -91,9 +102,28 @@ export function SkillTerminalPane({
 
     // Keep the remote PTY the same size as this xterm, so the shell doesn't
     // stay at the size the run opened it with while the pane fits a different
-    // one. fit() below fires this with the real dimensions.
+    // one. fit() below fires this with the real dimensions — but that first
+    // fit races the SSH connect: the backend only registers the session once
+    // the connection is up (seconds), so a resize sent before then is lost,
+    // and with the pane's size never changing again it was never re-sent. The
+    // remote then stays at the run's opening size while the pane shows more
+    // rows, which is exactly the half-screen scroll region + bottom-line
+    // overwrite mess apt/needrestart made. `sizeSynced` tracks whether a
+    // resize has ever been delivered; the data handler below re-sends on the
+    // first output, which cannot arrive before the session is registered.
+    let sizeSynced = false;
+    const syncSize = (cols: number, rows: number) => {
+      ptyResize(sessionId, cols, rows).then(
+        () => {
+          sizeSynced = true;
+        },
+        () => {
+          sizeSynced = false;
+        },
+      );
+    };
     const resizeSub = term.onResize(({ cols, rows }) => {
-      ptyResize(sessionId, cols, rows).catch(() => {});
+      syncSize(cols, rows);
     });
 
     // Copy-on-select, matching the terminal tabs.
@@ -123,7 +153,15 @@ export function SkillTerminalPane({
     if (el) observer.observe(el);
 
     const unlistenData = onPtyData((id, bytes) => {
-      if (id === sessionId) term.write(bytes);
+      if (id !== sessionId) return;
+      term.write(bytes);
+      // First proof the session is live on the backend: deliver the size the
+      // pre-connect attempt lost. Marked synced up front so a burst of output
+      // doesn't queue a resize per chunk; a failure unmarks it for the next.
+      if (!sizeSynced && openedRef.current) {
+        sizeSynced = true;
+        syncSize(term.cols, term.rows);
+      }
     });
 
     return () => {
@@ -132,6 +170,7 @@ export function SkillTerminalPane({
       observer.disconnect();
       el?.removeEventListener("mouseup", onMouseUp);
       void unlistenData.then((fn) => fn());
+      unregisterPaneSnapshot(sessionId);
       term.dispose();
       openedRef.current = false;
       // No ptyClose here: the run owns this session and closes it when the host

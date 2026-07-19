@@ -173,6 +173,7 @@ fn cfg(steps: Vec<SeqStep>) -> SequenceConfig {
         params: vec![],
         start_step_id: start,
         steps,
+        allow_transfer: false,
     }
 }
 
@@ -595,7 +596,7 @@ async fn resume_after_a_pause_does_not_re_run_the_command() {
     tokio::spawn(async move {
         // Let the step time out and park.
         tokio::time::sleep(Duration::from_secs(45)).await;
-        let _ = ctl.send(Ctl::Resume);
+        let _ = ctl.send(Ctl::Resume { clear: false });
         // The slow command finally finishes.
         tokio::time::sleep(Duration::from_secs(1)).await;
         let _ = data.send(TapMsg::Data(b"done\r\n__bsdone_0__\r\n".to_vec()));
@@ -640,12 +641,90 @@ async fn abort_after_a_pause_stops_the_host() {
     assert!(!outcome.ok);
     assert!(outcome.message.contains("operator"), "{}", outcome.message);
     assert!(!host.typed().contains("should not run"));
+    // Abort closes the shell.
+    assert_eq!(outcome.disposition, Disposition::Aborted);
+}
+
+#[tokio::test(start_paused = true)]
+async fn detach_after_a_pause_hands_the_shell_off() {
+    // The operator sends the paused host's shell to a terminal tab. The engine
+    // stops (the next step never runs) but the disposition says hand off, not
+    // close: the shell stays open for the terminal to adopt.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        expect_step("a", "never appears", None, "b"),
+        run_step("b", "should not run", STOP, STOP),
+    ]);
+    let ctl = host.ctl.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(45)).await;
+        let _ = ctl.send(Ctl::Detach);
+    });
+    let outcome = engine.run_sequence(&c).await;
+    assert_eq!(outcome.disposition, Disposition::Detached);
+    assert!(outcome.ok, "{}", outcome.message);
+    assert!(!host.typed().contains("should not run"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_step_keeps_the_finished_disposition() {
+    // A natural end, even an unhappy one, keeps `Finished`: a transfer-enabled
+    // skill leaves that shell open for inspection. Only an operator abort closes.
+    let (mut engine, _host) = harness();
+    let c = cfg(vec![on_timeout(
+        expect_step("a", "never appears", None, STOP),
+        TimeoutAction::Fail,
+    )]);
+    let outcome = engine.run_sequence(&c).await;
+    assert!(!outcome.ok);
+    assert_eq!(outcome.disposition, Disposition::Finished);
+}
+
+#[tokio::test(start_paused = true)]
+async fn probe_uid_reads_root_and_non_root() {
+    let (mut engine, host) = harness();
+    host.say("__bsuid_0__\r\n");
+    assert_eq!(engine.probe_uid().await, Some(true));
+    host.say("__bsuid_1000__\r\n");
+    assert_eq!(engine.probe_uid().await, Some(false));
+}
+
+#[tokio::test(start_paused = true)]
+async fn run_host_probes_uid_when_transfer_is_allowed() {
+    // Transfer on: run_host probes at the opening prompt so the outcome carries
+    // the root flag the handoff and close-run warnings need.
+    let (engine, host) = harness();
+    let mut c = cfg(vec![run_step("a", "true", STOP, "fail")]);
+    c.allow_transfer = true;
+    host.say("__bsshell_-bash__\r\n"); // detect_shell
+    host.say("__bsuid_0__\r\n"); // opening uid probe
+    host.say("__bsdone_0__\r\n"); // the step
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert_eq!(outcome.is_root, Some(true));
+    assert!(host.typed().contains("__bsuid_"), "should have probed uid");
+}
+
+#[tokio::test(start_paused = true)]
+async fn run_host_skips_the_uid_probe_when_transfer_is_off() {
+    // Transfer off: the shell always closes on finish, so root status is never
+    // used. run_host skips the probe entirely, so its echoed `id -u` line never
+    // reaches the operator's pane and the outcome carries no root flag.
+    let (engine, host) = harness();
+    let c = cfg(vec![run_step("a", "true", STOP, "fail")]); // allow_transfer: false
+    host.say("__bsshell_-bash__\r\n"); // detect_shell
+    host.say("__bsdone_0__\r\n"); // the step
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert_eq!(outcome.is_root, None);
+    assert!(!host.typed().contains("__bsuid_"), "must not probe uid");
 }
 
 #[tokio::test(start_paused = true)]
 async fn operator_takeover_noise_is_cleared_on_resume() {
     // The operator types at the paused pane. What they did must not satisfy the
-    // pattern the engine is about to wait for again.
+    // pattern the engine is about to wait for again, so a typed-through pause
+    // resumes with `clear: true`.
     let (mut engine, host) = harness();
     let c = cfg(vec![expect_step("a", "READY", None, STOP)]);
     let ctl = host.ctl.clone();
@@ -655,7 +734,7 @@ async fn operator_takeover_noise_is_cleared_on_resume() {
         // While parked, the operator's own session prints the magic word.
         let _ = data.send(TapMsg::Data(b"$ echo READY\r\nREADY\r\n".to_vec()));
         tokio::time::sleep(Duration::from_secs(1)).await;
-        let _ = ctl.send(Ctl::Resume);
+        let _ = ctl.send(Ctl::Resume { clear: true });
         tokio::time::sleep(Duration::from_secs(90)).await;
         let _ = ctl.send(Ctl::Abort);
     });
@@ -664,6 +743,43 @@ async fn operator_takeover_noise_is_cleared_on_resume() {
     // we aborted it. If takeover noise had counted, this would have "succeeded".
     assert!(!outcome.ok, "takeover output satisfied the pattern");
     assert_eq!(host.events.paused_reasons().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_value_arriving_during_a_pause_satisfies_an_untyped_resume() {
+    // The GL1 fubar's second half: the awaited text lands while parked (a slow
+    // host, or output the previous step provoked). The operator only watched,
+    // so resume must not wipe it; the retried wait sees it immediately.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![expect_step("a", "READY", None, STOP)]);
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(45)).await;
+        // The host catches up on its own while parked.
+        let _ = data.send(TapMsg::Data(b"READY\r\n".to_vec()));
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+    });
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert_eq!(host.events.paused_reasons().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_match_does_not_consume_a_later_value_on_the_same_line() {
+    // The GL0/GL1 fubar's first half: a repainting program keeps both values
+    // on one unterminated line. Matching GL0 must leave GL1 matchable, or the
+    // second step times out on text the operator can plainly see.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        expect_step("a", "GL0: pass", None, "b"),
+        expect_step("b", "GL1: pass", None, STOP),
+    ]);
+    host.say("GL0: pass  GL1: pass");
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(host.events.paused_reasons().is_empty(), "a step paused");
 }
 
 // ------------------------------------------------------ cancel and teardown
@@ -711,6 +827,7 @@ async fn a_missing_branch_target_fails_the_host() {
         params: vec![],
         start_step_id: "ghost".into(),
         steps: vec![run_step("a", "true", STOP, STOP)],
+        allow_transfer: false,
     };
     let outcome = engine.run_sequence(&c).await;
     assert!(!outcome.ok);
@@ -817,6 +934,7 @@ fn prepare_substitutes_validates_and_rejects_a_broken_graph() {
         }],
         start_step_id: "a".into(),
         steps: vec![run_step("a", "git clone {{repo}}", STOP, STOP)],
+        allow_transfer: false,
     };
     let values: std::collections::HashMap<String, String> =
         [("repo".to_string(), "my repo".to_string())].into();

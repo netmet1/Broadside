@@ -73,6 +73,13 @@ export type SshTermSession = {
   seq: number;
   /** Snapshot of the host at open time (rename/recolor mid-session is fine). */
   host: Host;
+  /** This tab adopted a PTY a skill run already had open (its `id` is that
+   * backend session id). The first mount skips `pty_open`; a later Reconnect
+   * opens a fresh shell to the host. */
+  adopted?: boolean;
+  /** The skill pane's scrollback as an ANSI string, seeded into the terminal on
+   * its first (adopting) mount so the run's history carries over. */
+  adoptSnapshot?: string;
 };
 export type LocalTermSession = {
   id: string;
@@ -791,6 +798,8 @@ export function TerminalsPage({
                 setSearchResults({ index, count })
               }
               onConnectionChange={onConnectionChange}
+              adoptExisting={s.type === "ssh" && s.adopted === true}
+              adoptSnapshot={s.type === "ssh" ? s.adoptSnapshot : undefined}
             />
           </div>
         ))}

@@ -153,6 +153,11 @@ const MIGRATIONS: &[&str] = &[
         created_at   TEXT NOT NULL,
         updated_at   TEXT NOT NULL
     );",
+    // 14: the host's detected login shell (X4). Written by the backend after a
+    // successful connect, never by the host form, so the Hosts table can warn
+    // that a non-POSIX shell (fish, csh) gets no command-block tracking and
+    // can't run skills. NULL means "not probed yet", not "unsupported".
+    "ALTER TABLE hosts ADD COLUMN login_shell TEXT;",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -246,6 +251,31 @@ mod tests {
             .query_row("SELECT label FROM hosts", [], |r| r.get(0))
             .unwrap();
         assert_eq!(label, "web01");
+    }
+
+    #[test]
+    fn an_existing_database_gains_login_shell_without_losing_hosts() {
+        // Migration 14 (X4). Same shape as the skills upgrade above: the column
+        // lands on a database that already has host rows, and they survive.
+        let conn = database_at_version(13);
+        conn.execute(
+            "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at)
+             VALUES ('web01', 'example.test', 22, 'joe', '#aabbcc', 'then', 'then')",
+            [],
+        )
+        .unwrap();
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        let host = &hosts::list_all(&conn).unwrap()[0];
+        assert_eq!(host.label, "web01");
+        // Not probed yet: absent, which must not read as "unsupported".
+        assert_eq!(host.login_shell, None);
+
+        hosts::set_login_shell(&conn, host.id, "fish").unwrap();
+        let host = hosts::get(&conn, host.id).unwrap();
+        assert_eq!(host.login_shell.as_deref(), Some("fish"));
     }
 
     #[test]

@@ -19,17 +19,22 @@ import {
   exportSkill,
   parseSequence,
   readSkillFile,
+  skillCloseRun,
+  skillDetach,
   type Skill,
   type SkillInput,
+  type SkillPane,
   type SkillPreflight,
 } from "@/lib/tauri/skills";
-import { errorMessage } from "@/lib/tauri/hosts";
+import { errorMessage, type Host } from "@/lib/tauri/hosts";
 import { railTooltip } from "@/lib/hostTags";
 import { EmergencyCancel } from "@/pages/skills/EmergencyCancel";
+import { takePaneSnapshot } from "@/pages/skills/paneSnapshots";
 import { ParamForm } from "@/pages/skills/ParamForm";
 import { RunPanel } from "@/pages/skills/RunPanel";
 import { SequenceBuilder } from "@/pages/skills/SequenceBuilder";
 import { SkillList } from "@/pages/skills/SkillList";
+import { SkillOverview } from "@/pages/skills/SkillOverview";
 import {
   SKILL_SORT_OPTIONS,
   useSkillSelection,
@@ -42,6 +47,9 @@ import { useSkillsModel } from "@/pages/skills/useSkillsModel";
  * state and this only decides whether it is the thing on screen. */
 type View =
   | { kind: "idle" }
+  // Picking a skill lands here, not in the editor: the flow map is how you see
+  // what a skill actually does before you run or change it.
+  | { kind: "overview"; skill: Skill }
   | { kind: "edit"; skill: Skill | null }
   | { kind: "params"; skill: Skill }
   | { kind: "run" };
@@ -55,7 +63,16 @@ type View =
  * whichever of build / configure / watch the user is in. All logic lives in
  * `src/pages/skills/`.
  */
-export function SkillsPage({ visible }: { visible: boolean }) {
+export function SkillsPage({
+  visible,
+  onAdoptTerminal,
+}: {
+  visible: boolean;
+  /** Hand a skill run's live shell to a terminal tab, adopting the exact
+   * backend session. `snapshot` is the pane's scrollback as an ANSI string, so
+   * the new tab opens with the run's history intact rather than empty. */
+  onAdoptTerminal: (sessionId: string, host: Host, snapshot: string | null) => void;
+}) {
   const hint = useHint();
   const sel = useSkillSelection(visible);
   const model = useSkillsModel();
@@ -82,6 +99,77 @@ export function SkillsPage({ visible }: { visible: boolean }) {
         : null,
     visible,
   );
+
+  // A root shell awaiting the "leaving a root shell open" confirm, and the
+  // Close-run confirm when root shells are still open.
+  const [pendingHandoff, setPendingHandoff] = useState<SkillPane | null>(null);
+  const [pendingClose, setPendingClose] = useState(false);
+
+  /** Whether the live run's skill permits handing shells to a terminal. */
+  const runAllowsTransfer = runningSkill
+    ? parseSequence(runningSkill.config_json).allowTransfer
+    : false;
+  /** Still-open shells that are root, once the run has finished. Only a
+   * transfer-enabled skill keeps shells open, so a skill that doesn't allow
+   * transfer never leaves one standing: its hosts' `isRoot` stays null (the
+   * backend skips the probe) and this is 0, so Close run never warns. */
+  const rootShellsOpen = runAllowsTransfer
+    ? run.hosts.filter((h) => h.isRoot === true).length
+    : 0;
+
+  /** Hand one host's live shell to a terminal tab: detach the skill from that
+   * host (its shell stays open), adopt the exact session, drop the pane. */
+  const handoff = useCallback(
+    async (pane: SkillPane) => {
+      const host = sel.hosts.find((h) => h.id === pane.hostId);
+      if (!host) {
+        toast.error("That host is no longer listed; cannot open a terminal for it.");
+        return;
+      }
+      if (!run.runId) return;
+      // Grab the pane's scrollback before anything tears it down, so the new
+      // terminal tab opens with the run's history, not an empty screen.
+      const snapshot = takePaneSnapshot(pane.sessionId);
+      try {
+        await skillDetach(run.runId, pane.hostId);
+      } catch (e) {
+        toast.error(errorMessage(e));
+        return;
+      }
+      onAdoptTerminal(pane.sessionId, host, snapshot);
+      run.removeHost(pane.hostId);
+    },
+    [sel.hosts, run, onAdoptTerminal],
+  );
+
+  /** From the run panel's per-host control: confirm first if the shell is root. */
+  const requestHandoff = useCallback(
+    (pane: SkillPane, isRoot: boolean) => {
+      if (isRoot) setPendingHandoff(pane);
+      else void handoff(pane);
+    },
+    [handoff],
+  );
+
+  /** Close a finished run: close any shells it still owns, then clear the panel. */
+  const closeRun = useCallback(async () => {
+    if (run.runId) {
+      try {
+        await skillCloseRun(run.runId);
+      } catch (e) {
+        toast.error(errorMessage(e));
+      }
+    }
+    run.reset();
+    setRunningSkill(null);
+    setView({ kind: "idle" });
+  }, [run]);
+
+  /** Close run, confirming first if root shells are still open. */
+  const requestCloseRun = useCallback(() => {
+    if (rootShellsOpen > 0) setPendingClose(true);
+    else void closeRun();
+  }, [rootShellsOpen, closeRun]);
 
   const dispatch = useCallback(
     async (
@@ -234,7 +322,9 @@ export function SkillsPage({ visible }: { visible: boolean }) {
           skills={model.skills}
           loading={model.loading}
           selectedId={
-            view.kind === "edit" || view.kind === "params"
+            view.kind === "overview" ||
+            view.kind === "edit" ||
+            view.kind === "params"
               ? view.skill?.id ?? null
               : view.kind === "run"
                 ? runningSkill?.id ?? null
@@ -245,7 +335,7 @@ export function SkillsPage({ visible }: { visible: boolean }) {
           canRun={sel.selected.size > 0 && !run.active}
           onRun={(skill) => setView({ kind: "params", skill })}
           onWatch={() => setView({ kind: "run" })}
-          onEdit={(skill) => setView({ kind: "edit", skill })}
+          onOpen={(skill) => setView({ kind: "overview", skill })}
           onNew={() => setView({ kind: "edit", skill: null })}
           onImport={startImport}
           onExport={exportOne}
@@ -274,21 +364,40 @@ export function SkillsPage({ visible }: { visible: boolean }) {
               skillName={runningSkill.name}
               active={run.active}
               visible={view.kind === "run"}
+              allowTransfer={runAllowsTransfer}
               setTakenOver={run.setTakenOver}
               finishHost={run.finishHost}
-              onDone={() => {
-                run.reset();
-                setRunningSkill(null);
-                setView({ kind: "idle" });
-              }}
+              onSendToTerminal={requestHandoff}
+              onDone={requestCloseRun}
             />
           </div>
         )}
-        {view.kind === "edit" ? (
+        {view.kind === "overview" ? (
+          <SkillOverview
+            skill={view.skill}
+            canRun={sel.selected.size > 0 && !run.active}
+            onEdit={() => setView({ kind: "edit", skill: view.skill })}
+            onRun={() => setView({ kind: "params", skill: view.skill })}
+            onExport={() => void exportOne(view.skill)}
+            onClose={() => setView({ kind: "idle" })}
+          />
+        ) : view.kind === "edit" ? (
           <SequenceBuilder
             editing={view.skill}
             onSave={model.save}
-            onCancel={() => setView({ kind: "idle" })}
+            // Leaving the editor (saved or cancelled) goes back to the skill's
+            // overview, so a save lands on the redrawn flow map rather than
+            // dumping you at the empty page. The lookup by id picks up the
+            // freshly saved copy; a new skill has no overview to return to.
+            onCancel={() => {
+              const id = view.skill?.id;
+              const fresh = id != null
+                ? model.skills.find((s) => s.id === id)
+                : undefined;
+              setView(
+                fresh ? { kind: "overview", skill: fresh } : { kind: "idle" },
+              );
+            }}
           />
         ) : view.kind === "params" ? (
           <ParamForm
@@ -410,6 +519,70 @@ export function SkillsPage({ visible }: { visible: boolean }) {
               }}
             >
               Delete
+            </AlertDialogAction>
+            <AlertDialogCancel autoFocus>Cancel</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Handing a root shell to a terminal leaves it open and privileged. */}
+      <AlertDialog
+        open={pendingHandoff != null}
+        onOpenChange={(open) => {
+          if (!open) setPendingHandoff(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send a root shell to a terminal?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This shell is running as root. Handing it to a terminal tab keeps
+              it open with root privileges until you close that tab. Only do this
+              if you mean to keep working as root.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              onClick={() => {
+                const pane = pendingHandoff;
+                setPendingHandoff(null);
+                if (pane) void handoff(pane);
+              }}
+            >
+              Send to terminal
+            </AlertDialogAction>
+            <AlertDialogCancel autoFocus>Cancel</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Closing a run closes any shells it left open, incl. root ones. */}
+      <AlertDialog
+        open={pendingClose}
+        onOpenChange={(open) => {
+          if (!open) setPendingClose(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close the run and its open shells?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {rootShellsOpen === 1
+                ? "1 shell is still open as root."
+                : `${rootShellsOpen} shells are still open as root.`}{" "}
+              Closing the run closes them. To keep one, send it to a terminal tab
+              first instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                setPendingClose(false);
+                void closeRun();
+              }}
+            >
+              Close run
             </AlertDialogAction>
             <AlertDialogCancel autoFocus>Cancel</AlertDialogCancel>
           </AlertDialogFooter>

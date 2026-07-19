@@ -30,6 +30,9 @@ export type HostRunState = {
   pausedReason: string | null;
   /** Whether the operator has taken the keyboard for this pane. */
   takenOver: boolean;
+  /** The host's shell is running as root (uid 0), once probed; null until
+   * known. Drives the warning before a shell is handed off or left open. */
+  isRoot: boolean | null;
   message: string | null;
   lines: RunLine[];
 };
@@ -50,9 +53,15 @@ export function useSkillRun() {
   const [runId, setRunId] = useState<string | null>(null);
   const [hosts, setHosts] = useState<Map<number, HostRunState>>(new Map());
   const [starting, setStarting] = useState(false);
-  // Read inside event handlers that must not re-subscribe on every run.
+  // The authoritative claim on the current run's id, read inside event
+  // handlers that must not re-subscribe on every run. Owned by start() and
+  // reset() only; deliberately NOT synced from state on render. start() claims
+  // the id *before* its invoke resolves, and a render in that window (the
+  // setStarting call alone guarantees one) used to clobber the claim back to
+  // the previous value. Every event from a host that failed instantly (no
+  // credentials, say) then hit the listeners' run-id filter and was dropped,
+  // leaving its pane on "starting…" forever while the backend was long done.
   const runIdRef = useRef<string | null>(null);
-  runIdRef.current = runId;
   /** Hosts whose panes have landed, so patch knows what it can apply now. */
   const knownRef = useRef<Set<number>>(new Set());
   /** Updates for a host whose pane hasn't arrived yet, replayed once it does. */
@@ -98,6 +107,7 @@ export function useSkillRun() {
           stepKind: p.phase === "step" ? p.stepKind : prev.stepKind,
           stepSecs: p.phase === "step" ? p.stepSecs : prev.stepSecs,
           stepStartedAt: p.phase === "step" ? Date.now() : prev.stepStartedAt,
+          isRoot: p.isRoot ?? prev.isRoot,
           lines: [...prev.lines, { phase: p.phase, detail: p.detail }].slice(
             -MAX_LINES,
           ),
@@ -117,6 +127,7 @@ export function useSkillRun() {
           ...prev,
           status: p.ok ? "done" : "failed",
           pausedReason: null,
+          isRoot: p.isRoot ?? prev.isRoot,
           message: p.message,
           lines: [
             ...prev.lines,
@@ -146,6 +157,12 @@ export function useSkillRun() {
       // those events, and a host whose very first event is its last (a
       // credentials failure, say) would sit on "running" forever.
       runIdRef.current = id;
+      // Also clear the routing state here, not just in reset(): a stale entry
+      // in knownRef would make patch() apply this run's early events to the
+      // previous run's map (where the seed then overwrites them) instead of
+      // queueing them for replay.
+      knownRef.current = new Set();
+      pendingRef.current.clear();
       setStarting(true);
       try {
         const panes = await runSkill({ runId: id, ...args });
@@ -162,6 +179,7 @@ export function useSkillRun() {
               stepStartedAt: Date.now(),
               pausedReason: null,
               takenOver: false,
+              isRoot: null,
               message: null,
               lines: [],
             },
@@ -177,6 +195,9 @@ export function useSkillRun() {
         setHosts(seeded);
         return true;
       } catch (e) {
+        // The run never started; release the claim so stray events for this
+        // id (there should be none) don't queue forever.
+        runIdRef.current = null;
         toast.error(errorMessage(e));
         return false;
       } finally {
@@ -246,6 +267,19 @@ export function useSkillRun() {
     [patch],
   );
 
+  /** Drops a host's pane from the run, for when its shell was handed off to a
+   * terminal tab. The backend has already released it. */
+  const removeHost = useCallback((hostId: number) => {
+    knownRef.current.delete(hostId);
+    pendingRef.current.delete(hostId);
+    setHosts((prev) => {
+      if (!prev.has(hostId)) return prev;
+      const next = new Map(prev);
+      next.delete(hostId);
+      return next;
+    });
+  }, []);
+
   /** Clears a finished run so the page returns to the picker. */
   const reset = useCallback(() => {
     setRunId(null);
@@ -269,6 +303,7 @@ export function useSkillRun() {
     cancelAll,
     finishHost,
     setTakenOver,
+    removeHost,
     reset,
   };
 }

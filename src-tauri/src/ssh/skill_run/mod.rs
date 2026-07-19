@@ -59,6 +59,12 @@ const DONE_MARKER: &str = "__bsdone_";
 /// Same trick for shell detection: the capture class excludes `%`, so the
 /// echoed `__bsshell_%s__` cannot match while `__bsshell_-bash__` does.
 const SHELL_MARKER: &str = "__bsshell_";
+/// Same marker trick again for the root probe: `__bsuid_0__` means the shell's
+/// effective uid is 0, and `(\d+)` never matches the `%s` echo.
+const UID_MARKER: &str = "__bsuid_";
+/// Bound on the `id -u` root probe. It answers instantly at a live prompt; this
+/// is only a floor against a wedged shell so a probe can never hang the run.
+const UID_PROBE_SECS: u64 = 5;
 
 /// How long output must be quiet before a match is acted on. Redraw-heavy
 /// screens (a repainting monitor, a progress table) can flash text that is
@@ -101,6 +107,10 @@ pub struct SkillProgress {
     /// run/expect timeout, or a wait's duration. The panel counts down from it.
     pub step_secs: Option<u64>,
     pub detail: String,
+    /// The host's effective uid == 0, once probed (after shell detection).
+    /// `None` until known. Rides on every event so the panel can warn before a
+    /// root shell is handed off or left open.
+    pub is_root: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -123,6 +133,9 @@ pub struct SkillDone {
     pub session_id: String,
     pub ok: bool,
     pub message: String,
+    /// The shell's effective uid == 0 at the end of the run, if it was probed.
+    /// Lets the panel flag a lingering root shell after the run finishes.
+    pub is_root: Option<bool>,
 }
 
 /// Where run events go. The app implements this with Tauri events; tests
@@ -188,13 +201,15 @@ enum Wait {
     Timeout,
     Closed,
     Aborted,
+    Detached,
     Skipped,
 }
 
 enum Park {
-    Resume,
+    Resume { clear: bool },
     Skip,
     Abort,
+    Detach,
     Closed,
 }
 
@@ -202,7 +217,23 @@ enum StepOutcome {
     Goto(String),
     Failed(String),
     Aborted,
+    Detached,
     Closed,
+}
+
+/// How a host's run ended, which decides what happens to its shell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Disposition {
+    /// Reached a natural end (finished, failed, or hit a safety limit). The
+    /// shell is kept open for transfer only if the skill allows it; otherwise
+    /// it is closed.
+    Finished,
+    /// The operator stopped this host (`Ctl::Abort` / a dropped control
+    /// channel / a panic). The shell is always closed.
+    Aborted,
+    /// The operator handed the shell to a terminal tab (`Ctl::Detach`). The
+    /// shell is kept open and handed off; it does not linger or close.
+    Detached,
 }
 
 /// The result of driving one host to completion.
@@ -210,6 +241,22 @@ enum StepOutcome {
 pub struct HostOutcome {
     pub ok: bool,
     pub message: String,
+    pub disposition: Disposition,
+    /// The shell's effective uid == 0, if probed. Filled by `run_host`.
+    pub is_root: Option<bool>,
+}
+
+impl HostOutcome {
+    /// A natural end (finished/failed/limit): keep-open eligibility is the
+    /// skill's `allow_transfer` choice, decided by the caller.
+    fn finished(ok: bool, message: impl Into<String>) -> Self {
+        Self {
+            ok,
+            message: message.into(),
+            disposition: Disposition::Finished,
+            is_root: None,
+        }
+    }
 }
 
 pub struct Engine<E: SkillEvents> {
@@ -218,6 +265,14 @@ pub struct Engine<E: SkillEvents> {
     screen: Screen,
     events: std::sync::Arc<E>,
     meta: HostMeta,
+    /// The host's effective uid == 0, once probed. Rides on every emitted event.
+    is_root: Option<bool>,
+    /// The login shell the SSH-level probe read on connect (X4), used only to
+    /// name the shell in the refusal message. The in-shell `$0` probe below is
+    /// still the authority on whether a run may proceed, but it cannot answer
+    /// on fish (`$0` is a parse error there), which is how a fish host used to
+    /// be refused as "unknown".
+    known_shell: Option<String>,
 }
 
 impl<E: SkillEvents> Engine<E> {
@@ -233,7 +288,16 @@ impl<E: SkillEvents> Engine<E> {
             screen: Screen::new(),
             events,
             meta,
+            is_root: None,
+            known_shell: None,
         }
+    }
+
+    /// Tells the engine what the SSH-level probe read as the login shell, so a
+    /// refusal can name it. Purely cosmetic; it never permits a run.
+    pub fn with_known_shell(mut self, shell: Option<String>) -> Self {
+        self.known_shell = shell;
+        self
     }
 
     fn emit(&self, phase: &str, step_id: Option<&str>, detail: impl Into<String>) {
@@ -258,6 +322,7 @@ impl<E: SkillEvents> Engine<E> {
             step_kind: step_kind.map(str::to_string),
             step_secs,
             detail: detail.into(),
+            is_root: self.is_root,
         });
     }
 
@@ -288,10 +353,16 @@ impl<E: SkillEvents> Engine<E> {
         let raw = match outcome {
             Wait::Matched { group1, .. } => group1.unwrap_or_default(),
             Wait::Timeout => {
-                return Err(
-                    "Could not identify this host's shell. Currently only bash, zsh and sh are supported."
+                // A shell that never answered. If the connect-time probe read a
+                // name, that IS the answer: fish gets here every time, because
+                // `$0` is a parse error there rather than a variable.
+                return Err(match &self.known_shell {
+                    Some(shell) => format!(
+                        "This host's shell ({shell}) is not supported. Currently only bash, zsh and sh are supported."
+                    ),
+                    None => "Could not identify this host's shell. Currently only bash, zsh and sh are supported."
                         .into(),
-                )
+                });
             }
             _ => return Err("The shell closed before the run started.".into()),
         };
@@ -304,12 +375,41 @@ impl<E: SkillEvents> Engine<E> {
             .trim_start_matches('-')
             .to_string();
         if !SUPPORTED_SHELLS.contains(&name.as_str()) {
-            let shown = if name.is_empty() { "unknown" } else { &name };
+            // Prefer a name we actually read over an empty capture.
+            let fallback = self.known_shell.as_deref().unwrap_or("unknown");
+            let shown = if name.is_empty() { fallback } else { &name };
             return Err(format!(
                 "This host's shell ({shown}) is not supported. Currently only bash, zsh and sh are supported."
             ));
         }
         Ok(name)
+    }
+
+    /// Probes the shell's effective uid so the panel can warn before a root
+    /// shell is handed to a terminal tab or left open. Reuses the marker trick
+    /// from `detect_shell`, and like it must only be called at a clean prompt
+    /// (never mid-step or while parked): the probe *types* into the shell, so
+    /// running it at a half-finished line would corrupt it. Best-effort: any
+    /// failure yields `None` (unknown), never an error that ends the run.
+    async fn probe_uid(&mut self) -> Option<bool> {
+        let probe = format!(" printf '{UID_MARKER}%s__\\n' \"$(id -u)\"\n");
+        if self.send_bytes(&probe).is_err() {
+            return None;
+        }
+        let re = Regex::new(&format!(r"{UID_MARKER}(\d+)__")).expect("static regex");
+        let outcome = wait_for(
+            &mut self.screen,
+            &mut self.link.rx,
+            &mut self.ctl,
+            &re,
+            Duration::from_secs(UID_PROBE_SECS),
+            Duration::ZERO,
+        )
+        .await;
+        match outcome {
+            Wait::Matched { group1, .. } => group1.map(|g| g == "0"),
+            _ => None,
+        }
     }
 
     /// Keeps reading until the host goes quiet, so whatever the last step
@@ -336,28 +436,22 @@ impl<E: SkillEvents> Engine<E> {
         let mut executions = 0usize;
         loop {
             if current == STOP {
-                return HostOutcome {
-                    ok: true,
-                    message: "finished".into(),
-                };
+                return HostOutcome::finished(true, "finished");
             }
             let Some(step) = cfg.step(&current) else {
-                return HostOutcome {
-                    ok: false,
-                    message: format!("step not found: {current}"),
-                };
+                return HostOutcome::finished(false, format!("step not found: {current}"));
             };
             executions += 1;
             if executions > MAX_STEP_EXECUTIONS {
                 // A branch cycle that never converges. Save-time validation
                 // allows cycles (polling until ready is legitimate); this is
                 // what stops a runaway.
-                return HostOutcome {
-                    ok: false,
-                    message: format!(
+                return HostOutcome::finished(
+                    false,
+                    format!(
                         "stopped after {MAX_STEP_EXECUTIONS} steps: the skill's branches loop without finishing"
                     ),
-                };
+                );
             }
             self.emit_step(
                 "step",
@@ -382,22 +476,28 @@ impl<E: SkillEvents> Engine<E> {
                 }
                 StepOutcome::Failed(message) => {
                     self.emit("failed", Some(step.id()), message.clone());
-                    return HostOutcome {
-                        ok: false,
-                        message,
-                    };
+                    return HostOutcome::finished(false, message);
                 }
                 StepOutcome::Aborted => {
                     return HostOutcome {
                         ok: false,
                         message: "stopped by the operator".into(),
+                        disposition: Disposition::Aborted,
+                        is_root: None,
+                    }
+                }
+                StepOutcome::Detached => {
+                    return HostOutcome {
+                        ok: true,
+                        message: "handed off to a terminal tab".into(),
+                        disposition: Disposition::Detached,
+                        is_root: None,
                     }
                 }
                 StepOutcome::Closed => {
-                    return HostOutcome {
-                        ok: false,
-                        message: "the shell closed unexpectedly".into(),
-                    }
+                    // The shell is already gone; keep-open is a no-op, so treat
+                    // it as a natural (failed) end rather than a close request.
+                    return HostOutcome::finished(false, "the shell closed unexpectedly");
                 }
             }
         }
@@ -431,6 +531,7 @@ impl<E: SkillEvents> Engine<E> {
                         StepOutcome::Goto(next.clone())
                     }
                     Wait::Aborted => StepOutcome::Aborted,
+                    Wait::Detached => StepOutcome::Detached,
                     Wait::Closed => StepOutcome::Closed,
                     // wait_fixed never matches a pattern.
                     Wait::Matched { .. } => StepOutcome::Goto(next.clone()),
@@ -464,6 +565,7 @@ impl<E: SkillEvents> Engine<E> {
                         "timed out waiting for: {pattern}"
                     )),
                     Ok(Wait::Aborted) => StepOutcome::Aborted,
+                    Ok(Wait::Detached) => StepOutcome::Detached,
                     Ok(Wait::Closed) => StepOutcome::Closed,
                     Err(outcome) => outcome,
                 }
@@ -516,6 +618,7 @@ impl<E: SkillEvents> Engine<E> {
             .await
             {
                 Wait::Aborted => return StepOutcome::Aborted,
+                Wait::Detached => return StepOutcome::Detached,
                 Wait::Closed => return StepOutcome::Closed,
                 _ => return StepOutcome::Goto(on_success.to_string()),
             }
@@ -578,6 +681,7 @@ impl<E: SkillEvents> Engine<E> {
                 StepOutcome::Goto(on_failure.to_string())
             }
             Ok(Wait::Aborted) => StepOutcome::Aborted,
+            Ok(Wait::Detached) => StepOutcome::Detached,
             Ok(Wait::Closed) => StepOutcome::Closed,
             Err(outcome) => outcome,
         }
@@ -625,14 +729,21 @@ impl<E: SkillEvents> Engine<E> {
                 reason,
             });
             match park(&mut self.screen, &mut self.link.rx, &mut self.ctl).await {
-                Park::Resume => {
-                    // Whatever the operator typed, and whatever it printed, must
-                    // not satisfy the pattern we're about to wait for again.
-                    self.screen.clear();
+                Park::Resume { clear } => {
+                    // Clear only when the operator typed during the pause:
+                    // their keystrokes (and whatever they printed) must not
+                    // satisfy the pattern we're about to wait for again. When
+                    // they only watched, the buffer keeps what the host printed
+                    // while parked, so a value that arrived late matches the
+                    // retried wait immediately instead of timing out again.
+                    if clear {
+                        self.screen.clear();
+                    }
                     self.emit("info", Some(step.id()), "resumed by the operator");
                 }
                 Park::Skip => return Ok(Wait::Skipped),
                 Park::Abort => return Err(StepOutcome::Aborted),
+                Park::Detach => return Err(StepOutcome::Detached),
                 Park::Closed => return Err(StepOutcome::Closed),
             }
         }
@@ -711,8 +822,10 @@ async fn wait_for(
                 Some(Ctl::SkipStep) => return Wait::Skipped,
                 // A dropped control channel is a cancelled run.
                 Some(Ctl::Abort) | None => return Wait::Aborted,
+                // Stop driving, but hand the shell off rather than close it.
+                Some(Ctl::Detach) => return Wait::Detached,
                 // Resume with nothing to resume from: ignore.
-                Some(Ctl::Resume) => {}
+                Some(Ctl::Resume { .. }) => {}
             },
         }
     }
@@ -760,7 +873,9 @@ async fn wait_quiet(
             c = ctl.recv() => match c {
                 Some(Ctl::SkipStep) => return Wait::Skipped,
                 Some(Ctl::Abort) | None => return Wait::Aborted,
-                Some(Ctl::Resume) => {}
+                // Stop driving, but hand the shell off rather than close it.
+                Some(Ctl::Detach) => return Wait::Detached,
+                Some(Ctl::Resume { .. }) => {}
             },
         }
     }
@@ -786,8 +901,10 @@ async fn wait_fixed(
             c = ctl.recv() => match c {
                 Some(Ctl::SkipStep) => return Wait::Skipped,
                 Some(Ctl::Abort) | None => return Wait::Aborted,
+                // Stop driving, but hand the shell off rather than close it.
+                Some(Ctl::Detach) => return Wait::Detached,
                 // A resume during a plain wait has nothing to resume.
-                Some(Ctl::Resume) => {}
+                Some(Ctl::Resume { .. }) => {}
             },
         }
     }
@@ -806,9 +923,10 @@ async fn park(
     loop {
         tokio::select! {
             c = ctl.recv() => return match c {
-                Some(Ctl::Resume) => Park::Resume,
+                Some(Ctl::Resume { clear }) => Park::Resume { clear },
                 Some(Ctl::SkipStep) => Park::Skip,
                 Some(Ctl::Abort) | None => Park::Abort,
+                Some(Ctl::Detach) => Park::Detach,
             },
             msg = rx.recv() => match msg {
                 Some(TapMsg::Data(bytes)) => screen.feed(&bytes),
@@ -898,24 +1016,42 @@ pub async fn run_host<E: SkillEvents>(
     mut engine: Engine<E>,
     cfg: &SequenceConfig,
 ) -> HostOutcome {
-    let outcome = match engine.detect_shell().await {
+    let mut outcome = match engine.detect_shell().await {
         Ok(shell) => {
+            // Probe uid at the clean opening prompt, so `started` (and every
+            // later event) carries the login privilege level. A mid-run
+            // `sudo -i` is caught by the finish probe below. Only skills that
+            // allow transfer keep a shell open, so only they can leave a root
+            // shell standing: for every other skill the probe is unused and its
+            // echoed `printf ... id -u` line is just noise, so skip it entirely.
+            if cfg.allow_transfer {
+                engine.is_root = engine.probe_uid().await;
+            }
             engine.emit("started", None, format!("shell: {shell}"));
             engine.run_sequence(cfg).await
         }
-        Err(message) => {
-            return HostOutcome {
-                ok: false,
-                message,
+        Err(message) => return HostOutcome::finished(false, message),
+    };
+    // A detached shell is handed straight to the operator: don't linger reading
+    // it (they own the keyboard now), and don't probe (they may be mid-command).
+    if outcome.disposition != Disposition::Detached {
+        // The last step's answer only just went out, and the shell may be closed
+        // the moment we return. Without this the reply to it never arrives: a
+        // sequence ending in "answer the prompt" showed the operator the prompt
+        // and nothing else, and the only way to see the result was to add a
+        // throwaway step after it.
+        engine.linger().await;
+        // Re-probe at the clean end-of-run prompt to catch a mid-run escalation
+        // (`sudo -i`). Only overwrite on a definite answer. Gated on
+        // `allow_transfer` for the same reason as the opening probe: a shell
+        // that is about to close has no root status worth warning about.
+        if cfg.allow_transfer {
+            if let Some(root) = engine.probe_uid().await {
+                engine.is_root = Some(root);
             }
         }
-    };
-    // The last step's answer only just went out, and the shell is closed the
-    // moment we return. Without this the reply to it never arrives: a sequence
-    // ending in "answer the prompt" showed the operator the prompt and nothing
-    // else, and the only way to see the result was to add a throwaway step
-    // after it.
-    engine.linger().await;
+    }
+    outcome.is_root = engine.is_root;
     outcome
 }
 
