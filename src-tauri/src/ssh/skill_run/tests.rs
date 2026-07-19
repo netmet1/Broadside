@@ -721,6 +721,29 @@ async fn run_host_skips_the_uid_probe_when_transfer_is_off() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn an_abort_skips_the_closing_probe() {
+    // Stop host must stop now. The tail work run_host does on a natural finish
+    // (linger, then re-probe the uid) types into the shell, and the shell an
+    // abort is most likely to be parked at is one sitting on an unanswered sudo
+    // password prompt: the probe line went in as a password guess and the
+    // operator then waited out its timeout before the host stopped.
+    let (engine, host) = harness();
+    let mut c = cfg(vec![expect_step("a", "never appears", None, STOP)]);
+    c.allow_transfer = true; // the probe is only ever armed with transfer on
+    host.say("__bsshell_-bash__\r\n"); // detect_shell
+    host.say("__bsuid_1000__\r\n"); // the opening probe, which does still run
+    let ctl = host.ctl.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(75)).await;
+        let _ = ctl.send(Ctl::Abort);
+    });
+    let outcome = run_host(engine, &c).await;
+    assert_eq!(outcome.disposition, Disposition::Aborted);
+    // One probe (the opening one), not two: nothing was typed on the way out.
+    assert_eq!(host.typed().matches("__bsuid_").count(), 1);
+}
+
+#[tokio::test(start_paused = true)]
 async fn operator_takeover_noise_is_cleared_on_resume() {
     // The operator types at the paused pane. What they did must not satisfy the
     // pattern the engine is about to wait for again, so a typed-through pause

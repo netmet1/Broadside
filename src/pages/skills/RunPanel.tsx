@@ -221,7 +221,11 @@ function HostPane({
         >
           {finished ? host.message : host.step}
         </span>
-        {allowTransfer && (
+        {/* Only offer the handoff when there is actually a shell to hand over.
+            A host that never connected (no credentials, unreachable, an
+            untrusted key) finishes with no shell at all, and one that was
+            stopped had its shell closed, so the button could only ever fail. */}
+        {allowTransfer && (!finished || host.shellOpen) && (
           <button
             type="button"
             onClick={() => onSendToTerminal(pane, host.isRoot === true)}

@@ -464,6 +464,12 @@ impl HostGuard {
             ok,
             message,
             is_root: self.is_root,
+            // Mirrors exactly what Drop is about to do with the shell below.
+            // Only a natural finish under a transfer-enabled skill leaves one
+            // standing; an abort, a panic, and every failure to connect close
+            // it or never opened one.
+            shell_open: self.allow_transfer
+                && matches!(self.disposition, Disposition::Finished),
         });
     }
 }

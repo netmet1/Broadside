@@ -33,6 +33,9 @@ export type HostRunState = {
   /** The host's shell is running as root (uid 0), once probed; null until
    * known. Drives the warning before a shell is handed off or left open. */
   isRoot: boolean | null;
+  /** Whether the host's shell is still open now the run is over. Only meaningful
+   * once finished; while running there is always a shell. */
+  shellOpen: boolean;
   message: string | null;
   lines: RunLine[];
 };
@@ -128,6 +131,7 @@ export function useSkillRun() {
           status: p.ok ? "done" : "failed",
           pausedReason: null,
           isRoot: p.isRoot ?? prev.isRoot,
+          shellOpen: p.shellOpen,
           message: p.message,
           lines: [
             ...prev.lines,
@@ -180,6 +184,8 @@ export function useSkillRun() {
               pausedReason: null,
               takenOver: false,
               isRoot: null,
+              // A running host has a shell by definition; `done` corrects this.
+              shellOpen: true,
               message: null,
               lines: [],
             },
@@ -223,6 +229,8 @@ export function useSkillRun() {
             status: "failed",
             pausedReason: null,
             takenOver: false,
+            // The emergency stop kills each host by closing its PTY.
+            shellOpen: false,
             message,
           });
         }
@@ -239,6 +247,8 @@ export function useSkillRun() {
         status: "failed",
         pausedReason: null,
         takenOver: false,
+        // The backend has no record of this host, so nothing is left to adopt.
+        shellOpen: false,
         message,
       })),
     [patch],

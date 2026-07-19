@@ -136,6 +136,12 @@ pub struct SkillDone {
     /// The shell's effective uid == 0 at the end of the run, if it was probed.
     /// Lets the panel flag a lingering root shell after the run finishes.
     pub is_root: Option<bool>,
+    /// Whether this host still has a shell open now the run is over. False when
+    /// it never got one (no credentials, unreachable, key not trusted) and when
+    /// the shell was closed on the way out. The panel gates its "To terminal"
+    /// button on this: offering to adopt a shell that does not exist is an
+    /// invitation to press a button that can only fail.
+    pub shell_open: bool,
 }
 
 /// Where run events go. The app implements this with Tauri events; tests
@@ -1032,9 +1038,22 @@ pub async fn run_host<E: SkillEvents>(
         }
         Err(message) => return HostOutcome::finished(false, message),
     };
-    // A detached shell is handed straight to the operator: don't linger reading
-    // it (they own the keyboard now), and don't probe (they may be mid-command).
-    if outcome.disposition != Disposition::Detached {
+    // Two dispositions skip the tail work entirely.
+    //
+    // Detached: the shell is handed straight to the operator, so don't linger
+    // reading it (they own the keyboard now) and don't probe (they may be
+    // mid-command).
+    //
+    // Aborted: the operator asked for this host to stop, and the shell is about
+    // to be closed regardless, so there is nothing the tail could tell anyone.
+    // Doing it anyway was actively harmful: `probe_uid` *types* into the shell,
+    // and pressing Stop host at a step parked on an unanswered `sudo` password
+    // prompt fed the probe line in as a password guess, then sat through its
+    // five second wait before the host finally stopped. Stop now means stop now.
+    if !matches!(
+        outcome.disposition,
+        Disposition::Detached | Disposition::Aborted
+    ) {
         // The last step's answer only just went out, and the shell may be closed
         // the moment we return. Without this the reply to it never arrives: a
         // sequence ending in "answer the prompt" showed the operator the prompt

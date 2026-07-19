@@ -274,6 +274,11 @@ export type SkillDone = {
   /** The shell's effective uid == 0 at the end of the run, if probed. Flags a
    * lingering root shell after a transfer-enabled run finishes. */
   isRoot: boolean | null;
+  /** Whether this host still has a shell open. False when it never got one (no
+   * credentials, unreachable, an untrusted key) and when the shell was closed
+   * on the way out, so the panel can stop offering to hand over a shell that
+   * isn't there. */
+  shellOpen: boolean;
 };
 
 export function onSkillProgress(
