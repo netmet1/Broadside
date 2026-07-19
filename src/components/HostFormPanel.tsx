@@ -925,7 +925,7 @@ export function HostFormPanel({
               login-shell caveat belongs (X4). Read-only: the shell is what the
               last connect saw, not something you set here. */}
           {host?.login_shell && !isShellSupported(host.login_shell) && (
-            <p className="text-xs text-amber-400">
+            <p className="mb-3 text-xs text-amber-400">
               {unsupportedShellMessage(host.login_shell)}
             </p>
           )}
