@@ -23,6 +23,7 @@ export function SkillList({
   onRun,
   onWatch,
   onOpen,
+  onEdit,
   onNew,
   onImport,
   onExport,
@@ -40,8 +41,11 @@ export function SkillList({
   onRun: (skill: Skill) => void;
   onWatch: () => void;
   /** Opens the skill's overview: its flow map and what it does, with Edit one
-   * click further in. Deliberately not straight into the editor. */
+   * click further in. What clicking the skill's name does. */
   onOpen: (skill: Skill) => void;
+  /** Straight into the editor, skipping the flow map. What the pencil does: it
+   * is the "I already know what I want to change" route. */
+  onEdit: (skill: Skill) => void;
   onNew: () => void;
   onImport: () => void;
   onExport: (skill: Skill) => void;
@@ -153,10 +157,10 @@ export function SkillList({
                     variant="ghost"
                     size="sm"
                     className="h-6 w-6 shrink-0 p-0"
-                    onClick={() => onOpen(s)}
-                    aria-label={`Open ${s.name}`}
+                    onClick={() => onEdit(s)}
+                    aria-label={`Edit ${s.name}`}
                     {...hint(
-                      `Open "${s.name}": see its flow, then edit it from there`,
+                      `Edit "${s.name}" directly. Click its name instead to see the flow first.`,
                     )}
                   >
                     <PencilIcon className="h-3.5 w-3.5" />

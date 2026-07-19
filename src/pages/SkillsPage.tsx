@@ -47,10 +47,19 @@ import { useSkillsModel } from "@/pages/skills/useSkillsModel";
  * state and this only decides whether it is the thing on screen. */
 type View =
   | { kind: "idle" }
-  // Picking a skill lands here, not in the editor: the flow map is how you see
-  // what a skill actually does before you run or change it.
-  | { kind: "overview"; skill: Skill }
-  | { kind: "edit"; skill: Skill | null }
+  // Clicking a skill's name lands here, not in the editor: the flow map is how
+  // you see what a skill actually does before you run or change it. The pencil
+  // skips it and goes straight to `edit`.
+  //
+  // Held by id, not as a Skill: the overview must redraw when the skill it is
+  // showing is saved, and a snapshot taken when the view opened cannot. Editing
+  // a skill and saving left the map showing the pre-edit flow until you clicked
+  // away and back.
+  | { kind: "overview"; skillId: number }
+  // `from` is where Cancel and a finished save return to, so the pencil's
+  // "straight to the editor" route doesn't detour through a screen the operator
+  // deliberately skipped.
+  | { kind: "edit"; skill: Skill | null; from: "overview" | "list" }
   | { kind: "params"; skill: Skill }
   | { kind: "run" };
 
@@ -82,6 +91,12 @@ export function SkillsPage({
    * to build another skill doesn't lose track of what's running. */
   const [runningSkill, setRunningSkill] = useState<Skill | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Skill | null>(null);
+  /** The skill the overview is showing, resolved live from the model so a save
+   * redraws it. Null when the view isn't the overview, or the skill is gone. */
+  const overviewSkill =
+    view.kind === "overview"
+      ? model.skills.find((s) => s.id === view.skillId) ?? null
+      : null;
   // A skill read from a file, awaiting the operator's confirmation to save.
   const [importing, setImporting] = useState<SkillInput | null>(null);
   // Set when a run needs the typed-CONFIRM gate (D-014).
@@ -322,21 +337,22 @@ export function SkillsPage({
           skills={model.skills}
           loading={model.loading}
           selectedId={
-            view.kind === "overview" ||
-            view.kind === "edit" ||
-            view.kind === "params"
-              ? view.skill?.id ?? null
-              : view.kind === "run"
-                ? runningSkill?.id ?? null
-                : null
+            view.kind === "overview"
+              ? view.skillId
+              : view.kind === "edit" || view.kind === "params"
+                ? view.skill?.id ?? null
+                : view.kind === "run"
+                  ? runningSkill?.id ?? null
+                  : null
           }
           runningSkillId={run.runId ? (runningSkill?.id ?? null) : null}
           watching={view.kind === "run"}
           canRun={sel.selected.size > 0 && !run.active}
           onRun={(skill) => setView({ kind: "params", skill })}
           onWatch={() => setView({ kind: "run" })}
-          onOpen={(skill) => setView({ kind: "overview", skill })}
-          onNew={() => setView({ kind: "edit", skill: null })}
+          onOpen={(skill) => setView({ kind: "overview", skillId: skill.id })}
+          onEdit={(skill) => setView({ kind: "edit", skill, from: "list" })}
+          onNew={() => setView({ kind: "edit", skill: null, from: "list" })}
           onImport={startImport}
           onExport={exportOne}
           onDelete={setPendingDelete}
@@ -373,29 +389,38 @@ export function SkillsPage({
           </div>
         )}
         {view.kind === "overview" ? (
-          <SkillOverview
-            skill={view.skill}
-            canRun={sel.selected.size > 0 && !run.active}
-            onEdit={() => setView({ kind: "edit", skill: view.skill })}
-            onRun={() => setView({ kind: "params", skill: view.skill })}
-            onExport={() => void exportOne(view.skill)}
-            onClose={() => setView({ kind: "idle" })}
-          />
+          // Looked up fresh on every render rather than carried in the view, so
+          // saving an edit redraws the flow map immediately. Gone means it was
+          // deleted from under us; the rail's empty state covers that.
+          overviewSkill && (
+            <SkillOverview
+              skill={overviewSkill}
+              canRun={sel.selected.size > 0 && !run.active}
+              onEdit={() =>
+                setView({
+                  kind: "edit",
+                  skill: overviewSkill,
+                  from: "overview",
+                })
+              }
+              onRun={() => setView({ kind: "params", skill: overviewSkill })}
+              onExport={() => void exportOne(overviewSkill)}
+              onClose={() => setView({ kind: "idle" })}
+            />
+          )
         ) : view.kind === "edit" ? (
           <SequenceBuilder
             editing={view.skill}
             onSave={model.save}
-            // Leaving the editor (saved or cancelled) goes back to the skill's
-            // overview, so a save lands on the redrawn flow map rather than
-            // dumping you at the empty page. The lookup by id picks up the
-            // freshly saved copy; a new skill has no overview to return to.
+            // Leaving the editor (saved or cancelled) returns where it was
+            // opened from: back to the flow map if that's where you came in,
+            // and to the empty page if you took the pencil's shortcut past it.
             onCancel={() => {
               const id = view.skill?.id;
-              const fresh = id != null
-                ? model.skills.find((s) => s.id === id)
-                : undefined;
               setView(
-                fresh ? { kind: "overview", skill: fresh } : { kind: "idle" },
+                view.from === "overview" && id != null
+                  ? { kind: "overview", skillId: id }
+                  : { kind: "idle" },
               );
             }}
           />
