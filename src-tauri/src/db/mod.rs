@@ -158,6 +158,17 @@ const MIGRATIONS: &[&str] = &[
     // that a non-POSIX shell (fish, csh) gets no command-block tracking and
     // can't run skills. NULL means "not probed yet", not "unsupported".
     "ALTER TABLE hosts ADD COLUMN login_shell TEXT;",
+    // 15: hand-picked skill order (user request). The rail used to be sorted by
+    // name, which is no order at all once you have a dozen skills and run three
+    // of them daily. Existing rows are backfilled with their current
+    // name-sorted position, so an upgrade changes nothing until the operator
+    // moves something.
+    "ALTER TABLE skills ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+     UPDATE skills SET sort_order = (
+        SELECT COUNT(*) FROM skills AS other
+         WHERE other.name < skills.name
+            OR (other.name = skills.name AND other.id < skills.id)
+     );",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -276,6 +287,33 @@ mod tests {
         hosts::set_login_shell(&conn, host.id, "fish").unwrap();
         let host = hosts::get(&conn, host.id).unwrap();
         assert_eq!(host.login_shell.as_deref(), Some("fish"));
+    }
+
+    #[test]
+    fn existing_skills_are_backfilled_in_name_order() {
+        // Migration 15. A database that predates hand-picked order must come
+        // out looking exactly as it did before, which then means name order:
+        // the upgrade itself must not reshuffle anybody's rail.
+        let conn = database_at_version(14);
+        for name in ["zebra", "Apple", "mango"] {
+            conn.execute(
+                "INSERT INTO skills (name, description, icon, kind, config_json,
+                                     created_at, updated_at)
+                 VALUES (?1, '', NULL, 'sequence', '{}', 'then', 'then')",
+                [name],
+            )
+            .unwrap();
+        }
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        let names: Vec<String> = skills::list(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(names, vec!["Apple", "mango", "zebra"]);
     }
 
     #[test]

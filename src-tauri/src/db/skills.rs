@@ -74,8 +74,13 @@ fn validate(input: &SkillInput) -> AppResult<()> {
     Ok(())
 }
 
+/// The rail's order: whatever the operator arranged, name as the tie-break so
+/// two skills that have never been moved still land somewhere predictable.
 pub fn list(conn: &Connection) -> AppResult<Vec<Skill>> {
-    let sql = format!("SELECT {SELECT_COLS} FROM skills ORDER BY name COLLATE NOCASE ASC");
+    let sql = format!(
+        "SELECT {SELECT_COLS} FROM skills
+          ORDER BY sort_order ASC, name COLLATE NOCASE ASC"
+    );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], from_row)?;
     let mut out = Vec::new();
@@ -96,9 +101,14 @@ pub fn get(conn: &Connection, id: i64) -> AppResult<Skill> {
 pub fn create(conn: &Connection, input: &SkillInput) -> AppResult<Skill> {
     validate(input)?;
     let now = Utc::now().to_rfc3339();
+    // A new skill goes to the bottom of the rail rather than sorting itself
+    // into the middle, so creating one doesn't shuffle the list you just
+    // arranged.
     conn.execute(
-        "INSERT INTO skills (name, description, icon, kind, config_json, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO skills (name, description, icon, kind, config_json, created_at, updated_at,
+                             sort_order)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,
+                 (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM skills))",
         params![
             input.name.trim(),
             input.description,
@@ -140,6 +150,24 @@ pub fn delete(conn: &Connection, id: i64) -> AppResult<usize> {
     Ok(conn.execute("DELETE FROM skills WHERE id = ?1", params![id])?)
 }
 
+/// Writes the rail's order, `ids` being every skill top to bottom.
+///
+/// Takes the whole list rather than a swap: the caller already knows the order
+/// it is showing, and rewriting all of it heals any duplicate or gap left by an
+/// interrupted move or a migration backfill. Ids that no longer exist are
+/// skipped, so a stale list from a rail that hasn't reloaded yet is harmless.
+pub fn reorder(conn: &mut Connection, ids: &[i64]) -> AppResult<()> {
+    let tx = conn.transaction()?;
+    for (position, id) in ids.iter().enumerate() {
+        tx.execute(
+            "UPDATE skills SET sort_order = ?1 WHERE id = ?2",
+            params![position as i64, id],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,14 +194,54 @@ mod tests {
         assert_eq!(got.created_at, got.updated_at);
     }
 
+    fn names(conn: &Connection) -> Vec<String> {
+        list(conn).unwrap().into_iter().map(|s| s.name).collect()
+    }
+
     #[test]
-    fn list_sorts_by_name_case_insensitively() {
+    fn list_keeps_creation_order_until_something_is_moved() {
+        // Each new skill lands at the bottom, so the rail doesn't reshuffle
+        // itself the moment you add one.
         let conn = open_in_memory().unwrap();
         create(&conn, &input("zebra")).unwrap();
         create(&conn, &input("Apple")).unwrap();
         create(&conn, &input("mango")).unwrap();
-        let names: Vec<String> = list(&conn).unwrap().into_iter().map(|s| s.name).collect();
-        assert_eq!(names, vec!["Apple", "mango", "zebra"]);
+        assert_eq!(names(&conn), vec!["zebra", "Apple", "mango"]);
+    }
+
+    #[test]
+    fn reorder_writes_the_order_it_is_given() {
+        let mut conn = open_in_memory().unwrap();
+        let a = create(&conn, &input("first")).unwrap();
+        let b = create(&conn, &input("second")).unwrap();
+        let c = create(&conn, &input("third")).unwrap();
+
+        reorder(&mut conn, &[c.id, a.id, b.id]).unwrap();
+        assert_eq!(names(&conn), vec!["third", "first", "second"]);
+    }
+
+    #[test]
+    fn reorder_ignores_ids_that_are_gone() {
+        // The rail can hand over a list it read before another window deleted
+        // something. That must reorder what's left, not fail the whole move.
+        let mut conn = open_in_memory().unwrap();
+        let a = create(&conn, &input("kept")).unwrap();
+        let b = create(&conn, &input("also kept")).unwrap();
+
+        reorder(&mut conn, &[999, b.id, a.id]).unwrap();
+        assert_eq!(names(&conn), vec!["also kept", "kept"]);
+    }
+
+    #[test]
+    fn name_breaks_a_tie_case_insensitively() {
+        // Rows that have never been moved all sit at 0 (the pre-migration-15
+        // state), and must still come out in a stable, readable order.
+        let conn = open_in_memory().unwrap();
+        create(&conn, &input("zebra")).unwrap();
+        create(&conn, &input("Apple")).unwrap();
+        create(&conn, &input("mango")).unwrap();
+        conn.execute("UPDATE skills SET sort_order = 0", []).unwrap();
+        assert_eq!(names(&conn), vec!["Apple", "mango", "zebra"]);
     }
 
     #[test]

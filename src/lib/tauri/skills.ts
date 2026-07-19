@@ -142,6 +142,11 @@ export function deleteSkill(id: number): Promise<number> {
   return invoke<number>("delete_skill", { id });
 }
 
+/** Writes the rail's order: `ids` is every skill, top to bottom. */
+export function reorderSkills(ids: number[]): Promise<void> {
+  return invoke<void>("reorder_skills", { ids });
+}
+
 /** Writes a skill to `path` as a portable JSON file (definition only, never
  * credentials). */
 export function exportSkill(id: number, path: string): Promise<void> {

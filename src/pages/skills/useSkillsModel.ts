@@ -6,6 +6,7 @@ import {
   createSkill,
   deleteSkill,
   listSkills,
+  reorderSkills,
   updateSkill,
   type Skill,
   type SkillInput,
@@ -63,5 +64,29 @@ export function useSkillsModel() {
     [reload],
   );
 
-  return { skills, loading, reload, save, remove };
+  /** Moves one skill up or down the rail by one place.
+   *
+   * The list is updated first and persisted after, rather than reloading:
+   * pressing an arrow four times in a row should feel like four moves, not four
+   * round trips, and the order written is exactly the order already on screen.
+   * A failed write reloads to put the rail back to the truth. */
+  const move = useCallback(
+    async (id: number, direction: -1 | 1) => {
+      const from = skills.findIndex((s) => s.id === id);
+      const to = from + direction;
+      if (from < 0 || to < 0 || to >= skills.length) return;
+      const next = [...skills];
+      [next[from], next[to]] = [next[to]!, next[from]!];
+      setSkills(next);
+      try {
+        await reorderSkills(next.map((s) => s.id));
+      } catch (e) {
+        toast.error(errorMessage(e));
+        await reload();
+      }
+    },
+    [skills, reload],
+  );
+
+  return { skills, loading, reload, save, remove, move };
 }

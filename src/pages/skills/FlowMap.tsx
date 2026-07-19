@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MinusIcon, PlusIcon } from "lucide-react";
 
 import { useHint } from "@/lib/status";
@@ -53,6 +53,12 @@ const KIND_LABEL: Record<SeqStep["kind"], string> = {
  * short one wastes it, so the operator picks; there is no clever auto-fit. */
 const ZOOM_STOPS = [0.5, 0.65, 0.8, 1, 1.25, 1.5, 2];
 const DEFAULT_ZOOM_INDEX = 3;
+
+/** Never shrink the map below this, however little room is left: a sliver of a
+ * diagram is worse than a scrollbar. */
+const MIN_BOX_H = 200;
+/** Breathing room under the map so it doesn't sit flush on the window edge. */
+const BOTTOM_GAP = 24;
 
 type Placed = { id: string; x: number; y: number; w: number; h: number };
 
@@ -128,19 +134,21 @@ export function FlowMap({
   startStepId,
   selectedId,
   onSelect,
-  compact,
+  reserveBelow,
 }: {
   steps: SeqStep[];
   startStepId: string;
   /** The step whose detail is showing, drawn with a ring. */
   selectedId: string | null;
   onSelect: (stepId: string | null) => void;
-  /** A step's detail panel is open below, so give up some height to it. With
-   * nothing selected the map takes the space the panel would have had, which is
-   * the state you spend most of your time in. */
-  compact: boolean;
+  /** Pixels the caller needs under the map, which is the step detail panel when
+   * one is open. The map gives up exactly that much rather than a fixed guess,
+   * so clicking a step never pushes its own settings off the bottom. */
+  reserveBelow: number;
 }) {
   const hint = useHint();
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [avail, setAvail] = useState<number | null>(null);
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   const zoom = ZOOM_STOPS[zoomIndex]!;
   const graph = useMemo(
@@ -151,6 +159,28 @@ export function FlowMap({
     () => layout(graph),
     [graph],
   );
+
+  // How much window is actually left below the top of the map. Measured rather
+  // than assumed: a fixed height is either wasteful on a tall screen or leaves
+  // the diagram in a letterbox on a short one, and neither guess survives the
+  // detail panel opening underneath it.
+  //
+  // Only the top edge is measured, and nothing above the map moves when the map
+  // resizes, so this cannot chase its own tail. Scrolling deliberately does not
+  // re-measure: the box would grow and shrink under the pointer as you scrolled.
+  useLayoutEffect(() => {
+    const measure = () => {
+      const box = boxRef.current;
+      if (!box) return;
+      const top = box.getBoundingClientRect().top;
+      setAvail(
+        Math.max(MIN_BOX_H, window.innerHeight - top - reserveBelow - BOTTOM_GAP),
+      );
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [reserveBelow]);
 
   if (steps.length === 0) {
     return (
@@ -204,9 +234,13 @@ export function FlowMap({
           down the page that clicking a node scrolled the thing you clicked out
           of view. */}
       <div
-        className={`overflow-auto rounded-md border border-border/60 bg-muted/10 p-2 transition-[height] ${
-          compact ? "h-[20rem]" : "h-[34rem]"
-        }`}
+        ref={boxRef}
+        className="overflow-auto rounded-md border border-border/60 bg-muted/10 p-2 transition-[height]"
+        style={{
+          // Never taller than the diagram needs: a three step skill gets a
+          // small box, not an acre of empty grid.
+          height: Math.min(avail ?? MIN_BOX_H * 2, height * zoom + 20),
+        }}
       >
         <svg
           width={width * zoom}

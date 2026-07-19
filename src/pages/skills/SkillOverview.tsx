@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DownloadIcon,
   PencilIcon,
@@ -64,6 +64,25 @@ export function SkillOverview({
   const warnings = useMemo(() => flowWarnings(graph), [graph]);
   const selected = config.steps.find((s) => s.id === selectedId) ?? null;
   const selectedIndex = config.steps.findIndex((s) => s.id === selectedId);
+
+  // The map sizes itself to the window, so it needs to know how much room the
+  // detail panel wants underneath it. Measured, because the panel's height
+  // depends on the step: a `wait` has two lines, a branching `run` has six.
+  const detailRef = useRef<HTMLElement>(null);
+  const [detailHeight, setDetailHeight] = useState(0);
+  useEffect(() => {
+    const panel = detailRef.current;
+    if (!panel) {
+      setDetailHeight(0);
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      // Plus the gap the layout puts between the map and the panel.
+      setDetailHeight(panel.offsetHeight + 20);
+    });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [selectedId]);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-6 py-6">
@@ -175,12 +194,15 @@ export function SkillOverview({
           startStepId={config.startStepId}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          compact={selected != null}
+          reserveBelow={selected ? detailHeight : 0}
         />
       </section>
 
       {selected && (
-        <section className="space-y-2 rounded-md border border-border/60 p-3">
+        <section
+          ref={detailRef}
+          className="space-y-2 rounded-md border border-border/60 p-3"
+        >
           <div className="flex items-center gap-2">
             <code className="rounded bg-muted px-1.5 font-mono text-xs">
               {selected.id}

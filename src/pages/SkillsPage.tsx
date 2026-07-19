@@ -356,6 +356,7 @@ export function SkillsPage({
           onImport={startImport}
           onExport={exportOne}
           onDelete={setPendingDelete}
+          onMove={(skill, direction) => void model.move(skill.id, direction)}
         />
 
         {/* Emergency stop lives here, ghosted until a run is live. */}
@@ -539,7 +540,20 @@ export function SkillsPage({
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
-                if (pendingDelete) void model.remove(pendingDelete.id);
+                if (pendingDelete) {
+                  void model.remove(pendingDelete.id);
+                  // Leave any view that was showing the skill we just deleted.
+                  // Without this the overview looked up a skill that was gone
+                  // and rendered nothing, leaving a blank panel.
+                  if (
+                    (view.kind === "overview" &&
+                      view.skillId === pendingDelete.id) ||
+                    ((view.kind === "edit" || view.kind === "params") &&
+                      view.skill?.id === pendingDelete.id)
+                  ) {
+                    setView({ kind: "idle" });
+                  }
+                }
                 setPendingDelete(null);
               }}
             >

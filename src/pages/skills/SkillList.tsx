@@ -1,4 +1,6 @@
 import {
+  ChevronDownIcon,
+  ChevronUpIcon,
   DownloadIcon,
   EyeIcon,
   PencilIcon,
@@ -28,6 +30,7 @@ export function SkillList({
   onImport,
   onExport,
   onDelete,
+  onMove,
 }: {
   skills: Skill[];
   loading: boolean;
@@ -50,6 +53,8 @@ export function SkillList({
   onImport: () => void;
   onExport: (skill: Skill) => void;
   onDelete: (skill: Skill) => void;
+  /** Moves a skill one place up (-1) or down (1) the rail. */
+  onMove: (skill: Skill, direction: -1 | 1) => void;
 }) {
   const hint = useHint();
 
@@ -91,7 +96,7 @@ export function SkillList({
             them. Press New to build one.
           </p>
         ) : (
-          skills.map((s) => {
+          skills.map((s, i) => {
             const steps = parseSequence(s.config_json).steps.length;
             const running = runningSkillId === s.id;
             return (
@@ -101,16 +106,60 @@ export function SkillList({
                   selectedId === s.id ? "bg-accent/40 ring-1 ring-primary/50" : "hover:bg-accent/40"
                 }`}
               >
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 truncate text-left text-sm"
-                    title={s.name}
-                    onClick={() => onOpen(s)}
-                    {...hint(`Open "${s.name}" to see its flow`)}
+                <button
+                  type="button"
+                  className="block w-full truncate text-left text-sm"
+                  title={s.name}
+                  onClick={() => onOpen(s)}
+                  {...hint(`Open "${s.name}" to see its flow`)}
+                >
+                  {s.name}
+                </button>
+                <div className="flex items-center gap-1.5 pr-1 text-[10px] text-muted-foreground">
+                  <span className="shrink-0">
+                    {steps} {steps === 1 ? "step" : "steps"}
+                  </span>
+                  {running && (
+                    <span className="shrink-0 font-medium text-emerald-500">
+                      running
+                    </span>
+                  )}
+                  {s.kind === "ai" && (
+                    <span className="shrink-0 rounded-full bg-muted px-1.5">AI</span>
+                  )}
+                  {s.description && (
+                    <span className="min-w-0 truncate" title={s.description}>
+                      · {s.description}
+                    </span>
+                  )}
+                </div>
+                {/* The controls get their own row rather than sharing the name's.
+                    Four buttons in a 16rem rail left the name a few characters
+                    wide, which is the one thing you actually read. */}
+                <div className="mt-0.5 flex items-center gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-5 shrink-0 p-0"
+                    disabled={i === 0}
+                    onClick={() => onMove(s, -1)}
+                    aria-label={`Move ${s.name} up`}
+                    {...hint(`Move "${s.name}" up the list`)}
                   >
-                    {s.name}
-                  </button>
+                    <ChevronUpIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-5 shrink-0 p-0"
+                    disabled={i === skills.length - 1}
+                    onClick={() => onMove(s, 1)}
+                    aria-label={`Move ${s.name} down`}
+                    {...hint(`Move "${s.name}" down the list`)}
+                  >
+                    <ChevronDownIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <span className="flex-1" />
                   {running ? (
                     <Button
                       variant="ghost"
@@ -185,24 +234,6 @@ export function SkillList({
                   >
                     <Trash2Icon className="h-3.5 w-3.5" />
                   </Button>
-                </div>
-                <div className="flex items-center gap-1.5 pr-1 text-[10px] text-muted-foreground">
-                  <span className="shrink-0">
-                    {steps} {steps === 1 ? "step" : "steps"}
-                  </span>
-                  {running && (
-                    <span className="shrink-0 font-medium text-emerald-500">
-                      running
-                    </span>
-                  )}
-                  {s.kind === "ai" && (
-                    <span className="shrink-0 rounded-full bg-muted px-1.5">AI</span>
-                  )}
-                  {s.description && (
-                    <span className="min-w-0 truncate" title={s.description}>
-                      · {s.description}
-                    </span>
-                  )}
                 </div>
               </div>
             );

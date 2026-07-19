@@ -60,6 +60,19 @@ pub fn delete_skill(id: i64, state: State<'_, DbState>) -> AppResult<usize> {
     with_db(&state, |conn| skill_repo::delete(conn, id))
 }
 
+/// Rewrites the rail's order. `ids` is every skill, top to bottom.
+///
+/// Locks the connection directly rather than going through `with_db`: the write
+/// is a transaction over several rows, which needs `&mut Connection`.
+#[tauri::command]
+pub fn reorder_skills(ids: Vec<i64>, state: State<'_, DbState>) -> AppResult<()> {
+    let mut conn = state
+        .0
+        .lock()
+        .map_err(|_| AppError::State("db mutex poisoned".into()))?;
+    skill_repo::reorder(&mut conn, &ids)
+}
+
 /// The on-disk shape for import/export: the definition only, and never a
 /// credential. `config` is the parsed config object rather than a stringified
 /// blob so the file is readable and hand-editable.
