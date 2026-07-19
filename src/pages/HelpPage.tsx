@@ -308,8 +308,8 @@ const SECTIONS: HelpSection[] = [
           <p>
             The buttons down the left side switch between the main areas of the
             app: <Nav>Hosts</Nav>, <Nav>Terminals</Nav>, <Nav>Broadcast</Nav>,{" "}
-            <Nav>PTY Broadcast</Nav>, <Nav>MultiTerminal</Nav>, <Nav>SFTP</Nav>,{" "}
-            <Nav>Logs</Nav> and <Nav>Settings</Nav>. <Nav>Help</Nav> and{" "}
+            <Nav>PTY Broadcast</Nav>, <Nav>MultiTerminal</Nav>, <Nav>Skills</Nav>,{" "}
+            <Nav>SFTP</Nav>, <Nav>Logs</Nav> and <Nav>Settings</Nav>. <Nav>Help</Nav> and{" "}
             <Nav>About</Nav> sit at
             the bottom. The rail collapses to icons only on narrow windows, or
             with the collapse button at the top. Drag its right edge to resize
@@ -702,7 +702,7 @@ const SECTIONS: HelpSection[] = [
               open for the combined view to be meaningful. The rail collapses to
               color dots; its actions shrink to icons when collapsed.
             </li>
-            <li>Show Manual Activity
+            <li>
               The rail carries the same <Nav>Find by label…</Nav> box and{" "}
               <Nav>Filter tags</Nav> dropdown as{" "}
               <SectionLink id="help-sec-broadcast">Broadcast</SectionLink>. Only{" "}
@@ -716,7 +716,9 @@ const SECTIONS: HelpSection[] = [
             <li>
               Turn on <Nav>Show Manual Activity</Nav> to also capture commands you
               type by hand inside a <Nav>Terminals</Nav> tab; with it off, only
-              commands sent from <Nav>MultiTerminal</Nav> appear here.
+              commands sent from <Nav>MultiTerminal</Nav> appear here. It follows
+              the hosts you have checked in the rail, so a host you deliberately
+              left unchecked stays out of the log whether you type into it or not.
             </li>
           </Bullets>
           <H3>Block headers</H3>
@@ -742,6 +744,163 @@ const SECTIONS: HelpSection[] = [
               tears down every open terminal after a confirmation.
             </li>
           </Bullets>
+        </Detail>
+      </>
+    ),
+  },
+  {
+    id: "help-sec-skills",
+    title: "Skills",
+    keywords:
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil",
+    body: (
+      <>
+        <Lead>
+          A <Nav>skill</Nav> is a saved sequence of steps that Broadside runs
+          against every host you check, in a real interactive shell it opens for
+          each one. Because it is a real shell rather than a one-shot command, a
+          skill can become root and stay root, answer questions a program asks,
+          and drive things that repaint the screen, while you watch each host's
+          terminal live.
+        </Lead>
+        <Detail>
+          <H3>The four kinds of step</H3>
+          <Bullets>
+            <li>
+              <Nav>run</Nav> sends a command and waits for it to finish, then
+              branches on whether it succeeded.
+            </li>
+            <li>
+              <Nav>wait for</Nav> watches the output for a pattern, optionally
+              sending a reply the moment it appears. This is how you answer a
+              prompt: wait for <code>Password:</code>, send the password.
+            </li>
+            <li>
+              <Nav>send</Nav> types something with no waiting, for a keystroke a
+              program is already sitting there expecting.
+            </li>
+            <li>
+              <Nav>hold</Nav> pauses for a fixed number of seconds, sending
+              nothing, so a status screen has time to settle.
+            </li>
+          </Bullets>
+          <H3>Patterns</H3>
+          <p>
+            A <Nav>wait for</Nav> pattern is a regular expression tested against
+            the output with the colour codes stripped out. Its anchors are line
+            anchors, so <code>^Ready$</code> means a line that says Ready, not the
+            whole screen.
+          </p>
+          <H3>Interactive steps</H3>
+          <p>
+            Normally a <Nav>run</Nav> step knows the command finished because the
+            shell comes back to a prompt. Some commands never do:{" "}
+            <code>sudo -i</code> opens a nested shell, and an installer stops on a
+            question. Tick <Nav>Interactive</Nav> on those, and the step moves on
+            once the output goes quiet instead. You then drive the rest with{" "}
+            <Nav>wait for</Nav> and <Nav>send</Nav>.
+          </p>
+          <H3>Branching</H3>
+          <Bullets>
+            <li>
+              Every step says where to go next. <Nav>next</Nav> means the
+              following step in the list, so a straight-through skill needs no
+              wiring at all. <Nav>stop</Nav> finishes that host successfully.
+            </li>
+            <li>
+              A <Nav>run</Nav> step branches on the command's exit code by
+              default: one target if it worked, another if it did not.
+            </li>
+            <li>
+              Tick <Nav>branch on the output</Nav> instead to decide on what the
+              command printed. Give it a pattern and two targets, and the output
+              test outranks the exit code entirely. Useful for a command that
+              reports what it found without failing, such as{" "}
+              <code>systemctl is-active</code>.
+            </li>
+          </Bullets>
+          <H3>Timeouts</H3>
+          <p>
+            Each waiting step has a time budget. When it runs out the default is
+            to <Nav>pause and wait for you</Nav>: that host goes yellow and you
+            choose to wait again, treat the step as done and carry on, or stop the
+            host. The other option is to fail the host outright. Nothing is ever
+            quietly reported as finished because a timeout expired.
+          </p>
+          <H3>Inputs</H3>
+          <p>
+            Declare inputs to avoid hard-coding values into commands. Write{" "}
+            <code>{"{{service}}"}</code> in a step and Broadside asks you for{" "}
+            <Nav>service</Nav> just before the run. Go templates such as{" "}
+            <code>{"docker ps --format '{{.Names}}'"}</code> pass through
+            untouched, so they are safe to use.
+          </p>
+          <H3>The flow map</H3>
+          <Bullets>
+            <li>
+              Clicking a skill's name opens its <Nav>overview</Nav>: what it does,
+              the inputs it asks for, and a diagram of how its steps connect.
+              Clicking the pencil skips straight to the editor instead.
+            </li>
+            <li>
+              Click any step in the diagram to see its settings. The zoom controls
+              sit at the top right; clicking the percentage returns to 100%.
+            </li>
+            <li>
+              The map catches two mistakes a list of steps cannot show you: a step
+              nothing branches to, which will never run, and a loop with no way
+              out, which will run into the 100 step cap and fail the host. Both
+              appear as amber warnings above the diagram. Neither blocks you, as a
+              loop with an exit branch is a perfectly good pattern.
+            </li>
+          </Bullets>
+          <H3>Running one</H3>
+          <Bullets>
+            <li>
+              Check hosts in the rail, then press play on the skill. Steps that
+              match a <SectionLink id="help-sec-broadcast">guard rule</SectionLink>{" "}
+              need the same typed confirmation a dangerous broadcast does.
+            </li>
+            <li>
+              Each host gets its own live terminal pane. A host that pauses shows
+              its options there. <Nav>Stop host</Nav> ends one host and leaves the
+              rest running; the <Nav>Emergency stop</Nav> button at the foot of the
+              rail ends all of them at once, which can leave a host mid-upgrade.
+            </li>
+            <li>
+              You can type into any host's pane while it runs. That takes the host
+              over: the skill stops driving it and it is yours.
+            </li>
+          </Bullets>
+          <H3>Keeping the shell afterwards</H3>
+          <p>
+            A skill normally closes each shell when it is done. Turn on{" "}
+            <Nav>Allow transfer</Nav> and the shell stays open instead, so you can
+            press <Nav>To terminal</Nav> and carry on by hand in a{" "}
+            <Nav>Terminals</Nav> tab, with the run's scrollback intact. Broadside
+            checks whether that shell is root and warns you before you leave a
+            privileged one open. Closing the run closes any it still holds.
+          </p>
+          <H3>Organising them</H3>
+          <Bullets>
+            <li>
+              The arrows on each skill in the rail move it up and down the list.
+              The order is yours and it is remembered.
+            </li>
+            <li>
+              <Nav>Export</Nav> writes a skill to a <code>.json</code> file, and{" "}
+              <Nav>Import</Nav> reads one back, showing you its steps before
+              anything is saved. Files carry the definition only, never
+              credentials.
+            </li>
+          </Bullets>
+          <H3>What a skill needs from the host</H3>
+          <p>
+            Skills need a <Nav>bash</Nav>, <Nav>zsh</Nav> or <Nav>sh</Nav> login
+            shell. A host on fish or csh is refused up front and named on the{" "}
+            <SectionLink id="help-sec-hosts">Hosts</SectionLink> tab with an amber
+            chip.
+          </p>
         </Detail>
       </>
     ),

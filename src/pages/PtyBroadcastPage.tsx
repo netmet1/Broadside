@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
+import { ScrollToBottom } from "@/components/ScrollToBottom";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
@@ -524,6 +525,7 @@ export function PtyBroadcastPage({
               onManage={onManageShortcuts}
             />
           </div>
+          <div className="relative flex min-h-0 flex-1 flex-col">
           <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
             {!hasOutput ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
@@ -584,6 +586,8 @@ export function PtyBroadcastPage({
                 ))}
               </div>
             )}
+          </div>
+            <ScrollToBottom scrollerRef={outputRef} />
           </div>
 
           <div className="flex items-end gap-2 border-t border-border/50 p-3">

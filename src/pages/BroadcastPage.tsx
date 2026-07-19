@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Composer } from "@/components/Composer";
+import { ScrollToBottom } from "@/components/ScrollToBottom";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import {
   BatchTofuDialog,
@@ -745,6 +746,7 @@ export function BroadcastPage({
             </Button>
           </div>
         )}
+        <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           ref={outputRef}
           onScroll={onOutputScroll}
@@ -815,6 +817,16 @@ export function BroadcastPage({
               </div>
             ))}
           </div>
+        </div>
+          {/* Jumping back to the end also re-arms the follow, so new results
+              keep the view at the bottom the way they did before you scrolled
+              up to read something. */}
+          <ScrollToBottom
+            scrollerRef={outputRef}
+            onJump={() => {
+              atBottomRef.current = true;
+            }}
+          />
         </div>
 
         <div className="flex items-end gap-2 border-t border-border/50 p-3">
