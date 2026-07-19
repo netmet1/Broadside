@@ -166,7 +166,7 @@ export function SkillOverview({
       <section className="space-y-2">
         <div className="flex items-baseline justify-between gap-2">
           <h3 className="text-sm font-medium">Flow</h3>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-purple-600 dark:text-purple-400">
             Click a step to see its settings
           </span>
         </div>
@@ -175,6 +175,7 @@ export function SkillOverview({
           startStepId={config.startStepId}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          compact={selected != null}
         />
       </section>
 
