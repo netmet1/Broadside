@@ -948,7 +948,7 @@ export function TerminalsPage({
                       max={maxShells}
                       value={shellCount}
                       onChange={(e) => setShellCount(e.target.value)}
-                      className="w-16 rounded border border-input bg-background py-0.5 pl-1.5 pr-2.5 text-right font-mono text-xs"
+                      className="w-16 rounded border border-input bg-background px-1.5 py-0.5 text-center font-mono text-xs"
                     />
                     <span className="ml-auto text-[11px] text-muted-foreground">
                       max {maxShells}
