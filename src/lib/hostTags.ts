@@ -25,6 +25,22 @@ export function firstTag(tag: string | null | undefined): string {
   return parseTags(tag)[0]?.toLowerCase() ?? "";
 }
 
+/** The mouse-over text for a host row on the selection rails: the endpoint
+ * (hostname, plus a non-default port) then each tag, one per line. The label is
+ * already the row's visible text, so repeating it in the tooltip is wasted;
+ * this surfaces what the label doesn't show. */
+export function railTooltip(host: {
+  hostname: string;
+  port?: number;
+  tag?: string | null;
+}): string {
+  const endpoint =
+    host.port && host.port !== 22
+      ? `${host.hostname}:${host.port}`
+      : host.hostname;
+  return [endpoint, ...parseTags(host.tag)].join("\n");
+}
+
 /** The de-duplicated union of every tag across the given `tag` fields, sorted
  * A-Z (case-insensitive), in their first-seen display spelling. */
 export function allTags(tagFields: (string | null | undefined)[]): string[] {

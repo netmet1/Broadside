@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
+import { isShellSupported, unsupportedShellMessage } from "@/lib/shells";
 import { type Host, errorMessage } from "@/lib/tauri/hosts";
 import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 
@@ -46,6 +47,12 @@ export function useHostConnTest() {
         switch (result.status) {
           case "ok":
             toast.success(`${host.label}: connected (${result.latency_ms}ms)`);
+            // Surface an unsupported login shell here too, so Test connection
+            // is one of the ways an operator finds out (X4). Separate toast:
+            // the connection genuinely succeeded, this is a caveat about it.
+            if (result.login_shell && !isShellSupported(result.login_shell)) {
+              toast.warning(unsupportedShellMessage(result.login_shell));
+            }
             markFailed(host.id, false);
             break;
           case "unknown_key":

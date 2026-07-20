@@ -36,9 +36,16 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }
+      // Colour the text by outcome, so a toast reads at a glance without being
+      // parsed: red went wrong, green worked, amber is a caveat, and anything
+      // that is just telling you something stays the plain popover colour. The
+      // icons inherit it, since they are drawn with currentColor.
       toastOptions={{
         classNames: {
           toast: "cn-toast",
+          error: "text-red-600! dark:text-red-400!",
+          success: "text-emerald-600! dark:text-emerald-400!",
+          warning: "text-amber-600! dark:text-amber-400!",
         },
       }}
       {...props}

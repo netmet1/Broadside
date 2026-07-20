@@ -17,7 +17,10 @@ use tauri::{Emitter, Manager};
 use tokio::sync::mpsc;
 
 use super::sudo_inject::SudoInjector;
-use super::{connect_and_auth, AuthMethod, ConnectFailure, PresentedKey};
+use super::{
+    connect_and_auth, detect_login_shell, shell_can_parse_integration, AuthMethod, ConnectFailure,
+    PresentedKey,
+};
 use crate::error::{AppError, AppResult};
 
 pub const DATA_EVENT: &str = "pty:data";
@@ -31,6 +34,14 @@ pub const SUDO_EVENT: &str = "pty:sudo";
 pub const SUDO_REJECTED_EVENT: &str = "pty:sudo-rejected";
 
 const TERM: &str = "xterm-256color";
+
+/// Bound on the post-auth channel + PTY + shell setup. Connect and auth are
+/// already bounded upstream (`CONNECT_TIMEOUT` / `AUTH_TIMEOUT`), but a host
+/// that authenticates and then never grants a shell (a locked or shell-less
+/// account, a forced command, a half-dead sshd) used to stall these awaits
+/// forever, leaving a skill pane or terminal tab hung on "starting…" with no
+/// outcome. Ten seconds matches the other phases.
+const SHELL_SETUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PtyData {
@@ -114,7 +125,12 @@ impl PtyEvents for tauri::AppHandle {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum PtyOpenResult {
-    Opened,
+    Opened {
+        /// The host's login shell, when the probe could read it (X4). Lets the
+        /// tab warn that command-block tracking is unavailable on a shell that
+        /// cannot take the OSC 133 integration.
+        login_shell: Option<String>,
+    },
     UnknownKey {
         key: PresentedKey,
     },
@@ -267,18 +283,50 @@ pub async fn open<E: PtyEvents>(
             Err(failure) => return Ok(failure.into()),
         };
 
-    let mut channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|e| AppError::Ssh(format!("channel open: {e}")))?;
-    channel
-        .request_pty(false, TERM, cols, rows, 0, 0, &[])
-        .await
-        .map_err(|e| AppError::Ssh(format!("pty request: {e}")))?;
-    channel
-        .request_shell(true)
-        .await
-        .map_err(|e| AppError::Ssh(format!("shell request: {e}")))?;
+    // Read the login shell before the shell channel opens, so no banner is
+    // streaming into a channel nobody is draining yet, and so the answer is in
+    // hand by the time the setup line has to be built. One extra round trip on
+    // a host that answers; bounded and ignored on one that doesn't (X4).
+    let login_shell = detect_login_shell(&handle).await;
+    // Unknown keeps today's behaviour and injects: the integration is harmless
+    // in every Bourne-family shell, and refusing to send it on a host we simply
+    // couldn't probe would silently drop command-block tracking.
+    let with_integration = login_shell
+        .as_deref()
+        .map(shell_can_parse_integration)
+        .unwrap_or(true);
+
+    // Bound the whole channel/PTY/shell handshake: on a host that authenticates
+    // but never grants a shell, these awaits would otherwise hang forever and
+    // strand the caller (a skill pane frozen on "starting…", a terminal tab that
+    // never connects). A timeout turns that into a clean, reported failure.
+    let setup = async {
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|e| AppError::Ssh(format!("channel open: {e}")))?;
+        channel
+            .request_pty(false, TERM, cols, rows, 0, 0, &[])
+            .await
+            .map_err(|e| AppError::Ssh(format!("pty request: {e}")))?;
+        channel
+            .request_shell(true)
+            .await
+            .map_err(|e| AppError::Ssh(format!("shell request: {e}")))?;
+        Ok::<_, AppError>(channel)
+    };
+    let mut channel = match tokio::time::timeout(SHELL_SETUP_TIMEOUT, setup).await {
+        Ok(result) => result?,
+        Err(_) => {
+            let _ = handle
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
+            return Err(AppError::Ssh(format!(
+                "timed out opening a shell after {}s",
+                SHELL_SETUP_TIMEOUT.as_secs()
+            )));
+        }
+    };
 
     // OSC 133 shell integration is injected from inside the session task once
     // the login banner has streamed (so we can capture the real "Last login:"
@@ -328,6 +376,7 @@ pub async fn open<E: PtyEvents>(
                             if last_login.is_some() || banner.len() > 8192 {
                                 let setup = crate::omni::shell_setup_command(
                                     last_login.as_deref(),
+                                    with_integration,
                                 );
                                 let _ = channel.data(setup.as_bytes()).await;
                                 setup_sent = true;
@@ -366,7 +415,7 @@ pub async fn open<E: PtyEvents>(
                 },
                 _ = &mut setup_timeout, if !setup_sent => {
                     // No last-login arrived in time — set up without re-echoing it.
-                    let setup = crate::omni::shell_setup_command(None);
+                    let setup = crate::omni::shell_setup_command(None, with_integration);
                     let _ = channel.data(setup.as_bytes()).await;
                     setup_sent = true;
                 },
@@ -412,5 +461,5 @@ pub async fn open<E: PtyEvents>(
         }
     });
 
-    Ok(PtyOpenResult::Opened)
+    Ok(PtyOpenResult::Opened { login_shell })
 }

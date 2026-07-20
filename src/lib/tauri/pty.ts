@@ -4,7 +4,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { PresentedKey } from "@/lib/tauri/ssh";
 
 export type PtyOpenResult =
-  | { status: "opened" }
+  // `login_shell` is what the connect-time probe read, or null when it could
+  // not tell. Null is "unknown", never "unsupported".
+  | { status: "opened"; login_shell: string | null }
   | { status: "unknown_key"; key: PresentedKey }
   | {
       status: "key_mismatch";

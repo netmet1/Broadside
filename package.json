@@ -1,7 +1,7 @@
 {
   "name": "broadside",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Windows desktop SSH broadcast console (Tauri 2 + Rust + React)",
   "type": "module",
   "scripts": {
@@ -20,6 +20,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
+    "@xterm/addon-serialize": "0.14.0",
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

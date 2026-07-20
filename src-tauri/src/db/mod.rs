@@ -12,6 +12,7 @@ pub mod hosts;
 pub mod omni_history;
 pub mod pty_history;
 pub mod settings;
+pub mod skills;
 
 pub struct DbState(pub Mutex<Connection>);
 
@@ -137,6 +138,37 @@ const MIGRATIONS: &[&str] = &[
     // grouping/sorting hosts in the table; autocompleted in the form from tags
     // already in use. Surfaces before linux_flavor in the UI.
     "ALTER TABLE hosts ADD COLUMN tag TEXT;",
+    // 13: skills. Reusable multi-step operations driven over a live PTY per
+    // host (skills-feature-plan, Phase 1). `config_json` is the kind-specific
+    // blob (steps + declared params); it can hold command text, so it shares
+    // the at-rest exposure class of command_history (D-011). No secrets ever
+    // live here; the credential store owns those.
+    "CREATE TABLE IF NOT EXISTS skills (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        name         TEXT NOT NULL,
+        description  TEXT NOT NULL DEFAULT '',
+        icon         TEXT,
+        kind         TEXT NOT NULL,
+        config_json  TEXT NOT NULL,
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL
+    );",
+    // 14: the host's detected login shell (X4). Written by the backend after a
+    // successful connect, never by the host form, so the Hosts table can warn
+    // that a non-POSIX shell (fish, csh) gets no command-block tracking and
+    // can't run skills. NULL means "not probed yet", not "unsupported".
+    "ALTER TABLE hosts ADD COLUMN login_shell TEXT;",
+    // 15: hand-picked skill order (user request). The rail used to be sorted by
+    // name, which is no order at all once you have a dozen skills and run three
+    // of them daily. Existing rows are backfilled with their current
+    // name-sorted position, so an upgrade changes nothing until the operator
+    // moves something.
+    "ALTER TABLE skills ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+     UPDATE skills SET sort_order = (
+        SELECT COUNT(*) FROM skills AS other
+         WHERE other.name < skills.name
+            OR (other.name = skills.name AND other.id < skills.id)
+     );",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -174,4 +206,129 @@ fn add_column_if_missing(
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Brings a fresh connection up to `version` the way a shipped database
+    /// would have got there, so an upgrade can be exercised from that point.
+    fn database_at_version(version: usize) -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in MIGRATIONS.iter().take(version) {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", version as i64)
+            .unwrap();
+        conn
+    }
+
+    fn user_version(conn: &Connection) -> i64 {
+        conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn an_existing_database_gains_skills_without_losing_data() {
+        // The upgrade path every real installation takes. The unit tests all
+        // start from a fresh schema, so this is the only place the *migration*
+        // (rather than the final shape) is exercised.
+        let conn = database_at_version(12);
+        conn.execute(
+            "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at)
+             VALUES ('web01', 'example.test', 22, 'joe', '#aabbcc', 'then', 'then')",
+            [],
+        )
+        .unwrap();
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        // The new table works…
+        skills::create(
+            &conn,
+            &skills::SkillInput {
+                name: "after upgrade".into(),
+                description: String::new(),
+                icon: None,
+                kind: skills::KIND_SEQUENCE.into(),
+                config_json: "{}".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(skills::list(&conn).unwrap().len(), 1);
+        // …and the row that was already there is untouched.
+        let label: String = conn
+            .query_row("SELECT label FROM hosts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(label, "web01");
+    }
+
+    #[test]
+    fn an_existing_database_gains_login_shell_without_losing_hosts() {
+        // Migration 14 (X4). Same shape as the skills upgrade above: the column
+        // lands on a database that already has host rows, and they survive.
+        let conn = database_at_version(13);
+        conn.execute(
+            "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at)
+             VALUES ('web01', 'example.test', 22, 'joe', '#aabbcc', 'then', 'then')",
+            [],
+        )
+        .unwrap();
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        let host = &hosts::list_all(&conn).unwrap()[0];
+        assert_eq!(host.label, "web01");
+        // Not probed yet: absent, which must not read as "unsupported".
+        assert_eq!(host.login_shell, None);
+
+        hosts::set_login_shell(&conn, host.id, "fish").unwrap();
+        let host = hosts::get(&conn, host.id).unwrap();
+        assert_eq!(host.login_shell.as_deref(), Some("fish"));
+    }
+
+    #[test]
+    fn existing_skills_are_backfilled_in_name_order() {
+        // Migration 15. A database that predates hand-picked order must come
+        // out looking exactly as it did before, which then means name order:
+        // the upgrade itself must not reshuffle anybody's rail.
+        let conn = database_at_version(14);
+        for name in ["zebra", "Apple", "mango"] {
+            conn.execute(
+                "INSERT INTO skills (name, description, icon, kind, config_json,
+                                     created_at, updated_at)
+                 VALUES (?1, '', NULL, 'sequence', '{}', 'then', 'then')",
+                [name],
+            )
+            .unwrap();
+        }
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        let names: Vec<String> = skills::list(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(names, vec!["Apple", "mango", "zebra"]);
+    }
+
+    #[test]
+    fn bootstrap_is_idempotent() {
+        // Every launch runs it; a second pass must not re-run a migration.
+        let conn = open_in_memory().unwrap();
+        let version = user_version(&conn);
+        bootstrap(&conn).unwrap();
+        bootstrap(&conn).unwrap();
+        assert_eq!(user_version(&conn), version);
+    }
+
+    #[test]
+    fn a_fresh_database_lands_on_the_latest_version() {
+        let conn = open_in_memory().unwrap();
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+    }
 }

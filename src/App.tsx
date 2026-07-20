@@ -8,8 +8,20 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { AppShell, type Page } from "@/components/AppShell";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { isExitGuardEnabled } from "@/lib/exitGuard";
 import { HostsPage } from "@/pages/HostsPage";
 import { BroadcastPage } from "@/pages/BroadcastPage";
 import {
@@ -20,6 +32,7 @@ import {
 import type { LocalShell } from "@/lib/tauri/local";
 import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
 import { MultiTerminalPage } from "@/pages/MultiTerminalPage";
+import { SkillsPage } from "@/pages/SkillsPage";
 import { SftpPage } from "@/pages/SftpPage";
 import { LogsPage } from "@/pages/LogsPage";
 // Settings (~2k lines) and Help (static docs) mount only when their tab is
@@ -74,6 +87,19 @@ function App() {
   const [maxSessionId, setMaxSessionId] = useState<string | null>(null);
   const maximized = maxSessionId !== null;
 
+  // Exit guard (opt-in, on by default): warn before the window closes while any
+  // terminal is still connected, so a stray Alt+F4 doesn't drop live sessions.
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
+  // The close handler is registered once but must see the live connection set
+  // and toggle state, so both are read through refs the effects keep current.
+  const connectedRef = useRef<Set<string>>(connectedSessions);
+  useEffect(() => {
+    connectedRef.current = connectedSessions;
+  }, [connectedSessions]);
+  // Latched true once the user confirms the quit, so our own destroy() isn't
+  // re-intercepted by the guard.
+  const closingRef = useRef(false);
+
   useEffect(() => {
     (async () => {
       try {
@@ -124,6 +150,30 @@ function App() {
     setActiveSessionId(session.id);
     setPage("terminals");
   }, [nextSeq]);
+
+  /** Adopt a skill run's live shell as a terminal tab. The tab reuses the
+   * backend session id as its own, so the very shell the skill was driving (its
+   * root state, cwd and scrollback) carries over; TerminalView skips pty_open
+   * for an adopted session. `snapshot` is the skill pane's scrollback as an ANSI
+   * string, seeded into the new terminal so the run's history is visible. */
+  const adoptTerminal = useCallback(
+    (sessionId: string, host: Host, snapshot: string | null) => {
+      const session: TermSession = {
+        id: sessionId,
+        type: "ssh",
+        seq: nextSeq(),
+        host,
+        adopted: true,
+        adoptSnapshot: snapshot ?? undefined,
+      };
+      setSessions((prev) =>
+        prev.some((s) => s.id === sessionId) ? prev : [...prev, session],
+      );
+      setActiveSessionId(sessionId);
+      setPage("terminals");
+    },
+    [nextSeq],
+  );
 
   /** Open a terminal tab for every host at once (Hosts multi-select). */
   const openTerminals = useCallback((hostsToOpen: Host[]) => {
@@ -286,6 +336,36 @@ function App() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [maximized, page, activeSessionId]);
 
+  // Intercept the window close: if the guard is on and something is still
+  // connected, hold the close and ask first. Registered once; reads the live
+  // connection set / preference through refs and localStorage so it never goes
+  // stale. Confirming sets closingRef and calls destroy(), which closes without
+  // re-emitting the request (unlike close()).
+  useEffect(() => {
+    const win = getCurrentWindow();
+    const unlisten = win.onCloseRequested((event) => {
+      if (closingRef.current) return;
+      if (isExitGuardEnabled() && connectedRef.current.size > 0) {
+        event.preventDefault();
+        setExitConfirmOpen(true);
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const confirmQuit = useCallback(() => {
+    closingRef.current = true;
+    setExitConfirmOpen(false);
+    getCurrentWindow()
+      .destroy()
+      .catch(() => {
+        // If destroy somehow fails, drop the latch so the guard still works.
+        closingRef.current = false;
+      });
+  }, []);
+
   // Drop back to the tabbed view when the maximized terminal is gone (closed
   // or terminated) or we've left the Terminals page.
   useEffect(() => {
@@ -397,6 +477,12 @@ function App() {
           onJumpToHostTerminal={jumpToHostTerminal}
         />
       </div>
+      {/* Skills stays mounted so a running skill — and its live per-host panes —
+          survive tab switches. A run can last as long as an apt upgrade, and
+          unmounting would tear down the xterm panes mid-run. */}
+      <div className={page === "skills" ? "block h-full" : "hidden"}>
+        <SkillsPage visible={page === "skills"} onAdoptTerminal={adoptTerminal} />
+      </div>
       {/* SFTP stays mounted so an open browser session survives navigation. */}
       <div className={page === "sftp" ? "block h-full" : "hidden"}>
         <SftpPage visible={page === "sftp"} />
@@ -432,6 +518,29 @@ function App() {
           onOpenChange={setUnlockOpen}
           onUnlocked={() => {}}
         />
+        <AlertDialog open={exitConfirmOpen} onOpenChange={setExitConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Quit with terminals connected?</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="font-semibold text-foreground">
+                  {connectedSessions.size}
+                </span>{" "}
+                terminal {connectedSessions.size === 1 ? "session is" : "sessions are"}{" "}
+                still connected. Quitting now disconnects{" "}
+                {connectedSessions.size === 1 ? "it" : "them"} and loses any
+                unsaved work in those shells. You can turn this warning off in
+                Settings, under Performance.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Stay open</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={confirmQuit}>
+                Quit anyway
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <Toaster />
       </AppShell>
       </UiPrefsProvider>

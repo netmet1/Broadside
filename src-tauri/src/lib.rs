@@ -115,6 +115,11 @@ pub fn run() {
 
             app.manage(ssh::pty::PtyState::default());
 
+            // In-flight skill runs. Empty on launch: a run is attended and
+            // lives only as long as the app does (v1 keeps transcripts in
+            // frontend memory; a skill_run_history table is the follow-up).
+            app.manage(ssh::skill_run::state::SkillRunState::default());
+
             // Live SFTP browser sessions (kept open between operations).
             app.manage(ssh::sftp::SftpState::default());
 
@@ -226,6 +231,23 @@ pub fn run() {
             commands::settings::clear_command_history,
             commands::import::preview_import,
             commands::import::import_hosts,
+            commands::skills::list_skills,
+            commands::skills::get_skill,
+            commands::skills::create_skill,
+            commands::skills::update_skill,
+            commands::skills::delete_skill,
+            commands::skills::reorder_skills,
+            commands::skills::export_skill,
+            commands::skills::read_skill_file,
+            commands::skills::skill_preflight,
+            commands::skills::run_skill,
+            commands::skills::skill_cancel,
+            commands::skills::skill_resume,
+            commands::skills::skill_skip_step,
+            commands::skills::skill_abort,
+            commands::skills::skill_send_input,
+            commands::skills::skill_detach,
+            commands::skills::skill_close_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

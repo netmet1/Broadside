@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { allTags } from "@/lib/hostTags";
+import { isShellSupported, unsupportedShellMessage } from "@/lib/shells";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -918,6 +919,14 @@ export function HostFormPanel({
           {!adminLocked && hasSudo && sudoAction === "remove" && (
             <p className="text-xs font-medium text-amber-400">
               Sudo password will be removed on save
+            </p>
+          )}
+          {/* This card is where sudo auto-fill is explained, so it is where the
+              login-shell caveat belongs (X4). Read-only: the shell is what the
+              last connect saw, not something you set here. */}
+          {host?.login_shell && !isShellSupported(host.login_shell) && (
+            <p className="mb-3 text-xs text-amber-400">
+              {unsupportedShellMessage(host.login_shell)}
             </p>
           )}
           {!adminLocked && sudoEditing && (

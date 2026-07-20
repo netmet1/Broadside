@@ -7,7 +7,7 @@ export type PresentedKey = {
 };
 
 export type ProbeResult =
-  | { status: "ok"; latency_ms: number }
+  | { status: "ok"; latency_ms: number; login_shell: string | null }
   | { status: "unknown_key"; key: PresentedKey }
   | {
       status: "key_mismatch";

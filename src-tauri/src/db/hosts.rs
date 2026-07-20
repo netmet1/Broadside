@@ -35,6 +35,10 @@ pub struct Host {
     pub has_sudo_password: bool,
     /// Optional free-text grouping tag (migration 12).
     pub tag: Option<String>,
+    /// The login shell last seen on this host (migration 14), e.g. `bash` or
+    /// `fish`. Backend-written after a successful connect, so it is absent from
+    /// [`HostInput`] exactly like `has_sudo_password`. `None` means not probed.
+    pub login_shell: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -65,11 +69,12 @@ fn from_row(row: &Row) -> rusqlite::Result<Host> {
         key_path: row.get(11)?,
         has_sudo_password: row.get::<_, i64>(12)? != 0,
         tag: row.get(13)?,
+        login_shell: row.get(14)?,
     })
 }
 
 const SELECT_COLS: &str =
-    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path, has_sudo_password, tag";
+    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path, has_sudo_password, tag, login_shell";
 
 fn validate(input: &HostInput) -> AppResult<()> {
     if input.label.trim().is_empty() {
@@ -147,6 +152,20 @@ pub fn set_has_sudo_password(conn: &Connection, id: i64, value: bool) -> AppResu
     if affected == 0 {
         return Err(AppError::HostNotFound(id));
     }
+    Ok(())
+}
+
+/// Records the login shell seen on the last successful connect (X4). Not part
+/// of `update`, so saving the host form never clobbers a probed value with a
+/// stale one. A host that has gone away is not an error here: this is called
+/// from connect paths where failing the connect over a bookkeeping write would
+/// be the wrong trade.
+pub fn set_login_shell(conn: &Connection, id: i64, shell: &str) -> AppResult<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE hosts SET login_shell = ?1, updated_at = ?2 WHERE id = ?3",
+        params![shell, now, id],
+    )?;
     Ok(())
 }
 

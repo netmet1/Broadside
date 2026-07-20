@@ -14,6 +14,7 @@ import {
   PlusIcon,
   TagIcon,
   TerminalIcon,
+  TriangleAlertIcon,
   Trash2Icon,
   UnplugIcon,
   UploadIcon,
@@ -53,6 +54,11 @@ import {
 } from "@/lib/tauri/hosts";
 import { HIDEABLE_COLUMNS } from "@/lib/hostColumns";
 import { parseTags } from "@/lib/hostTags";
+import {
+  isShellSupported,
+  shellChipLabel,
+  unsupportedShellMessage,
+} from "@/lib/shells";
 import { nextColor } from "@/lib/palette";
 import { useHint, usePageStatus } from "@/lib/status";
 import {
@@ -607,7 +613,21 @@ export function HostsPage({
                     />
                   </TableCell>
                   <TableCell className="truncate font-medium" title={h.label}>
-                    {h.label}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate">{h.label}</span>
+                      {/* A login shell we can't fully drive (fish, csh). Only
+                          shown once a connect has actually read one, so an
+                          unprobed host is never flagged on a guess (X4). */}
+                      {h.login_shell && !isShellSupported(h.login_shell) && (
+                        <span
+                          className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+                          {...hint(unsupportedShellMessage(h.login_shell))}
+                        >
+                          <TriangleAlertIcon className="h-2.5 w-2.5" />
+                          {shellChipLabel(h.login_shell)}
+                        </span>
+                      )}
+                    </span>
                   </TableCell>
                   <TableCell className={hiddenCols.has("status") ? "hidden" : undefined}>
                     <span

@@ -12,11 +12,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
+import { ScrollToBottom } from "@/components/ScrollToBottom";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { RAIL_SORT_OPTIONS, sortForRail } from "@/lib/railSort";
 import { useRailFilter } from "@/lib/useRailFilter";
+import { railTooltip } from "@/lib/hostTags";
 import { RailFilterControls } from "@/components/RailFilterControls";
 import {
   ptyHistoryAdd,
@@ -410,7 +412,10 @@ export function PtyBroadcastPage({
                   type="button"
                   onClick={() => toggleSession(s.id)}
                   disabled={sending}
-                  title={`${s.host.label}${connectedSessions.has(s.id) ? "" : " (not connected)"}`}
+                  title={
+                    railTooltip(s.host) +
+                    (connectedSessions.has(s.id) ? "" : "\n(not connected)")
+                  }
                   className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 ${
                     selected.has(s.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""
                   }`}
@@ -439,7 +444,7 @@ export function PtyBroadcastPage({
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: s.host.color }}
                   />
-                  <span className="min-w-0 truncate" title={s.host.label}>
+                  <span className="min-w-0 truncate" title={railTooltip(s.host)}>
                     {s.host.label}
                   </span>
                   <span
@@ -520,6 +525,7 @@ export function PtyBroadcastPage({
               onManage={onManageShortcuts}
             />
           </div>
+          <div className="relative flex min-h-0 flex-1 flex-col">
           <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
             {!hasOutput ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
@@ -580,6 +586,8 @@ export function PtyBroadcastPage({
                 ))}
               </div>
             )}
+          </div>
+            <ScrollToBottom scrollerRef={outputRef} />
           </div>
 
           <div className="flex items-end gap-2 border-t border-border/50 p-3">

@@ -27,10 +27,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
+import { ScrollToBottom } from "@/components/ScrollToBottom";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { useRailFilter } from "@/lib/useRailFilter";
+import { railTooltip } from "@/lib/hostTags";
 import { RailFilterControls } from "@/components/RailFilterControls";
 import {
   omniBlocksAdd,
@@ -185,6 +187,8 @@ export function MultiTerminalPage({
   mirrorRef.current = mirrorTyped;
   const sessionsByIdRef = useRef(sessionsById);
   sessionsByIdRef.current = sessionsById;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   // Per-session FIFO queue of commands WE dispatched, so a block can be tagged
   // dispatched (always shown) vs hand-typed (shown only when mirror is on).
   const pendingDispatched = useRef<Map<string, string[]>>(new Map());
@@ -205,8 +209,14 @@ export function MultiTerminalPage({
         dispatchedCmd = queue.shift() ?? null;
         dispatched = true;
       }
-      // Hand-typed blocks only appear when the mirror toggle is on.
-      if (!dispatched && !mirrorRef.current) return;
+      // Hand-typed blocks only appear when the mirror toggle is on, and only
+      // for hosts that are checked on the rail. The rail selection is what this
+      // page is scoped to: without that second test, turning the toggle on
+      // filled the log with work from hosts the operator had deliberately left
+      // out, and nothing on the page explained where it came from. Dispatched
+      // blocks are unaffected, since we only ever dispatch to checked hosts.
+      if (!dispatched && (!mirrorRef.current || !selectedRef.current.has(blk.session_id)))
+        return;
       // For blocks WE dispatched, trust the command we sent — the parsed echo
       // (blk.command) can be corrupted by recalled/edited input still sitting at
       // the prompt (e.g. an Up-arrow recall of the setup line before dispatch).
@@ -525,7 +535,10 @@ export function MultiTerminalPage({
                     type="button"
                     onClick={() => isConnected && toggleSession(s.id)}
                     disabled={sending || !isConnected}
-                    title={`${label}${isConnected ? "" : " (disconnected)"}`}
+                    title={
+                      railTooltip(hostsById.get(s.host.id) ?? s.host) +
+                      (isConnected ? "" : "\n(disconnected)")
+                    }
                     className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 ${
                       isConnected
                         ? "cursor-pointer hover:bg-accent/50"
@@ -563,7 +576,12 @@ export function MultiTerminalPage({
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: color }}
                   />
-                  <span className="min-w-0 truncate">{label}</span>
+                  <span
+                    className="min-w-0 truncate"
+                    title={railTooltip(hostsById.get(s.host.id) ?? s.host)}
+                  >
+                    {label}
+                  </span>
                   <span
                     className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
                       isConnected ? "bg-emerald-500" : "bg-red-500/70"
@@ -670,7 +688,7 @@ export function MultiTerminalPage({
             <label
               className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
               {...hint(
-                "When on, commands you type by hand inside a terminal tab also appear here. Off = only commands sent from MultiTerminal.",
+                "When on, commands you type by hand inside a terminal tab also appear here, for the hosts you have checked on the left. Off = only commands sent from MultiTerminal.",
               )}
             >
               <input
@@ -705,6 +723,7 @@ export function MultiTerminalPage({
           </div>
 
           {/* Block log. */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
           <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
             {!hasOutput ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
@@ -742,6 +761,8 @@ export function MultiTerminalPage({
                 })}
               </div>
             )}
+          </div>
+            <ScrollToBottom scrollerRef={outputRef} />
           </div>
 
           {/* Composer. */}

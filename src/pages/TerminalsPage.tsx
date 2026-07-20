@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
+  Columns2Icon,
+  LayoutGridIcon,
   Maximize2Icon,
+  PanelTopIcon,
   PlusIcon,
+  Rows2Icon,
   SquareTerminalIcon,
   TerminalIcon,
   TextIcon,
@@ -43,22 +47,60 @@ import { errorMessage, type Host } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import { reconcileDisabledShells } from "@/lib/localShellPrefs";
 import type { SearchOptions } from "@/lib/search";
-import type { ShortcutScope } from "@/lib/tauri/settings";
+import { getAppSettings, type ShortcutScope } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
 
 const TABS_COMPACT_KEY = "terminal-tabs-compact";
+const LAYOUT_KEY = "terminal-layout";
 
-/** Initials of each whitespace-separated word, e.g. "This is a test" → "TIAT".
- * Used for the compact tab label mode. */
+/** Opening more than this many local shells at once first asks for confirmation
+ * — a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
+ * the common "a handful at once" case (up to 7) stays friction-free. */
+const BULK_SHELL_WARN = 7;
+
+/** Fallback cap on the bulk-open count when the settings probe hasn't answered
+ * yet (the real cap is the configured/suggested max concurrent sessions). */
+const DEFAULT_MAX_SHELLS = 32;
+
+/** How the open terminals are laid out below the tab strip: one pane at a time
+ * (the default) or every pane tiled at once, mirroring the skill run panel. */
+type TermLayout = "tabs" | "grid";
+
+/** Most initials we ever show. Camel/word splitting can produce a long run
+ * (e.g. "aVeryLongCamelCaseName" → 6), which defeats the point of the compact
+ * mode, so the result is trimmed to keep tabs tight. */
+const MAX_INITIALS = 4;
+
+/** Break a single word into its parts on camelCase / digit boundaries, keeping
+ * runs of capitals together so acronyms stay one part:
+ *   "webServer"      → ["web", "Server"]
+ *   "XMLHttpRequest" → ["XML", "Http", "Request"]
+ *   "SERVER"         → ["SERVER"]   (all-caps: one part → one initial)
+ *   "server"         → ["server"]   (all-lowercase: one part → one initial)
+ *   "box01"          → ["box", "01"] */
+function splitWordParts(word: string): string[] {
+  return word.match(/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+/g) ?? [];
+}
+
+/** Compact-tab initials. Words are separated by spaces, underscores and dashes,
+ * and each word is further split on camelCase and letter/digit boundaries; the
+ * first character of every part becomes an initial. All-caps, all-lowercase or
+ * otherwise single-part words collapse to a single letter (so "PRODSERVER" and
+ * "prodserver" both give "P"), and an over-eager camelCase run is trimmed to
+ * MAX_INITIALS so a tab never sprouts a long acronym. Examples:
+ *   "This is a test"  → "TIAT"      "web-server-01"        → "WS0"
+ *   "prod_db_east"    → "PDE"       "myProdBox"            → "MPB"
+ *   "aVeryLongName…"  → capped      "PRODSERVER"           → "P" */
 function labelInitials(label: string): string {
-  const initials = label
-    .split(/\s+/)
+  const parts = label
+    .split(/[\s_-]+/)
     .filter(Boolean)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-  return initials || label.slice(0, 2).toUpperCase();
+    .flatMap(splitWordParts);
+  const initials = parts.map((p) => p[0]!.toUpperCase()).join("");
+  const trimmed = initials.slice(0, MAX_INITIALS);
+  return trimmed || label.slice(0, 2).toUpperCase();
 }
 
 /** An SSH terminal (bound to a saved host) or a local shell (PowerShell / pwsh /
@@ -73,6 +115,13 @@ export type SshTermSession = {
   seq: number;
   /** Snapshot of the host at open time (rename/recolor mid-session is fine). */
   host: Host;
+  /** This tab adopted a PTY a skill run already had open (its `id` is that
+   * backend session id). The first mount skips `pty_open`; a later Reconnect
+   * opens a fresh shell to the host. */
+  adopted?: boolean;
+  /** The skill pane's scrollback as an ANSI string, seeded into the terminal on
+   * its first (adopting) mount so the run's history carries over. */
+  adoptSnapshot?: string;
 };
 export type LocalTermSession = {
   id: string;
@@ -193,6 +242,58 @@ export function TerminalsPage({
       window.removeEventListener("keydown", onKey);
     };
   }, [shellMenuOpen]);
+
+  // Bulk-open: how many copies of a chosen shell the "+" launcher opens at once,
+  // and the cap on that count (the configured max concurrent sessions, or the
+  // machine's suggested max, whichever the settings expose). Kept as a string so
+  // the input can be cleared while typing; parsed/clamped at open time.
+  const [shellCount, setShellCount] = useState("1");
+  const [maxShells, setMaxShells] = useState(DEFAULT_MAX_SHELLS);
+  useEffect(() => {
+    if (!visible) return;
+    getAppSettings()
+      .then((s) => {
+        const cap =
+          s.max_concurrent_sessions ??
+          s.local_probe?.suggested_max_sessions ??
+          DEFAULT_MAX_SHELLS;
+        setMaxShells(Math.max(1, cap));
+      })
+      .catch(() => {});
+  }, [visible]);
+  // A pending bulk open awaiting the "that's a lot of shells" confirmation.
+  const [bulkConfirm, setBulkConfirm] = useState<{
+    shell: LocalShell;
+    count: number;
+  } | null>(null);
+
+  // Open `count` copies of a shell (each append is a functional state update in
+  // App, so N calls accumulate N distinct sessions).
+  const openShells = useCallback(
+    (shell: LocalShell, count: number) => {
+      for (let i = 0; i < count; i++) onOpenLocalShell(shell);
+    },
+    [onOpenLocalShell],
+  );
+  // Launcher pick: clamp the requested count to [1, maxShells]; if it's an
+  // excessive batch, confirm first, otherwise open immediately.
+  const requestOpenShells = useCallback(
+    (shell: LocalShell) => {
+      setShellMenuOpen(false);
+      const parsed = Number.parseInt(shellCount, 10);
+      const n = Math.min(
+        Math.max(Number.isFinite(parsed) ? parsed : 1, 1),
+        maxShells,
+      );
+      if (n > BULK_SHELL_WARN) {
+        setBulkConfirm({ shell, count: n });
+      } else {
+        openShells(shell, n);
+      }
+    },
+    [shellCount, maxShells, openShells],
+  );
+
   const hint = useHint();
   usePageStatus(
     `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`,
@@ -226,6 +327,8 @@ export function TerminalsPage({
     () => [...sessions].sort((a, b) => a.seq - b.seq),
     [sessions],
   );
+  // How many tiles the grid shows — drives the fill/split/scroll layout (B3).
+  const gridCount = paneOrder.length;
 
   // Tab label mode: full label (default) vs color-dot + initials. Persisted
   // like the sidebar-collapse pref (localStorage, UI-only).
@@ -239,6 +342,25 @@ export function TerminalsPage({
       return next;
     });
   }, []);
+
+  // Pane layout: one tab at a time (default) or every pane tiled like the skill
+  // run panel. Persisted in localStorage so it survives tab switches (the page
+  // stays mounted anyway) and program restarts. Maximizing always collapses to
+  // the single fullscreen pane, so grid only applies when not maximized.
+  const [layout, setLayout] = useState<TermLayout>(() =>
+    localStorage.getItem(LAYOUT_KEY) === "grid" ? "grid" : "tabs",
+  );
+  const chooseLayout = useCallback((next: TermLayout) => {
+    setLayout(next);
+    localStorage.setItem(LAYOUT_KEY, next);
+  }, []);
+  const gridMode = layout === "grid" && !maximized;
+
+  // How the special two-terminal grid is split: side-by-side columns (default)
+  // or stacked top/bottom rows. Deliberately plain component state, NOT
+  // persisted — the page stays mounted for the whole session so the choice
+  // sticks across tab switches, but it resets to side-by-side on a restart.
+  const [twoUpSplit, setTwoUpSplit] = useState<"cols" | "rows">("cols");
 
   // Drag-to-reorder tab state: the session being dragged and the tab it's
   // currently hovering over (drives the drop-indicator border).
@@ -264,6 +386,28 @@ export function TerminalsPage({
     const delta = t.left + t.width / 2 - (c.left + c.width / 2);
     container.scrollTo({ left: container.scrollLeft + delta, behavior: "smooth" });
   }, [activeId, sessions]);
+
+  // The scrolling grid container + a live map of each tile's element, so
+  // selecting a tab/session while in Grid can bring its tile fully into view
+  // when it's scrolled off (only >2 tiles ever scroll; otherwise this no-ops).
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+  const paneElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // In Grid, when the active session changes, scroll its tile just enough to be
+  // fully visible in the pane area, but leave it alone if it already is.
+  useEffect(() => {
+    if (!gridMode || activeId === null) return;
+    const container = gridScrollRef.current;
+    const target = paneElRefs.current.get(activeId);
+    if (!container || !target) return;
+    const c = container.getBoundingClientRect();
+    const t = target.getBoundingClientRect();
+    if (t.top >= c.top && t.bottom <= c.bottom) return; // already fully visible
+    // Scroll the minimum so the tile sits within the viewport (nearest edge).
+    const delta =
+      t.top < c.top ? t.top - c.top : t.bottom - c.bottom;
+    container.scrollTo({ top: container.scrollTop + delta, behavior: "smooth" });
+  }, [activeId, sessions, gridMode]);
 
   const [gates, setGates] = useState<Map<string, ConnectionGate>>(new Map());
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
@@ -481,6 +625,72 @@ export function TerminalsPage({
           <TextIcon />
           {tabsCompact ? "Initials" : "Full labels"}
         </Button>
+
+        {/* Pane layout toggle: one tab at a time, or every open pane tiled at
+            once like a skill run. A segmented switch rather than a single
+            button so the current mode reads at a glance. */}
+        <div
+          role="group"
+          aria-label="Terminal layout"
+          className="flex items-center gap-0.5 rounded-md border border-input p-0.5"
+        >
+          <button
+            type="button"
+            onClick={() => chooseLayout("tabs")}
+            aria-pressed={layout === "tabs"}
+            className={cn(
+              "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
+              layout === "tabs"
+                ? "bg-accent text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            {...hint("One terminal at a time, picked with the tabs below.")}
+          >
+            <PanelTopIcon className="h-3.5 w-3.5" />
+            Tabs
+          </button>
+          <button
+            type="button"
+            onClick={() => chooseLayout("grid")}
+            aria-pressed={layout === "grid"}
+            className={cn(
+              "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
+              layout === "grid"
+                ? "bg-accent text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            {...hint("Every open terminal tiled at once, like a skill run.")}
+          >
+            <LayoutGridIcon className="h-3.5 w-3.5" />
+            Grid
+          </button>
+        </div>
+
+        {/* Flip the two-terminal grid between side-by-side and top/bottom.
+            Only meaningful for exactly two tiles (one fills, three+ tile and
+            scroll), so it's shown only then. */}
+        {gridMode && gridCount === 2 && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setTwoUpSplit((s) => (s === "cols" ? "rows" : "cols"))
+            }
+            {...hint(
+              twoUpSplit === "cols"
+                ? "Terminals are side by side. Click to stack them top and bottom."
+                : "Terminals are stacked top and bottom. Click to place them side by side.",
+            )}
+          >
+            {twoUpSplit === "cols" ? (
+              <Columns2Icon className="h-3.5 w-3.5" />
+            ) : (
+              <Rows2Icon className="h-3.5 w-3.5" />
+            )}
+            {twoUpSplit === "cols" ? "Side by side" : "Top / bottom"}
+          </Button>
+        )}
+
         <div className="ml-auto flex items-center gap-1.5">
           <ShortcutBar
             shortcuts={shortcuts}
@@ -720,23 +930,45 @@ export function TerminalsPage({
                   Appearance.
                 </p>
               ) : (
-                enabledShells.map((sh) => (
-                  <button
-                    key={sh.id}
-                    type="button"
-                    onClick={() => {
-                      setShellMenuOpen(false);
-                      onOpenLocalShell(sh);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                  >
-                    <LocalShellIcon
-                      kind={sh.kind}
-                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                <>
+                  {/* How many to open at once. Picking a shell below opens this
+                      many; a large batch confirms first. Capped at the max
+                      concurrent sessions from Settings. */}
+                  <div className="mb-1 flex items-center gap-2 border-b border-border/60 px-2 py-1.5">
+                    <label
+                      htmlFor="shell-count"
+                      className="text-xs text-muted-foreground"
+                    >
+                      How many
+                    </label>
+                    <input
+                      id="shell-count"
+                      type="number"
+                      min={1}
+                      max={maxShells}
+                      value={shellCount}
+                      onChange={(e) => setShellCount(e.target.value)}
+                      className="w-16 rounded border border-input bg-background px-1.5 py-0.5 text-center font-mono text-xs"
                     />
-                    {sh.label}
-                  </button>
-                ))
+                    <span className="ml-auto text-[11px] text-muted-foreground">
+                      max {maxShells}
+                    </span>
+                  </div>
+                  {enabledShells.map((sh) => (
+                    <button
+                      key={sh.id}
+                      type="button"
+                      onClick={() => requestOpenShells(sh)}
+                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <LocalShellIcon
+                        kind={sh.kind}
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                      />
+                      {sh.label}
+                    </button>
+                  ))}
+                </>
               )}
             </div>
           )}
@@ -757,43 +989,175 @@ export function TerminalsPage({
         />
       )}
 
-      <div className="relative min-h-0 flex-1 bg-[var(--terminal-bg)] p-2">
-        {paneOrder.map((s) => (
-          <div
-            key={s.id}
-            className={cn(
-              "h-full w-full",
-              s.id === activeId ? "block" : "hidden",
-            )}
-          >
-            <TerminalView
-              ref={(handle) => {
-                if (handle) {
-                  searchHandles.current.set(s.id, handle);
-                } else {
-                  searchHandles.current.delete(s.id);
-                }
+      {/* In tabs mode one pane fills the area and the rest are display:none.
+          In grid mode every pane tiles at once, mirroring the skill run panel.
+          The pane wrappers keep the same key and structure in both modes (the
+          header is present-but-hidden in tabs), so switching layout only
+          restyles them — it never remounts a TerminalView, which would tear
+          down its live PTY. */}
+      <div
+        ref={gridScrollRef}
+        className={cn(
+          "min-h-0 flex-1 bg-[var(--terminal-bg)] p-2",
+          !gridMode && "relative",
+          // Grid layout, sized to the number of open terminals (B3):
+          //  1 tile  → fills the whole area,
+          //  2 tiles → split full-height (two columns wide, stacked when narrow),
+          //  3+ tiles → tile two-across and scroll, each a comfortable minimum.
+          gridMode && gridCount === 1 && "grid grid-cols-1 grid-rows-1 gap-2",
+          // Two tiles: side-by-side full-height (stacking only when narrow), or
+          // flipped to a fixed top/bottom split — the twoUpSplit toggle.
+          gridMode &&
+            gridCount === 2 &&
+            twoUpSplit === "cols" &&
+            "grid grid-cols-1 grid-rows-2 gap-2 lg:grid-cols-2 lg:grid-rows-1",
+          gridMode &&
+            gridCount === 2 &&
+            twoUpSplit === "rows" &&
+            "grid grid-cols-1 grid-rows-2 gap-2",
+          gridMode &&
+            gridCount > 2 &&
+            "grid grid-cols-1 content-start gap-2 overflow-auto lg:grid-cols-2",
+        )}
+      >
+        {paneOrder.map((s) => {
+          const isActive = s.id === activeId;
+          const disconnected = s.type === "ssh" && !connectedSessions.has(s.id);
+          // The active tile's header mirrors the tab tint: a ~20% host-colour
+          // fill and a top bar in the host colour for a connected SSH tile,
+          // falling back to the theme accent (with a foreground top bar) for
+          // local or disconnected tiles that have no usable hue.
+          const hostColor = s.type === "ssh" ? s.host.color : null;
+          const hostTint =
+            isActive &&
+            !disconnected &&
+            hostColor !== null &&
+            /^#[0-9a-fA-F]{6}$/.test(hostColor);
+          const headerStyle: React.CSSProperties | undefined = !isActive
+            ? undefined
+            : hostTint
+              ? { backgroundColor: `${hostColor}33`, borderTopColor: hostColor! }
+              : { borderTopColor: "var(--foreground)" };
+          return (
+            <div
+              key={s.id}
+              ref={(el) => {
+                if (el) paneElRefs.current.set(s.id, el);
+                else paneElRefs.current.delete(s.id);
               }}
-              sessionId={s.id}
-              source={
-                s.type === "ssh"
-                  ? { type: "ssh", hostId: s.host.id }
-                  : { type: "local", shellId: s.shell.id }
-              }
-              visible={visible && s.id === activeId}
-              retryNonce={retryNonces.get(s.id) ?? 0}
-              onGate={handleGate}
-              onClosed={closeSession}
-              onReconnect={reconnectSession}
-              onSearchRequest={() => setSearchOpen(true)}
-              onTabNav={navTab}
-              onSearchResults={(index, count) =>
-                setSearchResults({ index, count })
-              }
-              onConnectionChange={onConnectionChange}
-            />
-          </div>
-        ))}
+              className={cn(
+                gridMode
+                  ? cn(
+                      "flex min-w-0 flex-col overflow-hidden rounded-md border",
+                      // 1-2 tiles stretch to fill their row; 3+ keep a floor so
+                      // a tall stack stays legible and scrolls.
+                      gridCount > 2 ? "min-h-[16rem]" : "min-h-0",
+                      isActive
+                        ? "border-primary/70 ring-1 ring-primary/40"
+                        : "border-border/50",
+                    )
+                  : cn("h-full w-full", isActive ? "block" : "hidden"),
+              )}
+              onClick={gridMode ? () => onActivate(s.id) : undefined}
+            >
+              {/* Grid-only pane header: identifies the tile and carries the
+                  same maximize/close affordances the tab has. Rendered (hidden)
+                  in tabs mode so the TerminalView below never shifts position.
+                  border-t-2/transparent reserves the active top bar so tinting
+                  never nudges the layout. */}
+              <div
+                style={headerStyle}
+                className={cn(
+                  "shrink-0 items-center gap-2 border-b border-t-2 border-border/40 border-t-transparent px-2 py-1",
+                  gridMode ? "flex" : "hidden",
+                  isActive
+                    ? !hostTint && "bg-accent"
+                    : "bg-muted/30",
+                )}
+              >
+                {s.type === "ssh" ? (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: s.host.color }}
+                  />
+                ) : (
+                  <LocalShellIcon
+                    kind={s.shell.kind}
+                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                  />
+                )}
+                <span
+                  className={cn(
+                    "min-w-0 truncate text-sm font-medium",
+                    disconnected
+                      ? "text-red-500 dark:text-red-400"
+                      : isActive
+                        ? "text-foreground"
+                        : "text-muted-foreground",
+                  )}
+                  title={`${sessionLabel(s)}${tabSuffix.get(s.id) ?? ""}`}
+                >
+                  {sessionLabel(s)}
+                  {tabSuffix.get(s.id)}
+                </span>
+                <button
+                  type="button"
+                  className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMaximize(s.id);
+                  }}
+                  aria-label={`Maximize ${sessionLabel(s)}`}
+                  title="Maximize this terminal to fill the window (F11)"
+                >
+                  <Maximize2Icon className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeSession(s.id);
+                  }}
+                  aria-label={`Close ${sessionLabel(s)}`}
+                >
+                  <XIcon className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <div className={cn("min-w-0", gridMode ? "min-h-0 flex-1" : "h-full w-full")}>
+                <TerminalView
+                  ref={(handle) => {
+                    if (handle) {
+                      searchHandles.current.set(s.id, handle);
+                    } else {
+                      searchHandles.current.delete(s.id);
+                    }
+                  }}
+                  sessionId={s.id}
+                  source={
+                    s.type === "ssh"
+                      ? { type: "ssh", hostId: s.host.id }
+                      : { type: "local", shellId: s.shell.id }
+                  }
+                  visible={visible && (gridMode || isActive)}
+                  retryNonce={retryNonces.get(s.id) ?? 0}
+                  onGate={handleGate}
+                  onClosed={closeSession}
+                  onReconnect={reconnectSession}
+                  onSearchRequest={() => setSearchOpen(true)}
+                  onTabNav={navTab}
+                  onSearchResults={(index, count) =>
+                    setSearchResults({ index, count })
+                  }
+                  onConnectionChange={onConnectionChange}
+                  adoptExisting={s.type === "ssh" && s.adopted === true}
+                  adoptSnapshot={s.type === "ssh" ? s.adoptSnapshot : undefined}
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <AlertDialog open={closeAllOpen} onOpenChange={setCloseAllOpen}>
@@ -813,6 +1177,38 @@ export function TerminalsPage({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={closeAll}>
               Close all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={bulkConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setBulkConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Open that many shells?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You're about to open{" "}
+              <span className="font-semibold text-foreground">
+                {bulkConfirm?.count} {bulkConfirm?.shell.label}
+              </span>{" "}
+              terminals at once. That's a lot of shells, and each one is a live
+              process. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (bulkConfirm) openShells(bulkConfirm.shell, bulkConfirm.count);
+                setBulkConfirm(null);
+              }}
+            >
+              Open {bulkConfirm?.count}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

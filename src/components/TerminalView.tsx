@@ -24,6 +24,12 @@ import {
 } from "@/lib/tauri/pty";
 import { ptyOpenLocal } from "@/lib/tauri/local";
 import { errorMessage } from "@/lib/tauri/hosts";
+import {
+  dismissShellWarning,
+  isShellSupported,
+  loadDismissedShellWarnings,
+  unsupportedShellMessage,
+} from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
 import { useUiPrefs } from "@/lib/uiPrefs";
 
@@ -88,6 +94,14 @@ type Props = {
   /** Fires whenever this session's live-connection state flips (used for
    * the Hosts page connected indicators). */
   onConnectionChange?: (sessionId: string, connected: boolean) => void;
+  /** Adopt a backend PTY that is already open (a skill run handed its shell
+   * over) instead of opening a new one. Skips `pty_open` on the first mount and
+   * binds to the existing session id; a later Reconnect opens for real. */
+  adoptExisting?: boolean;
+  /** The skill pane's scrollback as an ANSI string, written into this terminal
+   * once on the adopting mount so the run's history is visible (adoption binds
+   * to the live stream going forward; the backend does not replay the past). */
+  adoptSnapshot?: string;
 };
 
 /** One xterm.js pane bound to one backend PTY session. Stays mounted (and
@@ -106,6 +120,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       onTabNav,
       onSearchResults,
       onConnectionChange,
+      adoptExisting,
+      adoptSnapshot,
     }: Props,
     searchHandleRef,
   ) {
@@ -117,6 +133,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // effect awaits this before opening so a shell that emits immediately (e.g.
   // PowerShell's startup cursor-position query, which it blocks on) isn't missed.
   const dataReadyRef = useRef<Promise<unknown> | null>(null);
+  // Guards the one-time write of an adopted session's scrollback snapshot.
+  const snapshotWrittenRef = useRef(false);
   const onSearchRequestRef = useRef(onSearchRequest);
   onSearchRequestRef.current = onSearchRequest;
   const onTabNavRef = useRef(onTabNav);
@@ -133,6 +151,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   prefsRef.current = prefs;
   const phaseRef = useRef<Phase>({ kind: "connecting" });
   const [phase, setPhaseState] = useState<Phase>({ kind: "connecting" });
+  // An unsupported login shell reported by the open (X4), or null. Held apart
+  // from `phase` because it survives across the phase transitions of a
+  // reconnect and is cleared only by the operator dismissing it.
+  const [shellWarning, setShellWarning] = useState<string | null>(null);
   const setPhase = useCallback(
     (p: Phase) => {
       phaseRef.current = p;
@@ -354,6 +376,27 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // no early output (e.g. a shell's startup cursor query) is dropped.
       await dataReadyRef.current;
       if (cancelled) return;
+      // Adopted session: a skill run already opened this PTY and handed it over.
+      // Opening it again would spin up a second shell and orphan the first, so
+      // just bind to the live session (the data/resize/close listeners key on
+      // the id) and mark it open. Only on the first mount — a later Reconnect
+      // (retryNonce > 0) means the original shell is gone, so fall through to a
+      // real open.
+      if (adoptExisting && retryNonce === 0 && source.type === "ssh") {
+        if (phaseRef.current.kind !== "closed") {
+          // Seed the run's scrollback before marking open, so the operator lands
+          // on the history they were just watching, not a blank shell. Once only:
+          // the live stream takes over from here, and a re-run of this effect
+          // must not stamp the backlog in again.
+          if (adoptSnapshot && !snapshotWrittenRef.current) {
+            snapshotWrittenRef.current = true;
+            term.write(adoptSnapshot);
+          }
+          setPhase({ kind: "open" });
+          term.focus();
+        }
+        return;
+      }
       try {
         // Local shells have no host-key trust or auth gate — just spawn and open.
         if (source.type === "local") {
@@ -379,6 +422,15 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         if (cancelled) return;
         switch (result.status) {
           case "opened":
+            // Flag a login shell we can't fully drive, unless this host's
+            // warning was already dismissed (X4).
+            if (
+              result.login_shell &&
+              !isShellSupported(result.login_shell) &&
+              !loadDismissedShellWarnings().has(source.hostId)
+            ) {
+              setShellWarning(unsupportedShellMessage(result.login_shell));
+            }
             // A pty:closed for this session may have raced ahead of the
             // open result — don't resurrect a dead session.
             if (phaseRef.current.kind !== "closed") {
@@ -490,6 +542,28 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
               </>
             )}
           </div>
+        </div>
+      )}
+      {/* An unsupported login shell (X4). Slim and dismissible: the shell still
+          works, so this is a caveat, not a failure. Dismissing remembers the
+          host, so a second tab on the same box doesn't say it again. Yields to
+          the disconnected banner, which owns this slot when the shell is gone. */}
+      {shellWarning && phase.kind === "open" && (
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 border-t border-amber-500/30 bg-background/95 px-3 py-2">
+          <span className="min-w-0 text-xs text-amber-700 dark:text-amber-300">
+            {shellWarning}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => {
+              if (source.type === "ssh") dismissShellWarning(source.hostId);
+              setShellWarning(null);
+            }}
+          >
+            Got it
+          </Button>
         </div>
       )}
       {/* Disconnected: keep scrollback readable, show a slim banner. */}
