@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
+  LayoutGridIcon,
   Maximize2Icon,
+  PanelTopIcon,
   PlusIcon,
   SquareTerminalIcon,
   TerminalIcon,
@@ -49,6 +51,11 @@ import { useShortcuts } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
 
 const TABS_COMPACT_KEY = "terminal-tabs-compact";
+const LAYOUT_KEY = "terminal-layout";
+
+/** How the open terminals are laid out below the tab strip: one pane at a time
+ * (the default) or every pane tiled at once, mirroring the skill run panel. */
+type TermLayout = "tabs" | "grid";
 
 /** Initials of each whitespace-separated word, e.g. "This is a test" → "TIAT".
  * Used for the compact tab label mode. */
@@ -246,6 +253,19 @@ export function TerminalsPage({
       return next;
     });
   }, []);
+
+  // Pane layout: one tab at a time (default) or every pane tiled like the skill
+  // run panel. Persisted in localStorage so it survives tab switches (the page
+  // stays mounted anyway) and program restarts. Maximizing always collapses to
+  // the single fullscreen pane, so grid only applies when not maximized.
+  const [layout, setLayout] = useState<TermLayout>(() =>
+    localStorage.getItem(LAYOUT_KEY) === "grid" ? "grid" : "tabs",
+  );
+  const chooseLayout = useCallback((next: TermLayout) => {
+    setLayout(next);
+    localStorage.setItem(LAYOUT_KEY, next);
+  }, []);
+  const gridMode = layout === "grid" && !maximized;
 
   // Drag-to-reorder tab state: the session being dragged and the tab it's
   // currently hovering over (drives the drop-indicator border).
@@ -488,6 +508,47 @@ export function TerminalsPage({
           <TextIcon />
           {tabsCompact ? "Initials" : "Full labels"}
         </Button>
+
+        {/* Pane layout toggle: one tab at a time, or every open pane tiled at
+            once like a skill run. A segmented switch rather than a single
+            button so the current mode reads at a glance. */}
+        <div
+          role="group"
+          aria-label="Terminal layout"
+          className="flex items-center gap-0.5 rounded-md border border-input p-0.5"
+        >
+          <button
+            type="button"
+            onClick={() => chooseLayout("tabs")}
+            aria-pressed={layout === "tabs"}
+            className={cn(
+              "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
+              layout === "tabs"
+                ? "bg-accent text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            {...hint("One terminal at a time, picked with the tabs below.")}
+          >
+            <PanelTopIcon className="h-3.5 w-3.5" />
+            Tabs
+          </button>
+          <button
+            type="button"
+            onClick={() => chooseLayout("grid")}
+            aria-pressed={layout === "grid"}
+            className={cn(
+              "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
+              layout === "grid"
+                ? "bg-accent text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            {...hint("Every open terminal tiled at once, like a skill run.")}
+          >
+            <LayoutGridIcon className="h-3.5 w-3.5" />
+            Grid
+          </button>
+        </div>
+
         <div className="ml-auto flex items-center gap-1.5">
           <ShortcutBar
             shortcuts={shortcuts}
@@ -764,45 +825,130 @@ export function TerminalsPage({
         />
       )}
 
-      <div className="relative min-h-0 flex-1 bg-[var(--terminal-bg)] p-2">
-        {paneOrder.map((s) => (
-          <div
-            key={s.id}
-            className={cn(
-              "h-full w-full",
-              s.id === activeId ? "block" : "hidden",
-            )}
-          >
-            <TerminalView
-              ref={(handle) => {
-                if (handle) {
-                  searchHandles.current.set(s.id, handle);
-                } else {
-                  searchHandles.current.delete(s.id);
-                }
-              }}
-              sessionId={s.id}
-              source={
-                s.type === "ssh"
-                  ? { type: "ssh", hostId: s.host.id }
-                  : { type: "local", shellId: s.shell.id }
-              }
-              visible={visible && s.id === activeId}
-              retryNonce={retryNonces.get(s.id) ?? 0}
-              onGate={handleGate}
-              onClosed={closeSession}
-              onReconnect={reconnectSession}
-              onSearchRequest={() => setSearchOpen(true)}
-              onTabNav={navTab}
-              onSearchResults={(index, count) =>
-                setSearchResults({ index, count })
-              }
-              onConnectionChange={onConnectionChange}
-              adoptExisting={s.type === "ssh" && s.adopted === true}
-              adoptSnapshot={s.type === "ssh" ? s.adoptSnapshot : undefined}
-            />
-          </div>
-        ))}
+      {/* In tabs mode one pane fills the area and the rest are display:none.
+          In grid mode every pane tiles at once, mirroring the skill run panel.
+          The pane wrappers keep the same key and structure in both modes (the
+          header is present-but-hidden in tabs), so switching layout only
+          restyles them — it never remounts a TerminalView, which would tear
+          down its live PTY. */}
+      <div
+        className={cn(
+          "min-h-0 flex-1 bg-[var(--terminal-bg)] p-2",
+          gridMode
+            ? "grid grid-cols-1 content-start gap-2 overflow-auto lg:grid-cols-2"
+            : "relative",
+        )}
+      >
+        {paneOrder.map((s) => {
+          const isActive = s.id === activeId;
+          const disconnected = s.type === "ssh" && !connectedSessions.has(s.id);
+          return (
+            <div
+              key={s.id}
+              className={cn(
+                gridMode
+                  ? cn(
+                      "flex min-h-[16rem] min-w-0 flex-col overflow-hidden rounded-md border",
+                      isActive
+                        ? "border-primary/70 ring-1 ring-primary/40"
+                        : "border-border/50",
+                    )
+                  : cn("h-full w-full", isActive ? "block" : "hidden"),
+              )}
+              onClick={gridMode ? () => onActivate(s.id) : undefined}
+            >
+              {/* Grid-only pane header: identifies the tile and carries the
+                  same maximize/close affordances the tab has. Rendered (hidden)
+                  in tabs mode so the TerminalView below never shifts position. */}
+              <div
+                className={cn(
+                  "shrink-0 items-center gap-2 border-b border-border/40 bg-muted/30 px-2 py-1",
+                  gridMode ? "flex" : "hidden",
+                )}
+              >
+                {s.type === "ssh" ? (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: s.host.color }}
+                  />
+                ) : (
+                  <LocalShellIcon
+                    kind={s.shell.kind}
+                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                  />
+                )}
+                <span
+                  className={cn(
+                    "min-w-0 truncate text-sm font-medium",
+                    disconnected
+                      ? "text-red-500 dark:text-red-400"
+                      : isActive
+                        ? "text-foreground"
+                        : "text-muted-foreground",
+                  )}
+                  title={`${sessionLabel(s)}${tabSuffix.get(s.id) ?? ""}`}
+                >
+                  {sessionLabel(s)}
+                  {tabSuffix.get(s.id)}
+                </span>
+                <button
+                  type="button"
+                  className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMaximize(s.id);
+                  }}
+                  aria-label={`Maximize ${sessionLabel(s)}`}
+                  title="Maximize this terminal to fill the window (F11)"
+                >
+                  <Maximize2Icon className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeSession(s.id);
+                  }}
+                  aria-label={`Close ${sessionLabel(s)}`}
+                >
+                  <XIcon className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <div className={cn("min-w-0", gridMode ? "min-h-0 flex-1" : "h-full w-full")}>
+                <TerminalView
+                  ref={(handle) => {
+                    if (handle) {
+                      searchHandles.current.set(s.id, handle);
+                    } else {
+                      searchHandles.current.delete(s.id);
+                    }
+                  }}
+                  sessionId={s.id}
+                  source={
+                    s.type === "ssh"
+                      ? { type: "ssh", hostId: s.host.id }
+                      : { type: "local", shellId: s.shell.id }
+                  }
+                  visible={visible && (gridMode || isActive)}
+                  retryNonce={retryNonces.get(s.id) ?? 0}
+                  onGate={handleGate}
+                  onClosed={closeSession}
+                  onReconnect={reconnectSession}
+                  onSearchRequest={() => setSearchOpen(true)}
+                  onTabNav={navTab}
+                  onSearchResults={(index, count) =>
+                    setSearchResults({ index, count })
+                  }
+                  onConnectionChange={onConnectionChange}
+                  adoptExisting={s.type === "ssh" && s.adopted === true}
+                  adoptSnapshot={s.type === "ssh" ? s.adoptSnapshot : undefined}
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <AlertDialog open={closeAllOpen} onOpenChange={setCloseAllOpen}>

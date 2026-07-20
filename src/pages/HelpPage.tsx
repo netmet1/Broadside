@@ -443,7 +443,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several",
     body: (
       <>
         <Lead>
@@ -516,6 +516,16 @@ const SECTIONS: HelpSection[] = [
               Maximize a single terminal to fill the window (also <Nav>F11</Nav>),
               and close a single tab or use <Nav>Close all</Nav> to clear them
               with a confirmation.
+            </li>
+            <li>
+              Switch the pane area between <Nav>Tabs</Nav> and <Nav>Grid</Nav>{" "}
+              with the toggle above the tab strip. <Nav>Tabs</Nav> shows one
+              terminal at a time; <Nav>Grid</Nav> tiles every open terminal at
+              once, the way a skill run does, so you can watch several together.
+              Each grid tile has its own maximize and close buttons, and clicking
+              one makes it the active tab that find and shortcut commands act on.
+              Your choice is remembered between visits and restarts; maximizing a
+              terminal always shows it on its own.
             </li>
           </Bullets>
           <H3>Copy, paste and jumping to a tab</H3>
@@ -1165,6 +1175,130 @@ const SECTIONS: HelpSection[] = [
               to give them their own Windows login and have them import hosts from
               a credential-free <Term term="csv" /> file, so they never receive
               your stored secrets.
+            </li>
+          </Bullets>
+        </Detail>
+      </>
+    ),
+  },
+  {
+    id: "help-sec-system",
+    title: "System requirements",
+    keywords:
+      "system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install",
+    body: (
+      <>
+        <Lead>
+          Broadside is a native Windows desktop app and runs comfortably on
+          modest hardware. The table lists what it needs at a minimum, and what
+          makes for a smoother ride when you are driving many hosts at once.
+        </Lead>
+        <Detail>
+          <H3>Minimum and recommended</H3>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <th className="py-2 pr-4 font-heading font-semibold">
+                    Component
+                  </th>
+                  <th className="py-2 pr-4 font-heading font-semibold">
+                    Minimum
+                  </th>
+                  <th className="py-2 font-heading font-semibold">
+                    Recommended
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="[&_td]:py-2 [&_td]:pr-4 [&_td]:align-top [&_tr]:border-b [&_tr]:border-border/50">
+                <tr>
+                  <td className="font-medium text-foreground">
+                    Operating system
+                  </td>
+                  <td className="text-foreground/90">
+                    Windows 10 (64-bit), version 1809 or later
+                  </td>
+                  <td className="text-foreground/90">
+                    Windows 11 (64-bit), kept up to date
+                  </td>
+                </tr>
+                <tr>
+                  <td className="font-medium text-foreground">
+                    WebView2 runtime
+                  </td>
+                  <td className="text-foreground/90">
+                    Microsoft Edge WebView2 installed (the installer adds it if
+                    missing)
+                  </td>
+                  <td className="text-foreground/90">
+                    WebView2 kept current through Windows Update
+                  </td>
+                </tr>
+                <tr>
+                  <td className="font-medium text-foreground">Processor</td>
+                  <td className="text-foreground/90">
+                    64-bit dual-core (x64 or ARM64)
+                  </td>
+                  <td className="text-foreground/90">
+                    Quad-core or better, 2.5 GHz and up
+                  </td>
+                </tr>
+                <tr>
+                  <td className="font-medium text-foreground">Memory (RAM)</td>
+                  <td className="text-foreground/90">4 GB</td>
+                  <td className="text-foreground/90">8 GB or more</td>
+                </tr>
+                <tr>
+                  <td className="font-medium text-foreground">
+                    Free disk space
+                  </td>
+                  <td className="text-foreground/90">300 MB</td>
+                  <td className="text-foreground/90">
+                    1 GB or more, for logs, saved sessions and backups
+                  </td>
+                </tr>
+                <tr>
+                  <td className="font-medium text-foreground">Display</td>
+                  <td className="text-foreground/90">1280 × 720</td>
+                  <td className="text-foreground/90">
+                    1920 × 1080 or higher
+                  </td>
+                </tr>
+                <tr>
+                  <td className="font-medium text-foreground">Network</td>
+                  <td className="text-foreground/90">
+                    Any connection that can reach your <Term term="SSH" /> hosts
+                  </td>
+                  <td className="text-foreground/90">
+                    A low-latency link when broadcasting to many hosts at once
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <H3>Worth knowing</H3>
+          <Bullets>
+            <li>
+              Broadside is Windows only: it uses <Term term="ConPTY" /> for local
+              shells and the <Term term="credential-manager" /> for your secrets,
+              neither of which exists on macOS or Linux.
+            </li>
+            <li>
+              No administrator rights are needed to run it. WebView2 ships with
+              Windows 11 and recent Windows 10; on an older system the installer
+              adds the Evergreen runtime, which is what draws the app's interface.
+            </li>
+            <li>
+              Memory and processor use scale with how many terminals you keep open
+              and the concurrency you set for <Nav>Broadcast</Nav> and{" "}
+              <Nav>Skills</Nav> in <Nav>Settings</Nav>; each terminal also keeps
+              its own scrollback in memory.
+            </li>
+            <li>
+              Disk use grows with saved sessions, the audit log and backups, all
+              of which you control from the{" "}
+              <SectionLink id="help-sec-logs">Logs</SectionLink> and{" "}
+              <SectionLink id="help-sec-settings">Settings</SectionLink> tabs.
             </li>
           </Bullets>
         </Detail>
