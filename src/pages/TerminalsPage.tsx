@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
+  Columns2Icon,
   LayoutGridIcon,
   Maximize2Icon,
   PanelTopIcon,
   PlusIcon,
+  Rows2Icon,
   SquareTerminalIcon,
   TerminalIcon,
   TextIcon,
@@ -354,6 +356,12 @@ export function TerminalsPage({
   }, []);
   const gridMode = layout === "grid" && !maximized;
 
+  // How the special two-terminal grid is split: side-by-side columns (default)
+  // or stacked top/bottom rows. Deliberately plain component state, NOT
+  // persisted — the page stays mounted for the whole session so the choice
+  // sticks across tab switches, but it resets to side-by-side on a restart.
+  const [twoUpSplit, setTwoUpSplit] = useState<"cols" | "rows">("cols");
+
   // Drag-to-reorder tab state: the session being dragged and the tab it's
   // currently hovering over (drives the drop-indicator border).
   const [dragId, setDragId] = useState<string | null>(null);
@@ -658,6 +666,31 @@ export function TerminalsPage({
           </button>
         </div>
 
+        {/* Flip the two-terminal grid between side-by-side and top/bottom.
+            Only meaningful for exactly two tiles (one fills, three+ tile and
+            scroll), so it's shown only then. */}
+        {gridMode && gridCount === 2 && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setTwoUpSplit((s) => (s === "cols" ? "rows" : "cols"))
+            }
+            {...hint(
+              twoUpSplit === "cols"
+                ? "Terminals are side by side. Click to stack them top and bottom."
+                : "Terminals are stacked top and bottom. Click to place them side by side.",
+            )}
+          >
+            {twoUpSplit === "cols" ? (
+              <Columns2Icon className="h-3.5 w-3.5" />
+            ) : (
+              <Rows2Icon className="h-3.5 w-3.5" />
+            )}
+            {twoUpSplit === "cols" ? "Side by side" : "Top / bottom"}
+          </Button>
+        )}
+
         <div className="ml-auto flex items-center gap-1.5">
           <ShortcutBar
             shortcuts={shortcuts}
@@ -915,7 +948,7 @@ export function TerminalsPage({
                       max={maxShells}
                       value={shellCount}
                       onChange={(e) => setShellCount(e.target.value)}
-                      className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-right font-mono text-xs"
+                      className="w-16 rounded border border-input bg-background py-0.5 pl-1.5 pr-2.5 text-right font-mono text-xs"
                     />
                     <span className="ml-auto text-[11px] text-muted-foreground">
                       max {maxShells}
@@ -972,9 +1005,16 @@ export function TerminalsPage({
           //  2 tiles → split full-height (two columns wide, stacked when narrow),
           //  3+ tiles → tile two-across and scroll, each a comfortable minimum.
           gridMode && gridCount === 1 && "grid grid-cols-1 grid-rows-1 gap-2",
+          // Two tiles: side-by-side full-height (stacking only when narrow), or
+          // flipped to a fixed top/bottom split — the twoUpSplit toggle.
           gridMode &&
             gridCount === 2 &&
+            twoUpSplit === "cols" &&
             "grid grid-cols-1 grid-rows-2 gap-2 lg:grid-cols-2 lg:grid-rows-1",
+          gridMode &&
+            gridCount === 2 &&
+            twoUpSplit === "rows" &&
+            "grid grid-cols-1 grid-rows-2 gap-2",
           gridMode &&
             gridCount > 2 &&
             "grid grid-cols-1 content-start gap-2 overflow-auto lg:grid-cols-2",
@@ -1156,8 +1196,8 @@ export function TerminalsPage({
               <span className="font-semibold text-foreground">
                 {bulkConfirm?.count} {bulkConfirm?.shell.label}
               </span>{" "}
-              terminals at once. That's a lot of shells — each is a live process.
-              Continue?
+              terminals at once. That's a lot of shells, and each one is a live
+              process. Continue?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
