@@ -145,7 +145,7 @@ function sessionScope(s: TermSession): ShortcutScope {
 
 /** Tab/menu icon for a local shell. WSL is grouped with SSH hosts under the
  * terminal icon; the Windows shells use the square-terminal icon. */
-function LocalShellIcon({
+export function LocalShellIcon({
   kind,
   className,
 }: {

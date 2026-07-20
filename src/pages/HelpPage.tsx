@@ -654,7 +654,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-ptybroadcast",
     title: "PTY Broadcast",
     keywords:
-      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all",
+      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return",
     body: (
       <>
         <Lead>
@@ -668,7 +668,7 @@ const SECTIONS: HelpSection[] = [
             <li>
               Use it when you want the same keystrokes delivered into several live
               sessions, for example to start the same interactive program on many
-              hosts.
+              hosts or local shells.
             </li>
             <li>
               Because it sends into a live <Term term="PTY" />, there is no
@@ -681,12 +681,42 @@ const SECTIONS: HelpSection[] = [
               <Nav>Broadcast</Nav> for one-shot commands and{" "}
               <Nav>PTY Broadcast</Nav> for interactive ones.
             </li>
+          </Bullets>
+          <H3>Four tabs, one shell language each</H3>
+          <Bullets>
             <li>
-              The session rail has the same <Nav>Find by label…</Nav> box and{" "}
-              <Nav>Filter tags</Nav> dropdown as{" "}
+              The page is split into four fixed tabs: <Nav>SSH</Nav>,{" "}
+              <Nav>PowerShell</Nav>, <Nav>Command Prompt</Nav>, and <Nav>WSL</Nav>.
+              Each open terminal shows up under its own tab, so a single command
+              is always valid for the shells it reaches (PowerShell and Command
+              Prompt stay separate because their syntax differs). A small count on
+              each tab shows how many shells of that kind are open.
+            </li>
+            <li>
+              The <Nav>SSH</Nav> tab is the host-oriented view: it has the same{" "}
+              <Nav>Find by label…</Nav> box and <Nav>Filter tags</Nav> dropdown as{" "}
               <SectionLink id="help-sec-broadcast">Broadcast</SectionLink>{" "}
-              (filtering a session out unchecks it), applied to each session'sShow Manual Activity
-              host.
+              (filtering a session out unchecks it), applied to each session's
+              host, plus the persisted dispatch history.
+            </li>
+          </Bullets>
+          <H3>Local shells (PowerShell, Command Prompt, WSL)</H3>
+          <Bullets>
+            <li>
+              The three local tabs fan a command out to the shells running on{" "}
+              <em>this machine</em>. A persistent yellow banner marks the danger:
+              the command runs in every checked shell immediately, with no undo.
+            </li>
+            <li>
+              Every local send asks you to confirm first, listing the exact
+              command and the shells it will run in. Cancelling sends nothing.
+            </li>
+            <li>
+              Local runs are session-only: the report clears when you close
+              Broadside (local shells do not survive a restart anyway). Behind the
+              scenes local shells receive a carriage return so PowerShell and
+              Command Prompt actually execute the line rather than waiting at a
+              continuation prompt.
             </li>
           </Bullets>
         </Detail>

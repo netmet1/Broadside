@@ -1,0 +1,536 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CheckIcon,
+  Loader2Icon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  SendIcon,
+  XIcon,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { Composer } from "@/components/Composer";
+import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
+import { ScrollToBottom } from "@/components/ScrollToBottom";
+import { ShortcutBar } from "@/components/ShortcutBar";
+import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
+import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
+import { RAIL_SORT_OPTIONS, sortForRail } from "@/lib/railSort";
+import { useRailFilter } from "@/lib/useRailFilter";
+import { railTooltip } from "@/lib/hostTags";
+import { RailFilterControls } from "@/components/RailFilterControls";
+import { useHint, usePageStatus } from "@/lib/status";
+import { useShortcuts } from "@/lib/useShortcuts";
+import type { SshTermSession } from "@/pages/TerminalsPage";
+import { useSessionBroadcast } from "@/pages/ptyBroadcast/useSessionBroadcast";
+
+/** Persisted collapse state for the session rail (mirrors MultiTerminal). */
+const RAIL_COLLAPSED_KEY = "pty-broadcast-rail-collapsed";
+/** Persisted "show per-run command header" toggle (mirrors MultiTerminal O4). */
+const HEADERS_KEY = "pty-broadcast-headers";
+
+/** Initials of each whitespace-separated word, for the collapsed rail. */
+function wordInitials(label: string): string {
+  const i = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  return i || label.slice(0, 2).toUpperCase();
+}
+
+/** PTY Broadcast — SSH tab (work-queue 2026-06-12, extended 2026-06-13): mirrors
+ * the Broadcast page's host selection, but targets the already-open SSH terminal
+ * sessions — the command is typed (with Enter) into every checked PTY. The
+ * dispatch report (sent / failed per session) appends and persists; the actual
+ * output lives in each terminal tab. */
+export function SshBroadcastPanel({
+  visible,
+  sessions,
+  connectedSessions,
+  onManageShortcuts,
+}: {
+  visible: boolean;
+  sessions: SshTermSession[];
+  /** Session ids with a live connection — only these can receive input. */
+  connectedSessions: Set<string>;
+  onManageShortcuts: () => void;
+}) {
+  const describe = useCallback(
+    (s: SshTermSession) => ({
+      host_id: s.host.id,
+      label: s.host.label,
+      color: s.host.color,
+    }),
+    [],
+  );
+  const {
+    selected,
+    setSelected,
+    toggleSession,
+    command,
+    setCommand,
+    sending,
+    runs,
+    history,
+    dispatch,
+    clearResults,
+    clearCmdHistory,
+  } = useSessionBroadcast({
+    sessions,
+    connectedSessions,
+    lineEnding: "\n",
+    persist: true,
+    describe,
+  });
+
+  const [guardHits, setGuardHits] = useState<GuardHit[]>([]);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  // Live host lookup so dispatch rows tint by the host's current colour
+  // (D-061 sub-4), reloaded when the page is shown.
+  const [hostsById, setHostsById] = useState<Map<number, Host>>(new Map());
+  const hint = useHint();
+  const shortcuts = useShortcuts(visible);
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  // Collapsible session rail (mirrors MultiTerminal's O1), persisted.
+  const [railCollapsed, setRailCollapsed] = useState(
+    () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
+  );
+  const toggleRail = useCallback(() => {
+    setRailCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(RAIL_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
+  // Per-run command header toggle (O4): default ON; off = result rows only.
+  const [headers, setHeaders] = useState(
+    () => localStorage.getItem(HEADERS_KEY) !== "0",
+  );
+  const toggleHeaders = useCallback(() => {
+    setHeaders((prev) => {
+      const next = !prev;
+      localStorage.setItem(HEADERS_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
+  }, [runs]);
+
+  // Refresh the live host colours each time the page is shown.
+  useEffect(() => {
+    if (!visible) return;
+    listHosts()
+      .then((hs) => setHostsById(new Map(hs.map((h) => [h.id, h] as const))))
+      .catch(() => {});
+  }, [visible]);
+
+  usePageStatus(
+    sessions.length > 0
+      ? `${selected.size}/${sessions.length} sessions selected`
+      : null,
+    visible,
+  );
+
+  const send = useCallback(
+    async (cmdOverride?: string) => {
+      const cmd = (cmdOverride ?? command).trim();
+      if (!cmd || selected.size === 0 || sending) return;
+      // Same pre-send guard UX as Broadcast (D-014). Note: this path types
+      // into interactive PTYs, so the check here is frontend-side courtesy —
+      // the backend keystroke channel stays guard-exempt by design.
+      try {
+        const hits = await checkDestructive(cmd);
+        if (hits.length > 0) {
+          setGuardHits(hits);
+          setConfirmOpen(true);
+          return;
+        }
+      } catch (e) {
+        toast.error(errorMessage(e));
+        return;
+      }
+      dispatch(cmd);
+      setCommand(""); // clear the composer after sending (P2)
+    },
+    [command, selected, sending, dispatch, setCommand],
+  );
+
+  const runShortcut = useCallback(
+    (cmd: string) => {
+      setCommand(cmd);
+      send(cmd);
+    },
+    [send, setCommand],
+  );
+
+  // Rail sort order (P3). Component stays mounted so this survives tab switches.
+  const [railSort, setRailSort] = useState("az");
+  const railSessions = useMemo(
+    () =>
+      sortForRail(
+        sessions,
+        (s) => s.host,
+        railSort,
+        (s) => connectedSessions.has(s.id),
+      ),
+    [sessions, railSort, connectedSessions],
+  );
+
+  // Tag + label filter over the rail (view-only; selection is unaffected). The
+  // rail rows are sessions, so the filter runs against each session's host.
+  const railFilterHosts = useMemo(() => sessions.map((s) => s.host), [sessions]);
+  const railFilter = useRailFilter(railFilterHosts, "pty-broadcast-rail-filter");
+  const railMatches = railFilter.matches;
+  const visibleRailSessions = useMemo(
+    () => railSessions.filter((s) => railMatches(s.host)),
+    [railSessions, railMatches],
+  );
+
+  // Selection is always a subset of the filtered-visible sessions: hiding a
+  // session unchecks it, and it stays unchecked when the filter is cleared (the
+  // user re-selects deliberately). "Select all" + its counter use the visible set.
+  const visibleIds = useMemo(
+    () => new Set(visibleRailSessions.map((s) => s.id)),
+    [visibleRailSessions],
+  );
+  useEffect(() => {
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visibleIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [visibleIds, setSelected]);
+
+  const allSelected =
+    visibleRailSessions.length > 0 && visibleRailSessions.every((s) => selected.has(s.id));
+  const toggleAll = () => {
+    setSelected(allSelected ? new Set() : new Set(visibleIds));
+  };
+
+  const hasOutput = runs.length > 0;
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="shrink-0 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
+        Sends the command to every checked terminal session as if typed there.
+        Results appear in each tab on the Terminals page.
+      </div>
+      <div className="flex min-h-0 flex-1">
+        {/* Session selection rail (collapsible — mirrors MultiTerminal). */}
+        <div
+          className={`flex shrink-0 flex-col border-r border-border/50 ${
+            railCollapsed ? "w-14" : "w-60"
+          }`}
+        >
+          <div className="flex shrink-0 items-center gap-2 px-2 py-2">
+            <button
+              type="button"
+              onClick={toggleRail}
+              className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              aria-label={
+                railCollapsed ? "Expand session rail" : "Collapse session rail"
+              }
+              {...hint(
+                railCollapsed
+                  ? "Expand the session selection rail"
+                  : "Collapse the session selection rail to dots",
+              )}
+            >
+              {railCollapsed ? (
+                <PanelLeftOpenIcon className="h-4 w-4" />
+              ) : (
+                <PanelLeftCloseIcon className="h-4 w-4" />
+              )}
+            </button>
+            {!railCollapsed && (
+              <label
+                className="flex cursor-pointer items-center gap-2 text-sm font-medium"
+                {...hint("Select or deselect every open terminal session")}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-primary"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  disabled={sending || visibleRailSessions.length === 0}
+                />
+                Select all
+                <span className="ml-auto text-xs font-normal text-muted-foreground">
+                  {selected.size}/{visibleRailSessions.length}
+                </span>
+              </label>
+            )}
+          </div>
+          {/* Sort-by dropdown for the session list (P3). */}
+          {!railCollapsed && (
+            <div className="shrink-0 px-3 pb-2">
+              <select
+                value={railSort}
+                onChange={(e) => setRailSort(e.target.value)}
+                aria-label="Sort sessions"
+                className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-muted-foreground outline-none focus-visible:border-ring"
+              >
+                {RAIL_SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    Sort: {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {/* Tag + label filter (mirrors the Hosts table's tag filter). */}
+          {!railCollapsed && <RailFilterControls f={railFilter} />}
+          {/* pt-2 (not just pb-2) so the first item's selection ring isn't
+              clipped by the scroll container's top edge when collapsed. */}
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {visibleRailSessions.map((s) =>
+              railCollapsed ? (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => toggleSession(s.id)}
+                  disabled={sending}
+                  title={
+                    railTooltip(s.host) +
+                    (connectedSessions.has(s.id) ? "" : "\n(not connected)")
+                  }
+                  className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 ${
+                    selected.has(s.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""
+                  }`}
+                >
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: s.host.color }}
+                  />
+                  <span className="font-mono text-[10px] leading-none">
+                    {wordInitials(s.host.label)}
+                  </span>
+                </button>
+              ) : (
+                <label
+                  key={s.id}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={selected.has(s.id)}
+                    onChange={() => toggleSession(s.id)}
+                    disabled={sending}
+                  />
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: s.host.color }}
+                  />
+                  <span className="min-w-0 truncate" title={railTooltip(s.host)}>
+                    {s.host.label}
+                  </span>
+                  <span
+                    className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
+                    connectedSessions.has(s.id)
+                      ? "bg-emerald-500"
+                      : "bg-red-500/70"
+                  }`}
+                  title={
+                    connectedSessions.has(s.id) ? "Connected" : "Not connected"
+                  }
+                />
+              </label>
+              ),
+            )}
+            {sessions.length === 0 && !railCollapsed && (
+              <p className="px-2 py-4 text-xs text-muted-foreground">
+                No open terminal sessions. Open terminals from the Hosts page
+                first.
+              </p>
+            )}
+            {sessions.length > 0 &&
+              visibleRailSessions.length === 0 &&
+              !railCollapsed &&
+              railFilter.filterActive && (
+                <p className="px-2 py-4 text-xs text-muted-foreground">
+                  No sessions match the current filter.
+                </p>
+              )}
+          </div>
+          {/* Bottom-pinned clear actions — stay visible while the session list
+              above scrolls (work queue 2026-06-13). Hidden when collapsed. */}
+          {!railCollapsed && (
+            <div className="shrink-0 space-y-1 border-t border-border/50 p-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={clearResults}
+                disabled={!hasOutput}
+                {...hint("Clear the saved dispatch history (also clears the persisted history)")}
+              >
+                Clear results
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={clearCmdHistory}
+                {...hint("Clear the Up/Down command recall history")}
+              >
+                Clear command history
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Dispatch report + composer */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/30 px-3 py-1.5">
+            <label
+              className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
+              {...hint("Show the command + time header above each dispatch. Off = result rows only.")}
+            >
+              <input
+                type="checkbox"
+                className="accent-primary"
+                checked={headers}
+                onChange={toggleHeaders}
+              />
+              Headers
+            </label>
+            <ShortcutBar
+              shortcuts={shortcuts}
+              activeScope="ssh"
+              disabled={sending || selected.size === 0}
+              onRun={runShortcut}
+              onManage={onManageShortcuts}
+            />
+          </div>
+          <div className="relative flex min-h-0 flex-1 flex-col">
+          <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+            {!hasOutput ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Select sessions, type a command, press Enter. The command is
+                typed into every checked terminal.
+              </p>
+            ) : (
+              <div className="space-y-5">
+                {runs.map((run) => (
+                  <div key={run.runId} className="space-y-2">
+                    {/* Command-sent header, mirroring the Broadcast tab. */}
+                    {headers && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="shrink-0 tabular-nums">
+                          {formatRunTime(run.ts)}
+                        </span>
+                        <code className="truncate rounded bg-muted/40 px-1.5 py-0.5 font-mono text-foreground/80">
+                          {run.command}
+                        </code>
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      {run.results.map((r, i) => {
+                        // Resolve the host's live colour/label by id (D-061
+                        // sub-4); fall back to the stored snapshot if the host
+                        // is gone or the row predates host_id.
+                        const live =
+                          r.host_id != null
+                            ? hostsById.get(r.host_id)
+                            : undefined;
+                        const color = live?.color ?? r.color;
+                        const label = live?.label ?? r.label;
+                        return (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 rounded-md border border-border/40 px-3 py-1.5 text-sm"
+                          >
+                            {r.ok ? (
+                              <CheckIcon className="h-4 w-4 shrink-0 text-emerald-400" />
+                            ) : (
+                              <XIcon className="h-4 w-4 shrink-0 text-red-400" />
+                            )}
+                            <span
+                              className="h-2.5 w-2.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="min-w-0 truncate font-medium">
+                              {label}
+                            </span>
+                            <span className="ml-auto font-mono text-xs text-muted-foreground">
+                              {r.ok ? "sent (see Terminals tab)" : r.message}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+            <ScrollToBottom scrollerRef={outputRef} />
+          </div>
+
+          <div className="flex items-end gap-2 border-t border-border/50 p-3">
+            <Composer
+              value={command}
+              onChange={setCommand}
+              onSubmit={send}
+              disabled={sessions.length === 0}
+              history={history}
+              placeholder={
+                sessions.length === 0
+                  ? "Open terminal sessions first…"
+                  : selected.size === 0
+                    ? "Select at least one session…"
+                    : `Send to ${selected.size} ${selected.size === 1 ? "session" : "sessions"}…`
+              }
+            />
+            <Button
+              onClick={() => send()}
+              disabled={sending || !command.trim() || selected.size === 0}
+              aria-label="Send"
+              className="h-10"
+              {...hint("Type the command into every checked terminal session")}
+            >
+              {sending ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
+              Send
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDestructiveDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        command={command.trim()}
+        hits={guardHits}
+        hostLabels={sessions
+          .filter((s) => selected.has(s.id))
+          .map((s) => s.host.label)
+          .sort()}
+        onConfirmed={() => {
+          dispatch(command.trim());
+          setCommand("");
+        }}
+      />
+    </div>
+  );
+}
+
+/** Run-header timestamp as `YYYY-MM-DD HH:MM:SS UTC` (B4). */
+function formatRunTime(ts: string): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ` +
+    `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`
+  );
+}
