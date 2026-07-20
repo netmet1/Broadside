@@ -57,8 +57,29 @@ const DEFAULT_ZOOM_INDEX = 3;
 /** Never shrink the map below this, however little room is left: a sliver of a
  * diagram is worse than a scrollbar. */
 const MIN_BOX_H = 200;
-/** Breathing room under the map so it doesn't sit flush on the window edge. */
-const BOTTOM_GAP = 24;
+/** Breathing room under the map so it doesn't sit flush on the window edge. A
+ * long skill that runs right up to the sill reads as if it is overflowing even
+ * when it is not, so leave a clear gap below it. */
+const BOTTOM_GAP = 44;
+
+/** Inner padding inside a node box, and rough per-character advances for the
+ * three fonts we draw with, so a long id or summary can be trimmed to the box
+ * width rather than bleeding out the side. SVG has no text-overflow; a fitted
+ * string with an ellipsis is the closest we get, and a clip on the box catches
+ * anything the estimate underruns. */
+const TEXT_PAD_L = 10;
+const TEXT_PAD_R = 10;
+const ID_CHAR_W = 6.6; // mono, 11px
+const LABEL_CHAR_W = 5; // 9px
+const SUMMARY_CHAR_W = 5.4; // 10px, proportional; kept generous so wide glyphs fit
+
+/** Trims a string to a pixel width, adding an ellipsis when it doesn't fit. */
+function fitText(text: string, maxWidth: number, charW: number): string {
+  if (maxWidth <= 0) return "";
+  const max = Math.floor(maxWidth / charW);
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(1, max - 1))}…`;
+}
 
 type Placed = { id: string; x: number; y: number; w: number; h: number };
 
@@ -336,12 +357,30 @@ export function FlowMap({
           </g>
 
           {/* Step boxes. */}
-          {graph.nodes.map((node) => {
+          {graph.nodes.map((node, ni) => {
             const box = placed.get(node.step.id);
             if (!box) return null;
             const isStart = node.step.id === startStepId;
             const isOrphan = unreachable.has(node.step.id);
             const isSelected = node.step.id === selectedId;
+            const clipId = `fm-clip-${ni}`;
+
+            // The id shares its line with the kind label, so reserve the label's
+            // width first and fit the id into whatever is left. The summary gets
+            // the full inner width. Everything is clipped to the box as a final
+            // guard, so no estimate can bleed past the edge.
+            const labelText = `${KIND_LABEL[node.step.kind]}${isStart ? " · start" : ""}`;
+            const labelW = labelText.length * LABEL_CHAR_W;
+            const idText = fitText(
+              node.step.id,
+              box.w - TEXT_PAD_L - TEXT_PAD_R - 6 - labelW,
+              ID_CHAR_W,
+            );
+            const summaryText = fitText(
+              node.summary,
+              box.w - TEXT_PAD_L - TEXT_PAD_R,
+              SUMMARY_CHAR_W,
+            );
             return (
               <g
                 key={node.step.id}
@@ -349,6 +388,15 @@ export function FlowMap({
                 onClick={() => onSelect(isSelected ? null : node.step.id)}
                 {...hint(`${node.step.id}: ${stepDetail(node.step)}`)}
               >
+                <clipPath id={clipId}>
+                  <rect
+                    x={box.x}
+                    y={box.y}
+                    width={box.w}
+                    height={box.h}
+                    rx={8}
+                  />
+                </clipPath>
                 <rect
                   x={box.x}
                   y={box.y}
@@ -376,31 +424,32 @@ export function FlowMap({
                     className="text-primary"
                   />
                 )}
-                <text
-                  x={box.x + 10}
-                  y={box.y + 17}
-                  fontSize="11"
-                  className="fill-foreground font-mono"
-                >
-                  {node.step.id}
-                </text>
-                <text
-                  x={box.x + 10 + node.step.id.length * 7 + 6}
-                  y={box.y + 17}
-                  fontSize="9"
-                  className="fill-muted-foreground"
-                >
-                  {KIND_LABEL[node.step.kind]}
-                  {isStart ? " · start" : ""}
-                </text>
-                <text
-                  x={box.x + 10}
-                  y={box.y + 36}
-                  fontSize="10"
-                  className="fill-muted-foreground"
-                >
-                  {node.summary}
-                </text>
+                <g clipPath={`url(#${clipId})`}>
+                  <text
+                    x={box.x + TEXT_PAD_L}
+                    y={box.y + 17}
+                    fontSize="11"
+                    className="fill-foreground font-mono"
+                  >
+                    {idText}
+                  </text>
+                  <text
+                    x={box.x + TEXT_PAD_L + idText.length * ID_CHAR_W + 6}
+                    y={box.y + 17}
+                    fontSize="9"
+                    className="fill-muted-foreground"
+                  >
+                    {labelText}
+                  </text>
+                  <text
+                    x={box.x + TEXT_PAD_L}
+                    y={box.y + 36}
+                    fontSize="10"
+                    className="fill-muted-foreground"
+                  >
+                    {summaryText}
+                  </text>
+                </g>
               </g>
             );
           })}
