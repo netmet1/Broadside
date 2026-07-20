@@ -393,8 +393,9 @@ function App() {
     return ids;
   }, [sessions]);
 
-  // SSH-only sessions for the host-oriented pages (PTY Broadcast, MultiTerminal),
-  // which target saved hosts and don't apply to local shells.
+  // SSH-only sessions for MultiTerminal, whose aggregate block view needs the
+  // OSC 133 markers only the SSH path emits. PTY Broadcast now takes the full
+  // session list — its local-shell tabs fan out to open PowerShell/cmd/WSL too.
   const sshSessions = useMemo(
     () => sessions.filter((s): s is SshTermSession => s.type === "ssh"),
     [sessions],
@@ -443,7 +444,7 @@ function App() {
       <div className={page === "ptybroadcast" ? "block h-full" : "hidden"}>
         <PtyBroadcastPage
           visible={page === "ptybroadcast"}
-          sessions={sshSessions}
+          sessions={sessions}
           connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}
         />
