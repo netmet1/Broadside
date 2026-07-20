@@ -50,6 +50,7 @@ import {
   resetAppSettings,
   setSudoAutofillEnabled,
 } from "@/lib/tauri/settings";
+import { isExitGuardEnabled, setExitGuardEnabled } from "@/lib/exitGuard";
 import { AdminUnlockDialog } from "@/components/AdminUnlockDialog";
 import {
   AlertDialog,
@@ -148,6 +149,9 @@ export function SettingsPage({
     submitRecover,
     removeLock,
   } = useAdminLock();
+
+  // Warn-before-quit-with-connected-terminals guard (UI-only pref, default on).
+  const [exitGuard, setExitGuard] = useState(isExitGuardEnabled);
 
   // Reset-everything-to-defaults (with a guard rail).
   const [resetOpen, setResetOpen] = useState(false);
@@ -605,6 +609,29 @@ export function SettingsPage({
               Save
             </Button>
           </div>
+        </div>
+
+        {/* Exit guard: warn before quitting while terminals are still
+            connected. A local UI preference (saved immediately), separate from
+            the Save button above. */}
+        <div className="max-w-xl space-y-1 border-t border-border/40 pt-4">
+          <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="accent-primary"
+              checked={exitGuard}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setExitGuardEnabled(next);
+                setExitGuard(next);
+              }}
+            />
+            Warn before quitting with terminals connected
+          </label>
+          <p className="text-xs text-muted-foreground">
+            When on, closing the app while any terminal is still connected asks
+            for confirmation first, so a stray close never drops a live session.
+          </p>
         </div>
       </section>
       )}

@@ -521,11 +521,13 @@ const SECTIONS: HelpSection[] = [
               Switch the pane area between <Nav>Tabs</Nav> and <Nav>Grid</Nav>{" "}
               with the toggle above the tab strip. <Nav>Tabs</Nav> shows one
               terminal at a time; <Nav>Grid</Nav> tiles every open terminal at
-              once, the way a skill run does, so you can watch several together.
-              Each grid tile has its own maximize and close buttons, and clicking
-              one makes it the active tab that find and shortcut commands act on.
-              Your choice is remembered between visits and restarts; maximizing a
-              terminal always shows it on its own.
+              once so you can watch several together. One terminal fills the
+              area, two split it, and three or more tile two-across and scroll.
+              Each grid tile has its own maximize and close buttons, its header
+              shows the same colour as the tab, and clicking one makes it the
+              active tab that find and shortcut commands act on. Your choice is
+              remembered between visits and restarts; maximizing a terminal
+              always shows it on its own.
             </li>
           </Bullets>
           <H3>Copy, paste and jumping to a tab</H3>

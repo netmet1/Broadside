@@ -8,8 +8,20 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { AppShell, type Page } from "@/components/AppShell";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { isExitGuardEnabled } from "@/lib/exitGuard";
 import { HostsPage } from "@/pages/HostsPage";
 import { BroadcastPage } from "@/pages/BroadcastPage";
 import {
@@ -74,6 +86,19 @@ function App() {
   // view automatically when that specific terminal is closed.
   const [maxSessionId, setMaxSessionId] = useState<string | null>(null);
   const maximized = maxSessionId !== null;
+
+  // Exit guard (opt-in, on by default): warn before the window closes while any
+  // terminal is still connected, so a stray Alt+F4 doesn't drop live sessions.
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
+  // The close handler is registered once but must see the live connection set
+  // and toggle state, so both are read through refs the effects keep current.
+  const connectedRef = useRef<Set<string>>(connectedSessions);
+  useEffect(() => {
+    connectedRef.current = connectedSessions;
+  }, [connectedSessions]);
+  // Latched true once the user confirms the quit, so our own destroy() isn't
+  // re-intercepted by the guard.
+  const closingRef = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -311,6 +336,36 @@ function App() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [maximized, page, activeSessionId]);
 
+  // Intercept the window close: if the guard is on and something is still
+  // connected, hold the close and ask first. Registered once; reads the live
+  // connection set / preference through refs and localStorage so it never goes
+  // stale. Confirming sets closingRef and calls destroy(), which closes without
+  // re-emitting the request (unlike close()).
+  useEffect(() => {
+    const win = getCurrentWindow();
+    const unlisten = win.onCloseRequested((event) => {
+      if (closingRef.current) return;
+      if (isExitGuardEnabled() && connectedRef.current.size > 0) {
+        event.preventDefault();
+        setExitConfirmOpen(true);
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const confirmQuit = useCallback(() => {
+    closingRef.current = true;
+    setExitConfirmOpen(false);
+    getCurrentWindow()
+      .destroy()
+      .catch(() => {
+        // If destroy somehow fails, drop the latch so the guard still works.
+        closingRef.current = false;
+      });
+  }, []);
+
   // Drop back to the tabbed view when the maximized terminal is gone (closed
   // or terminated) or we've left the Terminals page.
   useEffect(() => {
@@ -463,6 +518,29 @@ function App() {
           onOpenChange={setUnlockOpen}
           onUnlocked={() => {}}
         />
+        <AlertDialog open={exitConfirmOpen} onOpenChange={setExitConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Quit with terminals connected?</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="font-semibold text-foreground">
+                  {connectedSessions.size}
+                </span>{" "}
+                terminal {connectedSessions.size === 1 ? "session is" : "sessions are"}{" "}
+                still connected. Quitting now disconnects{" "}
+                {connectedSessions.size === 1 ? "it" : "them"} and loses any
+                unsaved work in those shells. You can turn this warning off in
+                Settings, under Performance.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Stay open</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={confirmQuit}>
+                Quit anyway
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <Toaster />
       </AppShell>
       </UiPrefsProvider>
