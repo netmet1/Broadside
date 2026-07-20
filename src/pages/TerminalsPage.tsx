@@ -77,6 +77,10 @@ const GRID_FLOOR_COLS = 24;
 const TILE_BORDER_X = 2;
 const TILE_BORDER_Y = 2;
 const GRID_HEADER_H = 30;
+/** Legible minimum tile height (16rem = 256px) for a custom grid whose item
+ * height is auto. Rows fill the pane when few (so a maximized window has no dead
+ * space) but never shrink below this, overflowing to a vertical scroll when many. */
+const GRID_ROW_FLOOR_PX = 256;
 
 /** How the open terminals are laid out below the tab strip: one pane at a time
  * (the default) or every pane tiled at once, mirroring the skill run panel. */
@@ -417,6 +421,11 @@ export function TerminalsPage({
       style.gridAutoRows = `${
         Math.round(gridPrefs.itemRows * cell.cellH) + GRID_HEADER_H + TILE_BORDER_Y
       }px`;
+    } else {
+      // Item height auto: rows grow to fill the pane (a few tiles leave no dead
+      // space in a tall/maximized window) but hold a legible floor, so more tiles
+      // than fit overflow to a vertical scroll instead of shrinking to slivers.
+      style.gridAutoRows = `minmax(${GRID_ROW_FLOOR_PX}px, 1fr)`;
     }
     return style;
   }, [customGrid, gridPrefs, cell]);
@@ -1121,14 +1130,12 @@ export function TerminalsPage({
                 gridMode
                   ? cn(
                       "flex min-w-0 flex-col overflow-hidden rounded-md border",
-                      // Row height: a pinned item-height fixes the row (min-h-0
-                      // lets the tile fill it); otherwise 1-2 tiles fill their
-                      // row and 3+ (or a rows-auto custom grid) keep a legible
-                      // floor and scroll.
+                      // Row height: a custom grid's row track sets the tile
+                      // height (a pinned item-height, or minmax(floor,1fr) when
+                      // auto), so the tile just fills it (min-h-0). The default
+                      // grid keeps a legible floor for 3+ tiles and scrolls.
                       customGrid
-                        ? gridPrefs.itemRows != null
-                          ? "min-h-0"
-                          : "min-h-[16rem]"
+                        ? "min-h-0"
                         : gridCount > 2
                           ? "min-h-[16rem]"
                           : "min-h-0",
