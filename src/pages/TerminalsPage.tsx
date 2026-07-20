@@ -46,10 +46,13 @@ import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage, type Host } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import { reconcileDisabledShells } from "@/lib/localShellPrefs";
+import { isAutoGrid, loadGridPrefs, type GridPrefs } from "@/lib/gridPrefs";
+import { measureTerminalCell } from "@/lib/terminalCell";
 import type { SearchOptions } from "@/lib/search";
 import { getAppSettings, type ShortcutScope } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
+import { useUiPrefs } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
 
 const TABS_COMPACT_KEY = "terminal-tabs-compact";
@@ -63,6 +66,17 @@ const BULK_SHELL_WARN = 7;
 /** Fallback cap on the bulk-open count when the settings probe hasn't answered
  * yet (the real cap is the configured/suggested max concurrent sessions). */
 const DEFAULT_MAX_SHELLS = 32;
+
+/** Minimum tile width, in characters, when a fixed column count is set but the
+ * item width is auto — keeps a big column count from shaving tiles to slivers.
+ * Past this the grid overflows and scrolls horizontally instead. */
+const GRID_FLOOR_COLS = 24;
+/** Per-tile chrome added to the character-derived pixel size: the 1px border on
+ * each side (X), and the border plus the grid pane header (Y). Approximate — fit
+ * rounds a container to whole cells, so the result lands within ~1 col/row. */
+const TILE_BORDER_X = 2;
+const TILE_BORDER_Y = 2;
+const GRID_HEADER_H = 30;
 
 /** How the open terminals are laid out below the tab strip: one pane at a time
  * (the default) or every pane tiled at once, mirroring the skill run panel. */
@@ -361,6 +375,51 @@ export function TerminalsPage({
   // persisted — the page stays mounted for the whole session so the choice
   // sticks across tab switches, but it resets to side-by-side on a restart.
   const [twoUpSplit, setTwoUpSplit] = useState<"cols" | "rows">("cols");
+
+  // Grid layout prefs (Settings -> Grid): pinned column count and character-based
+  // tile size, or auto. Re-read whenever the page is shown so a change made in
+  // Settings (this page stays mounted) takes effect on return, like disabledShells.
+  const [gridPrefs, setGridPrefs] = useState<GridPrefs>(loadGridPrefs);
+  useEffect(() => {
+    if (visible) setGridPrefs(loadGridPrefs());
+  }, [visible]);
+  // One cell measurement serves every tile (all terminals share the app font).
+  const { prefs: uiPrefs } = useUiPrefs();
+  const cell = useMemo(
+    () =>
+      measureTerminalCell(uiPrefs.terminalFontFamily, uiPrefs.terminalFontSize),
+    [uiPrefs.terminalFontFamily, uiPrefs.terminalFontSize],
+  );
+  // A non-auto grid switches to a uniform, settings-driven layout that bypasses
+  // the 1/2/3-tile special cases and the two-up flip.
+  const customGrid = gridMode && !isAutoGrid(gridPrefs);
+  // When custom but neither cols nor item width is pinned (only rows), columns
+  // fall back to the shipped responsive default via a class, not inline style.
+  const customColsAuto =
+    customGrid && gridPrefs.cols == null && gridPrefs.itemCols == null;
+  const gridStyle = useMemo<React.CSSProperties | undefined>(() => {
+    if (!customGrid) return undefined;
+    const style: React.CSSProperties = {};
+    const widthPx =
+      gridPrefs.itemCols != null
+        ? Math.round(gridPrefs.itemCols * cell.cellW) + TILE_BORDER_X
+        : null;
+    const floorPx = Math.round(GRID_FLOOR_COLS * cell.cellW) + TILE_BORDER_X;
+    if (gridPrefs.cols != null && widthPx != null) {
+      style.gridTemplateColumns = `repeat(${gridPrefs.cols}, ${widthPx}px)`;
+    } else if (gridPrefs.cols != null) {
+      style.gridTemplateColumns = `repeat(${gridPrefs.cols}, minmax(${floorPx}px, 1fr))`;
+    } else if (widthPx != null) {
+      style.gridTemplateColumns = `repeat(auto-fill, ${widthPx}px)`;
+    }
+    // else: columns stay auto (only rows pinned) — a Tailwind class handles it.
+    if (gridPrefs.itemRows != null) {
+      style.gridAutoRows = `${
+        Math.round(gridPrefs.itemRows * cell.cellH) + GRID_HEADER_H + TILE_BORDER_Y
+      }px`;
+    }
+    return style;
+  }, [customGrid, gridPrefs, cell]);
 
   // Drag-to-reorder tab state: the session being dragged and the tab it's
   // currently hovering over (drives the drop-indicator border).
@@ -668,8 +727,9 @@ export function TerminalsPage({
 
         {/* Flip the two-terminal grid between side-by-side and top/bottom.
             Only meaningful for exactly two tiles (one fills, three+ tile and
-            scroll), so it's shown only then. */}
-        {gridMode && gridCount === 2 && (
+            scroll), and only in the default auto grid — a pinned grid uses the
+            Settings layout instead. */}
+        {gridMode && !customGrid && gridCount === 2 && (
           <Button
             size="sm"
             variant="outline"
@@ -1000,25 +1060,37 @@ export function TerminalsPage({
         className={cn(
           "min-h-0 flex-1 bg-[var(--terminal-bg)] p-2",
           !gridMode && "relative",
-          // Grid layout, sized to the number of open terminals (B3):
+          // Settings-driven grid (Settings -> Grid): a uniform layout with pinned
+          // columns and/or character-based tile size. Overflow scrolls — the
+          // fixed widths can exceed the viewport, and that scroll is intended.
+          customGrid && "grid content-start gap-2 overflow-auto",
+          customColsAuto && "grid-cols-1 lg:grid-cols-2",
+          // Default fit-to-viewport grid, sized to the number of open terminals:
           //  1 tile  → fills the whole area,
           //  2 tiles → split full-height (two columns wide, stacked when narrow),
           //  3+ tiles → tile two-across and scroll, each a comfortable minimum.
-          gridMode && gridCount === 1 && "grid grid-cols-1 grid-rows-1 gap-2",
+          !customGrid &&
+            gridMode &&
+            gridCount === 1 &&
+            "grid grid-cols-1 grid-rows-1 gap-2",
           // Two tiles: side-by-side full-height (stacking only when narrow), or
           // flipped to a fixed top/bottom split — the twoUpSplit toggle.
-          gridMode &&
+          !customGrid &&
+            gridMode &&
             gridCount === 2 &&
             twoUpSplit === "cols" &&
             "grid grid-cols-1 grid-rows-2 gap-2 lg:grid-cols-2 lg:grid-rows-1",
-          gridMode &&
+          !customGrid &&
+            gridMode &&
             gridCount === 2 &&
             twoUpSplit === "rows" &&
             "grid grid-cols-1 grid-rows-2 gap-2",
-          gridMode &&
+          !customGrid &&
+            gridMode &&
             gridCount > 2 &&
             "grid grid-cols-1 content-start gap-2 overflow-auto lg:grid-cols-2",
         )}
+        style={gridStyle}
       >
         {paneOrder.map((s) => {
           const isActive = s.id === activeId;
@@ -1049,9 +1121,17 @@ export function TerminalsPage({
                 gridMode
                   ? cn(
                       "flex min-w-0 flex-col overflow-hidden rounded-md border",
-                      // 1-2 tiles stretch to fill their row; 3+ keep a floor so
-                      // a tall stack stays legible and scrolls.
-                      gridCount > 2 ? "min-h-[16rem]" : "min-h-0",
+                      // Row height: a pinned item-height fixes the row (min-h-0
+                      // lets the tile fill it); otherwise 1-2 tiles fill their
+                      // row and 3+ (or a rows-auto custom grid) keep a legible
+                      // floor and scroll.
+                      customGrid
+                        ? gridPrefs.itemRows != null
+                          ? "min-h-0"
+                          : "min-h-[16rem]"
+                        : gridCount > 2
+                          ? "min-h-[16rem]"
+                          : "min-h-0",
                       isActive
                         ? "border-primary/70 ring-1 ring-primary/40"
                         : "border-border/50",

@@ -19,6 +19,7 @@ export const SECTION_TITLES = [
   "Destructive command guard",
   "Shortcut commands",
   "Appearance",
+  "Grid",
   "Backup & Restore",
   "Help",
   "Audit log",
