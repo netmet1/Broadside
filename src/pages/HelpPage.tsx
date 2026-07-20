@@ -443,7 +443,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto",
     body: (
       <>
         <Lead>
@@ -528,6 +528,17 @@ const SECTIONS: HelpSection[] = [
               active tab that find and shortcut commands act on. Your choice is
               remembered between visits and restarts; maximizing a terminal
               always shows it on its own.
+            </li>
+            <li>
+              To pin the grid, open <Nav>Settings</Nav> and the <Nav>Grid</Nav>{" "}
+              section. Leave everything on <Nav>Auto</Nav> for the layout above,
+              or set the <Nav>Columns across</Nav> and the tile{" "}
+              <Nav>Item width</Nav> / <Nav>Item height</Nav> in characters
+              (columns and rows). Fixed tile widths that add up to more than the
+              window scroll sideways rather than shrinking, so panes keep the
+              character size you asked for. Changing the terminal font resizes
+              pinned tiles to keep those dimensions. The settings apply the next
+              time you open the Terminals page.
             </li>
           </Bullets>
           <H3>Copy, paste and jumping to a tab</H3>

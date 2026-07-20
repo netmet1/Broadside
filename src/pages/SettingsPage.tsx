@@ -71,6 +71,7 @@ import {
   sectionDomId,
 } from "@/pages/settings/constants";
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
+import { GridSection } from "@/pages/settings/GridSection";
 import { useAdminLock } from "@/pages/settings/useAdminLock";
 import { useAppearance } from "@/pages/settings/useAppearance";
 import { useBackupRestore } from "@/pages/settings/useBackupRestore";
@@ -1221,6 +1222,11 @@ export function SettingsPage({
           </div>
         </div>
       </section>
+      )}
+
+      {/* Grid — Terminals grid layout (localStorage, applies on next visit). */}
+      {sectionVisible("Grid") && sectionReady("Grid") && (
+        <GridSection id={sectionDomId("Grid")} />
       )}
 
       {/* Backup & Restore */}
