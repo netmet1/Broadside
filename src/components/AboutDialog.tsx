@@ -1,4 +1,5 @@
 import { HeartIcon } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 import {
   Dialog,
@@ -10,11 +11,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAppVersion } from "@/lib/useAppVersion";
 
+/** Ko-fi donations page; funnels from the About dialog's Donate button. */
+const DONATE_URL = "https://ko-fi.com/netmet";
+
 /**
- * About dialog (D-019): version, donations link slot, NOTICE reference.
- * The donations target gets wired when the repo flips public (GitHub
- * Sponsors requires a public repo) — until then the slot is a disabled
- * placeholder.
+ * About dialog (D-019): version, donations link, NOTICE reference.
+ * The Donate button opens DONATE_URL in the default browser via the
+ * Tauri opener plugin.
  */
 export function AboutDialog({
   open,
@@ -41,7 +44,11 @@ export function AboutDialog({
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Support development</span>
-            <Button variant="outline" size="sm" disabled title="Available once the project is public">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void openUrl(DONATE_URL)}
+            >
               <HeartIcon />
               Donate
             </Button>
