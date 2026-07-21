@@ -1,0 +1,94 @@
+name: Release
+
+# Cuts a GitHub Release for a "done" version. MANUAL trigger only
+# (workflow_dispatch) so it never runs on ordinary pushes - ci.yml stays the
+# push-to-main backstop; this is the deliberate "ship it" button.
+#
+# The release notes live in internal_only/release notes/ which is GITIGNORED, so
+# a fresh runner checkout does not contain them. They are handed to this run as
+# the `notes` input at trigger time (see scripts/release.ps1, which reads the
+# local notes file and passes its contents). The notes never enter the repo.
+#
+# What it does on a clean Windows runner:
+#   1. Build the app (npm run tauri build) -> the MSI installer.
+#   2. Title  = vX.X.X, read from src-tauri/tauri.conf.json (single source of truth).
+#   3. Body   = the `notes` input.
+#   4. Asset  = the built MSI.
+# The release is created as a DRAFT for review; you publish it by hand.
+#
+# Assumes the target commit already passed validation (local scripts/ci.ps1 and
+# the ci.yml backstop on main). This workflow builds and publishes; it does not
+# re-run the test/audit suite.
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "Release notes markdown (body of the release). Passed by scripts/release.ps1 from the local gitignored notes file."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build MSI and draft release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Build app (MSI)
+        run: npm run tauri build
+
+      - name: Resolve version and locate MSI
+        id: pkg
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $tag = "v$version"
+          $msi = Get-ChildItem "src-tauri/target/release/bundle/msi/*.msi" | Select-Object -First 1
+          if (-not $msi) { throw "No MSI found under src-tauri/target/release/bundle/msi/" }
+          "tag=$tag"            >> $env:GITHUB_OUTPUT
+          "msi=$($msi.FullName)" >> $env:GITHUB_OUTPUT
+          Write-Host "Release $tag  ->  $($msi.Name)"
+
+      - name: Write notes file
+        shell: pwsh
+        env:
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: |
+          # Via env (not string interpolation) so nothing in the notes can inject
+          # into the script. UTF-8 without BOM keeps the header emoji intact.
+          $env:RELEASE_NOTES | Out-File -FilePath notes.md -Encoding utf8 -NoNewline
+
+      - name: Create draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.pkg.outputs.tag }}"
+          if (gh release view $tag 2>$null) {
+            throw "Release $tag already exists. Delete the existing (draft) release or bump the version, then re-run."
+          }
+          gh release create $tag `
+            --draft `
+            --title $tag `
+            --notes-file notes.md `
+            --target $env:GITHUB_SHA `
+            "${{ steps.pkg.outputs.msi }}"
+          Write-Host "Draft release $tag created. Review it on the Releases page, then Publish."
