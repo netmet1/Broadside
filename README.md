@@ -7,7 +7,7 @@ Built with Tauri 2 + Rust + React + TypeScript.
 
 ## Status
 
-Alpha (`v0.1a`). Private development. Not for distribution.
+**v1.1.0**
 
 ## Local development
 
