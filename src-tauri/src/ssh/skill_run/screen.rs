@@ -2,8 +2,8 @@
 //!
 //! Raw bytes still stream to the live pane untouched (`pty:data`); this is a
 //! parallel, display-free interpretation used *only* for matching, so that a
-//! program which repaints its screen with colour and carriage returns (the
-//! `cpilot` monitor is the motivating case) doesn't defeat a pattern that would
+//! program which repaints its screen with colour and carriage returns (a live
+//! monitor like `htop` is the motivating case) doesn't defeat a pattern that would
 //! obviously match what the operator can plainly see.
 //!
 //! Semantics are expect's, not a terminal's: output accumulates into a buffer
@@ -15,7 +15,7 @@
 //! the buffer append-only and cheap.
 //!
 //! The current line is part of the match view: an interactive prompt
-//! (`start the validator(s)? (y/n) `) never sends a newline, so a matcher that
+//! (`Do you want to continue? [Y/n] `) never sends a newline, so a matcher that
 //! only saw completed lines could never answer one.
 
 use vte::{Params, Parser, Perform};
@@ -201,7 +201,7 @@ impl Screen {
     /// Consumes the view through byte offset `end` (the end of a match) and
     /// returns the consumed text, so the same output can never satisfy a later
     /// step. A match reaching into the current line consumes only through the
-    /// match end: a repainting program (cpilot) keeps several values on one
+    /// match end: a repainting program (htop) keeps several values on one
     /// unterminated line, and consuming the line whole ate the *next* step's
     /// value along with this step's match. The value stayed plainly visible in
     /// the pane, was never reprinted, and the next expect timed out on text
@@ -263,8 +263,8 @@ mod tests {
     fn unterminated_line_is_visible() {
         // The whole point: a prompt with no newline must be matchable.
         assert_eq!(
-            view_of(&[b"start the validator(s)? (y/n) "]),
-            "start the validator(s)? (y/n) "
+            view_of(&[b"Do you want to continue? [Y/n] "]),
+            "Do you want to continue? [Y/n] "
         );
     }
 
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn carriage_return_redraw_collapses_to_final_text() {
-        // The cpilot case: one line repainted in place.
+        // The htop case: one line repainted in place.
         assert_eq!(
             view_of(&[b"Attempt 1: waiting\rAttempt 2: waiting\rAttempt 3: Ready  \r\n"]),
             "Attempt 3: Ready  \n"
@@ -358,13 +358,13 @@ mod tests {
 
     #[test]
     fn consume_mid_line_keeps_the_rest_of_the_line_matchable() {
-        // The GL0/GL1 bug: two step values sharing one unterminated line. The
+        // The two-values bug: two step values sharing one unterminated line. The
         // first match must not eat the second value.
         let mut s = Screen::new();
-        s.feed(b"GL0: pass  GL1: pass");
-        let end = s.view().find("GL0: pass").unwrap() + "GL0: pass".len();
-        assert_eq!(s.consume_through(end), "GL0: pass");
-        assert_eq!(s.view(), "  GL1: pass");
+        s.feed(b"web: ok  db: ok");
+        let end = s.view().find("web: ok").unwrap() + "web: ok".len();
+        assert_eq!(s.consume_through(end), "web: ok");
+        assert_eq!(s.view(), "  db: ok");
     }
 
     #[test]
@@ -382,11 +382,11 @@ mod tests {
         // After a partial consume, a `\r` repaint must land at the true start
         // of the surviving text, not at a stale cursor offset.
         let mut s = Screen::new();
-        s.feed(b"GL0: pass  GL1: ....");
-        let end = s.view().find("GL0: pass").unwrap() + "GL0: pass".len();
+        s.feed(b"web: ok  db: ....");
+        let end = s.view().find("web: ok").unwrap() + "web: ok".len();
         s.consume_through(end);
-        s.feed(b"\rGL0: pass  GL1: pass");
-        assert_eq!(s.view(), "GL0: pass  GL1: pass");
+        s.feed(b"\rweb: ok  db: ok");
+        assert_eq!(s.view(), "web: ok  db: ok");
     }
 
     #[test]

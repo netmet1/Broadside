@@ -198,14 +198,14 @@ async fn run_step_takes_the_success_branch_on_exit_zero() {
 
 #[tokio::test(start_paused = true)]
 async fn run_step_takes_the_failure_branch_on_nonzero_exit() {
-    // The plan's cpilot-not-installed case: exit 127 → failure branch.
+    // The not-installed case: exit 127 → failure branch.
     let (mut engine, host) = harness();
     let c = cfg(vec![
-        run_step("a", "cpilot shutdown", STOP, "b"),
+        run_step("a", "htop", STOP, "b"),
         run_step("b", "echo recovering", STOP, STOP),
     ]);
-    host.say(&echo_of("cpilot shutdown"));
-    host.say("bash: cpilot: command not found\r\n__bsdone_127__\r\n");
+    host.say(&echo_of("htop"));
+    host.say("bash: htop: command not found\r\n__bsdone_127__\r\n");
     host.say(&echo_of("echo recovering"));
     host.say("recovering\r\n__bsdone_0__\r\n");
     let outcome = engine.run_sequence(&c).await;
@@ -312,15 +312,15 @@ fn command_output_of_a_silent_command_is_empty() {
 
 #[tokio::test(start_paused = true)]
 async fn expect_step_answers_an_interactive_prompt() {
-    // The north-star: cpilot asks, the engine answers, the operator watches.
+    // The north-star: the program asks, the engine answers, the operator watches.
     let (mut engine, host) = harness();
     let c = cfg(vec![expect_step(
         "a",
-        r"start the validator\(s\)\? \(y/n\)",
+        r"Do you want to continue\? \[Y/n\]",
         Some("y\n"),
         STOP,
     )]);
-    host.say("start the validator(s)? (y/n) ");
+    host.say("Do you want to continue? [Y/n] ");
     let outcome = engine.run_sequence(&c).await;
     assert!(outcome.ok, "{outcome:?}");
     assert_eq!(host.typed(), "y\n");
@@ -372,7 +372,7 @@ async fn expect_matches_a_prompt_with_no_trailing_newline() {
 async fn expect_matches_through_ansi_redraw_noise() {
     let (mut engine, host) = harness();
     let c = cfg(vec![expect_step("a", "^Ready$", None, STOP)]);
-    // cpilot shutdown repaints one line in place, in colour, then settles.
+    // htop repaints one line in place, in colour, then settles.
     host.say("\x1b[33mAttempt 8: waiting\x1b[0m\rAttempt 9: waiting\r");
     host.say("\x1b[32mReady\x1b[0m\x1b[K\r\n");
     assert!(engine.run_sequence(&c).await.ok);
@@ -384,11 +384,11 @@ async fn a_prompt_arriving_early_is_still_matched() {
     // answers it starts afterwards. Consume-on-match is what saves this.
     let (mut engine, host) = harness();
     let c = cfg(vec![
-        run_step("a", "cpilot", "b", "fail"),
-        expect_step("b", "join GL1\\?", Some("y\n"), STOP),
+        run_step("a", "htop", "b", "fail"),
+        expect_step("b", "Restart nginx\\?", Some("y\n"), STOP),
     ]);
-    host.say(&echo_of("cpilot"));
-    host.say("working\r\n__bsdone_0__\r\njoin GL1? (y/n) ");
+    host.say(&echo_of("htop"));
+    host.say("working\r\n__bsdone_0__\r\nRestart nginx? (y/n) ");
     assert!(engine.run_sequence(&c).await.ok);
     assert!(host.typed().ends_with("y\n"));
 }
@@ -770,7 +770,7 @@ async fn operator_takeover_noise_is_cleared_on_resume() {
 
 #[tokio::test(start_paused = true)]
 async fn a_value_arriving_during_a_pause_satisfies_an_untyped_resume() {
-    // The GL1 fubar's second half: the awaited text lands while parked (a slow
+    // The parked-match case's second half: the awaited text lands while parked (a slow
     // host, or output the previous step provoked). The operator only watched,
     // so resume must not wipe it; the retried wait sees it immediately.
     let (mut engine, host) = harness();
@@ -791,15 +791,15 @@ async fn a_value_arriving_during_a_pause_satisfies_an_untyped_resume() {
 
 #[tokio::test(start_paused = true)]
 async fn a_match_does_not_consume_a_later_value_on_the_same_line() {
-    // The GL0/GL1 fubar's first half: a repainting program keeps both values
-    // on one unterminated line. Matching GL0 must leave GL1 matchable, or the
+    // The two-values case's first half: a repainting program keeps both values
+    // on one unterminated line. Matching the first must leave the second matchable, or the
     // second step times out on text the operator can plainly see.
     let (mut engine, host) = harness();
     let c = cfg(vec![
-        expect_step("a", "GL0: pass", None, "b"),
-        expect_step("b", "GL1: pass", None, STOP),
+        expect_step("a", "web: ok", None, "b"),
+        expect_step("b", "db: ok", None, STOP),
     ]);
-    host.say("GL0: pass  GL1: pass");
+    host.say("web: ok  db: ok");
     let outcome = engine.run_sequence(&c).await;
     assert!(outcome.ok, "{outcome:?}");
     assert!(host.events.paused_reasons().is_empty(), "a step paused");

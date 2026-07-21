@@ -72,7 +72,7 @@ pub enum SeqStep {
     /// Non-interactive commands are sentinel-wrapped so the engine recovers
     /// both completion and the exit code. `interactive` skips the wrapper for
     /// a command that never returns to the prompt on its own (`sudo -i` starts
-    /// a nested shell; `cpilot` waits on a question). Those advance once the
+    /// a nested shell; `htop` takes over the screen). Those advance once the
     /// output goes quiet and are then driven with `expect`/`send`.
     Run {
         id: String,

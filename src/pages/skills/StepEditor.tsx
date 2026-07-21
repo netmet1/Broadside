@@ -368,7 +368,7 @@ export function StepEditor({
             <Input
               value={step.pattern}
               onChange={(e) => onChange({ ...step, pattern: e.target.value })}
-              placeholder="start the validator\(s\)\? \(y/n\)"
+              placeholder="Do you want to continue\? \[Y/n\]"
               className="font-mono text-xs"
               spellCheck={false}
               autoComplete="off"

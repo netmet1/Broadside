@@ -63,7 +63,7 @@ export function SequenceBuilder({
               id="skill-name"
               value={f.name}
               onChange={(e) => f.setName(e.target.value)}
-              placeholder="Restart validator"
+              placeholder="Restart nginx"
               autoComplete="off"
             />
           </div>
@@ -75,7 +75,7 @@ export function SequenceBuilder({
               id="skill-desc"
               value={f.description}
               onChange={(e) => f.setDescription(e.target.value)}
-              placeholder="Upgrade, clean, and bring the validator back up"
+              placeholder="Upgrade packages, then restart the web server"
               autoComplete="off"
             />
           </div>
