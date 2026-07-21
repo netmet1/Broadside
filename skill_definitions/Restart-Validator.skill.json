@@ -1,0 +1,131 @@
+{
+  "broadsideSkill": 1,
+  "name": "Restart Constellation Validator",
+  "description": "Upgrade, Clean and Bring a Constelaltion Validator Back Online",
+  "icon": null,
+  "kind": "sequence",
+  "config": {
+    "allowTransfer": true,
+    "params": [],
+    "startStepId": "s1",
+    "steps": [
+      {
+        "command": "sudo -i",
+        "id": "s1",
+        "interactive": true,
+        "kind": "run",
+        "onFailure": "s2",
+        "onSuccess": "s2",
+        "onTimeout": "fail",
+        "timeoutSecs": 10
+      },
+      {
+        "command": "apt -y update && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt -y upgrade",
+        "id": "s2",
+        "interactive": false,
+        "kind": "run",
+        "onFailure": "stop",
+        "onSuccess": "s3",
+        "onTimeout": "pause",
+        "timeoutSecs": 300
+      },
+      {
+        "command": "cpilot shutdown",
+        "id": "s3",
+        "interactive": false,
+        "kind": "run",
+        "onFailure": "stop",
+        "onSuccess": "s4",
+        "onTimeout": "pause",
+        "timeoutSecs": 300
+      },
+      {
+        "command": "docker system prune -a --volumes --force",
+        "id": "s4",
+        "interactive": false,
+        "kind": "run",
+        "onFailure": "stop",
+        "onSuccess": "s5",
+        "onTimeout": "pause",
+        "timeoutSecs": 120
+      },
+      {
+        "command": "cpilot clean",
+        "id": "s5",
+        "interactive": false,
+        "kind": "run",
+        "onFailure": "stop",
+        "onSuccess": "s6",
+        "onTimeout": "pause",
+        "timeoutSecs": 60
+      },
+      {
+        "id": "s6",
+        "kind": "wait",
+        "next": "next",
+        "seconds": 3
+      },
+      {
+        "command": "cpilot",
+        "id": "s7",
+        "interactive": true,
+        "kind": "run",
+        "onFailure": "stop",
+        "onSuccess": "s8",
+        "onTimeout": "pause",
+        "timeoutSecs": 60
+      },
+      {
+        "id": "s8",
+        "kind": "expect",
+        "onMatch": "s9",
+        "onTimeout": "pause",
+        "pattern": "Discord notifications",
+        "sendOnMatch": "n\\n",
+        "timeoutSecs": 10
+      },
+      {
+        "id": "s9",
+        "kind": "expect",
+        "onMatch": "s10",
+        "onTimeout": "pause",
+        "pattern": "start the validator",
+        "sendOnMatch": "y\\n",
+        "timeoutSecs": 300
+      },
+      {
+        "id": "s10",
+        "kind": "expect",
+        "onMatch": "s11",
+        "onTimeout": "pause",
+        "pattern": "The validator node layer",
+        "sendOnMatch": "y\\n",
+        "timeoutSecs": 300
+      },
+      {
+        "id": "s11",
+        "kind": "expect",
+        "onMatch": "s12",
+        "onTimeout": "pause",
+        "pattern": "snapshot fast forward feature",
+        "sendOnMatch": "y\\n",
+        "timeoutSecs": 300
+      },
+      {
+        "id": "s12",
+        "kind": "expect",
+        "onMatch": "s13",
+        "onTimeout": "pause",
+        "pattern": "GL1",
+        "sendOnMatch": "y\\n",
+        "timeoutSecs": 10
+      },
+      {
+        "id": "s13",
+        "kind": "wait",
+        "next": "stop",
+        "seconds": 600
+      }
+    ]
+  }
+}
