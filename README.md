@@ -102,3 +102,7 @@ Actively developed. See the [Releases](../../releases) page for the latest versi
 ## License
 
 Proprietary. All rights reserved. See [`NOTICE.md`](./NOTICE.md).
+
+## Inspiration
+
+This application was inspired by **RadSSH**, a Python tool written by my friend and former colleague Paul. You can find it on [GitHub](https://github.com/radssh/radssh) and read the [docs here](https://radssh.readthedocs.io/en/v1.1.0/).
