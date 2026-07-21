@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useAppVersion } from "@/lib/useAppVersion";
 
 /** Ko-fi donations page; funnels from the About dialog's Donate button. */
-const DONATE_URL = "https://ko-fi.com/broadside";
+const DONATE_URL = "https://ko-fi.com/netmet";
 
 /**
  * About dialog (D-019): version, donations link, NOTICE reference.
