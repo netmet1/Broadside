@@ -97,7 +97,7 @@ Scripts:
 
 ## Status
 
-Current release: **v1.1.0**. Actively developed.
+Actively developed. See the [Releases](../../releases) page for the latest version.
 
 ## License
 
