@@ -186,9 +186,9 @@ mod tests {
     #[test]
     fn create_get_round_trip() {
         let conn = open_in_memory().unwrap();
-        let made = create(&conn, &input("Restart validator")).unwrap();
+        let made = create(&conn, &input("Restart nginx")).unwrap();
         let got = get(&conn, made.id).unwrap();
-        assert_eq!(got.name, "Restart validator");
+        assert_eq!(got.name, "Restart nginx");
         assert_eq!(got.kind, KIND_SEQUENCE);
         assert_eq!(got.icon.as_deref(), Some("wrench"));
         assert_eq!(got.created_at, got.updated_at);

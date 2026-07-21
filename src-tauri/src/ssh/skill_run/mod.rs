@@ -607,8 +607,8 @@ impl<E: SkillEvents> Engine<E> {
 
         if interactive {
             // No completion marker: the command never returns to the prompt on
-            // its own (`sudo -i` opens a nested shell; `cpilot` stops on a
-            // question). Send it, let the output settle, which also gives the
+            // its own (`sudo -i` opens a nested shell; `htop` takes over the
+            // screen). Send it, let the output settle, which also gives the
             // sudo injector time to answer a password prompt before we type
             // anything else at it, then hand over to expect/send steps.
             if let Err(e) = self.send_bytes(&format!(" {cmd}\n")) {

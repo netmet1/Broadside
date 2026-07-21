@@ -664,7 +664,7 @@ mod tests {
         let path = dir.path().join("skill.json");
         let portable = super::PortableSkill {
             broadside_skill: super::PORTABLE_VERSION,
-            name: "Restart validator".into(),
+            name: "Restart nginx".into(),
             description: "does a thing".into(),
             icon: Some("wrench".into()),
             kind: skill_repo::KIND_SEQUENCE.into(),
@@ -677,7 +677,7 @@ mod tests {
         std::fs::write(&path, serde_json::to_string_pretty(&portable).unwrap()).unwrap();
 
         let input = super::read_skill_file(path.to_string_lossy().into_owned()).unwrap();
-        assert_eq!(input.name, "Restart validator");
+        assert_eq!(input.name, "Restart nginx");
         assert_eq!(input.kind, skill_repo::KIND_SEQUENCE);
         assert!(input.config_json.contains("\"startStepId\":\"s1\""));
     }
