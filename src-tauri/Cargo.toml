@@ -3,8 +3,9 @@ name = "broadside"
 version = "1.1.0"
 description = "Windows desktop SSH broadcast console"
 authors = ["netmet1"]
-# No `license` field by design. NOTICE.md is the authoritative statement.
-# Combined with `publish = false`, Cargo never asks for an SPDX expression.
+license = "GPL-3.0-only"
+# `publish = false` keeps this off crates.io; the SPDX license above is the
+# authoritative expression, mirrored by the top-level LICENSE file and NOTICE.md.
 publish = false
 edition = "2021"
 

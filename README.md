@@ -99,9 +99,18 @@ Scripts:
 
 Actively developed. See the [Releases](../../releases) page for the latest version.
 
+## Support
+
+Broadside is free and open source. If it's useful to you, you can support
+continued development with a one-time or recurring tip on
+[Ko-fi](https://ko-fi.com/netmet). Thank you.
+
 ## License
 
-Proprietary. All rights reserved. See [`NOTICE.md`](./NOTICE.md).
+Broadside is licensed under the [GNU General Public License v3.0](./LICENSE)
+(`GPL-3.0-only`). You are free to use, study, share, and modify it; derivative
+works must remain under the GPL. See [`NOTICE.md`](./NOTICE.md) for the copyright
+notice and commercial-licensing contact.
 
 ## Inspiration
 
