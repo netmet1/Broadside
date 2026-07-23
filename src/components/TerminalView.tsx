@@ -426,7 +426,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
               startupTimer = setTimeout(() => {
                 if (cancelled) return;
                 ptyWrite(sessionId, startup + "\r").catch(() => {});
-              }, 250);
+              }, 513);
             }
           }
           return;

@@ -443,7 +443,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory",
     body: (
       <>
         <Lead>
@@ -486,6 +486,46 @@ const SECTIONS: HelpSection[] = [
               <Nav>Settings</Nav> under <Nav>Appearance</Nav>. Every detected
               shell is shown by default; a newly installed one appears
               automatically once detected.
+            </li>
+          </Bullets>
+          <H3>Shell profiles</H3>
+          <Bullets>
+            <li>
+              A profile is a saved local shell that opens the way you want it: a
+              chosen shell, a working directory, and an optional command that
+              runs the moment the shell is ready. Open the{" "}
+              <Nav>plus button</Nav> and use the <Nav>Profiles</Nav> section at
+              the bottom of the menu to create, launch, edit or delete them.
+            </li>
+            <li>
+              <Nav>New</Nav> opens a short form. Give the profile a name, pick
+              the shell, choose the <Nav>Working directory</Nav> (type it, or
+              use <Nav>Browse</Nav> to pick a folder), and optionally set a{" "}
+              <Nav>Startup command</Nav>. The name becomes the tab label, so a
+              profile tab is easy to tell apart from a plain shell tab. Leave the
+              working directory empty to start in your home folder, the same as a
+              plain shell.
+            </li>
+            <li>
+              Launching a profile opens the shell in that folder and, a moment
+              later, types the startup command for you and presses Enter, exactly
+              as if you had typed it. The short pause lets the shell finish
+              drawing its prompt first. As one example, a profile can open
+              PowerShell 7 in a project folder and start a command-line tool
+              there in a single click.
+            </li>
+            <li>
+              Profiles honour the <Nav>How many</Nav> count, so you can open
+              several copies of the same profile at once, and a large batch asks
+              first.
+            </li>
+            <li>
+              Profiles are saved on this PC only and never store passwords or
+              keys. A profile keeps working even if you hide its shell from the
+              plain list. If a profile points at a shell that is no longer
+              detected (for example a WSL distribution you removed), its name is
+              shown struck through and it will not launch until that shell is
+              back.
             </li>
           </Bullets>
           <H3>Working with tabs</H3>

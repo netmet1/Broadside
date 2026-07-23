@@ -116,7 +116,7 @@ export function ShellProfileDialog({
               id="profile-label"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="Broadside dev"
+              placeholder="YourProfileName"
               autoFocus
             />
           </div>

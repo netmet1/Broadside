@@ -1164,7 +1164,7 @@ export function TerminalsPage({
                               className="flex min-w-0 flex-1 items-center gap-2 text-left"
                               title={
                                 shell
-                                  ? `${p.shellId}${p.cwd ? ` — ${p.cwd}` : ""}`
+                                  ? `${p.shellId}${p.cwd ? `: ${p.cwd}` : ""}`
                                   : "This profile's shell isn't available on this machine"
                               }
                             >
