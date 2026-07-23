@@ -54,8 +54,8 @@ export function AboutDialog({
             </Button>
           </div>
           <p className="pt-1 text-xs text-muted-foreground">
-            © 2026 netmet1. All rights reserved. Proprietary software; see
-            NOTICE.md for terms.
+            © 2026 netmet1. Free software under the GNU GPL v3.0; see
+            LICENSE / NOTICE.md.
           </p>
         </div>
       </DialogContent>

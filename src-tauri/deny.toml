@@ -27,7 +27,8 @@ ignore = [
 [licenses]
 version = 2
 # Skip license checking for our own workspace crate (it's `publish = false`
-# and proprietary; cf. NOTICE.md). cargo-deny still checks third-party deps.
+# and GPL-3.0-only; cf. LICENSE / NOTICE.md). cargo-deny still checks
+# third-party deps against the allow-list below.
 private = { ignore = true }
 allow = [
     "MIT",
