@@ -28,7 +28,9 @@ import { type ShellProfile } from "@/lib/localShellProfiles";
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Detected shells, for the shell dropdown. */
+  /** Shells offered in the dropdown: the detected shells the user has not
+   * hidden in Settings, so the profile picker honors the same hide-list as the
+   * launcher. */
   shells: LocalShell[];
   /** The profile being edited, or null to create a new one. */
   initial: ShellProfile | null;
@@ -60,13 +62,14 @@ export function ShellProfileDialog({
     setStartupCommand(initial?.startupCommand ?? "");
   }, [open, initial, shells]);
 
-  // The shell options: the detected shells, plus the profile's own shell if it
-  // is no longer detected (a removed WSL distro) so editing never silently
-  // drops it — flagged so the user knows it won't launch until it's back.
+  // The shell options: the offered shells, plus the profile's own shell if it
+  // is not among them (hidden in Settings, or a removed WSL distro) so editing
+  // never silently drops it. Flagged as unavailable so the user knows it needs
+  // re-enabling (or reinstalling) before it will launch.
   const shellOptions = useMemo(() => {
     const opts = shells.map((s) => ({ id: s.id, label: s.label }));
     if (shellId && !shells.some((s) => s.id === shellId)) {
-      opts.push({ id: shellId, label: `${shellId} (not detected)` });
+      opts.push({ id: shellId, label: `${shellId} (unavailable)` });
     }
     return opts;
   }, [shells, shellId]);
@@ -116,7 +119,7 @@ export function ShellProfileDialog({
               id="profile-label"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="YourProfileName"
+              placeholder="Your Profile Name"
               autoFocus
             />
           </div>

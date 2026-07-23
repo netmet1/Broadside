@@ -1515,7 +1515,7 @@ export function TerminalsPage({
         onOpenChange={(open) => {
           if (!open) setProfileEdit(null);
         }}
-        shells={localShells}
+        shells={enabledShells}
         initial={profileEdit?.profile ?? null}
         onSave={saveProfile}
       />
