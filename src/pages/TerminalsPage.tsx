@@ -5,11 +5,13 @@ import {
   LayoutGridIcon,
   Maximize2Icon,
   PanelTopIcon,
+  PencilIcon,
   PlusIcon,
   Rows2Icon,
   SquareTerminalIcon,
   TerminalIcon,
   TextIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -46,6 +48,14 @@ import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage, type Host } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import { reconcileDisabledShells } from "@/lib/localShellPrefs";
+import {
+  loadProfiles,
+  removeProfile,
+  saveProfiles,
+  upsertProfile,
+  type ShellProfile,
+} from "@/lib/localShellProfiles";
+import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { isAutoGrid, loadGridPrefs, type GridPrefs } from "@/lib/gridPrefs";
 import { measureTerminalCell } from "@/lib/terminalCell";
 import type { SearchOptions } from "@/lib/search";
@@ -146,12 +156,27 @@ export type LocalTermSession = {
   type: "local";
   seq: number;
   shell: LocalShell;
+  /** Opened from a saved profile: its working directory, startup command, and
+   * name (shown as the tab label so a profile tab is distinguishable from a
+   * plain shell tab). Absent for a plain "+" shell open. */
+  cwd?: string;
+  startupCommand?: string;
+  profileLabel?: string;
 };
 export type TermSession = SshTermSession | LocalTermSession;
 
-/** Display label for a tab, regardless of session kind. */
+/** How a profile open is described to the App layer when spawning a session. */
+export type LocalShellOpenOpts = {
+  cwd?: string;
+  startupCommand?: string;
+  profileLabel?: string;
+};
+
+/** Display label for a tab, regardless of session kind. A profile-launched
+ * local tab shows the profile's name; a plain one shows the shell name. */
 function sessionLabel(s: TermSession): string {
-  return s.type === "ssh" ? s.host.label : s.shell.label;
+  if (s.type === "ssh") return s.host.label;
+  return s.profileLabel || s.shell.label;
 }
 
 /** Which shortcut scope a tab belongs to. SSH hosts and local WSL tabs run
@@ -190,8 +215,10 @@ type Props = {
   onMaximize: (id: string) => void;
   /** Whether the terminal is currently maximized (hides the page chrome). */
   maximized: boolean;
-  /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab. */
-  onOpenLocalShell: (shell: LocalShell) => void;
+  /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab.
+   * `opts` carries a saved profile's cwd / startup command / name when the open
+   * came from a profile rather than a plain shell pick. */
+  onOpenLocalShell: (shell: LocalShell, opts?: LocalShellOpenOpts) => void;
 };
 
 export function TerminalsPage({
@@ -279,24 +306,28 @@ export function TerminalsPage({
       })
       .catch(() => {});
   }, [visible]);
-  // A pending bulk open awaiting the "that's a lot of shells" confirmation.
+  // A pending bulk open awaiting the "that's a lot of shells" confirmation. Holds
+  // the profile opts (cwd / startup / name) when the open came from a profile.
   const [bulkConfirm, setBulkConfirm] = useState<{
     shell: LocalShell;
     count: number;
+    opts?: LocalShellOpenOpts;
   } | null>(null);
 
   // Open `count` copies of a shell (each append is a functional state update in
-  // App, so N calls accumulate N distinct sessions).
+  // App, so N calls accumulate N distinct sessions). `opts` carries a profile's
+  // cwd / startup command / name, applied identically to every copy.
   const openShells = useCallback(
-    (shell: LocalShell, count: number) => {
-      for (let i = 0; i < count; i++) onOpenLocalShell(shell);
+    (shell: LocalShell, count: number, opts?: LocalShellOpenOpts) => {
+      for (let i = 0; i < count; i++) onOpenLocalShell(shell, opts);
     },
     [onOpenLocalShell],
   );
   // Launcher pick: clamp the requested count to [1, maxShells]; if it's an
-  // excessive batch, confirm first, otherwise open immediately.
+  // excessive batch, confirm first, otherwise open immediately. Shared by the
+  // plain shell rows and the profile rows (the latter pass `opts`).
   const requestOpenShells = useCallback(
-    (shell: LocalShell) => {
+    (shell: LocalShell, opts?: LocalShellOpenOpts) => {
       setShellMenuOpen(false);
       const parsed = Number.parseInt(shellCount, 10);
       const n = Math.min(
@@ -304,12 +335,61 @@ export function TerminalsPage({
         maxShells,
       );
       if (n > BULK_SHELL_WARN) {
-        setBulkConfirm({ shell, count: n });
+        setBulkConfirm({ shell, count: n, opts });
       } else {
-        openShells(shell, n);
+        openShells(shell, n, opts);
       }
     },
     [shellCount, maxShells, openShells],
+  );
+
+  // Saved launch profiles (localStorage), re-read whenever the page is shown so
+  // an edit made in the dialog on another visit reflects on return, like
+  // disabledShells. Managed inline from the "+" launcher.
+  const [profiles, setProfiles] = useState<ShellProfile[]>(loadProfiles);
+  useEffect(() => {
+    if (visible) setProfiles(loadProfiles());
+  }, [visible]);
+  // The profile editor: null = closed; { profile: null } = new; else edit.
+  const [profileEdit, setProfileEdit] = useState<{
+    profile: ShellProfile | null;
+  } | null>(null);
+
+  const persistProfiles = useCallback((next: ShellProfile[]) => {
+    setProfiles(next);
+    saveProfiles(next);
+  }, []);
+  const saveProfile = useCallback(
+    (profile: ShellProfile) => {
+      persistProfiles(upsertProfile(loadProfiles(), profile));
+    },
+    [persistProfiles],
+  );
+  const deleteProfile = useCallback(
+    (id: string) => {
+      persistProfiles(removeProfile(loadProfiles(), id));
+    },
+    [persistProfiles],
+  );
+
+  // Launch a saved profile: resolve its shell among the detected ones (a profile
+  // can outlive a removed WSL distro), then open with its cwd / startup / name.
+  const openProfile = useCallback(
+    (profile: ShellProfile) => {
+      const shell = localShells.find((s) => s.id === profile.shellId);
+      if (!shell) {
+        toast.error(
+          `"${profile.label}" uses a shell that isn't available on this machine.`,
+        );
+        return;
+      }
+      requestOpenShells(shell, {
+        cwd: profile.cwd || undefined,
+        startupCommand: profile.startupCommand || undefined,
+        profileLabel: profile.label,
+      });
+    },
+    [localShells, requestOpenShells],
   );
 
   const hint = useHint();
@@ -986,23 +1066,18 @@ export function TerminalsPage({
             <ChevronDownIcon className="h-3 w-3" />
           </button>
           {shellMenuOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 min-w-48 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+            <div className="absolute right-0 top-full z-50 mt-1 min-w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
               {localShells.length === 0 ? (
                 <p className="px-2 py-1.5 text-xs text-muted-foreground">
                   {shellsError
                     ? "Couldn't list local shells. Rebuild the app and try again."
                     : "No local shells found."}
                 </p>
-              ) : enabledShells.length === 0 ? (
-                <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                  All local shells are hidden. Enable them in Settings,
-                  Appearance.
-                </p>
               ) : (
                 <>
-                  {/* How many to open at once. Picking a shell below opens this
-                      many; a large batch confirms first. Capped at the max
-                      concurrent sessions from Settings. */}
+                  {/* How many to open at once. Picking a shell or profile below
+                      opens this many; a large batch confirms first. Capped at
+                      the max concurrent sessions from Settings. */}
                   <div className="mb-1 flex items-center gap-2 border-b border-border/60 px-2 py-1.5">
                     <label
                       htmlFor="shell-count"
@@ -1023,20 +1098,116 @@ export function TerminalsPage({
                       max {maxShells}
                     </span>
                   </div>
-                  {enabledShells.map((sh) => (
-                    <button
-                      key={sh.id}
-                      type="button"
-                      onClick={() => requestOpenShells(sh)}
-                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <LocalShellIcon
-                        kind={sh.kind}
-                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                      />
-                      {sh.label}
-                    </button>
-                  ))}
+                  {enabledShells.length === 0 ? (
+                    <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                      All local shells are hidden. Enable them in Settings,
+                      Appearance.
+                    </p>
+                  ) : (
+                    enabledShells.map((sh) => (
+                      <button
+                        key={sh.id}
+                        type="button"
+                        onClick={() => requestOpenShells(sh)}
+                        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <LocalShellIcon
+                          kind={sh.kind}
+                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        />
+                        {sh.label}
+                      </button>
+                    ))
+                  )}
+
+                  {/* Saved launch profiles: a named shell + folder + optional
+                      startup command. Shown regardless of the hide-list (a
+                      profile may launch a shell hidden from the plain list) and
+                      managed inline via the editor dialog. */}
+                  <div className="mt-1 border-t border-border/60 pt-1">
+                    <div className="flex items-center justify-between px-2 py-1">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Profiles
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShellMenuOpen(false);
+                          setProfileEdit({ profile: null });
+                        }}
+                        className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                        {...hint("Create a saved shell profile")}
+                      >
+                        <PlusIcon className="h-3.5 w-3.5" /> New
+                      </button>
+                    </div>
+                    {profiles.length === 0 ? (
+                      <p className="px-2 py-1 text-xs text-muted-foreground">
+                        None yet. A profile opens a shell in a chosen folder and
+                        can run a command on start.
+                      </p>
+                    ) : (
+                      profiles.map((p) => {
+                        // A profile can outlive a removed WSL distro; flag one
+                        // whose shell isn't currently detected.
+                        const shell = localShells.find(
+                          (s) => s.id === p.shellId,
+                        );
+                        return (
+                          <div
+                            key={p.id}
+                            className="group flex items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => openProfile(p)}
+                              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                              title={
+                                shell
+                                  ? `${p.shellId}${p.cwd ? `: ${p.cwd}` : ""}`
+                                  : "This profile's shell isn't available on this machine"
+                              }
+                            >
+                              <LocalShellIcon
+                                kind={shell?.kind ?? "cmd"}
+                                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                              />
+                              <span
+                                className={cn(
+                                  "truncate",
+                                  !shell &&
+                                    "text-muted-foreground line-through",
+                                )}
+                              >
+                                {p.label}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShellMenuOpen(false);
+                                setProfileEdit({ profile: p });
+                              }}
+                              aria-label={`Edit ${p.label}`}
+                              title="Edit profile"
+                              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                            >
+                              <PencilIcon className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteProfile(p.id)}
+                              aria-label={`Delete ${p.label}`}
+                              title="Delete profile"
+                              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-red-500 group-hover:opacity-100"
+                            >
+                              <Trash2Icon className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </>
               )}
             </div>
@@ -1225,7 +1396,12 @@ export function TerminalsPage({
                   source={
                     s.type === "ssh"
                       ? { type: "ssh", hostId: s.host.id }
-                      : { type: "local", shellId: s.shell.id }
+                      : {
+                          type: "local",
+                          shellId: s.shell.id,
+                          cwd: s.cwd,
+                          startupCommand: s.startupCommand,
+                        }
                   }
                   visible={visible && (gridMode || isActive)}
                   retryNonce={retryNonces.get(s.id) ?? 0}
@@ -1332,6 +1508,16 @@ export function TerminalsPage({
         onTrusted={() => {
           if (activeGateSession) resolveGate(activeGateSession.id);
         }}
+      />
+
+      <ShellProfileDialog
+        open={profileEdit !== null}
+        onOpenChange={(open) => {
+          if (!open) setProfileEdit(null);
+        }}
+        shells={enabledShells}
+        initial={profileEdit?.profile ?? null}
+        onSave={saveProfile}
       />
     </div>
   );

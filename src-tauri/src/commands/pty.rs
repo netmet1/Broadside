@@ -157,6 +157,7 @@ pub async fn list_local_shells() -> Vec<crate::local::LocalShell> {
 pub fn pty_open_local(
     session_id: String,
     shell_id: String,
+    cwd: Option<String>,
     cols: u32,
     rows: u32,
     app: AppHandle,
@@ -167,6 +168,7 @@ pub fn pty_open_local(
         &pty_state,
         session_id,
         &shell_id,
+        cwd.as_deref(),
         cols.clamp(2, 1000),
         rows.clamp(2, 1000),
     )

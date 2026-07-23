@@ -16,10 +16,13 @@ export function listLocalShells(): Promise<LocalShell[]> {
 
 /** Opens a local shell over ConPTY. After this resolves, the session id flows
  * through the same ptyWrite/ptyResize/ptyClose + pty:data/pty:closed plumbing as
- * an SSH session. Throws on spawn failure. */
+ * an SSH session. `cwd` starts the shell in a chosen directory (a saved
+ * profile's working directory); omit it for the shell's default (home). Throws
+ * on spawn failure. */
 export function ptyOpenLocal(args: {
   sessionId: string;
   shellId: string;
+  cwd?: string;
   cols: number;
   rows: number;
 }): Promise<void> {

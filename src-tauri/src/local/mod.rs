@@ -132,8 +132,10 @@ fn decode_utf16le(bytes: &[u8]) -> String {
     String::from_utf16_lossy(&units)
 }
 
-/// Map a shell id to the process to launch.
-fn build_command(shell_id: &str) -> AppResult<CommandBuilder> {
+/// Map a shell id to the process to launch. `cwd` is the directory to start the
+/// shell in (a saved profile's working directory); when absent the shell opens
+/// in the user's home directory rather than the app's working dir.
+fn build_command(shell_id: &str, cwd: Option<&str>) -> AppResult<CommandBuilder> {
     let mut cmd = if let Some(distro) = shell_id.strip_prefix("wsl:") {
         let mut c = CommandBuilder::new("wsl.exe");
         c.arg("-d");
@@ -151,8 +153,16 @@ fn build_command(shell_id: &str) -> AppResult<CommandBuilder> {
             }
         }
     };
-    // Start in the user's home directory rather than the app's working dir.
-    if let Ok(home) = std::env::var("USERPROFILE") {
+    // A profile's working directory wins; a blank/whitespace one counts as unset.
+    // For a WSL shell this sets wsl.exe's Windows working directory, which the
+    // distro then starts in (translated to its /mnt path). We don't verify the
+    // path exists here — the shell surfaces its own error, and the UI validates
+    // before saving. Falls back to USERPROFILE so a shell never inherits the
+    // app's own working directory.
+    let cwd = cwd.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(dir) = cwd {
+        cmd.cwd(dir);
+    } else if let Ok(home) = std::env::var("USERPROFILE") {
         cmd.cwd(home);
     }
     Ok(cmd)
@@ -176,10 +186,11 @@ pub fn open_local<E: PtyEvents>(
     state: &PtyState,
     session_id: String,
     shell_id: &str,
+    cwd: Option<&str>,
     cols: u32,
     rows: u32,
 ) -> AppResult<()> {
-    let cmd = build_command(shell_id)?;
+    let cmd = build_command(shell_id, cwd)?;
     let pty_system = portable_pty::native_pty_system();
     let pair = pty_system
         .openpty(pty_size(cols, rows))
