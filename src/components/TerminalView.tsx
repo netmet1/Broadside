@@ -68,10 +68,12 @@ type Phase =
   | { kind: "failed"; message: string }
   | { kind: "closed"; message: string };
 
-/** What backs this terminal: an SSH host, or a local shell over ConPTY. */
+/** What backs this terminal: an SSH host, or a local shell over ConPTY. A local
+ * source may carry a saved profile's `cwd` (passed to the spawn) and
+ * `startupCommand` (typed into the shell once it opens). */
 export type TerminalSource =
   | { type: "ssh"; hostId: number }
-  | { type: "local"; shellId: string };
+  | { type: "local"; shellId: string; cwd?: string; startupCommand?: string };
 
 type Props = {
   sessionId: string;
@@ -366,6 +368,9 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // Connect (and reconnect after a TOFU gate is resolved).
   useEffect(() => {
     let cancelled = false;
+    // Pending profile startup-command injection (local shells), cleared if the
+    // tab tears down or reconnects before it fires.
+    let startupTimer: ReturnType<typeof setTimeout> | undefined;
     (async () => {
       const term = termRef.current;
       const fit = fitRef.current;
@@ -403,6 +408,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           await ptyOpenLocal({
             sessionId,
             shellId: source.shellId,
+            cwd: source.cwd,
             cols: term.cols,
             rows: term.rows,
           });
@@ -410,6 +416,18 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           if (phaseRef.current.kind !== "closed") {
             setPhase({ kind: "open" });
             term.focus();
+            // A profile's startup command: type it into the shell (with the
+            // Enter a real keypress sends) once the shell is up. Deferred a beat
+            // so it lands after the shell's own prompt rather than racing the
+            // banner, and re-run on a Reconnect since the fresh shell needs it
+            // again. Guarded by `cancelled` so a torn-down tab never writes.
+            const startup = source.startupCommand?.trim();
+            if (startup) {
+              startupTimer = setTimeout(() => {
+                if (cancelled) return;
+                ptyWrite(sessionId, startup + "\r").catch(() => {});
+              }, 250);
+            }
           }
           return;
         }
@@ -462,6 +480,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     })();
     return () => {
       cancelled = true;
+      if (startupTimer) clearTimeout(startupTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, retryNonce]);

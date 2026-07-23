@@ -146,12 +146,27 @@ export type LocalTermSession = {
   type: "local";
   seq: number;
   shell: LocalShell;
+  /** Opened from a saved profile: its working directory, startup command, and
+   * name (shown as the tab label so a profile tab is distinguishable from a
+   * plain shell tab). Absent for a plain "+" shell open. */
+  cwd?: string;
+  startupCommand?: string;
+  profileLabel?: string;
 };
 export type TermSession = SshTermSession | LocalTermSession;
 
-/** Display label for a tab, regardless of session kind. */
+/** How a profile open is described to the App layer when spawning a session. */
+export type LocalShellOpenOpts = {
+  cwd?: string;
+  startupCommand?: string;
+  profileLabel?: string;
+};
+
+/** Display label for a tab, regardless of session kind. A profile-launched
+ * local tab shows the profile's name; a plain one shows the shell name. */
 function sessionLabel(s: TermSession): string {
-  return s.type === "ssh" ? s.host.label : s.shell.label;
+  if (s.type === "ssh") return s.host.label;
+  return s.profileLabel || s.shell.label;
 }
 
 /** Which shortcut scope a tab belongs to. SSH hosts and local WSL tabs run
@@ -190,8 +205,10 @@ type Props = {
   onMaximize: (id: string) => void;
   /** Whether the terminal is currently maximized (hides the page chrome). */
   maximized: boolean;
-  /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab. */
-  onOpenLocalShell: (shell: LocalShell) => void;
+  /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab.
+   * `opts` carries a saved profile's cwd / startup command / name when the open
+   * came from a profile rather than a plain shell pick. */
+  onOpenLocalShell: (shell: LocalShell, opts?: LocalShellOpenOpts) => void;
 };
 
 export function TerminalsPage({
@@ -1225,7 +1242,12 @@ export function TerminalsPage({
                   source={
                     s.type === "ssh"
                       ? { type: "ssh", hostId: s.host.id }
-                      : { type: "local", shellId: s.shell.id }
+                      : {
+                          type: "local",
+                          shellId: s.shell.id,
+                          cwd: s.cwd,
+                          startupCommand: s.startupCommand,
+                        }
                   }
                   visible={visible && (gridMode || isActive)}
                   retryNonce={retryNonces.get(s.id) ?? 0}

@@ -28,6 +28,7 @@ import {
   TerminalsPage,
   type TermSession,
   type SshTermSession,
+  type LocalShellOpenOpts,
 } from "@/pages/TerminalsPage";
 import type { LocalShell } from "@/lib/tauri/local";
 import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
@@ -189,18 +190,26 @@ function App() {
     setPage("terminals");
   }, [nextSeq]);
 
-  /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab. */
-  const openLocalShell = useCallback((shell: LocalShell) => {
-    const session: TermSession = {
-      id: crypto.randomUUID(),
-      type: "local",
-      seq: nextSeq(),
-      shell,
-    };
-    setSessions((prev) => [...prev, session]);
-    setActiveSessionId(session.id);
-    setPage("terminals");
-  }, [nextSeq]);
+  /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab.
+   * `opts` carries a saved profile's cwd / startup command / name when the open
+   * came from a profile; absent for a plain shell pick. */
+  const openLocalShell = useCallback(
+    (shell: LocalShell, opts?: LocalShellOpenOpts) => {
+      const session: TermSession = {
+        id: crypto.randomUUID(),
+        type: "local",
+        seq: nextSeq(),
+        shell,
+        cwd: opts?.cwd,
+        startupCommand: opts?.startupCommand,
+        profileLabel: opts?.profileLabel,
+      };
+      setSessions((prev) => [...prev, session]);
+      setActiveSessionId(session.id);
+      setPage("terminals");
+    },
+    [nextSeq],
+  );
 
   const handleConnectionChange = useCallback(
     (sessionId: string, connected: boolean) => {
