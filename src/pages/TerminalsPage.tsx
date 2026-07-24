@@ -832,6 +832,28 @@ export function TerminalsPage({
           </button>
         </div>
 
+        {/* Hide/show every grid tile's title bar. Grid-only; the choice persists
+            across restarts. Sits between the layout selector and the two-up flip. */}
+        {gridMode && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={toggleGridHeaders}
+            {...hint(
+              hideGridHeaders
+                ? "Tile title bars are hidden. Click to show them."
+                : "Tile title bars are shown. Click to hide them for a denser grid.",
+            )}
+          >
+            {hideGridHeaders ? (
+              <EyeOffIcon className="h-3.5 w-3.5" />
+            ) : (
+              <EyeIcon className="h-3.5 w-3.5" />
+            )}
+            {hideGridHeaders ? "Title bars off" : "Title bars"}
+          </Button>
+        )}
+
         {/* Flip the two-terminal grid between side-by-side and top/bottom.
             Only meaningful for exactly two tiles (one fills, three+ tile and
             scroll), and only in the default auto grid — a pinned grid uses the
@@ -1327,9 +1349,7 @@ export function TerminalsPage({
               className={cn(
                 gridMode
                   ? cn(
-                      // `group` + `relative` let a hidden header re-appear as an
-                      // absolute hover overlay without reflowing the terminal.
-                      "group relative flex min-w-0 flex-col overflow-hidden rounded-md border",
+                      "flex min-w-0 flex-col overflow-hidden rounded-md border",
                       // Row height: a custom grid's row track sets the tile
                       // height (a pinned item-height, or minmax(floor,1fr) when
                       // auto), so the tile just fills it (min-h-0). The default
@@ -1352,19 +1372,15 @@ export function TerminalsPage({
             >
               {/* Grid-only pane header: identifies the tile and carries the
                   same maximize/close affordances the tab has. Rendered (hidden)
-                  in tabs mode so the TerminalView below never shifts position.
+                  in tabs mode so the TerminalView below never shifts position,
+                  and hidden outright when the toolbar's Title bars toggle is off.
                   border-t-2/transparent reserves the active top bar so tinting
-                  never nudges the layout. When the eye toggle hides headers, the
-                  bar lifts out of flow (so the terminal fills the tile) and only
-                  fades back in as an overlay while the tile is hovered. */}
+                  never nudges the layout. */}
               <div
                 style={headerStyle}
                 className={cn(
                   "shrink-0 items-center gap-2 border-b border-t-2 border-border/40 border-t-transparent px-2 py-1",
-                  gridMode ? "flex" : "hidden",
-                  gridMode &&
-                    hideGridHeaders &&
-                    "absolute inset-x-0 top-0 z-10 opacity-0 backdrop-blur-sm transition-opacity pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100",
+                  gridMode && !hideGridHeaders ? "flex" : "hidden",
                   isActive
                     ? !hostTint && "bg-accent"
                     : "bg-muted/30",
@@ -1398,28 +1414,6 @@ export function TerminalsPage({
                 <button
                   type="button"
                   className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleGridHeaders();
-                  }}
-                  aria-label={
-                    hideGridHeaders ? "Show grid title bars" : "Hide grid title bars"
-                  }
-                  title={
-                    hideGridHeaders
-                      ? "Show tile title bars"
-                      : "Hide tile title bars (they reappear on hover)"
-                  }
-                >
-                  {hideGridHeaders ? (
-                    <EyeOffIcon className="h-3.5 w-3.5" />
-                  ) : (
-                    <EyeIcon className="h-3.5 w-3.5" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                   onClick={(e) => {
                     e.stopPropagation();
                     onMaximize(s.id);

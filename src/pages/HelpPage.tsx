@@ -571,11 +571,11 @@ const SECTIONS: HelpSection[] = [
               always shows it on its own.
             </li>
             <li>
-              The <Nav>eye</Nav> button in a grid tile's header hides every
-              tile's title bar for a denser, chrome-free wall of terminals. The
-              bar peeks back whenever you hover a tile (so maximize, close and the
-              eye stay reachable), and a crossed-out eye marks the hidden state.
-              The choice is remembered across restarts.
+              The <Nav>Title bars</Nav> button (the eye, next to the{" "}
+              <Nav>Grid</Nav> toggle) hides every tile's title bar for a denser,
+              chrome-free wall of terminals; a crossed-out eye marks the hidden
+              state and clicking again brings the bars back. It appears only in
+              Grid and the choice is remembered across restarts.
             </li>
             <li>
               To pin the grid, open <Nav>Settings</Nav> and the <Nav>Grid</Nav>{" "}
