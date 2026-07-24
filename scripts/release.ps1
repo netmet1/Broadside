@@ -86,11 +86,13 @@ if (-not $Force) {
 }
 
 # --- Trigger the workflow (notes passed as an input, not committed) ---
-# Inputs go in as JSON on STDIN, not as a -f argument: ConvertTo-Json escapes the
-# emoji to ASCII \u sequences, dodging Windows PowerShell 5.1's mangling of
-# non-ASCII command-line arguments to native exes. gh reads the JSON from STDIN.
-$payload = @{ notes = $notes } | ConvertTo-Json -Compress
-$payload | gh workflow run release.yml --ref $Ref
+# Pass the notes with `-F notes=@<file>`: gh reads the value straight from the
+# notes file (the "@ syntax", see `gh help api`). Reading from the file, not the
+# command line, keeps the header emoji intact under Windows PowerShell 5.1 (which
+# otherwise mangles non-ASCII args to native exes) without needing any JSON step.
+# (STDIN-JSON was tried and abandoned: it needs `--json`, and even then gh wants a
+# different shape than {"notes":"..."} -> "cannot unmarshal object into string".)
+gh workflow run release.yml --ref $Ref -F "notes=@$notesPath"
 if ($LASTEXITCODE -ne 0) {
   Write-Host "FAILED: could not trigger the Release workflow." -ForegroundColor Red
   exit 1
