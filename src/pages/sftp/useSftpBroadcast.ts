@@ -48,6 +48,24 @@ function hasGlob(s: string): boolean {
   return /[*?]/.test(s);
 }
 
+/** Mirror of the backend `safe_local_child` guard (src-tauri/src/ssh/sftp.rs): a
+ *  directory-listing entry name must be a bare filename. A hostile/compromised
+ *  server could return a name with path separators or `..` to escape the per-host
+ *  destination folder when it's joined into a LOCAL download path, so reject those
+ *  before the name is ever used. The single-file download path (unlike
+ *  download_dir) does no such check itself, so the wildcard fan-out must. */
+function isSafeEntryName(name: string): boolean {
+  return (
+    name !== "" &&
+    name !== "." &&
+    name !== ".." &&
+    !name.includes("/") &&
+    !name.includes("\\") &&
+    !name.includes(":") && // Windows drive / alternate-data-stream separator
+    !name.includes("\0")
+  );
+}
+
 /** Compile a simple shell glob (`*`, `?`) to an anchored, case-sensitive RegExp.
  *  Only ever applied to a single path segment (the file-name), so `/` is treated
  *  as any other literal. Every other regex metacharacter is escaped. */
@@ -307,6 +325,17 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
         const matches = items.filter((e) => re.test(e.name));
         if (matches.length === 0) {
           throw new Error(`no matches for ${pattern} in ${dir}`);
+        }
+        // Each match's name becomes part of a LOCAL path below. A hostile server
+        // could return an entry named e.g. "..\\..\\evil.log" (which still matches
+        // the glob) to write outside the per-host folder, so refuse any unsafe
+        // name up front before a single byte is written (mirrors the backend's
+        // safe_local_child guard used by download_dir).
+        const unsafe = matches.find((e) => !isSafeEntryName(e.name));
+        if (unsafe) {
+          throw new Error(
+            `refusing unsafe remote entry name "${unsafe.name}" (possible path traversal)`,
+          );
         }
         const destFolder = winJoin(cfg.localPath, host.label);
         await localMkdir(destFolder).catch(() => {});
