@@ -65,4 +65,7 @@ jobs:
         run: npm run build
 
       - name: npm audit
-        run: npm audit --audit-level=high
+        # Strictest gate: no --audit-level, so ANY advisory (low/moderate up)
+        # fails the job. We clear all findings locally (scripts/ci.ps1) before
+        # pushing, so this stays green; see never-ship-vulnerabilities.
+        run: npm audit
