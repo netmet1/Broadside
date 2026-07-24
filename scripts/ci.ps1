@@ -9,7 +9,7 @@
   cloud workflow stays as a clean-room backstop on push to main.
 
   Run this (default/full mode) as the pre-merge gate. Steps:
-    Frontend : typecheck, lint, build, npm audit --audit-level=high
+    Frontend : typecheck, lint, build, npm audit (strict - fails on ANY advisory)
     Rust     : cargo build/test --locked --all-targets, cargo audit, cargo deny
 
   NOTE on `npm ci`: the default run does NOT wipe node_modules - it checks the
@@ -86,7 +86,8 @@ try {
   Step "typecheck" { npm run typecheck }
   Step "lint" { npm run lint }
   Step "build" { npm run build }
-  if (-not $Quick) { Step "npm audit" { npm audit --audit-level=high } }
+  # Strictest gate: no -AuditLevel, so ANY advisory (low/moderate up) fails.
+  if (-not $Quick) { Step "npm audit" { npm audit } }
 } finally {
   Pop-Location
 }
