@@ -850,7 +850,7 @@ export function TerminalsPage({
             ) : (
               <EyeIcon className="h-3.5 w-3.5" />
             )}
-            {hideGridHeaders ? "Title bars off" : "Title bars"}
+            Title bars
           </Button>
         )}
 
