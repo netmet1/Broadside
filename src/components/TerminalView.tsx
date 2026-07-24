@@ -11,6 +11,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +33,17 @@ import {
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
 import { useUiPrefs } from "@/lib/uiPrefs";
+
+/** Copy `sel` to the clipboard and flash a short confirmation toast. Nothing
+ * on-screen otherwise signals that copy-on-select fired, so the toast is the
+ * only feedback that the clipboard changed. A blank selection is a no-op. */
+function copySelection(sel: string) {
+  if (!sel) return;
+  navigator.clipboard
+    ?.writeText(sel)
+    .then(() => toast.success("Copied to clipboard", { duration: 1200 }))
+    .catch(() => {});
+}
 
 export type ConnectionGate = Extract<
   PtyOpenResult,
@@ -202,8 +214,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // right-click-paste — Ctrl+C/Ctrl+V alone stay reserved for the shell
       // (SIGINT / literal paste-through the shell may want).
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
-        const sel = term.getSelection();
-        if (sel) navigator.clipboard?.writeText(sel).catch(() => {});
+        copySelection(term.getSelection());
         return false;
       }
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) {
@@ -273,8 +284,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // does both copy and paste. Fires once per drag (on mouseup) rather than on
     // every onSelectionChange tick, so we don't spam the clipboard mid-drag.
     const onMouseUp = () => {
-      const sel = term.getSelection();
-      if (sel) navigator.clipboard?.writeText(sel).catch(() => {});
+      copySelection(term.getSelection());
     };
     contextMenuEl?.addEventListener("mouseup", onMouseUp);
 
