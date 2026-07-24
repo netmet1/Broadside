@@ -841,8 +841,8 @@ export function TerminalsPage({
             onClick={toggleGridHeaders}
             {...hint(
               hideGridHeaders
-                ? "Tile title bars are hidden. Click to show them."
-                : "Tile title bars are shown. Click to hide them for a denser grid.",
+                ? "Tile grid title bars are hidden. Click to show them."
+                : "Tile grid title bars are shown. Click to hide them for a denser grid.",
             )}
           >
             {hideGridHeaders ? (
@@ -850,7 +850,7 @@ export function TerminalsPage({
             ) : (
               <EyeIcon className="h-3.5 w-3.5" />
             )}
-            Title bars
+            Grid Titles
           </Button>
         )}
 
@@ -1373,7 +1373,7 @@ export function TerminalsPage({
               {/* Grid-only pane header: identifies the tile and carries the
                   same maximize/close affordances the tab has. Rendered (hidden)
                   in tabs mode so the TerminalView below never shifts position,
-                  and hidden outright when the toolbar's Title bars toggle is off.
+                  and hidden outright when the toolbar's 'Grid Titles' toggle is off.
                   border-t-2/transparent reserves the active top bar so tinting
                   never nudges the layout. */}
               <div

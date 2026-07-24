@@ -577,7 +577,7 @@ const SECTIONS: HelpSection[] = [
               always shows it on its own.
             </li>
             <li>
-              The <Nav>Title bars</Nav> button (the eye, next to the{" "}
+              The <Nav>Grid Titles</Nav> button (the eye, next to the{" "}
               <Nav>Grid</Nav> toggle) hides every tile's title bar for a denser,
               chrome-free wall of terminals; a crossed-out eye marks the hidden
               state and clicking again brings the bars back. It appears only in
@@ -1068,7 +1068,7 @@ const SECTIONS: HelpSection[] = [
             <li>
               On <Nav>GET</Nav>, the remote path may end in a wildcard (
               <Nav>*</Nav> or <Nav>?</Nav>) to pull several files at once, for
-              example <Nav>/home/user/*.p12</Nav> fetches every matching file from
+              example <Nav>/home/user/*.log</Nav> fetches every matching file from
               each host. Only the last part of the path is matched; the folders
               leading up to it are taken literally.
             </li>

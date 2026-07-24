@@ -462,7 +462,7 @@ export function BroadcastTab({
                 <p className="text-xs text-muted-foreground">
                   Wildcards (<span className="font-mono">*</span>,{" "}
                   <span className="font-mono">?</span>) in the last path segment fetch
-                  every match, e.g. <span className="font-mono">/home/user/*.p12</span>.
+                  every match, e.g. <span className="font-mono">/home/user/*.log</span>.
                 </p>
               )}
               <div

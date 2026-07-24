@@ -291,7 +291,7 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
       const cfg = cfgRef.current;
       const src = cfg.remotePath.trim();
 
-      // Wildcard source (e.g. /home/user/*.p12): expand the glob against its
+      // Wildcard source (e.g. /home/user/*.log): expand the glob against its
       // parent directory and fetch every match into this host's folder. Only the
       // final path segment may contain wildcards; the directory part is literal.
       const pattern = baseName(src);
