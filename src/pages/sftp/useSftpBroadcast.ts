@@ -42,6 +42,25 @@ export type HostXfer = {
   message: string | null;
 };
 
+/** True if `s` uses the shell-glob wildcards we expand on a GET source (`*` or
+ *  `?`). A `[` character-class isn't supported; it's matched literally. */
+function hasGlob(s: string): boolean {
+  return /[*?]/.test(s);
+}
+
+/** Compile a simple shell glob (`*`, `?`) to an anchored, case-sensitive RegExp.
+ *  Only ever applied to a single path segment (the file-name), so `/` is treated
+ *  as any other literal. Every other regex metacharacter is escaped. */
+function globToRegExp(glob: string): RegExp {
+  let re = "";
+  for (const ch of glob) {
+    if (ch === "*") re += ".*";
+    else if (ch === "?") re += ".";
+    else re += ch.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`);
+}
+
 function newXfer(hostId: number): HostXfer {
   return {
     hostId,
@@ -271,6 +290,73 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
     async (host: Host, sessionId: string) => {
       const cfg = cfgRef.current;
       const src = cfg.remotePath.trim();
+
+      // Wildcard source (e.g. /home/user/*.log): expand the glob against its
+      // parent directory and fetch every match into this host's folder. Only the
+      // final path segment may contain wildcards; the directory part is literal.
+      const pattern = baseName(src);
+      if (hasGlob(pattern)) {
+        const dir = posixDirname(src);
+        let items;
+        try {
+          items = await sftpList(sessionId, dir);
+        } catch {
+          throw new Error(`cannot read ${dir}`);
+        }
+        const re = globToRegExp(pattern);
+        const matches = items.filter((e) => re.test(e.name));
+        if (matches.length === 0) {
+          throw new Error(`no matches for ${pattern} in ${dir}`);
+        }
+        const destFolder = winJoin(cfg.localPath, host.label);
+        await localMkdir(destFolder).catch(() => {});
+        const bytesTotal = matches.reduce(
+          (n, e) => n + (e.kind === "file" ? e.size ?? 0 : 0),
+          0,
+        );
+        patch(host.id, { status: "running", filesTotal: matches.length, bytesTotal });
+        let filesDone = 0;
+        let bytesDone = 0;
+        for (const e of matches) {
+          const remoteItem = posixJoin(dir, e.name);
+          const localTarget = winJoin(destFolder, e.name);
+          // Each file gets its own transfer id, but it's deliberately NOT mapped
+          // in xferIdToHost: live progress events would overwrite the cumulative
+          // filesDone/bytesDone we patch after each file with per-file values and
+          // make the counter jump backwards. Per-file completion patches suffice.
+          const transferId = crypto.randomUUID();
+          if (e.kind === "dir") {
+            const stats = await sftpDownloadDir({
+              hostId: host.id,
+              sessionId,
+              remotePath: remoteItem,
+              localPath: localTarget,
+              transferId,
+              mode: cfg.mode,
+            });
+            bytesDone += stats.bytes;
+          } else {
+            const bytes = await sftpDownload({
+              hostId: host.id,
+              sessionId,
+              remotePath: remoteItem,
+              localPath: localTarget,
+              transferId,
+            });
+            bytesDone += bytes;
+          }
+          filesDone += 1;
+          patch(host.id, { filesDone, bytesDone });
+        }
+        patch(host.id, {
+          status: "ok",
+          filesDone,
+          bytesDone,
+          message: `${filesDone} file${filesDone === 1 ? "" : "s"}, ${bytesDone} bytes`,
+        });
+        return;
+      }
+
       // Detect file-vs-dir + size by listing the remote parent.
       const parent = posixDirname(src);
       let entry;

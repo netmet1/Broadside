@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
   Columns2Icon,
+  EyeIcon,
+  EyeOffIcon,
   LayoutGridIcon,
   Maximize2Icon,
   PanelTopIcon,
@@ -67,6 +69,9 @@ import { cn } from "@/lib/utils";
 
 const TABS_COMPACT_KEY = "terminal-tabs-compact";
 const LAYOUT_KEY = "terminal-layout";
+/** Grid tile chrome: "1" hides every tile's title bar (the header peeks back on
+ * hover). Persisted so the cleaner look survives a restart. */
+const GRID_HIDE_HEADERS_KEY = "terminal-grid-hide-headers";
 
 /** Opening more than this many local shells at once first asks for confirmation
  * — a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
@@ -454,6 +459,19 @@ export function TerminalsPage({
   }, []);
   const gridMode = layout === "grid" && !maximized;
 
+  // Hide every grid tile's title bar for a denser, chrome-free wall of terminals.
+  // The header still peeks back on hover (so maximize/close/eye stay reachable),
+  // and the choice persists across restarts.
+  const [hideGridHeaders, setHideGridHeaders] = useState(
+    () => localStorage.getItem(GRID_HIDE_HEADERS_KEY) === "1",
+  );
+  const toggleGridHeaders = useCallback(() => {
+    setHideGridHeaders((h) => {
+      localStorage.setItem(GRID_HIDE_HEADERS_KEY, h ? "0" : "1");
+      return !h;
+    });
+  }, []);
+
   // How the special two-terminal grid is split: side-by-side columns (default)
   // or stacked top/bottom rows. Deliberately plain component state, NOT
   // persisted — the page stays mounted for the whole session so the choice
@@ -813,6 +831,28 @@ export function TerminalsPage({
             Grid
           </button>
         </div>
+
+        {/* Hide/show every grid tile's title bar. Grid-only; the choice persists
+            across restarts. Sits between the layout selector and the two-up flip. */}
+        {gridMode && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={toggleGridHeaders}
+            {...hint(
+              hideGridHeaders
+                ? "Tile grid title bars are hidden. Click to show them."
+                : "Tile grid title bars are shown. Click to hide them for a denser grid.",
+            )}
+          >
+            {hideGridHeaders ? (
+              <EyeOffIcon className="h-3.5 w-3.5" />
+            ) : (
+              <EyeIcon className="h-3.5 w-3.5" />
+            )}
+            Grid Titles
+          </Button>
+        )}
 
         {/* Flip the two-terminal grid between side-by-side and top/bottom.
             Only meaningful for exactly two tiles (one fills, three+ tile and
@@ -1290,6 +1330,14 @@ export function TerminalsPage({
             : hostTint
               ? { backgroundColor: `${hostColor}33`, borderTopColor: hostColor! }
               : { borderTopColor: "var(--foreground)" };
+          // Selected tile outlined in the host's own identifying colour (border +
+          // a matching soft ring) instead of the theme primary. Only for a
+          // connected SSH tile with a usable hue; local/disconnected fall back to
+          // the primary classes below.
+          const tileStyle: React.CSSProperties | undefined =
+            gridMode && hostTint
+              ? { borderColor: hostColor!, boxShadow: `0 0 0 1px ${hostColor}66` }
+              : undefined;
           return (
             <div
               key={s.id}
@@ -1297,6 +1345,7 @@ export function TerminalsPage({
                 if (el) paneElRefs.current.set(s.id, el);
                 else paneElRefs.current.delete(s.id);
               }}
+              style={tileStyle}
               className={cn(
                 gridMode
                   ? cn(
@@ -1311,7 +1360,10 @@ export function TerminalsPage({
                           ? "min-h-[16rem]"
                           : "min-h-0",
                       isActive
-                        ? "border-primary/70 ring-1 ring-primary/40"
+                        ? // host-tinted tiles take their border+ring from tileStyle
+                          hostTint
+                          ? ""
+                          : "border-primary/70 ring-1 ring-primary/40"
                         : "border-border/50",
                     )
                   : cn("h-full w-full", isActive ? "block" : "hidden"),
@@ -1320,14 +1372,15 @@ export function TerminalsPage({
             >
               {/* Grid-only pane header: identifies the tile and carries the
                   same maximize/close affordances the tab has. Rendered (hidden)
-                  in tabs mode so the TerminalView below never shifts position.
+                  in tabs mode so the TerminalView below never shifts position,
+                  and hidden outright when the toolbar's 'Grid Titles' toggle is off.
                   border-t-2/transparent reserves the active top bar so tinting
                   never nudges the layout. */}
               <div
                 style={headerStyle}
                 className={cn(
                   "shrink-0 items-center gap-2 border-b border-t-2 border-border/40 border-t-transparent px-2 py-1",
-                  gridMode ? "flex" : "hidden",
+                  gridMode && !hideGridHeaders ? "flex" : "hidden",
                   isActive
                     ? !hostTint && "bg-accent"
                     : "bg-muted/30",

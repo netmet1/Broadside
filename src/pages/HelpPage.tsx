@@ -343,7 +343,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-hosts",
     title: "Hosts",
     keywords:
-      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column",
+      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow",
     body: (
       <>
         <Lead>
@@ -401,6 +401,12 @@ const SECTIONS: HelpSection[] = [
               Select several hosts and open a terminal for all of them at once.
             </li>
             <li>
+              The <Nav>Find by label…</Nav> box at the top right narrows the table
+              to hosts whose label matches what you type (case-insensitive), the
+              same as the search boxes on the broadcast rails. It combines with the
+              tag filter and clears with the <Nav>x</Nav>.
+            </li>
+            <li>
               You can hide columns you do not use from <Nav>Settings</Nav>, under{" "}
               <Nav>Appearance</Nav>. When a column is hidden, each row gets a small
               tag/label icon in its <Nav>Actions</Nav>; click it to see that host's
@@ -443,7 +449,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser",
     body: (
       <>
         <Lead>
@@ -565,9 +571,17 @@ const SECTIONS: HelpSection[] = [
               area, two split it, and three or more tile two-across and scroll.
               Each grid tile has its own maximize and close buttons, its header
               shows the same colour as the tab, and clicking one makes it the
-              active tab that find and shortcut commands act on. Your choice is
+              active tab that find and shortcut commands act on. The active tile
+              is also outlined in that host's own colour. Your choice is
               remembered between visits and restarts; maximizing a terminal
               always shows it on its own.
+            </li>
+            <li>
+              The <Nav>Grid Titles</Nav> button (the eye, next to the{" "}
+              <Nav>Grid</Nav> toggle) hides every tile's title bar for a denser,
+              chrome-free wall of terminals; a crossed-out eye marks the hidden
+              state and clicking again brings the bars back. It appears only in
+              Grid and the choice is remembered across restarts.
             </li>
             <li>
               To pin the grid, open <Nav>Settings</Nav> and the <Nav>Grid</Nav>{" "}
@@ -586,8 +600,9 @@ const SECTIONS: HelpSection[] = [
             <li>
               <strong className="font-semibold">Copy</strong> by selecting text
               with the mouse, and the selection is copied to the clipboard as soon
-              as you release the button (no menu, no shortcut needed). You can
-              also press <Nav>Ctrl+Shift+C</Nav> to copy the current selection.
+              as you release the button (no menu, no shortcut needed). A brief{" "}
+              <Nav>Copied to clipboard</Nav> toast confirms it. You can also press{" "}
+              <Nav>Ctrl+Shift+C</Nav> to copy the current selection.
             </li>
             <li>
               <strong className="font-semibold">Paste</strong> with a{" "}
@@ -1002,7 +1017,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk",
     body: (
       <>
         <Lead>
@@ -1049,6 +1064,13 @@ const SECTIONS: HelpSection[] = [
               different hosts never collide). Each host gets its own progress bar,
               and a few hosts transfer at a time so many targets are queued rather
               than opened all at once.
+            </li>
+            <li>
+              On <Nav>GET</Nav>, the remote path may end in a wildcard (
+              <Nav>*</Nav> or <Nav>?</Nav>) to pull several files at once, for
+              example <Nav>/home/user/*.log</Nav> fetches every matching file from
+              each host. Only the last part of the path is matched; the folders
+              leading up to it are taken literally.
             </li>
             <li>
               Because a broadcast write can overwrite data on many machines at

@@ -452,10 +452,19 @@ export function BroadcastTab({
               <Input
                 value={b.remotePath}
                 onChange={(e) => b.setRemotePath(e.target.value)}
-                placeholder={isPut ? "/remote/destination/dir" : "/remote/source/path"}
+                placeholder={
+                  isPut ? "/remote/destination/dir" : "/remote/source/path or /dir/*.ext"
+                }
                 className="font-mono text-xs"
                 disabled={b.running}
               />
+              {!isPut && (
+                <p className="text-xs text-muted-foreground">
+                  Wildcards (<span className="font-mono">*</span>,{" "}
+                  <span className="font-mono">?</span>) in the last path segment fetch
+                  every match, e.g. <span className="font-mono">/home/user/*.log</span>.
+                </p>
+              )}
               <div
                 ref={outputRef}
                 onScroll={onOutputScroll}
