@@ -343,7 +343,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-hosts",
     title: "Hosts",
     keywords:
-      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column",
+      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow",
     body: (
       <>
         <Lead>
@@ -399,6 +399,12 @@ const SECTIONS: HelpSection[] = [
             </li>
             <li>
               Select several hosts and open a terminal for all of them at once.
+            </li>
+            <li>
+              The <Nav>Find by label…</Nav> box at the top right narrows the table
+              to hosts whose label matches what you type (case-insensitive), the
+              same as the search boxes on the broadcast rails. It combines with the
+              tag filter and clears with the <Nav>x</Nav>.
             </li>
             <li>
               You can hide columns you do not use from <Nav>Settings</Nav>, under{" "}

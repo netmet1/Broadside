@@ -47,16 +47,29 @@ export function useHostTagFilter(hosts: Host[], sortedHosts: Host[]) {
           ]),
     );
 
-  // Apply the tag filter (OR semantics): a host shows if any of its tags is
-  // still checked; an untagged host shows unless "(untagged)" is unchecked.
+  // Ctrl-f style label search over the table (case-insensitive substring),
+  // mirroring the broadcast rails' "Find by label…" box. Session-only, in-memory.
+  const [labelQuery, setLabelQuery] = useState("");
+  const labelFilterActive = labelQuery.trim() !== "";
+
+  // Apply both filters. Tag (OR semantics): a host shows if any of its tags is
+  // still checked; an untagged host shows unless "(untagged)" is unchecked. Then
+  // the label query narrows further by case-insensitive substring on the label.
   const visibleHosts = useMemo(() => {
-    if (hiddenTags.size === 0) return sortedHosts;
+    const q = labelQuery.trim().toLowerCase();
     return sortedHosts.filter((h) => {
-      const tags = parseTags(h.tag);
-      if (tags.length === 0) return !hiddenTags.has(UNTAGGED_KEY);
-      return tags.some((t) => !hiddenTags.has(t.toLowerCase()));
+      if (hiddenTags.size > 0) {
+        const tags = parseTags(h.tag);
+        const tagOk =
+          tags.length === 0
+            ? !hiddenTags.has(UNTAGGED_KEY)
+            : tags.some((t) => !hiddenTags.has(t.toLowerCase()));
+        if (!tagOk) return false;
+      }
+      if (q && !h.label.toLowerCase().includes(q)) return false;
+      return true;
     });
-  }, [sortedHosts, hiddenTags]);
+  }, [sortedHosts, hiddenTags, labelQuery]);
 
   // Self-contained tag-filter dropdown, opened from the Tag header icon.
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
@@ -84,6 +97,9 @@ export function useHostTagFilter(hosts: Host[], sortedHosts: Host[]) {
     tagFilterActive,
     toggleTagFilter,
     setAllTagsVisible,
+    labelQuery,
+    setLabelQuery,
+    labelFilterActive,
     visibleHosts,
     tagMenuOpen,
     setTagMenuOpen,

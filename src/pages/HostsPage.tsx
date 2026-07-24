@@ -12,12 +12,14 @@ import {
   PencilIcon,
   PlugZapIcon,
   PlusIcon,
+  SearchIcon,
   TagIcon,
   TerminalIcon,
   TriangleAlertIcon,
   Trash2Icon,
   UnplugIcon,
   UploadIcon,
+  XIcon,
 } from "lucide-react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -130,7 +132,7 @@ export function HostsPage({
     connectedHostIds,
   );
 
-  // Tag filter (#8) + the sorted-and-filtered view shown in the table.
+  // Tag filter (#8) + label search + the sorted-and-filtered view for the table.
   const {
     hiddenTags,
     tagOptions,
@@ -138,6 +140,9 @@ export function HostsPage({
     tagFilterActive,
     toggleTagFilter,
     setAllTagsVisible,
+    labelQuery,
+    setLabelQuery,
+    labelFilterActive,
     visibleHosts,
     tagMenuOpen,
     setTagMenuOpen,
@@ -213,8 +218,8 @@ export function HostsPage({
   usePageStatus(
     loading
       ? null
-      : tagFilterActive && visibleHosts.length !== hosts.length
-        ? `Showing ${visibleHosts.length} of ${hosts.length} hosts (tag filter) · ${connectedCount} connected`
+      : (tagFilterActive || labelFilterActive) && visibleHosts.length !== hosts.length
+        ? `Showing ${visibleHosts.length} of ${hosts.length} hosts (filtered) · ${connectedCount} connected`
         : `Showing ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"} · ${connectedCount} connected`,
     !formOpen && !importOpen,
   );
@@ -338,6 +343,30 @@ export function HostsPage({
           </p>
         </div>
         <div className="flex gap-2">
+          {/* Ctrl-f style label search over the table, mirroring the broadcast
+              rails' "Find by label…" box. Narrows the table with the tag filter. */}
+          <div className="relative w-52 self-center">
+            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={labelQuery}
+              onChange={(e) => setLabelQuery(e.target.value)}
+              placeholder="Find by label…"
+              aria-label="Find hosts by label"
+              spellCheck={false}
+              className="h-9 w-full rounded-md border border-input bg-background py-1 pl-8 pr-8 text-sm outline-none focus-visible:border-ring"
+            />
+            {labelQuery && (
+              <button
+                type="button"
+                onClick={() => setLabelQuery("")}
+                aria-label="Clear label search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <XIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
           <Button
             variant="outline"
             onClick={openSelectedTerminals}
@@ -580,11 +609,14 @@ export function HostsPage({
             ) : visibleHosts.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={10} className="text-center text-sm text-muted-foreground">
-                  No hosts match the current tag filter.{" "}
+                  No hosts match the current filter.{" "}
                   <button
                     type="button"
                     className="font-medium text-primary hover:underline"
-                    onClick={() => setAllTagsVisible(true)}
+                    onClick={() => {
+                      setAllTagsVisible(true);
+                      setLabelQuery("");
+                    }}
                   >
                     Clear filter
                   </button>
