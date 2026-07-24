@@ -443,7 +443,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser",
     body: (
       <>
         <Lead>
@@ -565,9 +565,17 @@ const SECTIONS: HelpSection[] = [
               area, two split it, and three or more tile two-across and scroll.
               Each grid tile has its own maximize and close buttons, its header
               shows the same colour as the tab, and clicking one makes it the
-              active tab that find and shortcut commands act on. Your choice is
+              active tab that find and shortcut commands act on. The active tile
+              is also outlined in that host's own colour. Your choice is
               remembered between visits and restarts; maximizing a terminal
               always shows it on its own.
+            </li>
+            <li>
+              The <Nav>eye</Nav> button in a grid tile's header hides every
+              tile's title bar for a denser, chrome-free wall of terminals. The
+              bar peeks back whenever you hover a tile (so maximize, close and the
+              eye stay reachable), and a crossed-out eye marks the hidden state.
+              The choice is remembered across restarts.
             </li>
             <li>
               To pin the grid, open <Nav>Settings</Nav> and the <Nav>Grid</Nav>{" "}
@@ -586,8 +594,9 @@ const SECTIONS: HelpSection[] = [
             <li>
               <strong className="font-semibold">Copy</strong> by selecting text
               with the mouse, and the selection is copied to the clipboard as soon
-              as you release the button (no menu, no shortcut needed). You can
-              also press <Nav>Ctrl+Shift+C</Nav> to copy the current selection.
+              as you release the button (no menu, no shortcut needed). A brief{" "}
+              <Nav>Copied to clipboard</Nav> toast confirms it. You can also press{" "}
+              <Nav>Ctrl+Shift+C</Nav> to copy the current selection.
             </li>
             <li>
               <strong className="font-semibold">Paste</strong> with a{" "}
@@ -1002,7 +1011,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk",
     body: (
       <>
         <Lead>
@@ -1049,6 +1058,13 @@ const SECTIONS: HelpSection[] = [
               different hosts never collide). Each host gets its own progress bar,
               and a few hosts transfer at a time so many targets are queued rather
               than opened all at once.
+            </li>
+            <li>
+              On <Nav>GET</Nav>, the remote path may end in a wildcard (
+              <Nav>*</Nav> or <Nav>?</Nav>) to pull several files at once, for
+              example <Nav>/home/user/*.p12</Nav> fetches every matching file from
+              each host. Only the last part of the path is matched; the folders
+              leading up to it are taken literally.
             </li>
             <li>
               Because a broadcast write can overwrite data on many machines at
