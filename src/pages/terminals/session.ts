@@ -67,11 +67,12 @@ export function sessionLabel(s: TermSession): string {
   return s.title || s.profileLabel || s.shell.label;
 }
 
-/** Which shortcut scope a tab belongs to. SSH hosts and local WSL tabs run
- * Linux (ssh); local Command Prompt / PowerShell run Windows commands (local). */
+/** Which shortcut scope a tab belongs to. SSH hosts, local WSL tabs and custom
+ * POSIX terminals (Git Bash and the like) run Linux commands (ssh); local
+ * Command Prompt / PowerShell run Windows ones (local). */
 export function sessionScope(s: TermSession): ShortcutScope {
   if (s.type === "ssh") return "ssh";
-  return s.shell.kind === "wsl" ? "ssh" : "local";
+  return s.shell.kind === "wsl" || s.shell.kind === "posix" ? "ssh" : "local";
 }
 
 /** Most initials we ever show. Camel/word splitting can produce a long run

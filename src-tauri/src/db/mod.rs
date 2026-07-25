@@ -6,6 +6,7 @@ use tauri::{AppHandle, Manager};
 use crate::error::{AppError, AppResult};
 
 pub mod broadcast_history;
+pub mod custom_terminals;
 pub mod history;
 pub mod host_keys;
 pub mod hosts;
@@ -169,6 +170,25 @@ const MIGRATIONS: &[&str] = &[
          WHERE other.name < skills.name
             OR (other.name = skills.name AND other.id < skills.id)
      );",
+    // 16: user-defined terminal applications (Git Bash and the like), so the
+    // launcher isn't limited to the shells we detect.
+    //
+    // This lives in the DB rather than a localStorage UI pref on purpose. It
+    // names an executable the app will SPAWN, and keeping the definition
+    // backend-side means the frontend only ever sends an id: an arbitrary
+    // executable path can never cross the IPC boundary and become a launch.
+    // `args_json` is a JSON array passed as argv, never a joined string, so
+    // nothing is handed to a shell to re-parse.
+    "CREATE TABLE IF NOT EXISTS custom_terminals (
+        id INTEGER PRIMARY KEY,
+        label TEXT NOT NULL,
+        exe_path TEXT NOT NULL,
+        args_json TEXT NOT NULL DEFAULT '[]',
+        family TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {

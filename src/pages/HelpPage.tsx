@@ -449,7 +449,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language",
     body: (
       <>
         <Lead>
@@ -501,6 +501,42 @@ const SECTIONS: HelpSection[] = [
               <Nav>Settings</Nav> under <Nav>Appearance</Nav>. Every detected
               shell is shown by default; a newly installed one appears
               automatically once detected.
+            </li>
+          </Bullets>
+          <H3>Your own terminal applications</H3>
+          <Bullets>
+            <li>
+              Detection only finds the shells Broadside knows how to look for.
+              For anything else, such as <Nav>Git Bash</Nav>, MSYS2 or Cygwin,
+              open <Nav>Settings</Nav> and the <Nav>Custom terminals</Nav>{" "}
+              section and add it yourself. There is an <Nav>Add Git Bash</Nav>{" "}
+              button that fills in the usual path and options for you, so that
+              case is normally one click and a save.
+            </li>
+            <li>
+              Give it a name (used in the launcher and as the tab title), the
+              full path to the program (the <Nav>Browse</Nav> button finds it),
+              any arguments it needs, and which command language it speaks. Git
+              Bash needs <code>--login -i</code> or it opens without a prompt.
+            </li>
+            <li>
+              The program must be a full path to a real <code>.exe</code>.
+              Broadside checks that when you save, so a typo is caught there
+              rather than when you try to open a tab. Arguments are handed to
+              the program directly rather than through a shell, so there is no
+              quoting to get right.
+            </li>
+            <li>
+              The command language matters for more than the icon: it decides
+              which <Nav>PTY Broadcast</Nav> tab the terminal belongs to, so a
+              broadcast command is always valid for everything it reaches. A
+              Bash-like terminal joins the <Nav>WSL / POSIX</Nav> tab.
+            </li>
+            <li>
+              A terminal you add appears in the <Nav>+</Nav> menu straight away,
+              with no restart, and can be used by a saved shell profile like any
+              other shell. Removing one takes it out of the launcher; a profile
+              still pointing at it is flagged rather than silently broken.
             </li>
           </Bullets>
           <H3>Shell profiles</H3>

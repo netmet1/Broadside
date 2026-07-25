@@ -132,14 +132,45 @@ fn decode_utf16le(bytes: &[u8]) -> String {
     String::from_utf16_lossy(&units)
 }
 
+/// A user-defined terminal application resolved from the database, ready to
+/// launch. The command layer looks a `custom:<id>` shell id up and hands the
+/// row's stored program and arguments over; nothing here ever sees a path that
+/// came from the frontend.
+pub struct CustomLaunch {
+    pub exe_path: String,
+    pub args: Vec<String>,
+}
+
 /// Map a shell id to the process to launch. `cwd` is the directory to start the
 /// shell in (a saved profile's working directory); when absent the shell opens
 /// in the user's home directory rather than the app's working dir.
-fn build_command(shell_id: &str, cwd: Option<&str>) -> AppResult<CommandBuilder> {
+///
+/// `custom` must be supplied for a `custom:<id>` shell id and is ignored
+/// otherwise. Its arguments are passed as argv, one `.arg()` each, so nothing
+/// is handed to a shell to re-parse and there is no quoting to get wrong.
+fn build_command(
+    shell_id: &str,
+    cwd: Option<&str>,
+    custom: Option<&CustomLaunch>,
+) -> AppResult<CommandBuilder> {
     let mut cmd = if let Some(distro) = shell_id.strip_prefix("wsl:") {
         let mut c = CommandBuilder::new("wsl.exe");
         c.arg("-d");
         c.arg(distro);
+        c
+    } else if shell_id.starts_with("custom:") {
+        let Some(custom) = custom else {
+            // Only reachable if a caller forgot to resolve the row, which would
+            // be a bug here rather than bad input. Refusing to launch is the
+            // only safe answer.
+            return Err(AppError::InvalidInput(format!(
+                "custom terminal not resolved: {shell_id}"
+            )));
+        };
+        let mut c = CommandBuilder::new(&custom.exe_path);
+        for a in &custom.args {
+            c.arg(a);
+        }
         c
     } else {
         match shell_id {
@@ -187,10 +218,11 @@ pub fn open_local<E: PtyEvents>(
     session_id: String,
     shell_id: &str,
     cwd: Option<&str>,
+    custom: Option<&CustomLaunch>,
     cols: u32,
     rows: u32,
 ) -> AppResult<()> {
-    let cmd = build_command(shell_id, cwd)?;
+    let cmd = build_command(shell_id, cwd, custom)?;
     let pty_system = portable_pty::native_pty_system();
     let pair = pty_system
         .openpty(pty_size(cols, rows))
