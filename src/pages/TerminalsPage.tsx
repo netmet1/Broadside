@@ -8,6 +8,7 @@ import {
   Grid2x2XIcon,
   LayoutGridIcon,
   Maximize2Icon,
+  Minimize2Icon,
   PanelTopIcon,
   PencilIcon,
   PlusIcon,
@@ -16,6 +17,7 @@ import {
   TerminalIcon,
   TextIcon,
   Trash2Icon,
+  UndoIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -68,6 +70,7 @@ import {
 } from "@/lib/localShellProfiles";
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { useGridLayout } from "@/pages/terminals/useGridLayout";
+import { useGridResize } from "@/pages/terminals/useGridResize";
 import type { SearchOptions } from "@/lib/search";
 import { getAppSettings } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
@@ -128,6 +131,10 @@ type Props = {
   onMaximize: (id: string) => void;
   /** Whether the terminal is currently maximized (hides the page chrome). */
   maximized: boolean;
+  /** Whether the grid is filling the screen. Owned by App because it hides the
+   * app chrome, driven from here because this is where the layout is known. */
+  gridFullscreen: boolean;
+  onGridFullscreen: (on: boolean) => void;
   /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab.
    * `opts` carries a saved profile's cwd / startup command / name when the open
    * came from a profile rather than a plain shell pick. */
@@ -147,6 +154,8 @@ export function TerminalsPage({
   onRenameSession,
   onMaximize,
   maximized,
+  gridFullscreen,
+  onGridFullscreen,
   onOpenLocalShell,
 }: Props) {
   const shortcuts = useShortcuts(visible);
@@ -350,10 +359,26 @@ export function TerminalsPage({
     toggleGridHeaders,
     twoUpSplit,
     toggleTwoUpSplit,
+    gridPrefs,
+    refreshGridPrefs,
+    cell,
     customGrid,
     customColsAuto,
     gridStyle,
   } = useGridLayout({ sessions, visible, maximized });
+
+  // Drag a tile's edge to set the tile size for the whole grid. Writes the same
+  // Settings -> Grid prefs, so there is one source of truth and the Settings
+  // numbers show what you dragged to.
+  const { resizing, begin: beginResize, resetSize } = useGridResize({
+    cell,
+    onChange: refreshGridPrefs,
+  });
+  // Handles are pointless where a pinned tile size has no effect: in Tabs, and
+  // at exactly two tiles (which always take the full window by design).
+  const canResizeTiles = gridMode && gridCount !== 2;
+  const sizeIsPinned =
+    gridPrefs.itemCols !== null || gridPrefs.itemRows !== null;
 
   // Tab label mode: full label (default) vs color-dot + initials. Persisted
   // like the sidebar-collapse pref (localStorage, UI-only).
@@ -367,6 +392,41 @@ export function TerminalsPage({
       return next;
     });
   }, []);
+
+  // Grid fullscreen: the tiles take the whole window and every bit of chrome
+  // collapses to a hover strip at the top.
+  //
+  // F10 is registered here rather than in App (where F11 lives) so it can be
+  // gated on this page being visible AND the grid being the active layout,
+  // which is state App doesn't have. Capture phase, like F11, so xterm doesn't
+  // swallow it first.
+  //
+  // Trade-off worth knowing: while the grid is showing, F10 no longer reaches a
+  // terminal, and full-screen programs like mc and nano use it to quit. The
+  // toolbar button is the primary affordance; the key is the accelerator.
+  useEffect(() => {
+    if (!visible || !gridMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "F10") {
+        e.preventDefault();
+        e.stopPropagation();
+        onGridFullscreen(!gridFullscreen);
+      } else if (e.key === "Escape" && gridFullscreen) {
+        // Esc only exits; it must stay available to the shell otherwise.
+        e.preventDefault();
+        e.stopPropagation();
+        onGridFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [visible, gridMode, gridFullscreen, onGridFullscreen]);
+
+  // Leaving Grid (or maximizing a pane) has to give the chrome back, or it
+  // would be missing with nothing on screen able to restore it.
+  useEffect(() => {
+    if (gridFullscreen && !gridMode) onGridFullscreen(false);
+  }, [gridFullscreen, gridMode, onGridFullscreen]);
 
   // Drag-to-reorder tab state: the session being dragged and the tab it's
   // currently hovering over (drives the drop-indicator border).
@@ -625,11 +685,24 @@ export function TerminalsPage({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       {/* Chrome (controls + tab strip) is hidden while a terminal is maximized
-          — only the terminal pane and the AppShell banner remain. */}
+          — only the terminal pane and the AppShell banner remain.
+
+          In grid fullscreen the same chrome stays, but slides up out of the way
+          so only a thin strip shows, and slides back down on hover or when
+          anything inside it takes focus (so it is reachable from the keyboard
+          too). It is positioned out of flow, so the tiles get the whole window.
+          Deliberately a transform rather than a height animation with
+          overflow-hidden: the "+" launcher's dropdown has to be able to escape
+          the strip. */}
       {!maximized && (
-        <>
+        <div
+          className={cn(
+            gridFullscreen &&
+              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 focus-within:translate-y-0 hover:translate-y-0",
+          )}
+        >
       {/* Controls line: tab-label toggle (left) + shortcut bar + a session
           picker for jumping between many open tabs (right). */}
       <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
@@ -687,6 +760,47 @@ export function TerminalsPage({
             Grid
           </button>
         </div>
+
+        {/* Undo a drag-resize (or a pinned size set in Settings) and go back to
+            fit-to-window. Only offered when a size is actually pinned, so it
+            isn't a permanently dead button. */}
+        {gridMode && sizeIsPinned && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={resetSize}
+            {...hint(
+              "Clear the pinned tile size and go back to tiles that fit the window.",
+            )}
+          >
+            <UndoIcon className="h-3.5 w-3.5" />
+            Reset size
+          </Button>
+        )}
+
+        {/* Take the grid fullscreen: every tile fills the screen and all the
+            chrome (this bar, the tab strip, the sidebar and status bar)
+            collapses to a hover strip at the top. Grid-only. */}
+        {gridMode && (
+          <Button
+            size="sm"
+            variant={gridFullscreen ? "secondary" : "outline"}
+            onClick={() => onGridFullscreen(!gridFullscreen)}
+            aria-pressed={gridFullscreen}
+            {...hint(
+              gridFullscreen
+                ? "The grid fills the screen. Click (or press F10, or Esc) to come back."
+                : "Fill the screen with the grid (F10). The controls collapse to a strip you hover to reveal.",
+            )}
+          >
+            {gridFullscreen ? (
+              <Minimize2Icon className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2Icon className="h-3.5 w-3.5" />
+            )}
+            Fullscreen
+          </Button>
+        )}
 
         {/* Hide/show every grid tile's title bar. Grid-only; the choice persists
             across restarts. Sits between the layout selector and the two-up flip. */}
@@ -1187,7 +1301,14 @@ export function TerminalsPage({
           )}
         </div>
       </div>
-        </>
+      {/* The sliver left showing when the strip is slid up: a grab handle, so
+          it reads as "there is something here" rather than a stray border. */}
+      {gridFullscreen && (
+        <div className="flex h-1.5 items-center justify-center bg-border/70">
+          <div className="h-0.5 w-16 rounded-full bg-muted-foreground/70" />
+        </div>
+      )}
+        </div>
       )}
 
       {searchOpen && (
@@ -1304,7 +1425,8 @@ export function TerminalsPage({
                   ? excluded
                     ? "hidden"
                     : cn(
-                      "flex min-w-0 flex-col overflow-hidden rounded-md border",
+                      // relative: anchors the resize handles below.
+                      "relative flex min-w-0 flex-col overflow-hidden rounded-md border",
                       // Row height: a custom grid's row track sets the tile
                       // height (a pinned item-height, or minmax(floor,1fr) when
                       // auto), so the tile just fills it (min-h-0). The default
@@ -1391,7 +1513,16 @@ export function TerminalsPage({
                 </button>
               </div>
 
-              <div className={cn("min-w-0", gridMode ? "min-h-0 flex-1" : "h-full w-full")}>
+              <div
+                className={cn(
+                  "min-w-0",
+                  gridMode ? "min-h-0 flex-1" : "h-full w-full",
+                  // While a tile edge is being dragged the pointer sweeps across
+                  // other terminals; without this xterm would take those events
+                  // and start selecting text (or feed them to a mouse-aware TUI).
+                  resizing && "pointer-events-none",
+                )}
+              >
                 <TerminalView
                   ref={(handle) => {
                     if (handle) {
@@ -1429,6 +1560,45 @@ export function TerminalsPage({
                   adoptSnapshot={s.type === "ssh" ? s.adoptSnapshot : undefined}
                 />
               </div>
+
+              {/* Resize handles. Dragging any tile's edge sets the tile size for
+                  the WHOLE grid (it writes the Settings -> Grid character size),
+                  so the tiles stay uniform and overflow scrolls, rather than one
+                  tile growing out of step with the rest. Invisible until hovered
+                  so they don't clutter a wall of terminals. */}
+              {canResizeTiles && !excluded && (
+                <>
+                  <div
+                    onMouseDown={(e) =>
+                      beginResize(e, "x", paneElRefs.current.get(s.id) ?? null)
+                    }
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Drag to set the width of every grid tile"
+                    title="Drag to set the width of every tile"
+                    className="absolute inset-y-0 right-0 w-1.5 cursor-col-resize hover:bg-primary/40"
+                  />
+                  <div
+                    onMouseDown={(e) =>
+                      beginResize(e, "y", paneElRefs.current.get(s.id) ?? null)
+                    }
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Drag to set the height of every grid tile"
+                    title="Drag to set the height of every tile"
+                    className="absolute inset-x-0 bottom-0 h-1.5 cursor-row-resize hover:bg-primary/40"
+                  />
+                  <div
+                    onMouseDown={(e) =>
+                      beginResize(e, "both", paneElRefs.current.get(s.id) ?? null)
+                    }
+                    role="separator"
+                    aria-label="Drag to set the size of every grid tile"
+                    title="Drag to set the size of every tile"
+                    className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize hover:bg-primary/50"
+                  />
+                </>
+              )}
             </div>
           );
         })}
