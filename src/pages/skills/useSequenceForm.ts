@@ -84,6 +84,11 @@ export function useSequenceForm(editing: Skill | null) {
         if (!gone) return prev;
         const rest = prev.filter((_, i) => i !== index);
         const repoint = (target: string) => (target === gone.id ? STOP : target);
+        // The timeout target is a real branch too. Leaving it out here is how
+        // deleting a step would silently leave a dangling "on timeout, go to"
+        // reference that the backend then refuses to save.
+        const repointTimeout = (t: string | undefined) =>
+          t === undefined ? undefined : repoint(t);
         const next = rest.map((s): SeqStep => {
           switch (s.kind) {
             case "run":
@@ -91,6 +96,7 @@ export function useSequenceForm(editing: Skill | null) {
                 ...s,
                 onSuccess: repoint(s.onSuccess),
                 onFailure: repoint(s.onFailure),
+                onTimeoutTarget: repointTimeout(s.onTimeoutTarget),
                 match: s.match
                   ? {
                       ...s.match,
@@ -100,7 +106,11 @@ export function useSequenceForm(editing: Skill | null) {
                   : undefined,
               };
             case "expect":
-              return { ...s, onMatch: repoint(s.onMatch) };
+              return {
+                ...s,
+                onMatch: repoint(s.onMatch),
+                onTimeoutTarget: repointTimeout(s.onTimeoutTarget),
+              };
             case "send":
               return { ...s, next: repoint(s.next) };
             case "wait":
@@ -124,6 +134,10 @@ export function useSequenceForm(editing: Skill | null) {
   const renumberSteps = useCallback(() => {
     const map = new Map(steps.map((s, i) => [s.id, `s${i + 1}`]));
     const remap = (target: string) => map.get(target) ?? target;
+    // The timeout target moves with the ids like every other branch (see the
+    // matching note in removeStep).
+    const remapTimeout = (t: string | undefined) =>
+      t === undefined ? undefined : remap(t);
     setSteps(
       steps.map((s, i): SeqStep => {
         const id = `s${i + 1}`;
@@ -134,6 +148,7 @@ export function useSequenceForm(editing: Skill | null) {
               id,
               onSuccess: remap(s.onSuccess),
               onFailure: remap(s.onFailure),
+              onTimeoutTarget: remapTimeout(s.onTimeoutTarget),
               match: s.match
                 ? {
                     ...s.match,
@@ -143,7 +158,12 @@ export function useSequenceForm(editing: Skill | null) {
                 : undefined,
             };
           case "expect":
-            return { ...s, id, onMatch: remap(s.onMatch) };
+            return {
+              ...s,
+              id,
+              onMatch: remap(s.onMatch),
+              onTimeoutTarget: remapTimeout(s.onTimeoutTarget),
+            };
           case "send":
             return { ...s, id, next: remap(s.next) };
           case "wait":

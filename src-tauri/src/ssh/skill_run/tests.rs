@@ -127,6 +127,7 @@ fn run_step(id: &str, command: &str, on_success: &str, on_failure: &str) -> SeqS
         interactive: false,
         timeout_secs: Some(30),
         on_timeout: TimeoutAction::Fail,
+        on_timeout_target: None,
         on_success: on_success.into(),
         on_failure: on_failure.into(),
         r#match: None,
@@ -149,6 +150,27 @@ fn on_timeout(mut step: SeqStep, action: TimeoutAction) -> SeqStep {
     step
 }
 
+/// Point a step's timeout at another step: "if this doesn't arrive, go there".
+fn timeout_goto(mut step: SeqStep, target: &str) -> SeqStep {
+    match &mut step {
+        SeqStep::Run {
+            on_timeout,
+            on_timeout_target,
+            ..
+        }
+        | SeqStep::Expect {
+            on_timeout,
+            on_timeout_target,
+            ..
+        } => {
+            *on_timeout = TimeoutAction::Goto;
+            *on_timeout_target = Some(target.into());
+        }
+        SeqStep::Send { .. } | SeqStep::Wait { .. } => {}
+    }
+    step
+}
+
 fn interactive(mut step: SeqStep) -> SeqStep {
     if let SeqStep::Run { interactive, .. } = &mut step {
         *interactive = true;
@@ -163,6 +185,7 @@ fn expect_step(id: &str, pattern: &str, send: Option<&str>, on_match: &str) -> S
         send_on_match: send.map(str::to_string),
         timeout_secs: Some(30),
         on_timeout: TimeoutAction::Pause,
+        on_timeout_target: None,
         on_match: on_match.into(),
     }
 }
@@ -579,6 +602,59 @@ async fn expect_step_timeout_pauses_for_the_operator_by_default() {
     let reasons = events.paused_reasons();
     assert_eq!(reasons.len(), 1, "expected exactly one pause");
     assert!(reasons[0].contains("never appears"), "{}", reasons[0]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn expect_step_timeout_with_goto_takes_the_recovery_step() {
+    // The gap this closes: before, an expect that timed out could only fail the
+    // host or park. Now it can hand off to a recovery step and carry on.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        timeout_goto(expect_step("a", "never appears", None, STOP), "b"),
+        run_step("b", "echo recovered", STOP, STOP),
+    ]);
+    // Only answer once step a has actually timed out, so b's completion marker
+    // can't be what satisfies a.
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(45)).await;
+        let _ = data.send(TapMsg::Data(
+            b" echo recovered; printf '__bsdone_%s__\\n' \"$?\"\r\nrecovered\r\n__bsdone_0__\r\n"
+                .to_vec(),
+        ));
+    });
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(host.typed().contains("echo recovered"));
+    // It jumped rather than parking: nobody was there to resume it.
+    assert!(host.events.paused_reasons().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn run_step_timeout_with_goto_takes_the_target_not_the_failure_branch() {
+    // A run step could already branch on timeout, but only through on_failure,
+    // which conflates "timed out" with "exited non-zero". goto separates them.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        timeout_goto(run_step("a", "hangs", STOP, "wrong"), "b"),
+        run_step("b", "echo recovered", STOP, STOP),
+        run_step("wrong", "echo wrong branch", STOP, STOP),
+    ]);
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(45)).await;
+        let _ = data.send(TapMsg::Data(
+            b" echo recovered; printf '__bsdone_%s__\\n' \"$?\"\r\nrecovered\r\n__bsdone_0__\r\n"
+                .to_vec(),
+        ));
+    });
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(host.typed().contains("echo recovered"));
+    assert!(
+        !host.typed().contains("wrong branch"),
+        "took on_failure instead of the timeout target"
+    );
 }
 
 #[tokio::test(start_paused = true)]

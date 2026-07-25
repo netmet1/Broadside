@@ -222,7 +222,11 @@ export function SkillOverview({
                 <dd>
                   {selected.onTimeout === "pause"
                     ? "pause and wait for you"
-                    : "fail the host"}
+                    : selected.onTimeout === "goto"
+                      ? // The target itself is drawn below as the "On timeout"
+                        // branch row, so this only names the behaviour.
+                        "go to another step"
+                      : "fail the host"}
                 </dd>
               </div>
             )}

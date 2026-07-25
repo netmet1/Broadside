@@ -567,6 +567,21 @@ impl<E: SkillEvents> Engine<E> {
                     }
                     // Skipping an expect step means "pretend it matched".
                     Ok(Wait::Skipped) => StepOutcome::Goto(on_match.clone()),
+                    // `goto` sends the run down a recovery path instead of
+                    // ending the host, which is all an expect timeout could do
+                    // before. `fail` keeps failing the host.
+                    Ok(Wait::Timeout) if step.on_timeout() == TimeoutAction::Goto => {
+                        let target = step.on_timeout_target().to_string();
+                        self.emit(
+                            "timeout",
+                            Some(step.id()),
+                            format!(
+                                "timed out after {}s waiting for: {pattern}; going to {target}",
+                                step.timeout_secs()
+                            ),
+                        );
+                        StepOutcome::Goto(target)
+                    }
                     Ok(Wait::Timeout) => StepOutcome::Failed(format!(
                         "timed out waiting for: {pattern}"
                     )),
@@ -678,13 +693,19 @@ impl<E: SkillEvents> Engine<E> {
             Ok(Wait::Timeout) => {
                 // onTimeout: "fail" on a run step takes the failure branch
                 // rather than ending the host: the skill author gets to
-                // handle it.
+                // handle it. "goto" takes the timeout target instead, so a
+                // timeout can be handled separately from a non-zero exit.
+                let target = if step.on_timeout() == TimeoutAction::Goto {
+                    step.on_timeout_target().to_string()
+                } else {
+                    on_failure.to_string()
+                };
                 self.emit(
                     "timeout",
                     Some(step.id()),
-                    format!("timed out after {}s", step.timeout_secs()),
+                    format!("timed out after {}s; going to {target}", step.timeout_secs()),
                 );
-                StepOutcome::Goto(on_failure.to_string())
+                StepOutcome::Goto(target)
             }
             Ok(Wait::Aborted) => StepOutcome::Aborted,
             Ok(Wait::Detached) => StepOutcome::Detached,
@@ -721,7 +742,10 @@ impl<E: SkillEvents> Engine<E> {
             let Wait::Timeout = outcome else {
                 return Ok(outcome);
             };
-            if step.on_timeout() == TimeoutAction::Fail {
+            // Only `pause` parks here. `fail` and `goto` both hand the timeout
+            // back to the caller, which knows what its step kind should do with
+            // it (branch, jump, or end the host).
+            if step.on_timeout() != TimeoutAction::Pause {
                 return Ok(Wait::Timeout);
             }
             let reason = format!("waited {}s for {what}", step.timeout_secs());

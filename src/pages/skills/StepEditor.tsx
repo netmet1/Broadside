@@ -3,7 +3,12 @@ import { ChevronDownIcon, ChevronUpIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NEXT, STOP, type SeqStep } from "@/lib/tauri/skills";
+import {
+  NEXT,
+  STOP,
+  type SeqStep,
+  type TimeoutAction,
+} from "@/lib/tauri/skills";
 import { useHint } from "@/lib/status";
 
 /** Sentinel picked in a branch dropdown to spin up a fresh step and point the
@@ -352,8 +357,13 @@ export function StepEditor({
             <TimeoutFields
               timeoutSecs={step.timeoutSecs}
               onTimeout={step.onTimeout}
+              onTimeoutTarget={step.onTimeoutTarget}
               onChange={(t) => onChange({ ...step, ...t })}
               failLabel="take the 'if it fails' branch"
+              steps={steps}
+              selfId={step.id}
+              isLast={index === steps.length - 1}
+              onAddStep={onAddStep}
             />
           )}
         </div>
@@ -409,8 +419,13 @@ export function StepEditor({
           <TimeoutFields
             timeoutSecs={step.timeoutSecs}
             onTimeout={step.onTimeout}
+            onTimeoutTarget={step.onTimeoutTarget}
             onChange={(t) => onChange({ ...step, ...t })}
             failLabel="fail this host"
+            steps={steps}
+            selfId={step.id}
+            isLast={index === steps.length - 1}
+            onAddStep={onAddStep}
           />
         </div>
       )}
@@ -499,60 +514,104 @@ export function StepEditor({
   );
 }
 
-/** The timeout + what-to-do-about-it pair, shared by run and expect steps. */
+/** The timeout + what-to-do-about-it pair, shared by run and expect steps.
+ *
+ * Picking "go to a step" reveals the same target dropdown the branches use, so
+ * a step that times out can take a recovery path. Before this, an `expect`
+ * timeout could only fail the host or park waiting for someone. */
 function TimeoutFields({
   timeoutSecs,
   onTimeout,
+  onTimeoutTarget,
   onChange,
   failLabel,
+  steps,
+  selfId,
+  isLast,
+  onAddStep,
 }: {
   timeoutSecs?: number;
-  onTimeout?: "fail" | "pause";
-  onChange: (t: { timeoutSecs: number; onTimeout: "fail" | "pause" }) => void;
+  onTimeout?: TimeoutAction;
+  onTimeoutTarget?: string;
+  onChange: (t: {
+    timeoutSecs: number;
+    onTimeout: TimeoutAction;
+    onTimeoutTarget?: string;
+  }) => void;
   /** What "fail" does for this step kind, which differ. */
   failLabel: string;
+  steps: SeqStep[];
+  selfId: string;
+  isLast: boolean;
+  onAddStep: () => string;
 }) {
   const hint = useHint();
   const secs = timeoutSecs ?? 60;
   const action = onTimeout ?? "pause";
+  // Default a fresh goto to STOP rather than NEXT, matching the engine: a
+  // timeout that falls through to the next step in the list is rarely what the
+  // author means, and STOP at least ends the host cleanly.
+  const target = onTimeoutTarget ?? STOP;
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs">
-      <label
-        className="flex items-center gap-1.5"
-        {...hint(
-          "How long to wait before giving up on this step. Raise it for long upgrades or prunes. An hour is the ceiling.",
-        )}
-      >
-        <span className="shrink-0 text-muted-foreground">Wait up to</span>
-        <Input
-          type="number"
-          min={1}
-          max={3600}
-          value={secs}
-          onChange={(e) =>
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <label
+          className="flex items-center gap-1.5"
+          {...hint(
+            "How long to wait before giving up on this step. Raise it for long upgrades or prunes. An hour is the ceiling.",
+          )}
+        >
+          <span className="shrink-0 text-muted-foreground">Wait up to</span>
+          <Input
+            type="number"
+            min={1}
+            max={3600}
+            value={secs}
+            onChange={(e) =>
+              onChange({
+                timeoutSecs: Math.min(3600, Math.max(1, Number(e.target.value) || 60)),
+                onTimeout: action,
+                onTimeoutTarget,
+              })
+            }
+            className="h-7 w-20 text-xs"
+          />
+          <span className="shrink-0 text-muted-foreground">seconds, then</span>
+        </label>
+        <select
+          value={action}
+          onChange={(e) => {
+            const next = e.target.value as TimeoutAction;
             onChange({
-              timeoutSecs: Math.min(3600, Math.max(1, Number(e.target.value) || 60)),
-              onTimeout: action,
-            })
+              timeoutSecs: secs,
+              onTimeout: next,
+              // Only carry a target while the action is "goto", so switching
+              // away doesn't leave a stale edge behind in the saved config.
+              onTimeoutTarget: next === "goto" ? target : undefined,
+            });
+          }}
+          aria-label="On timeout"
+          className="rounded-md border border-input bg-background px-1.5 py-1 text-xs outline-none focus-visible:border-ring"
+        >
+          <option value="pause">wait for me (recommended)</option>
+          <option value="fail">{failLabel}</option>
+          <option value="goto">go to a step</option>
+        </select>
+      </div>
+      {action === "goto" && (
+        <TargetSelect
+          value={target}
+          steps={steps}
+          selfId={selfId}
+          isLast={isLast}
+          onAddStep={onAddStep}
+          onChange={(v) =>
+            onChange({ timeoutSecs: secs, onTimeout: "goto", onTimeoutTarget: v })
           }
-          className="h-7 w-20 text-xs"
+          label="Go to"
+          hintText="Where to carry on when this step runs out of time"
         />
-        <span className="shrink-0 text-muted-foreground">seconds, then</span>
-      </label>
-      <select
-        value={action}
-        onChange={(e) =>
-          onChange({
-            timeoutSecs: secs,
-            onTimeout: e.target.value as "fail" | "pause",
-          })
-        }
-        aria-label="On timeout"
-        className="rounded-md border border-input bg-background px-1.5 py-1 text-xs outline-none focus-visible:border-ring"
-      >
-        <option value="pause">wait for me (recommended)</option>
-        <option value="fail">{failLabel}</option>
-      </select>
+      )}
     </div>
   );
 }

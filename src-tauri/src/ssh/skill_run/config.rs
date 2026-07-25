@@ -52,6 +52,10 @@ pub enum TimeoutAction {
     /// brittle, and silently failing a half-done run is worse than waiting).
     #[default]
     Pause,
+    /// Continue the run at the step's `on_timeout_target`, so a timeout can take
+    /// a recovery path rather than ending the host. Without this an `expect`
+    /// that timed out could only fail or park.
+    Goto,
 }
 
 /// An optional output test on a `run` step, taking precedence over the exit
@@ -83,6 +87,11 @@ pub enum SeqStep {
         timeout_secs: Option<u64>,
         #[serde(default)]
         on_timeout: TimeoutAction,
+        /// Where a `Goto` timeout continues. Absent for the other actions; an
+        /// empty/missing value with `Goto` resolves to STOP (see
+        /// `on_timeout_target`).
+        #[serde(default)]
+        on_timeout_target: Option<String>,
         on_success: String,
         on_failure: String,
         #[serde(default)]
@@ -98,6 +107,9 @@ pub enum SeqStep {
         timeout_secs: Option<u64>,
         #[serde(default)]
         on_timeout: TimeoutAction,
+        /// Where a `Goto` timeout continues. See the `Run` variant.
+        #[serde(default)]
+        on_timeout_target: Option<String>,
         on_match: String,
     },
     /// Write literal keys, unconditionally.
@@ -185,6 +197,23 @@ impl SeqStep {
         match self {
             SeqStep::Run { on_timeout, .. } | SeqStep::Expect { on_timeout, .. } => *on_timeout,
             SeqStep::Send { .. } | SeqStep::Wait { .. } => TimeoutAction::Fail,
+        }
+    }
+
+    /// Where a `Goto` timeout continues. Defaults to STOP rather than NEXT when
+    /// unset: a step whose timeout target went missing should end the host
+    /// cleanly, not silently fall through to whatever now sits below it.
+    /// `resolve_next` has already rewritten any NEXT here into a concrete id by
+    /// the time the engine reads this.
+    pub fn on_timeout_target(&self) -> &str {
+        match self {
+            SeqStep::Run {
+                on_timeout_target, ..
+            }
+            | SeqStep::Expect {
+                on_timeout_target, ..
+            } => on_timeout_target.as_deref().unwrap_or(STOP),
+            SeqStep::Send { .. } | SeqStep::Wait { .. } => STOP,
         }
     }
 }
@@ -439,6 +468,7 @@ pub fn substituted_config(
                 interactive,
                 timeout_secs,
                 on_timeout,
+                on_timeout_target,
                 on_success,
                 on_failure,
                 r#match,
@@ -448,6 +478,7 @@ pub fn substituted_config(
                 interactive,
                 timeout_secs,
                 on_timeout,
+                on_timeout_target,
                 on_success,
                 on_failure,
                 r#match: r#match.map(|m| MatchBranch {
@@ -461,6 +492,7 @@ pub fn substituted_config(
                 send_on_match,
                 timeout_secs,
                 on_timeout,
+                on_timeout_target,
                 on_match,
             } => SeqStep::Expect {
                 id,
@@ -473,6 +505,7 @@ pub fn substituted_config(
                 send_on_match: send_on_match.map(|s| substitute(&unescape(&s), values, false)),
                 timeout_secs,
                 on_timeout,
+                on_timeout_target,
                 on_match,
             },
             SeqStep::Send { id, input, next } => SeqStep::Send {
@@ -529,6 +562,7 @@ pub fn resolve_next(cfg: &SequenceConfig) -> SequenceConfig {
                     interactive,
                     timeout_secs,
                     on_timeout,
+                    on_timeout_target,
                     on_success,
                     on_failure,
                     r#match,
@@ -538,6 +572,7 @@ pub fn resolve_next(cfg: &SequenceConfig) -> SequenceConfig {
                     interactive,
                     timeout_secs,
                     on_timeout,
+                    on_timeout_target: on_timeout_target.map(|t| resolve(&t)),
                     on_success: resolve(&on_success),
                     on_failure: resolve(&on_failure),
                     r#match: r#match.map(|m| MatchBranch {
@@ -552,6 +587,7 @@ pub fn resolve_next(cfg: &SequenceConfig) -> SequenceConfig {
                     send_on_match,
                     timeout_secs,
                     on_timeout,
+                    on_timeout_target,
                     on_match,
                 } => SeqStep::Expect {
                     id,
@@ -559,6 +595,7 @@ pub fn resolve_next(cfg: &SequenceConfig) -> SequenceConfig {
                     send_on_match,
                     timeout_secs,
                     on_timeout,
+                    on_timeout_target: on_timeout_target.map(|t| resolve(&t)),
                     on_match: resolve(&on_match),
                 },
                 SeqStep::Send { id, input, next } => SeqStep::Send {
@@ -660,12 +697,27 @@ pub fn validate_sequence(cfg: &SequenceConfig) -> AppResult<()> {
     Ok(())
 }
 
+/// Every outgoing edge of a step, so validation can reject a branch that points
+/// nowhere. A `Goto` timeout target counts: it is a real edge the engine will
+/// follow, and a dangling one must be caught at save time like any other.
+/// The target is only an edge when the action is actually `Goto` — a stale
+/// value left behind by switching back to `pause` is inert and must not fail
+/// validation.
+fn timeout_edge<'a>(action: &TimeoutAction, target: &'a Option<String>) -> Option<&'a str> {
+    match (action, target) {
+        (TimeoutAction::Goto, Some(t)) => Some(t.as_str()),
+        _ => None,
+    }
+}
+
 fn branch_targets(step: &SeqStep) -> Vec<&str> {
     match step {
         SeqStep::Run {
             on_success,
             on_failure,
             r#match,
+            on_timeout,
+            on_timeout_target,
             ..
         } => {
             let mut v = vec![on_success.as_str(), on_failure.as_str()];
@@ -673,9 +725,19 @@ fn branch_targets(step: &SeqStep) -> Vec<&str> {
                 v.push(&m.if_match);
                 v.push(&m.if_no_match);
             }
+            v.extend(timeout_edge(on_timeout, on_timeout_target));
             v
         }
-        SeqStep::Expect { on_match, .. } => vec![on_match.as_str()],
+        SeqStep::Expect {
+            on_match,
+            on_timeout,
+            on_timeout_target,
+            ..
+        } => {
+            let mut v = vec![on_match.as_str()];
+            v.extend(timeout_edge(on_timeout, on_timeout_target));
+            v
+        }
         SeqStep::Send { next, .. } => vec![next.as_str()],
         SeqStep::Wait { next, .. } => vec![next.as_str()],
     }
@@ -713,6 +775,7 @@ mod tests {
             interactive: false,
             timeout_secs,
             on_timeout: TimeoutAction::Pause,
+            on_timeout_target: None,
             on_success: on_success.into(),
             on_failure: on_failure.into(),
             r#match: None,
@@ -918,6 +981,7 @@ mod tests {
                 send_on_match: Some(r"y\n".into()),
                 timeout_secs: None,
                 on_timeout: TimeoutAction::Pause,
+                on_timeout_target: None,
                 on_match: STOP.into(),
             }],
             "a",
@@ -1027,6 +1091,7 @@ mod tests {
                     send_on_match: Some("{{v}}\n".into()),
                     timeout_secs: None,
                     on_timeout: TimeoutAction::Pause,
+                    on_timeout_target: None,
                     on_match: STOP.into(),
                 },
                 SeqStep::Send {
@@ -1137,6 +1202,7 @@ mod tests {
                     send_on_match: None,
                     timeout_secs: None,
                     on_timeout: TimeoutAction::Pause,
+                    on_timeout_target: None,
                     on_match: NEXT.into(),
                 },
                 SeqStep::Send {
@@ -1229,6 +1295,7 @@ mod tests {
                 send_on_match: None,
                 timeout_secs: None,
                 on_timeout: TimeoutAction::Pause,
+                on_timeout_target: None,
                 on_match: STOP.into(),
             }],
             "a",
@@ -1243,6 +1310,137 @@ mod tests {
         // stops a runaway, not save-time validation.
         let c = cfg(vec![run_full("a", "true", "a", "a", None)], "a");
         assert!(validate_sequence(&c).is_ok());
+    }
+
+    /// An `expect` whose timeout jumps to another step instead of failing.
+    fn expect_timeout_goto(
+        id: &str,
+        on_match: &str,
+        action: TimeoutAction,
+        target: Option<&str>,
+    ) -> SeqStep {
+        SeqStep::Expect {
+            id: id.into(),
+            pattern: "ready".into(),
+            send_on_match: None,
+            timeout_secs: None,
+            on_timeout: action,
+            on_timeout_target: target.map(|t| t.into()),
+            on_match: on_match.into(),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_a_timeout_goto_to_a_real_step() {
+        let c = cfg(
+            vec![
+                expect_timeout_goto("a", STOP, TimeoutAction::Goto, Some("b")),
+                run_step("b", "echo recover"),
+            ],
+            "a",
+        );
+        assert!(validate_sequence(&c).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_a_dangling_timeout_goto() {
+        // The whole point of putting the timeout target in branch_targets: a
+        // typo'd recovery step must be caught at save time, not mid-upgrade.
+        let c = cfg(
+            vec![expect_timeout_goto(
+                "a",
+                STOP,
+                TimeoutAction::Goto,
+                Some("nope"),
+            )],
+            "a",
+        );
+        let err = validate_sequence(&c).unwrap_err().to_string();
+        assert!(err.contains("nope"), "got: {err}");
+    }
+
+    #[test]
+    fn a_stale_timeout_target_is_inert_unless_the_action_is_goto() {
+        // Switching the dropdown back to "wait for me" leaves the old target
+        // behind in the JSON. It is not an edge any more, so it must not fail
+        // validation.
+        let c = cfg(
+            vec![expect_timeout_goto(
+                "a",
+                STOP,
+                TimeoutAction::Pause,
+                Some("nope"),
+            )],
+            "a",
+        );
+        assert!(validate_sequence(&c).is_ok());
+    }
+
+    #[test]
+    fn timeout_goto_may_form_a_cycle() {
+        // "wait for it; if it times out, poke it and wait again" is a real
+        // pattern. Like every other cycle, the execution cap is the guard.
+        let c = cfg(
+            vec![expect_timeout_goto(
+                "a",
+                STOP,
+                TimeoutAction::Goto,
+                Some("a"),
+            )],
+            "a",
+        );
+        assert!(validate_sequence(&c).is_ok());
+    }
+
+    #[test]
+    fn resolve_next_rewrites_a_timeout_target_of_next() {
+        let c = cfg(
+            vec![
+                expect_timeout_goto("a", STOP, TimeoutAction::Goto, Some(NEXT)),
+                run_step("b", "echo recover"),
+            ],
+            "a",
+        );
+        let out = resolve_next(&c);
+        assert_eq!(out.steps[0].on_timeout_target(), "b");
+    }
+
+    #[test]
+    fn a_missing_timeout_target_falls_back_to_stop_not_next() {
+        // A goto with nothing to go to ends the host cleanly rather than
+        // silently falling through to whatever now sits below it.
+        let c = cfg(
+            vec![
+                expect_timeout_goto("a", STOP, TimeoutAction::Goto, None),
+                run_step("b", "echo unrelated"),
+            ],
+            "a",
+        );
+        assert_eq!(c.steps[0].on_timeout_target(), STOP);
+    }
+
+    #[test]
+    fn a_timeout_goto_survives_a_json_round_trip() {
+        // config_json is the storage format; a new optional field must not
+        // disturb skills saved before it existed, and must persist when set.
+        let c = cfg(
+            vec![
+                expect_timeout_goto("a", STOP, TimeoutAction::Goto, Some("b")),
+                run_step("b", "echo recover"),
+            ],
+            "a",
+        );
+        let json = serde_json::to_string(&c).unwrap();
+        let back: SequenceConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, c);
+
+        // An older skill (no onTimeoutTarget at all) still parses.
+        let legacy = r#"{"params":[],"startStepId":"a","steps":[
+            {"kind":"expect","id":"a","pattern":"ready","onMatch":"stop"}
+        ],"allowTransfer":false}"#;
+        let parsed: SequenceConfig = serde_json::from_str(legacy).unwrap();
+        assert_eq!(parsed.steps[0].on_timeout(), TimeoutAction::Pause);
+        assert_eq!(parsed.steps[0].on_timeout_target(), STOP);
     }
 
     #[test]
@@ -1267,6 +1465,7 @@ mod tests {
                     send_on_match: Some("y\n".into()),
                     timeout_secs: None,
                     on_timeout: TimeoutAction::Pause,
+                    on_timeout_target: None,
                     on_match: "c".into(),
                 },
                 SeqStep::Send {
