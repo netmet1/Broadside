@@ -35,6 +35,11 @@ jobs:
   release:
     name: Build MSI and draft release
     runs-on: windows-latest
+    env:
+      # The `secrets` context is not available in a step-level `if`, so the
+      # "is signing configured?" question is answered once here (job-level env
+      # CAN read secrets) and the steps below branch on this instead.
+      SIGNING_CONFIGURED: ${{ secrets.AZURE_CLIENT_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -67,14 +72,66 @@ jobs:
           "msi=$($msi.FullName)" >> $env:GITHUB_OUTPUT
           Write-Host "Release $tag  ->  $($msi.Name)"
 
+      # Authenticode signing via Azure Trusted Signing (now "Azure Artifact
+      # Signing"). Windows Defender quarantined an unsigned build as
+      # Trojan:Win32/Bearfoos.A!ml — the textbook false positive for a new,
+      # unsigned, low-prevalence binary that spawns PTYs. Signing is the actual
+      # fix; a signed identity accrues reputation and stops most ML heuristics.
+      #
+      # SKIPPED, not failed, when the secrets aren't configured, so the release
+      # workflow keeps working until the Azure side is set up. See
+      # internal_only/docs/code-signing.md for what to configure.
+      - name: Sign the MSI
+        id: sign
+        if: env.SIGNING_CONFIGURED == 'true'
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_CERT_PROFILE }}
+          files-folder: src-tauri/target/release/bundle/msi
+          files-folder-filter: msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Warn when the build is unsigned
+        if: env.SIGNING_CONFIGURED != 'true'
+        shell: pwsh
+        run: |
+          Write-Host "::warning::Signing secrets are not configured, so this MSI is UNSIGNED." `
+            "Windows will show 'Publisher: Unknown' and Defender may flag it." `
+            "See internal_only/docs/code-signing.md."
+
+      # Published in the release notes so anyone can verify a download, and so a
+      # Defender false-positive report can reference an exact artifact.
+      - name: Hash the MSI
+        id: hash
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash "${{ steps.pkg.outputs.msi }}" -Algorithm SHA256).Hash.ToLower()
+          "sha256=$h" >> $env:GITHUB_OUTPUT
+          Write-Host "SHA-256  $h"
+
       - name: Write notes file
         shell: pwsh
         env:
           RELEASE_NOTES: ${{ inputs.notes }}
+          MSI_NAME: ${{ steps.pkg.outputs.msi }}
+          MSI_SHA256: ${{ steps.hash.outputs.sha256 }}
         run: |
           # Via env (not string interpolation) so nothing in the notes can inject
           # into the script. UTF-8 without BOM keeps the header emoji intact.
           $env:RELEASE_NOTES | Out-File -FilePath notes.md -Encoding utf8 -NoNewline
+          # Append the checksum so a download can be verified independently.
+          $name = Split-Path $env:MSI_NAME -Leaf
+          $block = "`n`n---`n`n**Verify your download**`n`n" +
+                   "``````text`n$name`nSHA-256  $env:MSI_SHA256`n```````n`n" +
+                   "In PowerShell: ``Get-FileHash .\$name -Algorithm SHA256``"
+          Add-Content -Path notes.md -Value $block -Encoding utf8
 
       - name: Create draft release
         shell: pwsh

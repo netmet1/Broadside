@@ -68,6 +68,34 @@ installer. When Windows shows `Publisher: Unknown`, that is expected for an unsi
 build: choose `Run anyway`. Open the `Help` tab at the bottom of the left rail to
 learn any feature.
 
+Every release lists the installer's `SHA-256` in its notes, so you can confirm the
+file you downloaded is the one that was built:
+
+```powershell
+Get-FileHash .\Broadside_x.y.z_x64_en-US.msi -Algorithm SHA256
+```
+
+### If Windows Defender flags it
+
+An unsigned application that is only days old, has few users, and opens terminal
+sessions fits the profile Defender's machine-learning heuristics are built to be
+suspicious of. It has produced at least one false positive on Broadside
+(`Trojan:Win32/Bearfoos.A!ml`), where the app was quarantined and had to be
+restored from `Windows Security` under `Protection history`.
+
+If it happens to you:
+
+1. Check the `SHA-256` above matches the release notes. If it does not, do not
+   restore it: report it instead.
+2. Restore the file from `Windows Security` -> `Virus & threat protection` ->
+   `Protection history`.
+3. Please also [open an issue](../../issues) with the detection name and the
+   version, so it can be reported to Microsoft as a false positive.
+
+Adding a Defender exclusion will stop the prompts, but it is a blunt instrument
+that also stops Defender protecting that path. It is a stopgap, not a fix. The
+real fix is code signing, which is being worked on.
+
 ## Built with
 
 Tauri 2, Rust, React, and TypeScript, for a small, fast, native Windows app.
