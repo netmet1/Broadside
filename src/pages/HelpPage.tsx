@@ -1404,7 +1404,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-system",
     title: "System requirements",
     keywords:
-      "system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install",
+      "system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install antivirus defender windows security false positive quarantine flagged virus trojan bearfoos ml detection code signing unsigned publisher unknown smartscreen sha256 checksum verify protection history restore exclusion",
     body: (
       <>
         <Lead>
@@ -1518,6 +1518,39 @@ const SECTIONS: HelpSection[] = [
               of which you control from the{" "}
               <SectionLink id="help-sec-logs">Logs</SectionLink> and{" "}
               <SectionLink id="help-sec-settings">Settings</SectionLink> tabs.
+            </li>
+          </Bullets>
+          <H3>If Windows Security flags Broadside</H3>
+          <Bullets>
+            <li>
+              It can happen, and it is a false alarm. An application that is not
+              yet code-signed, is only days old, has few users, and opens shell
+              sessions matches the pattern Windows Defender's automatic
+              heuristics are built to be suspicious of. Opening terminals means
+              starting processes, which is the behaviour being scored, and it is
+              also the entire purpose of the app.
+            </li>
+            <li>
+              A detection name ending in <code>!ml</code> means no known malware
+              was matched at all: a model simply judged the file to look
+              unusual. Broadside has been flagged this way once, as{" "}
+              <code>Trojan:Win32/Bearfoos.A!ml</code>.
+            </li>
+            <li>
+              If the app disappears, restore it from{" "}
+              <Nav>Windows Security</Nav> under{" "}
+              <Nav>Virus &amp; threat protection</Nav> and{" "}
+              <Nav>Protection history</Nav>. Before you do, check the installer's
+              SHA-256 against the one published with the release, so you know you
+              are restoring the file that was actually built.
+            </li>
+            <li>
+              Please report it if it happens, with the detection name and
+              version. Each report goes to Microsoft as a false positive, which
+              is what gets the detection corrected for everyone. Adding a
+              Defender exclusion silences the warnings but also stops Defender
+              watching that folder, so treat it as a temporary measure rather
+              than a solution.
             </li>
           </Bullets>
         </Detail>
