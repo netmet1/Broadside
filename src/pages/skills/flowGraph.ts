@@ -69,6 +69,16 @@ export function resolveTarget(
 /** Every branch a step declares, paired with what that branch means. Shared
  * with `useSequenceForm` so a new step kind only has to be taught here. */
 export function branchTargets(step: SeqStep): { target: string; label: string }[] {
+  // "On timeout, go to X" is a real edge the engine follows, so the map, the
+  // reachability pass and the cycle detector all need to see it. Only when the
+  // action is actually `goto`: a target left behind by switching back to
+  // pause/fail is inert and drawing it would be a lie.
+  const timeout =
+    (step.kind === "run" || step.kind === "expect") &&
+    step.onTimeout === "goto" &&
+    step.onTimeoutTarget
+      ? [{ target: step.onTimeoutTarget, label: "timeout" }]
+      : [];
   switch (step.kind) {
     case "run":
       return [
@@ -83,9 +93,10 @@ export function branchTargets(step: SeqStep): { target: string; label: string }[
               { target: step.onSuccess, label: "ok" },
               { target: step.onFailure, label: "fail" },
             ]),
+        ...timeout,
       ];
     case "expect":
-      return [{ target: step.onMatch, label: "then" }];
+      return [{ target: step.onMatch, label: "then" }, ...timeout];
     case "send":
     case "wait":
       return [{ target: step.next, label: "next" }];

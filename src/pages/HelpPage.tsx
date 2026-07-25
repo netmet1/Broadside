@@ -884,7 +884,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch",
     body: (
       <>
         <Lead>
@@ -956,8 +956,21 @@ const SECTIONS: HelpSection[] = [
             Each waiting step has a time budget. When it runs out the default is
             to <Nav>pause and wait for you</Nav>: that host goes yellow and you
             choose to wait again, treat the step as done and carry on, or stop the
-            host. The other option is to fail the host outright. Nothing is ever
-            quietly reported as finished because a timeout expired.
+            host. Nothing is ever quietly reported as finished because a timeout
+            expired.
+          </p>
+          <p>
+            The other two options are to fail (which ends the host for a{" "}
+            <Nav>Wait for output</Nav> step, or takes the{" "}
+            <Nav>if it fails</Nav> branch for a <Nav>Run a command</Nav> step),
+            or <Nav>go to a step</Nav>, which carries the run on somewhere else
+            of your choosing. Picking it shows the same target list the other
+            branches use, so a step that times out can take a recovery path,
+            retry an earlier step, or finish cleanly instead of stopping the
+            host. It also lets you handle a slow command differently from one
+            that failed, which the <Nav>if it fails</Nav> branch alone could not
+            tell apart. The timeout branch is drawn on the flow map like any
+            other, so a loop it creates shows up in the usual warnings.
           </p>
           <H3>Inputs</H3>
           <p>

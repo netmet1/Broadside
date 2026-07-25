@@ -44,8 +44,10 @@ export type SkillParam = {
 };
 
 /** What to do when a step's pattern doesn't arrive in time. `pause` (the
- * default) hands the host to the operator rather than failing silently. */
-export type TimeoutAction = "fail" | "pause";
+ * default) hands the host to the operator rather than failing silently;
+ * `goto` continues the run at {@link SeqStep.onTimeoutTarget}, so a step that
+ * times out can take a recovery path instead of ending the host. */
+export type TimeoutAction = "fail" | "pause" | "goto";
 
 export type MatchBranch = {
   pattern: string;
@@ -65,6 +67,9 @@ export type SeqStep =
       interactive?: boolean;
       timeoutSecs?: number;
       onTimeout?: TimeoutAction;
+      /** Where to go when `onTimeout` is `goto`. A step id, or NEXT / STOP.
+       * Ignored for the other actions. */
+      onTimeoutTarget?: string;
       onSuccess: string;
       onFailure: string;
       /** An output test, taking precedence over the exit code when set. */
@@ -79,6 +84,9 @@ export type SeqStep =
       sendOnMatch?: string;
       timeoutSecs?: number;
       onTimeout?: TimeoutAction;
+      /** Where to go when `onTimeout` is `goto`. A step id, or NEXT / STOP.
+       * Ignored for the other actions. */
+      onTimeoutTarget?: string;
       onMatch: string;
     }
   | { kind: "send"; id: string; input: string; next: string }
