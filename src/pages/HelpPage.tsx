@@ -449,7 +449,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place",
     body: (
       <>
         <Lead>
@@ -632,6 +632,24 @@ const SECTIONS: HelpSection[] = [
               The grid tiles follow the order of the tabs above them. Drag a tab
               to a new position and the grid rearranges to match straight away,
               without disturbing any running terminal.
+            </li>
+            <li>
+              The <Nav>Broadcast</Nav> button opens a rail down the left side:
+              pick a shell language, tick the sessions you want, type a command
+              at the bottom, and it is typed into all of them at once. Because
+              you never leave the page, the panes you are watching are the ones
+              that answer, which is the whole point of pairing it with{" "}
+              <Nav>Grid</Nav>. The button remembers whether it was open across
+              restarts.
+            </li>
+            <li>
+              One shell language at a time, deliberately, so a command is always
+              valid for everything it reaches. The safety checks are the same as
+              on the <Nav>PTY Broadcast</Nav> tab: a destructive command asks for
+              confirmation before going to SSH hosts, and every local-shell send
+              is confirmed. That tab is still there and unchanged; it keeps the
+              saved history and the full per-run report, while the rail is the
+              quick, in-place version.
             </li>
             <li>
               <Nav>Fullscreen</Nav> (also <Nav>F10</Nav>) gives the grid the
