@@ -70,11 +70,15 @@ export function PtyBroadcastPage({
       ),
     [sessions],
   );
+  // WSL and custom POSIX terminals (Git Bash and the like) share this panel:
+  // they take the same commands, and every open session has to land in exactly
+  // one family or it would silently disappear from every broadcast panel.
   const wslSessions = useMemo(
     () =>
       sessions.filter(
         (s): s is LocalTermSession =>
-          s.type === "local" && s.shell.kind === "wsl",
+          s.type === "local" &&
+          (s.shell.kind === "wsl" || s.shell.kind === "posix"),
       ),
     [sessions],
   );
@@ -108,7 +112,7 @@ export function PtyBroadcastPage({
           active={tab === "wsl"}
           onClick={() => setTab("wsl")}
           icon={<TerminalIcon className="h-4 w-4" />}
-          label="WSL"
+          label="WSL / POSIX"
           count={wslSessions.length}
         />
       </div>
@@ -148,7 +152,7 @@ export function PtyBroadcastPage({
         <div className={tab === "wsl" ? "h-full" : "hidden"}>
           <LocalBroadcastPanel
             visible={visible && tab === "wsl"}
-            family="WSL"
+            family="WSL / POSIX"
             sessions={wslSessions}
             connectedSessions={connectedSessions}
             scope="ssh"

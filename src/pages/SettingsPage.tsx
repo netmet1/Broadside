@@ -72,6 +72,7 @@ import {
 } from "@/pages/settings/constants";
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { GridSection } from "@/pages/settings/GridSection";
+import { CustomTerminalsSection } from "@/pages/settings/CustomTerminalsSection";
 import { useAdminLock } from "@/pages/settings/useAdminLock";
 import { useAppearance } from "@/pages/settings/useAppearance";
 import { useBackupRestore } from "@/pages/settings/useBackupRestore";
@@ -1223,6 +1224,12 @@ export function SettingsPage({
         </div>
       </section>
       )}
+
+      {/* Custom terminals — user-defined terminal apps (DB-backed). */}
+      {sectionVisible("Custom terminals") &&
+        sectionReady("Custom terminals") && (
+          <CustomTerminalsSection id={sectionDomId("Custom terminals")} />
+        )}
 
       {/* Grid — Terminals grid layout (localStorage, applies on next visit). */}
       {sectionVisible("Grid") && sectionReady("Grid") && (

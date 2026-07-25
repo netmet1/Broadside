@@ -99,8 +99,9 @@ export type {
   LocalShellOpenOpts,
 } from "@/pages/terminals/session";
 
-/** Tab/menu icon for a local shell. WSL is grouped with SSH hosts under the
- * terminal icon; the Windows shells use the square-terminal icon. */
+/** Tab/menu icon for a local shell. WSL and custom POSIX terminals (Git Bash
+ * and the like) are grouped with SSH hosts under the terminal icon; the Windows
+ * shells use the square-terminal icon. */
 export function LocalShellIcon({
   kind,
   className,
@@ -108,7 +109,8 @@ export function LocalShellIcon({
   kind: string;
   className?: string;
 }) {
-  const Icon = kind === "wsl" ? TerminalIcon : SquareTerminalIcon;
+  const Icon =
+    kind === "wsl" || kind === "posix" ? TerminalIcon : SquareTerminalIcon;
   return <Icon className={className} />;
 }
 
@@ -164,7 +166,12 @@ export function TerminalsPage({
   const [shellsError, setShellsError] = useState<string | null>(null);
   // Shells the user hid in Settings -> Appearance (stored by id).
   const [disabledShells, setDisabledShells] = useState<Set<string>>(new Set());
+  // Re-read on every visit rather than once at mount, so a custom terminal
+  // added in Settings shows up in the launcher straight away. The detected
+  // shells behind this are cached in the backend, so the repeat calls only cost
+  // a database read for the custom ones.
   useEffect(() => {
+    if (!visible) return;
     listLocalShells()
       .then((s) => {
         setLocalShells(s);
@@ -176,7 +183,7 @@ export function TerminalsPage({
         console.error("[TerminalsPage] listLocalShells failed", e);
         setShellsError(errorMessage(e));
       });
-  }, []);
+  }, [visible]);
   // Re-read the hide list whenever the page is shown so changes made in Settings
   // (this page stays mounted) take effect on return. Reconcile drops ids no
   // longer detected so a shell that returns is enabled again.

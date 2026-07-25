@@ -6,7 +6,7 @@ use crate::credentials::CredentialState;
 use crate::db::host_keys;
 use crate::db::hosts as host_repo;
 use crate::db::DbState;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::ssh::pty::{self, PtyOpenResult, PtyState};
 
 /// Whether a sudo password should be auto-filled for this terminal: the global
@@ -162,16 +162,75 @@ pub fn pty_open_local(
     rows: u32,
     app: AppHandle,
     pty_state: State<'_, PtyState>,
+    state: State<'_, DbState>,
 ) -> AppResult<()> {
+    // A `custom:<id>` shell names a row in custom_terminals, never a path. The
+    // program and its arguments are read here, from the database, so the only
+    // thing the frontend can influence is WHICH stored terminal to launch — an
+    // arbitrary executable path can't cross the IPC boundary. An id that no
+    // longer exists fails with "no such custom terminal" rather than launching
+    // anything.
+    let custom = match shell_id.strip_prefix("custom:") {
+        Some(raw) => {
+            let id: i64 = raw
+                .parse()
+                .map_err(|_| AppError::InvalidInput(format!("bad terminal id: {raw}")))?;
+            let row = with_db(&state, |conn| {
+                crate::db::custom_terminals::get(conn, id)
+            })?;
+            Some(crate::local::CustomLaunch {
+                exe_path: row.exe_path,
+                args: row.args,
+            })
+        }
+        None => None,
+    };
     crate::local::open_local(
         app,
         &pty_state,
         session_id,
         &shell_id,
         cwd.as_deref(),
+        custom.as_ref(),
         cols.clamp(2, 1000),
         rows.clamp(2, 1000),
     )
+}
+
+/// The user-defined terminal applications, for the launcher and Settings.
+#[tauri::command]
+pub fn list_custom_terminals(
+    state: State<'_, DbState>,
+) -> AppResult<Vec<crate::db::custom_terminals::CustomTerminal>> {
+    with_db(&state, crate::db::custom_terminals::list)
+}
+
+#[tauri::command]
+pub fn create_custom_terminal(
+    input: crate::db::custom_terminals::CustomTerminalInput,
+    state: State<'_, DbState>,
+) -> AppResult<crate::db::custom_terminals::CustomTerminal> {
+    with_db(&state, |conn| {
+        crate::db::custom_terminals::create(conn, &input)
+    })
+}
+
+#[tauri::command]
+pub fn update_custom_terminal(
+    id: i64,
+    input: crate::db::custom_terminals::CustomTerminalInput,
+    state: State<'_, DbState>,
+) -> AppResult<crate::db::custom_terminals::CustomTerminal> {
+    with_db(&state, |conn| {
+        crate::db::custom_terminals::update(conn, id, &input)
+    })
+}
+
+#[tauri::command]
+pub fn delete_custom_terminal(id: i64, state: State<'_, DbState>) -> AppResult<usize> {
+    with_db(&state, |conn| {
+        crate::db::custom_terminals::delete(conn, id)
+    })
 }
 
 #[tauri::command]
