@@ -12,9 +12,8 @@ import {
   PanelTopIcon,
   PencilIcon,
   PlusIcon,
+  RadioTowerIcon,
   Rows2Icon,
-  SquareTerminalIcon,
-  TerminalIcon,
   TextIcon,
   Trash2Icon,
   UndoIcon,
@@ -71,6 +70,8 @@ import {
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { useGridLayout } from "@/pages/terminals/useGridLayout";
 import { useGridResize } from "@/pages/terminals/useGridResize";
+import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
+import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import type { SearchOptions } from "@/lib/search";
 import { getAppSettings } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
@@ -78,6 +79,9 @@ import { useShortcuts } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
 
 const TABS_COMPACT_KEY = "terminal-tabs-compact";
+/** "1" shows the broadcast rail beside the panes. Persisted so the choice
+ * survives a restart, like the layout and grid-title prefs. */
+const BROADCAST_RAIL_KEY = "terminal-broadcast-rail";
 
 /** Opening more than this many local shells at once first asks for confirmation
  * — a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
@@ -99,20 +103,8 @@ export type {
   LocalShellOpenOpts,
 } from "@/pages/terminals/session";
 
-/** Tab/menu icon for a local shell. WSL and custom POSIX terminals (Git Bash
- * and the like) are grouped with SSH hosts under the terminal icon; the Windows
- * shells use the square-terminal icon. */
-export function LocalShellIcon({
-  kind,
-  className,
-}: {
-  kind: string;
-  className?: string;
-}) {
-  const Icon =
-    kind === "wsl" || kind === "posix" ? TerminalIcon : SquareTerminalIcon;
-  return <Icon className={className} />;
-}
+/** Re-exported for the broadcast panels, which already import it from here. */
+export { LocalShellIcon };
 
 type Props = {
   sessions: TermSession[];
@@ -386,6 +378,19 @@ export function TerminalsPage({
   const canResizeTiles = gridMode && gridCount !== 2;
   const sizeIsPinned =
     gridPrefs.itemCols !== null || gridPrefs.itemRows !== null;
+
+  // Broadcast rail: pick targets and type a command without leaving the page,
+  // so the panes you are watching are the ones that answer. Off by default;
+  // the choice persists across restarts.
+  const [broadcastRail, setBroadcastRail] = useState(
+    () => localStorage.getItem(BROADCAST_RAIL_KEY) === "1",
+  );
+  const toggleBroadcastRail = useCallback(() => {
+    setBroadcastRail((on) => {
+      localStorage.setItem(BROADCAST_RAIL_KEY, on ? "0" : "1");
+      return !on;
+    });
+  }, []);
 
   // Tab label mode: full label (default) vs color-dot + initials. Persisted
   // like the sidebar-collapse pref (localStorage, UI-only).
@@ -767,6 +772,24 @@ export function TerminalsPage({
             Grid
           </button>
         </div>
+
+        {/* Broadcast a command to several open sessions without leaving the
+            page, so the panes you are watching are the ones that answer.
+            Available in both layouts; Grid is what it is really for. */}
+        <Button
+          size="sm"
+          variant={broadcastRail ? "secondary" : "outline"}
+          onClick={toggleBroadcastRail}
+          aria-pressed={broadcastRail}
+          {...hint(
+            broadcastRail
+              ? "Hide the broadcast rail."
+              : "Show the broadcast rail: pick sessions and type one command for all of them, watching the panes as they answer.",
+          )}
+        >
+          <RadioTowerIcon className="h-3.5 w-3.5" />
+          Broadcast
+        </Button>
 
         {/* Undo a drag-resize (or a pinned size set in Settings) and go back to
             fit-to-window. Only offered when a size is actually pinned, so it
@@ -1336,10 +1359,22 @@ export function TerminalsPage({
           header is present-but-hidden in tabs), so switching layout only
           restyles them — it never remounts a TerminalView, which would tear
           down its live PTY. */}
+      {/* The rail sits beside the panes rather than above them, so turning it on
+          costs width (of which there is plenty) and not the vertical space the
+          terminals want. */}
+      <div className="flex min-h-0 flex-1">
+      {broadcastRail && (
+        <div className="w-56 shrink-0">
+          <BroadcastRail
+            sessions={sessions}
+            connectedSessions={connectedSessions}
+          />
+        </div>
+      )}
       <div
         ref={gridScrollRef}
         className={cn(
-          "min-h-0 flex-1 bg-[var(--terminal-bg)] p-2",
+          "min-h-0 min-w-0 flex-1 bg-[var(--terminal-bg)] p-2",
           !gridMode && "relative",
           // Settings-driven grid (Settings -> Grid): a uniform layout with pinned
           // columns and/or character-based tile size. Overflow scrolls — the
@@ -1609,6 +1644,7 @@ export function TerminalsPage({
             </div>
           );
         })}
+      </div>
       </div>
 
       <AlertDialog open={closeAllOpen} onOpenChange={setCloseAllOpen}>
