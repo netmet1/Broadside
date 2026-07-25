@@ -88,6 +88,11 @@ function App() {
   // view automatically when that specific terminal is closed.
   const [maxSessionId, setMaxSessionId] = useState<string | null>(null);
   const maximized = maxSessionId !== null;
+  // The Terminals grid filling the screen. A separate mode from maximizing one
+  // terminal, and mutually exclusive with it: entering either clears the other.
+  // Lives here because it hides AppShell's chrome, but it is driven from
+  // TerminalsPage, which is where the grid layout is known.
+  const [gridFullscreen, setGridFullscreen] = useState(false);
 
   // Exit guard (opt-in, on by default): warn before the window closes while any
   // terminal is still connected, so a stray Alt+F4 doesn't drop live sessions.
@@ -340,6 +345,9 @@ function App() {
   const maximizeTerminal = useCallback((id: string) => {
     setActiveSessionId(id);
     setMaxSessionId(id);
+    // One pane filling the screen and the whole grid filling it are two
+    // different answers to the same question, so taking one drops the other.
+    setGridFullscreen(false);
   }, []);
   const restoreTerminal = useCallback(() => setMaxSessionId(null), []);
 
@@ -402,6 +410,12 @@ function App() {
     }
   }, [maxSessionId, page, sessions]);
 
+  // Same for the fullscreen grid: navigating away must give the chrome back,
+  // or the sidebar would be missing on a page that has no way to restore it.
+  useEffect(() => {
+    if (gridFullscreen && page !== "terminals") setGridFullscreen(false);
+  }, [gridFullscreen, page]);
+
   const connectedHostIds = useMemo(() => {
     const ids = new Set<number>();
     for (const s of sessions) {
@@ -437,6 +451,7 @@ function App() {
         onNavigate={setPage}
         terminalCount={sessions.length}
         maximized={maximized}
+        gridFullscreen={gridFullscreen}
         onRestore={restoreTerminal}
         maximizedHost={
           maximizedSession
@@ -490,6 +505,8 @@ function App() {
           onRenameSession={renameSession}
           onMaximize={maximizeTerminal}
           maximized={maximized}
+          gridFullscreen={gridFullscreen}
+          onGridFullscreen={setGridFullscreen}
           onOpenLocalShell={openLocalShell}
           onManageShortcuts={openShortcutSettings}
         />

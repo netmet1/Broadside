@@ -8,6 +8,7 @@ import {
   Grid2x2XIcon,
   LayoutGridIcon,
   Maximize2Icon,
+  Minimize2Icon,
   PanelTopIcon,
   PencilIcon,
   PlusIcon,
@@ -16,6 +17,7 @@ import {
   TerminalIcon,
   TextIcon,
   Trash2Icon,
+  UndoIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -67,20 +69,15 @@ import {
   type ShellProfile,
 } from "@/lib/localShellProfiles";
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
-import { isAutoGrid, loadGridPrefs, type GridPrefs } from "@/lib/gridPrefs";
-import { measureTerminalCell } from "@/lib/terminalCell";
+import { useGridLayout } from "@/pages/terminals/useGridLayout";
+import { useGridResize } from "@/pages/terminals/useGridResize";
 import type { SearchOptions } from "@/lib/search";
 import { getAppSettings } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
-import { useUiPrefs } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
 
 const TABS_COMPACT_KEY = "terminal-tabs-compact";
-const LAYOUT_KEY = "terminal-layout";
-/** Grid tile chrome: "1" hides every tile's title bar (the header peeks back on
- * hover). Persisted so the cleaner look survives a restart. */
-const GRID_HIDE_HEADERS_KEY = "terminal-grid-hide-headers";
 
 /** Opening more than this many local shells at once first asks for confirmation
  * — a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
@@ -90,25 +87,6 @@ const BULK_SHELL_WARN = 7;
 /** Fallback cap on the bulk-open count when the settings probe hasn't answered
  * yet (the real cap is the configured/suggested max concurrent sessions). */
 const DEFAULT_MAX_SHELLS = 32;
-
-/** Minimum tile width, in characters, when a fixed column count is set but the
- * item width is auto — keeps a big column count from shaving tiles to slivers.
- * Past this the grid overflows and scrolls horizontally instead. */
-const GRID_FLOOR_COLS = 24;
-/** Per-tile chrome added to the character-derived pixel size: the 1px border on
- * each side (X), and the border plus the grid pane header (Y). Approximate — fit
- * rounds a container to whole cells, so the result lands within ~1 col/row. */
-const TILE_BORDER_X = 2;
-const TILE_BORDER_Y = 2;
-const GRID_HEADER_H = 30;
-/** Legible minimum tile height (16rem = 256px) for a custom grid whose item
- * height is auto. Rows fill the pane when few (so a maximized window has no dead
- * space) but never shrink below this, overflowing to a vertical scroll when many. */
-const GRID_ROW_FLOOR_PX = 256;
-
-/** How the open terminals are laid out below the tab strip: one pane at a time
- * (the default) or every pane tiled at once, mirroring the skill run panel. */
-type TermLayout = "tabs" | "grid";
 
 /** Session shapes and naming live in ./terminals/session, so anything that only
  * needs "what is this tab called" can have it without importing this page.
@@ -153,6 +131,10 @@ type Props = {
   onMaximize: (id: string) => void;
   /** Whether the terminal is currently maximized (hides the page chrome). */
   maximized: boolean;
+  /** Whether the grid is filling the screen. Owned by App because it hides the
+   * app chrome, driven from here because this is where the layout is known. */
+  gridFullscreen: boolean;
+  onGridFullscreen: (on: boolean) => void;
   /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab.
    * `opts` carries a saved profile's cwd / startup command / name when the open
    * came from a profile rather than a plain shell pick. */
@@ -172,6 +154,8 @@ export function TerminalsPage({
   onRenameSession,
   onMaximize,
   maximized,
+  gridFullscreen,
+  onGridFullscreen,
   onOpenLocalShell,
 }: Props) {
   const shortcuts = useShortcuts(visible);
@@ -360,60 +344,41 @@ export function TerminalsPage({
     return map;
   }, [sessions]);
 
-  // Terminal panes are rendered in stable creation order, decoupled from the
-  // (drag-reorderable) tab order. The active pane is shown via CSS regardless of
-  // its position, so pane order is invisible to the user -- and keeping it stable
-  // means dragging a tab never moves a pane's DOM node, so the live xterm/PTY is
-  // never torn down or remounted by a reorder.
-  const paneOrder = useMemo(
-    () => [...sessions].sort((a, b) => a.seq - b.seq),
-    [sessions],
-  );
+  // Grid layout: which tiles, in what order, laid out how. See ./terminals/
+  // useGridLayout — pure layout, nothing in it touches a PTY.
+  const {
+    layout,
+    chooseLayout,
+    gridMode,
+    paneOrder,
+    gridCount,
+    displayIndex,
+    excludedFromGrid,
+    toggleGridExcluded,
+    hideGridHeaders,
+    toggleGridHeaders,
+    twoUpSplit,
+    toggleTwoUpSplit,
+    gridPrefs,
+    refreshGridPrefs,
+    cell,
+    customGrid,
+    customColsAuto,
+    gridStyle,
+  } = useGridLayout({ sessions, visible, maximized });
 
-  // Where each pane sits *visually* in the grid: its position in the tab strip.
-  // Applied as the CSS `order` property rather than by sorting the rendered
-  // list, so the pane DOM stays in creation order (see paneOrder above) and a
-  // tab drag reflows the grid without moving a single node or remounting a
-  // live terminal. CSS grid auto-placement follows order-modified order.
-  const displayIndex = useMemo(() => {
-    const m = new Map<string, number>();
-    sessions.forEach((s, i) => m.set(s.id, i));
-    return m;
-  }, [sessions]);
-
-  // Terminals the operator has taken out of the grid via the tab's grid toggle.
-  // The shell keeps running and its tab still selects it in Tabs layout; it
-  // just doesn't claim a tile. Session-lifetime only, like twoUpSplit below:
-  // session ids are fresh UUIDs each run, so a persisted set would have nothing
-  // to reattach to on the next launch.
-  const [excludedFromGrid, setExcludedFromGrid] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const toggleGridExcluded = useCallback((id: string) => {
-    setExcludedFromGrid((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
-  }, []);
-  // Drop ids whose session has closed so the set can't grow without bound.
-  useEffect(() => {
-    setExcludedFromGrid((prev) => {
-      if (prev.size === 0) return prev;
-      const live = new Set(sessions.map((s) => s.id));
-      const next = new Set([...prev].filter((id) => live.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }, [sessions]);
-
-  const gridTiles = useMemo(
-    () => paneOrder.filter((s) => !excludedFromGrid.has(s.id)),
-    [paneOrder, excludedFromGrid],
-  );
-  // How many tiles the grid shows — drives the fill/split/scroll layout (B3).
-  // Excluded panes don't count, so hiding one of three tiles gives the real
-  // two-up split rather than a two-up-shaped hole.
-  const gridCount = gridTiles.length;
+  // Drag a tile's edge to set the tile size for the whole grid. Writes the same
+  // Settings -> Grid prefs, so there is one source of truth and the Settings
+  // numbers show what you dragged to.
+  const { resizing, begin: beginResize, resetSize } = useGridResize({
+    cell,
+    onChange: refreshGridPrefs,
+  });
+  // Handles are pointless where a pinned tile size has no effect: in Tabs, and
+  // at exactly two tiles (which always take the full window by design).
+  const canResizeTiles = gridMode && gridCount !== 2;
+  const sizeIsPinned =
+    gridPrefs.itemCols !== null || gridPrefs.itemRows !== null;
 
   // Tab label mode: full label (default) vs color-dot + initials. Persisted
   // like the sidebar-collapse pref (localStorage, UI-only).
@@ -428,93 +393,40 @@ export function TerminalsPage({
     });
   }, []);
 
-  // Pane layout: one tab at a time (default) or every pane tiled like the skill
-  // run panel. Persisted in localStorage so it survives tab switches (the page
-  // stays mounted anyway) and program restarts. Maximizing always collapses to
-  // the single fullscreen pane, so grid only applies when not maximized.
-  const [layout, setLayout] = useState<TermLayout>(() =>
-    localStorage.getItem(LAYOUT_KEY) === "grid" ? "grid" : "tabs",
-  );
-  const chooseLayout = useCallback((next: TermLayout) => {
-    setLayout(next);
-    localStorage.setItem(LAYOUT_KEY, next);
-  }, []);
-  const gridMode = layout === "grid" && !maximized;
-
-  // Hide every grid tile's title bar for a denser, chrome-free wall of terminals.
-  // The header still peeks back on hover (so maximize/close/eye stay reachable),
-  // and the choice persists across restarts.
-  const [hideGridHeaders, setHideGridHeaders] = useState(
-    () => localStorage.getItem(GRID_HIDE_HEADERS_KEY) === "1",
-  );
-  const toggleGridHeaders = useCallback(() => {
-    setHideGridHeaders((h) => {
-      localStorage.setItem(GRID_HIDE_HEADERS_KEY, h ? "0" : "1");
-      return !h;
-    });
-  }, []);
-
-  // How the special two-terminal grid is split: side-by-side columns (default)
-  // or stacked top/bottom rows. Deliberately plain component state, NOT
-  // persisted — the page stays mounted for the whole session so the choice
-  // sticks across tab switches, but it resets to side-by-side on a restart.
-  const [twoUpSplit, setTwoUpSplit] = useState<"cols" | "rows">("cols");
-
-  // Grid layout prefs (Settings -> Grid): pinned column count and character-based
-  // tile size, or auto. Re-read whenever the page is shown so a change made in
-  // Settings (this page stays mounted) takes effect on return, like disabledShells.
-  const [gridPrefs, setGridPrefs] = useState<GridPrefs>(loadGridPrefs);
-  useEffect(() => {
-    if (visible) setGridPrefs(loadGridPrefs());
-  }, [visible]);
-  // One cell measurement serves every tile (all terminals share the app font).
-  const { prefs: uiPrefs } = useUiPrefs();
-  const cell = useMemo(
-    () =>
-      measureTerminalCell(uiPrefs.terminalFontFamily, uiPrefs.terminalFontSize),
-    [uiPrefs.terminalFontFamily, uiPrefs.terminalFontSize],
-  );
-  // A non-auto grid switches to a uniform, settings-driven layout that bypasses
-  // the 1/3+-tile special cases.
+  // Grid fullscreen: the tiles take the whole window and every bit of chrome
+  // collapses to a hover strip at the top.
   //
-  // Two tiles are the deliberate exception: they always get the full-viewport
-  // side-by-side split (and its top/bottom flip), whatever the Grid settings
-  // say. Pinning a tile size to compare two machines side by side is exactly
-  // the case where the pinned size gets in the way, so two terminals ignore
-  // the Grid section outright.
-  const customGrid = gridMode && !isAutoGrid(gridPrefs) && gridCount !== 2;
-  // When custom but neither cols nor item width is pinned (only rows), columns
-  // fall back to the shipped responsive default via a class, not inline style.
-  const customColsAuto =
-    customGrid && gridPrefs.cols == null && gridPrefs.itemCols == null;
-  const gridStyle = useMemo<React.CSSProperties | undefined>(() => {
-    if (!customGrid) return undefined;
-    const style: React.CSSProperties = {};
-    const widthPx =
-      gridPrefs.itemCols != null
-        ? Math.round(gridPrefs.itemCols * cell.cellW) + TILE_BORDER_X
-        : null;
-    const floorPx = Math.round(GRID_FLOOR_COLS * cell.cellW) + TILE_BORDER_X;
-    if (gridPrefs.cols != null && widthPx != null) {
-      style.gridTemplateColumns = `repeat(${gridPrefs.cols}, ${widthPx}px)`;
-    } else if (gridPrefs.cols != null) {
-      style.gridTemplateColumns = `repeat(${gridPrefs.cols}, minmax(${floorPx}px, 1fr))`;
-    } else if (widthPx != null) {
-      style.gridTemplateColumns = `repeat(auto-fill, ${widthPx}px)`;
-    }
-    // else: columns stay auto (only rows pinned) — a Tailwind class handles it.
-    if (gridPrefs.itemRows != null) {
-      style.gridAutoRows = `${
-        Math.round(gridPrefs.itemRows * cell.cellH) + GRID_HEADER_H + TILE_BORDER_Y
-      }px`;
-    } else {
-      // Item height auto: rows grow to fill the pane (a few tiles leave no dead
-      // space in a tall/maximized window) but hold a legible floor, so more tiles
-      // than fit overflow to a vertical scroll instead of shrinking to slivers.
-      style.gridAutoRows = `minmax(${GRID_ROW_FLOOR_PX}px, 1fr)`;
-    }
-    return style;
-  }, [customGrid, gridPrefs, cell]);
+  // F10 is registered here rather than in App (where F11 lives) so it can be
+  // gated on this page being visible AND the grid being the active layout,
+  // which is state App doesn't have. Capture phase, like F11, so xterm doesn't
+  // swallow it first.
+  //
+  // Trade-off worth knowing: while the grid is showing, F10 no longer reaches a
+  // terminal, and full-screen programs like mc and nano use it to quit. The
+  // toolbar button is the primary affordance; the key is the accelerator.
+  useEffect(() => {
+    if (!visible || !gridMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "F10") {
+        e.preventDefault();
+        e.stopPropagation();
+        onGridFullscreen(!gridFullscreen);
+      } else if (e.key === "Escape" && gridFullscreen) {
+        // Esc only exits; it must stay available to the shell otherwise.
+        e.preventDefault();
+        e.stopPropagation();
+        onGridFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [visible, gridMode, gridFullscreen, onGridFullscreen]);
+
+  // Leaving Grid (or maximizing a pane) has to give the chrome back, or it
+  // would be missing with nothing on screen able to restore it.
+  useEffect(() => {
+    if (gridFullscreen && !gridMode) onGridFullscreen(false);
+  }, [gridFullscreen, gridMode, onGridFullscreen]);
 
   // Drag-to-reorder tab state: the session being dragged and the tab it's
   // currently hovering over (drives the drop-indicator border).
@@ -773,11 +685,24 @@ export function TerminalsPage({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       {/* Chrome (controls + tab strip) is hidden while a terminal is maximized
-          — only the terminal pane and the AppShell banner remain. */}
+          — only the terminal pane and the AppShell banner remain.
+
+          In grid fullscreen the same chrome stays, but slides up out of the way
+          so only a thin strip shows, and slides back down on hover or when
+          anything inside it takes focus (so it is reachable from the keyboard
+          too). It is positioned out of flow, so the tiles get the whole window.
+          Deliberately a transform rather than a height animation with
+          overflow-hidden: the "+" launcher's dropdown has to be able to escape
+          the strip. */}
       {!maximized && (
-        <>
+        <div
+          className={cn(
+            gridFullscreen &&
+              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 focus-within:translate-y-0 hover:translate-y-0",
+          )}
+        >
       {/* Controls line: tab-label toggle (left) + shortcut bar + a session
           picker for jumping between many open tabs (right). */}
       <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
@@ -836,6 +761,47 @@ export function TerminalsPage({
           </button>
         </div>
 
+        {/* Undo a drag-resize (or a pinned size set in Settings) and go back to
+            fit-to-window. Only offered when a size is actually pinned, so it
+            isn't a permanently dead button. */}
+        {gridMode && sizeIsPinned && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={resetSize}
+            {...hint(
+              "Clear the pinned tile size and go back to tiles that fit the window.",
+            )}
+          >
+            <UndoIcon className="h-3.5 w-3.5" />
+            Reset size
+          </Button>
+        )}
+
+        {/* Take the grid fullscreen: every tile fills the screen and all the
+            chrome (this bar, the tab strip, the sidebar and status bar)
+            collapses to a hover strip at the top. Grid-only. */}
+        {gridMode && (
+          <Button
+            size="sm"
+            variant={gridFullscreen ? "secondary" : "outline"}
+            onClick={() => onGridFullscreen(!gridFullscreen)}
+            aria-pressed={gridFullscreen}
+            {...hint(
+              gridFullscreen
+                ? "The grid fills the screen. Click (or press F10, or Esc) to come back."
+                : "Fill the screen with the grid (F10). The controls collapse to a strip you hover to reveal.",
+            )}
+          >
+            {gridFullscreen ? (
+              <Minimize2Icon className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2Icon className="h-3.5 w-3.5" />
+            )}
+            Fullscreen
+          </Button>
+        )}
+
         {/* Hide/show every grid tile's title bar. Grid-only; the choice persists
             across restarts. Sits between the layout selector and the two-up flip. */}
         {gridMode && (
@@ -868,7 +834,7 @@ export function TerminalsPage({
             size="sm"
             variant="outline"
             onClick={() =>
-              setTwoUpSplit((s) => (s === "cols" ? "rows" : "cols"))
+              toggleTwoUpSplit()
             }
             {...hint(
               twoUpSplit === "cols"
@@ -1335,7 +1301,14 @@ export function TerminalsPage({
           )}
         </div>
       </div>
-        </>
+      {/* The sliver left showing when the strip is slid up: a grab handle, so
+          it reads as "there is something here" rather than a stray border. */}
+      {gridFullscreen && (
+        <div className="flex h-1.5 items-center justify-center bg-border/70">
+          <div className="h-0.5 w-16 rounded-full bg-muted-foreground/70" />
+        </div>
+      )}
+        </div>
       )}
 
       {searchOpen && (
@@ -1452,7 +1425,8 @@ export function TerminalsPage({
                   ? excluded
                     ? "hidden"
                     : cn(
-                      "flex min-w-0 flex-col overflow-hidden rounded-md border",
+                      // relative: anchors the resize handles below.
+                      "relative flex min-w-0 flex-col overflow-hidden rounded-md border",
                       // Row height: a custom grid's row track sets the tile
                       // height (a pinned item-height, or minmax(floor,1fr) when
                       // auto), so the tile just fills it (min-h-0). The default
@@ -1539,7 +1513,16 @@ export function TerminalsPage({
                 </button>
               </div>
 
-              <div className={cn("min-w-0", gridMode ? "min-h-0 flex-1" : "h-full w-full")}>
+              <div
+                className={cn(
+                  "min-w-0",
+                  gridMode ? "min-h-0 flex-1" : "h-full w-full",
+                  // While a tile edge is being dragged the pointer sweeps across
+                  // other terminals; without this xterm would take those events
+                  // and start selecting text (or feed them to a mouse-aware TUI).
+                  resizing && "pointer-events-none",
+                )}
+              >
                 <TerminalView
                   ref={(handle) => {
                     if (handle) {
@@ -1577,6 +1560,45 @@ export function TerminalsPage({
                   adoptSnapshot={s.type === "ssh" ? s.adoptSnapshot : undefined}
                 />
               </div>
+
+              {/* Resize handles. Dragging any tile's edge sets the tile size for
+                  the WHOLE grid (it writes the Settings -> Grid character size),
+                  so the tiles stay uniform and overflow scrolls, rather than one
+                  tile growing out of step with the rest. Invisible until hovered
+                  so they don't clutter a wall of terminals. */}
+              {canResizeTiles && !excluded && (
+                <>
+                  <div
+                    onMouseDown={(e) =>
+                      beginResize(e, "x", paneElRefs.current.get(s.id) ?? null)
+                    }
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Drag to set the width of every grid tile"
+                    title="Drag to set the width of every tile"
+                    className="absolute inset-y-0 right-0 w-1.5 cursor-col-resize hover:bg-primary/40"
+                  />
+                  <div
+                    onMouseDown={(e) =>
+                      beginResize(e, "y", paneElRefs.current.get(s.id) ?? null)
+                    }
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Drag to set the height of every grid tile"
+                    title="Drag to set the height of every tile"
+                    className="absolute inset-x-0 bottom-0 h-1.5 cursor-row-resize hover:bg-primary/40"
+                  />
+                  <div
+                    onMouseDown={(e) =>
+                      beginResize(e, "both", paneElRefs.current.get(s.id) ?? null)
+                    }
+                    role="separator"
+                    aria-label="Drag to set the size of every grid tile"
+                    title="Drag to set the size of every tile"
+                    className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize hover:bg-primary/50"
+                  />
+                </>
+              )}
             </div>
           );
         })}

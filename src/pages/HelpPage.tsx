@@ -449,7 +449,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size",
     body: (
       <>
         <Lead>
@@ -596,6 +596,29 @@ const SECTIONS: HelpSection[] = [
               The grid tiles follow the order of the tabs above them. Drag a tab
               to a new position and the grid rearranges to match straight away,
               without disturbing any running terminal.
+            </li>
+            <li>
+              <Nav>Fullscreen</Nav> (also <Nav>F10</Nav>) gives the grid the
+              whole screen: the toolbar, the tab strip, the sidebar and the
+              status bar all slide away, leaving a thin strip at the very top.
+              Move the mouse to that strip and everything slides back down, so
+              you can pick a tab, close one, or use the dropdown without leaving
+              fullscreen; move away and it hides again. <Nav>F10</Nav>,{" "}
+              <Nav>Esc</Nav>, or the button brings the chrome back. Note that
+              while the grid is on screen, F10 belongs to Broadside, so a
+              full-screen program that uses it (such as{" "}
+              <code>mc</code> or <code>nano</code>) will not see it; use the
+              button in that case.
+            </li>
+            <li>
+              Drag the right or bottom edge of any tile (or its bottom-right
+              corner) to set the tile size. It sets the size for{" "}
+              <strong className="font-semibold">every</strong> tile, not just
+              that one, so the grid stays even; tiles that no longer fit scroll
+              rather than shrink. The drag writes the same <Nav>Grid</Nav>{" "}
+              settings described below, so Settings shows the size you dragged
+              to. <Nav>Reset size</Nav> in the toolbar clears it and goes back
+              to tiles that fit the window.
             </li>
             <li>
               To take one terminal out of the grid, click the small{" "}

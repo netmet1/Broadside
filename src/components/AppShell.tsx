@@ -132,6 +132,7 @@ export function AppShell({
   onNavigate,
   terminalCount,
   maximized = false,
+  gridFullscreen = false,
   onRestore,
   maximizedHost = null,
   children,
@@ -141,6 +142,10 @@ export function AppShell({
   terminalCount: number;
   /** When true, hide all chrome and show only the maximized terminal. */
   maximized?: boolean;
+  /** The Terminals grid is filling the screen. Hides the same chrome as
+   * `maximized`, but shows no banner: the grid renders its own hover strip, so
+   * a second bar would just eat the space fullscreen was meant to free. */
+  gridFullscreen?: boolean;
   /** Restore from the maximized terminal (banner button + Esc). */
   onRestore?: () => void;
   /** The maximized terminal's host, shown in the banner so you know which
@@ -224,6 +229,8 @@ export function AppShell({
   // Maximized terminal: keep the SAME tree (so the terminal's TerminalView is
   // never remounted — that would kill and reopen the PTY) but hide the sidebar,
   // separator and status bar via CSS and show a slim banner above the terminal.
+  // Both fullscreen modes hide the same chrome; only the banner differs.
+  const chromeHidden = maximized || gridFullscreen;
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       {maximized && (
@@ -261,7 +268,7 @@ export function AppShell({
           className={cn(
             "flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
             !dragging && "transition-[width] duration-150",
-            maximized && "hidden",
+            chromeHidden && "hidden",
           )}
         >
           <div
@@ -405,12 +412,12 @@ export function AppShell({
           className={cn(
             "w-1 shrink-0 cursor-col-resize hover:bg-primary/40",
             dragging && "bg-primary/50",
-            maximized && "hidden",
+            chromeHidden && "hidden",
           )}
         />
         <main className="relative min-w-0 flex-1 overflow-auto">{children}</main>
       </div>
-      {!maximized && <StatusBar />}
+      {!chromeHidden && <StatusBar />}
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </div>
   );
