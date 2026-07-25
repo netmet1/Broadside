@@ -26,7 +26,8 @@ import { ShortcutBar } from "@/components/ShortcutBar";
 import type { ShortcutScope } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
-import { LocalShellIcon, type LocalTermSession } from "@/pages/TerminalsPage";
+import { LocalShellIcon } from "@/pages/TerminalsPage";
+import { sessionLabel, type LocalTermSession } from "@/pages/terminals/session";
 import { useSessionBroadcast } from "@/pages/ptyBroadcast/useSessionBroadcast";
 
 /** Neutral dot colour for local shells (they have no per-host colour). Matches
@@ -66,20 +67,22 @@ export function LocalBroadcastPanel({
 
   // Duplicate " 02" suffix per shell id, ordered by creation seq (mirrors
   // TerminalsPage's tab suffix): the 2nd+ copy of the same shell gets a number
-  // so otherwise-identical labels ("PowerShell") stay distinguishable.
+  // so otherwise-identical labels ("PowerShell") stay distinguishable. A tab
+  // the operator renamed carries its own name instead, so it takes no suffix.
   const suffixById = useMemo(() => {
     const counts = new Map<string, number>();
     const map = new Map<string, string>();
     for (const s of [...sessions].sort((a, b) => a.seq - b.seq)) {
       const n = (counts.get(s.shell.id) ?? 0) + 1;
       counts.set(s.shell.id, n);
-      map.set(s.id, n > 1 ? ` ${String(n).padStart(2, "0")}` : "");
+      map.set(s.id, !s.title && n > 1 ? ` ${String(n).padStart(2, "0")}` : "");
     }
     return map;
   }, [sessions]);
 
+  // sessionLabel, so a renamed tab is named the same here as in the tab strip.
   const labelFor = useCallback(
-    (s: LocalTermSession) => s.shell.label + (suffixById.get(s.id) ?? ""),
+    (s: LocalTermSession) => sessionLabel(s) + (suffixById.get(s.id) ?? ""),
     [suffixById],
   );
 

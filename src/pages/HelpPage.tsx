@@ -449,7 +449,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window",
     body: (
       <>
         <Lead>
@@ -471,6 +471,15 @@ const SECTIONS: HelpSection[] = [
               Windows PowerShell, PowerShell 7 (pwsh), Command Prompt and any
               installed WSL distributions. Local shells run through{" "}
               <Term term="ConPTY" />.
+            </li>
+            <li>
+              Rename a local shell tab with the <Nav>pencil</Nav> on the tab:
+              type a name and press <Nav>Enter</Nav> (or <Nav>Esc</Nav> to
+              cancel). The name is used everywhere that tab appears, including
+              the grid tile and the broadcast lists, and an empty name puts the
+              shell's own name back. The rename lasts for the rest of the
+              session and is not kept across restarts. Tabs opened from a
+              profile already carry the profile's name, so they have no pencil.
             </li>
           </Bullets>
           <H3>How local shells are detected (important)</H3>
@@ -584,6 +593,19 @@ const SECTIONS: HelpSection[] = [
               Grid and the choice is remembered across restarts.
             </li>
             <li>
+              The grid tiles follow the order of the tabs above them. Drag a tab
+              to a new position and the grid rearranges to match straight away,
+              without disturbing any running terminal.
+            </li>
+            <li>
+              To take one terminal out of the grid, click the small{" "}
+              <Nav>grid button</Nav> on its tab (it appears in Grid only). The
+              tile disappears and the remaining tiles fill the space, while the
+              shell keeps running untouched; the button turns amber so you can
+              see which tabs are hidden, and clicking it again puts the tile
+              back. Hidden tabs still work normally in <Nav>Tabs</Nav>.
+            </li>
+            <li>
               To pin the grid, open <Nav>Settings</Nav> and the <Nav>Grid</Nav>{" "}
               section. Leave everything on <Nav>Auto</Nav> for the layout above,
               or set the <Nav>Columns across</Nav> and the tile{" "}
@@ -592,7 +614,9 @@ const SECTIONS: HelpSection[] = [
               window scroll sideways rather than shrinking, so panes keep the
               character size you asked for. Changing the terminal font resizes
               pinned tiles to keep those dimensions. The settings apply the next
-              time you open the Terminals page.
+              time you open the Terminals page. Exactly two terminals are the
+              one exception: they always take the full window, side by side or
+              stacked, and ignore the Grid settings entirely.
             </li>
           </Bullets>
           <H3>Copy, paste and jumping to a tab</H3>

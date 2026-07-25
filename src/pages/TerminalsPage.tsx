@@ -4,6 +4,8 @@ import {
   Columns2Icon,
   EyeIcon,
   EyeOffIcon,
+  Grid2x2Icon,
+  Grid2x2XIcon,
   LayoutGridIcon,
   Maximize2Icon,
   PanelTopIcon,
@@ -47,8 +49,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
-import { errorMessage, type Host } from "@/lib/tauri/hosts";
+import { errorMessage } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
+import {
+  labelInitials,
+  sessionLabel,
+  sessionScope,
+  type LocalShellOpenOpts,
+  type TermSession,
+} from "@/pages/terminals/session";
 import { reconcileDisabledShells } from "@/lib/localShellPrefs";
 import {
   loadProfiles,
@@ -61,7 +70,7 @@ import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { isAutoGrid, loadGridPrefs, type GridPrefs } from "@/lib/gridPrefs";
 import { measureTerminalCell } from "@/lib/terminalCell";
 import type { SearchOptions } from "@/lib/search";
-import { getAppSettings, type ShortcutScope } from "@/lib/tauri/settings";
+import { getAppSettings } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import { useUiPrefs } from "@/lib/uiPrefs";
@@ -101,95 +110,16 @@ const GRID_ROW_FLOOR_PX = 256;
  * (the default) or every pane tiled at once, mirroring the skill run panel. */
 type TermLayout = "tabs" | "grid";
 
-/** Most initials we ever show. Camel/word splitting can produce a long run
- * (e.g. "aVeryLongCamelCaseName" → 6), which defeats the point of the compact
- * mode, so the result is trimmed to keep tabs tight. */
-const MAX_INITIALS = 4;
-
-/** Break a single word into its parts on camelCase / digit boundaries, keeping
- * runs of capitals together so acronyms stay one part:
- *   "webServer"      → ["web", "Server"]
- *   "XMLHttpRequest" → ["XML", "Http", "Request"]
- *   "SERVER"         → ["SERVER"]   (all-caps: one part → one initial)
- *   "server"         → ["server"]   (all-lowercase: one part → one initial)
- *   "box01"          → ["box", "01"] */
-function splitWordParts(word: string): string[] {
-  return word.match(/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+/g) ?? [];
-}
-
-/** Compact-tab initials. Words are separated by spaces, underscores and dashes,
- * and each word is further split on camelCase and letter/digit boundaries; the
- * first character of every part becomes an initial. All-caps, all-lowercase or
- * otherwise single-part words collapse to a single letter (so "PRODSERVER" and
- * "prodserver" both give "P"), and an over-eager camelCase run is trimmed to
- * MAX_INITIALS so a tab never sprouts a long acronym. Examples:
- *   "This is a test"  → "TIAT"      "web-server-01"        → "WS0"
- *   "prod_db_east"    → "PDE"       "myProdBox"            → "MPB"
- *   "aVeryLongName…"  → capped      "PRODSERVER"           → "P" */
-function labelInitials(label: string): string {
-  const parts = label
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .flatMap(splitWordParts);
-  const initials = parts.map((p) => p[0]!.toUpperCase()).join("");
-  const trimmed = initials.slice(0, MAX_INITIALS);
-  return trimmed || label.slice(0, 2).toUpperCase();
-}
-
-/** An SSH terminal (bound to a saved host) or a local shell (PowerShell / pwsh /
- * Command Prompt / WSL) hosted over ConPTY. Both share the same session id /
- * pty plumbing; only the source and tab affordances differ. */
-/** Monotonic creation order, assigned when the tab opens. Drives the duplicate
- * " 02" suffix and the terminal-pane render order so neither depends on the
- * (drag-reorderable) display order. */
-export type SshTermSession = {
-  id: string;
-  type: "ssh";
-  seq: number;
-  /** Snapshot of the host at open time (rename/recolor mid-session is fine). */
-  host: Host;
-  /** This tab adopted a PTY a skill run already had open (its `id` is that
-   * backend session id). The first mount skips `pty_open`; a later Reconnect
-   * opens a fresh shell to the host. */
-  adopted?: boolean;
-  /** The skill pane's scrollback as an ANSI string, seeded into the terminal on
-   * its first (adopting) mount so the run's history carries over. */
-  adoptSnapshot?: string;
-};
-export type LocalTermSession = {
-  id: string;
-  type: "local";
-  seq: number;
-  shell: LocalShell;
-  /** Opened from a saved profile: its working directory, startup command, and
-   * name (shown as the tab label so a profile tab is distinguishable from a
-   * plain shell tab). Absent for a plain "+" shell open. */
-  cwd?: string;
-  startupCommand?: string;
-  profileLabel?: string;
-};
-export type TermSession = SshTermSession | LocalTermSession;
-
-/** How a profile open is described to the App layer when spawning a session. */
-export type LocalShellOpenOpts = {
-  cwd?: string;
-  startupCommand?: string;
-  profileLabel?: string;
-};
-
-/** Display label for a tab, regardless of session kind. A profile-launched
- * local tab shows the profile's name; a plain one shows the shell name. */
-function sessionLabel(s: TermSession): string {
-  if (s.type === "ssh") return s.host.label;
-  return s.profileLabel || s.shell.label;
-}
-
-/** Which shortcut scope a tab belongs to. SSH hosts and local WSL tabs run
- * Linux (ssh); local Command Prompt / PowerShell run Windows commands (local). */
-function sessionScope(s: TermSession): ShortcutScope {
-  if (s.type === "ssh") return "ssh";
-  return s.shell.kind === "wsl" ? "ssh" : "local";
-}
+/** Session shapes and naming live in ./terminals/session, so anything that only
+ * needs "what is this tab called" can have it without importing this page.
+ * Re-exported here because App and the broadcast pages already import the types
+ * from this module. */
+export type {
+  SshTermSession,
+  LocalTermSession,
+  TermSession,
+  LocalShellOpenOpts,
+} from "@/pages/terminals/session";
 
 /** Tab/menu icon for a local shell. WSL is grouped with SSH hosts under the
  * terminal icon; the Windows shells use the square-terminal icon. */
@@ -216,6 +146,9 @@ type Props = {
   onCloseSession: (id: string) => void;
   /** Reorder tabs: drop the dragged session in front of the target. */
   onReorder: (sourceId: string, targetId: string) => void;
+  /** Rename a local shell tab for the rest of this session. An empty title
+   * clears the override and falls back to the derived shell/profile label. */
+  onRenameSession: (id: string, title: string) => void;
   /** Maximize the given terminal to fill the whole window. */
   onMaximize: (id: string) => void;
   /** Whether the terminal is currently maximized (hides the page chrome). */
@@ -236,6 +169,7 @@ export function TerminalsPage({
   onActivate,
   onCloseSession,
   onReorder,
+  onRenameSession,
   onMaximize,
   maximized,
   onOpenLocalShell,
@@ -409,6 +343,10 @@ export function TerminalsPage({
   // Numbered by creation order (seq), NOT display order, so dragging a tab to a
   // new position never reshuffles the suffixes (the names stay put as the user
   // expects them to).
+  // A renamed tab still consumes its number so the tabs around it keep the
+  // suffixes they already had, but shows none of its own: the operator gave it
+  // an explicit name, and "Build box 02" would read as a duplicate of a tab
+  // that doesn't exist.
   const tabSuffix = useMemo(() => {
     const counts = new Map<string, number>();
     const map = new Map<string, string>();
@@ -416,7 +354,8 @@ export function TerminalsPage({
       const key = s.type === "ssh" ? `ssh:${s.host.id}` : `local:${s.shell.id}`;
       const n = (counts.get(key) ?? 0) + 1;
       counts.set(key, n);
-      map.set(s.id, n > 1 ? ` ${String(n).padStart(2, "0")}` : "");
+      const renamed = s.type === "local" && !!s.title;
+      map.set(s.id, !renamed && n > 1 ? ` ${String(n).padStart(2, "0")}` : "");
     }
     return map;
   }, [sessions]);
@@ -430,8 +369,51 @@ export function TerminalsPage({
     () => [...sessions].sort((a, b) => a.seq - b.seq),
     [sessions],
   );
+
+  // Where each pane sits *visually* in the grid: its position in the tab strip.
+  // Applied as the CSS `order` property rather than by sorting the rendered
+  // list, so the pane DOM stays in creation order (see paneOrder above) and a
+  // tab drag reflows the grid without moving a single node or remounting a
+  // live terminal. CSS grid auto-placement follows order-modified order.
+  const displayIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    sessions.forEach((s, i) => m.set(s.id, i));
+    return m;
+  }, [sessions]);
+
+  // Terminals the operator has taken out of the grid via the tab's grid toggle.
+  // The shell keeps running and its tab still selects it in Tabs layout; it
+  // just doesn't claim a tile. Session-lifetime only, like twoUpSplit below:
+  // session ids are fresh UUIDs each run, so a persisted set would have nothing
+  // to reattach to on the next launch.
+  const [excludedFromGrid, setExcludedFromGrid] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleGridExcluded = useCallback((id: string) => {
+    setExcludedFromGrid((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }, []);
+  // Drop ids whose session has closed so the set can't grow without bound.
+  useEffect(() => {
+    setExcludedFromGrid((prev) => {
+      if (prev.size === 0) return prev;
+      const live = new Set(sessions.map((s) => s.id));
+      const next = new Set([...prev].filter((id) => live.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [sessions]);
+
+  const gridTiles = useMemo(
+    () => paneOrder.filter((s) => !excludedFromGrid.has(s.id)),
+    [paneOrder, excludedFromGrid],
+  );
   // How many tiles the grid shows — drives the fill/split/scroll layout (B3).
-  const gridCount = paneOrder.length;
+  // Excluded panes don't count, so hiding one of three tiles gives the real
+  // two-up split rather than a two-up-shaped hole.
+  const gridCount = gridTiles.length;
 
   // Tab label mode: full label (default) vs color-dot + initials. Persisted
   // like the sidebar-collapse pref (localStorage, UI-only).
@@ -493,8 +475,14 @@ export function TerminalsPage({
     [uiPrefs.terminalFontFamily, uiPrefs.terminalFontSize],
   );
   // A non-auto grid switches to a uniform, settings-driven layout that bypasses
-  // the 1/2/3-tile special cases and the two-up flip.
-  const customGrid = gridMode && !isAutoGrid(gridPrefs);
+  // the 1/3+-tile special cases.
+  //
+  // Two tiles are the deliberate exception: they always get the full-viewport
+  // side-by-side split (and its top/bottom flip), whatever the Grid settings
+  // say. Pinning a tile size to compare two machines side by side is exactly
+  // the case where the pinned size gets in the way, so two terminals ignore
+  // the Grid section outright.
+  const customGrid = gridMode && !isAutoGrid(gridPrefs) && gridCount !== 2;
   // When custom but neither cols nor item width is pinned (only rows), columns
   // fall back to the shipped responsive default via a class, not inline style.
   const customColsAuto =
@@ -532,6 +520,22 @@ export function TerminalsPage({
   // currently hovering over (drives the drop-indicator border).
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  // Inline tab rename (local shells only): which tab is being edited and the
+  // draft text. Committing calls onRenameSession; an empty draft clears the
+  // override and the tab falls back to its shell name.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const startRename = useCallback((s: TermSession) => {
+    setRenamingId(s.id);
+    setRenameDraft(sessionLabel(s));
+  }, []);
+  const commitRename = useCallback(() => {
+    setRenamingId((id) => {
+      if (id !== null) onRenameSession(id, renameDraft);
+      return null;
+    });
+  }, [onRenameSession, renameDraft]);
 
   // The horizontally-scrolling tab list + a live map of each tab's element, so
   // activating a session (e.g. via the "Go to session" picker) can scroll its
@@ -856,8 +860,9 @@ export function TerminalsPage({
 
         {/* Flip the two-terminal grid between side-by-side and top/bottom.
             Only meaningful for exactly two tiles (one fills, three+ tile and
-            scroll), and only in the default auto grid — a pinned grid uses the
-            Settings layout instead. */}
+            scroll). Two tiles always take this layout, pinned Grid settings or
+            not, so the flip is always offered here (customGrid is false at a
+            count of two by construction). */}
         {gridMode && !customGrid && gridCount === 2 && (
           <Button
             size="sm"
@@ -982,7 +987,9 @@ export function TerminalsPage({
               else tabElRefs.current.delete(s.id);
             }}
             style={activeStyle}
-            draggable
+            // A draggable ancestor swallows text selection inside the rename
+            // input, so drag is switched off for the tab being renamed.
+            draggable={renamingId !== s.id}
             onDragStart={(e) => {
               setDragId(s.id);
               e.dataTransfer.effectAllowed = "move";
@@ -1037,6 +1044,26 @@ export function TerminalsPage({
               />
             )}
             {(() => {
+              if (renamingId === s.id) {
+                return (
+                  <input
+                    autoFocus
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onBlur={commitRename}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === "Enter") commitRename();
+                      else if (e.key === "Escape") setRenamingId(null);
+                    }}
+                    className="w-32 rounded border border-input bg-background px-1 py-0 text-sm outline-none focus-visible:border-ring"
+                    aria-label="Tab name"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                );
+              }
               // Disconnected (connecting/dropped/failed) SSH tabs show their
               // label in red; when active it inherits the tab's bold weight, so
               // the active-disconnected tab reads as bold red on the theme tint.
@@ -1056,6 +1083,60 @@ export function TerminalsPage({
                 </span>
               );
             })()}
+            {/* Rename a plain local shell tab for the rest of the session.
+                Profile tabs already carry the profile's name, so they're left
+                alone; SSH tabs are named by their host. */}
+            {s.type === "local" && !s.profileLabel && renamingId !== s.id && (
+              <button
+                type="button"
+                className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  startRename(s);
+                }}
+                aria-label={`Rename ${sessionLabel(s)}`}
+                title="Rename this tab for this session"
+              >
+                <PencilIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {/* Take this terminal out of the grid, or put it back. Grid-only:
+                in Tabs layout every tab shows its own pane anyway. The shell
+                keeps running either way. */}
+            {gridMode && (
+              <button
+                type="button"
+                className={cn(
+                  "rounded p-0.5 transition-opacity hover:bg-accent hover:text-foreground",
+                  // An excluded tab keeps its icon visible without a hover, so
+                  // you can find the hidden ones at a glance.
+                  excludedFromGrid.has(s.id)
+                    ? "text-amber-600 opacity-100 dark:text-amber-500"
+                    : "text-muted-foreground opacity-0 group-hover:opacity-100",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleGridExcluded(s.id);
+                }}
+                aria-pressed={excludedFromGrid.has(s.id)}
+                aria-label={
+                  excludedFromGrid.has(s.id)
+                    ? `Show ${sessionLabel(s)} in the grid`
+                    : `Hide ${sessionLabel(s)} from the grid`
+                }
+                title={
+                  excludedFromGrid.has(s.id)
+                    ? "Hidden from the grid. Click to put it back."
+                    : "Hide this terminal from the grid (it keeps running)"
+                }
+              >
+                {excludedFromGrid.has(s.id) ? (
+                  <Grid2x2XIcon className="h-3.5 w-3.5" />
+                ) : (
+                  <Grid2x2Icon className="h-3.5 w-3.5" />
+                )}
+              </button>
+            )}
             <button
               type="button"
               className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
@@ -1312,8 +1393,19 @@ export function TerminalsPage({
         )}
         style={gridStyle}
       >
+        {/* Every tile hidden but terminals still open: say so, or the grid
+            reads as broken. */}
+        {gridMode && gridCount === 0 && sessions.length > 0 && (
+          <p className="col-span-full p-4 text-sm text-muted-foreground">
+            Every terminal is hidden from the grid. Use the grid button on a tab
+            to bring one back.
+          </p>
+        )}
         {paneOrder.map((s) => {
           const isActive = s.id === activeId;
+          // Taken out of the grid from its tab. The pane stays mounted (and its
+          // shell alive); it is simply not laid out.
+          const excluded = gridMode && excludedFromGrid.has(s.id);
           const disconnected = s.type === "ssh" && !connectedSessions.has(s.id);
           // The active tile's header mirrors the tab tint: a ~20% host-colour
           // fill and a top bar in the host colour for a connected SSH tile,
@@ -1334,10 +1426,19 @@ export function TerminalsPage({
           // a matching soft ring) instead of the theme primary. Only for a
           // connected SSH tile with a usable hue; local/disconnected fall back to
           // the primary classes below.
-          const tileStyle: React.CSSProperties | undefined =
-            gridMode && hostTint
-              ? { borderColor: hostColor!, boxShadow: `0 0 0 1px ${hostColor}66` }
-              : undefined;
+          const tileStyle: React.CSSProperties | undefined = !gridMode
+            ? undefined
+            : {
+                // Visual position in the grid = position in the tab strip, so
+                // dragging a tab rearranges the grid. See displayIndex.
+                order: displayIndex.get(s.id) ?? 0,
+                ...(hostTint
+                  ? {
+                      borderColor: hostColor!,
+                      boxShadow: `0 0 0 1px ${hostColor}66`,
+                    }
+                  : {}),
+              };
           return (
             <div
               key={s.id}
@@ -1348,7 +1449,9 @@ export function TerminalsPage({
               style={tileStyle}
               className={cn(
                 gridMode
-                  ? cn(
+                  ? excluded
+                    ? "hidden"
+                    : cn(
                       "flex min-w-0 flex-col overflow-hidden rounded-md border",
                       // Row height: a custom grid's row track sets the tile
                       // height (a pinned item-height, or minmax(floor,1fr) when
@@ -1456,7 +1559,10 @@ export function TerminalsPage({
                           startupCommand: s.startupCommand,
                         }
                   }
-                  visible={visible && (gridMode || isActive)}
+                  // A pane taken out of the grid is display:none, so it has no
+                  // box to fit to — tell it so, exactly as a background tab in
+                  // tabs mode is told, or it would fit against a zero size.
+                  visible={visible && (gridMode ? !excluded : isActive)}
                   retryNonce={retryNonces.get(s.id) ?? 0}
                   onGate={handleGate}
                   onClosed={closeSession}
