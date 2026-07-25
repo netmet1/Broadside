@@ -40,6 +40,11 @@ export function GridSection({ id }: { id: string }) {
         title="Grid"
         hint="Pin the Terminals grid: how many panes tile across and each pane's size in characters. Auto keeps the default fit-to-window layout."
       />
+      <p className="max-w-md text-xs text-muted-foreground">
+        Exactly two terminals always split the window side by side (or top and
+        bottom) and ignore these settings, so the two-pane comparison view is
+        never shrunk by a pinned tile size.
+      </p>
       <div className="grid max-w-md gap-4">
         <GridField
           label="Columns across"

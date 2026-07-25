@@ -24,12 +24,13 @@ import {
 import { isExitGuardEnabled } from "@/lib/exitGuard";
 import { HostsPage } from "@/pages/HostsPage";
 import { BroadcastPage } from "@/pages/BroadcastPage";
+import { TerminalsPage } from "@/pages/TerminalsPage";
 import {
-  TerminalsPage,
+  sessionLabel,
   type TermSession,
   type SshTermSession,
   type LocalShellOpenOpts,
-} from "@/pages/TerminalsPage";
+} from "@/pages/terminals/session";
 import type { LocalShell } from "@/lib/tauri/local";
 import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
 import { MultiTerminalPage } from "@/pages/MultiTerminalPage";
@@ -242,6 +243,21 @@ function App() {
     });
   }, []);
 
+  /** Rename a local shell tab. Session-lifetime only, deliberately: session ids
+   * are fresh UUIDs every run, so a persisted name would have nothing to
+   * reattach to. An empty title clears the override and the tab falls back to
+   * its profile or shell name. */
+  const renameSession = useCallback((id: string, title: string) => {
+    const trimmed = title.trim();
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === id && s.type === "local"
+          ? { ...s, title: trimmed || undefined }
+          : s,
+      ),
+    );
+  }, []);
+
   const closeSession = useCallback((id: string) => {
     setSessions((prev) => {
       const idx = prev.findIndex((s) => s.id === id);
@@ -426,7 +442,9 @@ function App() {
           maximizedSession
             ? maximizedSession.type === "ssh"
               ? maximizedSession.host
-              : { label: maximizedSession.shell.label, color: "#6b7280" }
+              : // sessionLabel, not shell.label, so a renamed tab keeps its
+                // name in the maximize banner too.
+                { label: sessionLabel(maximizedSession), color: "#6b7280" }
             : null
         }
       >
@@ -469,6 +487,7 @@ function App() {
           onActivate={setActiveSessionId}
           onCloseSession={closeSession}
           onReorder={reorderSessions}
+          onRenameSession={renameSession}
           onMaximize={maximizeTerminal}
           maximized={maximized}
           onOpenLocalShell={openLocalShell}
