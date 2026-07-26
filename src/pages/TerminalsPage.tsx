@@ -87,6 +87,10 @@ const BROADCAST_RAIL_KEY = "terminal-broadcast-rail";
  * — a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
  * the common "a handful at once" case (up to 7) stays friction-free. */
 const BULK_SHELL_WARN = 7;
+/** A profile with a startup command gets a far stricter threshold: every copy
+ * runs that command again, and two accidental runs of a deploy script are a
+ * different kind of accident than two idle prompts. Anything past one asks. */
+const BULK_STARTUP_WARN = 1;
 
 /** Fallback cap on the bulk-open count when the settings probe hasn't answered
  * yet (the real cap is the configured/suggested max concurrent sessions). */
@@ -247,7 +251,8 @@ export function TerminalsPage({
   );
   // Launcher pick: clamp the requested count to [1, maxShells]; if it's an
   // excessive batch, confirm first, otherwise open immediately. Shared by the
-  // plain shell rows and the profile rows (the latter pass `opts`).
+  // plain shell rows and the profile rows (the latter pass `opts`). A profile
+  // that types a startup command confirms past a single copy, not past 7.
   const requestOpenShells = useCallback(
     (shell: LocalShell, opts?: LocalShellOpenOpts) => {
       setShellMenuOpen(false);
@@ -256,7 +261,8 @@ export function TerminalsPage({
         Math.max(Number.isFinite(parsed) ? parsed : 1, 1),
         maxShells,
       );
-      if (n > BULK_SHELL_WARN) {
+      const warnAt = opts?.startupCommand ? BULK_STARTUP_WARN : BULK_SHELL_WARN;
+      if (n > warnAt) {
         setBulkConfirm({ shell, count: n, opts });
       } else {
         openShells(shell, n, opts);
@@ -1677,21 +1683,47 @@ export function TerminalsPage({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Open that many shells?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {bulkConfirm?.opts?.startupCommand
+                ? "Run the startup command in every copy?"
+                : "Open that many shells?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               You're about to open{" "}
               <span className="font-semibold text-foreground">
-                {bulkConfirm?.count} {bulkConfirm?.shell.label}
+                {bulkConfirm?.count}{" "}
+                {bulkConfirm?.opts?.profileLabel ?? bulkConfirm?.shell.label}
               </span>{" "}
-              terminals at once. That's a lot of shells, and each one is a live
-              process. Continue?
+              {bulkConfirm?.opts?.startupCommand ? (
+                <>
+                  terminals, and this profile types its startup command into
+                  each one. That command will run{" "}
+                  <span className="font-semibold text-foreground">
+                    {bulkConfirm?.count} times
+                  </span>
+                  . Continue?
+                </>
+              ) : (
+                <>
+                  terminals at once. That's a lot of shells, and each one is a
+                  live process. Continue?
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (bulkConfirm) openShells(bulkConfirm.shell, bulkConfirm.count);
+                // Pass the stored opts through: a confirmed profile batch must
+                // keep its cwd / startup command / name, same as an unconfirmed
+                // one.
+                if (bulkConfirm)
+                  openShells(
+                    bulkConfirm.shell,
+                    bulkConfirm.count,
+                    bulkConfirm.opts,
+                  );
                 setBulkConfirm(null);
               }}
             >
