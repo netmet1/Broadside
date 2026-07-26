@@ -1381,7 +1381,12 @@ export function TerminalsPage({
         ref={gridScrollRef}
         className={cn(
           "min-h-0 min-w-0 flex-1 bg-[var(--terminal-bg)] p-2",
-          !gridMode && "relative",
+          // overflow-hidden: the pane must exactly fill this area, so clip any
+          // transient xterm mis-size (e.g. a font change applied while the page
+          // was hidden restyles .xterm-screen before a fit can run) instead of
+          // letting it push AppShell's overflow-auto <main> into scrolling the
+          // controls row + tab strip off screen.
+          !gridMode && "relative overflow-hidden",
           // Settings-driven grid (Settings -> Grid): a uniform layout with pinned
           // columns and/or character-based tile size. Overflow scrolls — the
           // fixed widths can exceed the viewport, and that scroll is intended.

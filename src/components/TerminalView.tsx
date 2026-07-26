@@ -149,6 +149,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const dataReadyRef = useRef<Promise<unknown> | null>(null);
   // Guards the one-time write of an adopted session's scrollback snapshot.
   const snapshotWrittenRef = useRef(false);
+  // A font change landed while this pane was hidden (display:none has no
+  // measurable box, so the fit had to be skipped). Settled by the visible
+  // effect below with a second-frame fit once the pane is back on screen.
+  const needsRefitRef = useRef(false);
   const onSearchRequestRef = useRef(onSearchRequest);
   onSearchRequestRef.current = onSearchRequest;
   const onTabNavRef = useRef(onTabNav);
@@ -522,7 +526,15 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     ) {
       term.options.fontFamily = prefs.terminalFontFamily;
       term.options.fontSize = prefs.terminalFontSize;
-      if (containerRef.current?.offsetParent) fitRef.current?.fit();
+      if (containerRef.current?.offsetParent) {
+        fitRef.current?.fit();
+      } else {
+        // Hidden pane (another tab/page is active): xterm still re-measures the
+        // font and restyles .xterm-screen to OLD rows x NEW cell height right
+        // away, leaving the pane over- or under-sized until a real fit can run.
+        // Mark it so the visible effect refits when the pane returns.
+        needsRefitRef.current = true;
+      }
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
 
@@ -546,6 +558,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // back to the prompt unless it was scrolled up into history.
   useEffect(() => {
     if (!visible) return;
+    let raf2 = 0;
     const raf = requestAnimationFrame(() => {
       const term = termRef.current;
       const buf = term?.buffer.active;
@@ -553,8 +566,27 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       fitRef.current?.fit();
       if (pinned) term?.scrollToBottom();
       if (phaseRef.current.kind === "open") term?.focus();
+      // A font change applied while this pane was hidden needs one more fit a
+      // frame later: xterm pauses its renderer for off-screen terminals and
+      // only unpauses via its own IntersectionObserver, which fires AFTER this
+      // frame's rAF callbacks — so the fit above can run against a still-paused
+      // renderer whose deferred resize never lands (the "whole panel scrolls /
+      // blank terminal after a Settings font change" bug). By the second frame
+      // the renderer is live, so this fit applies synchronously and sticks.
+      raf2 = requestAnimationFrame(() => {
+        if (!needsRefitRef.current) return;
+        needsRefitRef.current = false;
+        fitRef.current?.fit();
+        // `pinned` is deliberately the reading from before the first fit: the
+        // question is where the viewport sat when the pane came back, and the
+        // fit above may already have moved it.
+        if (pinned) term?.scrollToBottom();
+      });
     });
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      cancelAnimationFrame(raf2);
+    };
   }, [visible]);
 
   return (
