@@ -66,6 +66,9 @@ export function SkillTerminalPane({
   // Whether term.open() has run. It must not run until the container is
   // visible and sized (see the ResizeObserver below).
   const openedRef = useRef(false);
+  // A font change landed while this pane was hidden (no measurable box, so the
+  // fit was skipped). Settled by the visible effect with a second-frame fit.
+  const needsRefitRef = useRef(false);
   // Read from the data handler so it never re-subscribes (and so the pane never
   // misses bytes between renders).
   const interactiveRef = useRef(interactive);
@@ -188,8 +191,14 @@ export function SkillTerminalPane({
     ) {
       term.options.fontFamily = prefs.terminalFontFamily;
       term.options.fontSize = prefs.terminalFontSize;
-      if (openedRef.current && containerRef.current?.offsetParent)
+      if (openedRef.current && containerRef.current?.offsetParent) {
         fitRef.current?.fit();
+      } else {
+        // Hidden (or not yet opened): xterm still re-measures the font and
+        // restyles .xterm-screen at the old geometry right away. Mark it so
+        // the visible effect refits when the pane is back on screen.
+        needsRefitRef.current = true;
+      }
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
 
@@ -224,11 +233,27 @@ export function SkillTerminalPane({
   // element's box size). Only once opened, so it never fits an unopened term.
   useEffect(() => {
     if (!visible) return;
+    let raf2 = 0;
     const raf = requestAnimationFrame(() => {
       if (openedRef.current && containerRef.current?.offsetParent)
         fitRef.current?.fit();
+      // A font change applied while hidden needs one more fit a frame later:
+      // xterm's renderer is paused off-screen and only unpauses via its own
+      // IntersectionObserver, which fires after this frame's rAF callbacks —
+      // the fit above can therefore run against a still-paused renderer whose
+      // deferred resize never lands (see TerminalView's matching effect).
+      raf2 = requestAnimationFrame(() => {
+        if (!needsRefitRef.current) return;
+        if (openedRef.current && containerRef.current?.offsetParent) {
+          needsRefitRef.current = false;
+          fitRef.current?.fit();
+        }
+      });
     });
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      cancelAnimationFrame(raf2);
+    };
   }, [visible]);
 
   return <div ref={containerRef} className="h-full w-full" />;
