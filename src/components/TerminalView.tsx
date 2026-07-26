@@ -257,8 +257,24 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       ptyResize(sessionId, cols, rows).catch(() => {});
     });
 
+    // Refit coalesced to one per frame: a grid relayout (hiding a tile flips
+    // the container between the 3+ grid and the two-up split, and a scrollbar
+    // appearing or vanishing shifts widths again) can fire several resizes in
+    // a burst, and ConPTY handles one clean resize far better than a storm of
+    // them (each grow risks the prompt repainting mid-screen until the next
+    // keystroke). If the viewport was pinned to the bottom before the refit,
+    // re-pin it after, so the prompt stays where the resize leaves the cursor;
+    // a viewport deliberately scrolled up into history is left alone.
+    let refitRaf = 0;
     const observer = new ResizeObserver(() => {
-      if (containerRef.current?.offsetParent) fit.fit();
+      cancelAnimationFrame(refitRaf);
+      refitRaf = requestAnimationFrame(() => {
+        if (!containerRef.current?.offsetParent) return;
+        const buf = term.buffer.active;
+        const pinned = buf.viewportY >= buf.baseY;
+        fit.fit();
+        if (pinned) term.scrollToBottom();
+      });
     });
     if (containerRef.current) observer.observe(containerRef.current);
 
@@ -314,6 +330,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       dataSub.dispose();
       resultsSub.dispose();
       resizeSub.dispose();
+      cancelAnimationFrame(refitRaf);
       observer.disconnect();
       contextMenuEl?.removeEventListener("contextmenu", onContextMenu);
       contextMenuEl?.removeEventListener("mouseup", onMouseUp);
@@ -523,12 +540,19 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     return () => cancelAnimationFrame(raf);
   }, [resolvedTheme]);
 
-  // Refit + focus when this pane becomes visible.
+  // Refit + focus when this pane becomes visible. Same bottom-pin rule as the
+  // ResizeObserver refit: a pane re-shown after being hidden from the grid was
+  // resized while display:none (where fit is a no-op), so snap the viewport
+  // back to the prompt unless it was scrolled up into history.
   useEffect(() => {
     if (!visible) return;
     const raf = requestAnimationFrame(() => {
+      const term = termRef.current;
+      const buf = term?.buffer.active;
+      const pinned = buf ? buf.viewportY >= buf.baseY : false;
       fitRef.current?.fit();
-      if (phaseRef.current.kind === "open") termRef.current?.focus();
+      if (pinned) term?.scrollToBottom();
+      if (phaseRef.current.kind === "open") term?.focus();
     });
     return () => cancelAnimationFrame(raf);
   }, [visible]);
