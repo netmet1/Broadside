@@ -568,7 +568,8 @@ const SECTIONS: HelpSection[] = [
             <li>
               Profiles honour the <Nav>How many</Nav> count, so you can open
               several copies of the same profile at once, and a large batch asks
-              first.
+              first. A profile with a startup command asks before opening more
+              than one copy, because every copy runs that command again.
             </li>
             <li>
               Profiles are saved on this PC only and never store passwords or
