@@ -455,9 +455,42 @@ impl<E: SkillEvents> Engine<E> {
         // is actually spinning, and so a long linear skill is never mistaken
         // for a runaway just for having a lot of steps. It bounds the run just
         // as firmly: nothing may run more than `limit` times.
-        let limit = cfg.max_step_repeats();
+        // `None` when the author has removed the cap. Then nothing in here ends
+        // a looping skill, which is exactly what they asked for, and why the
+        // control check below is not optional.
+        let limit = cfg.step_repeat_limit();
         let mut runs: HashMap<&str, u32> = HashMap::new();
         loop {
+            // Look at the control channel between every pair of steps.
+            //
+            // Steps normally notice Stop host and the emergency stop while they
+            // wait, which is fine as long as they wait. An uncapped skill need
+            // not: a `log` step branching back to itself never touches the PTY,
+            // so with no cap to end it, that loop would spin with nothing ever
+            // reading the operator's instruction, and the one control that is
+            // supposed to always work would not. Resume and Skip are dropped
+            // here rather than acted on: between steps they refer to a step that
+            // has already finished.
+            match self.ctl.try_recv() {
+                Ok(Ctl::Abort) | Err(mpsc::error::TryRecvError::Disconnected) => {
+                    return HostOutcome {
+                        ok: false,
+                        message: "stopped by the operator".into(),
+                        disposition: Disposition::Aborted,
+                        is_root: None,
+                    }
+                }
+                Ok(Ctl::Detach) => {
+                    return HostOutcome {
+                        ok: true,
+                        message: "handed off to a terminal tab".into(),
+                        disposition: Disposition::Detached,
+                        is_root: None,
+                    }
+                }
+                Ok(Ctl::Resume { .. }) | Ok(Ctl::SkipStep) => {}
+                Err(mpsc::error::TryRecvError::Empty) => {}
+            }
             if current == STOP {
                 return HostOutcome::finished(true, "finished");
             }
@@ -465,11 +498,15 @@ impl<E: SkillEvents> Engine<E> {
                 return HostOutcome::finished(false, format!("step not found: {current}"));
             };
             let count = runs.entry(step.id()).or_insert(0);
-            *count += 1;
-            if *count > limit {
+            // Saturating, because with no cap this counts for as long as the
+            // operator lets the skill run, and an overflow panic would take the
+            // host's task down rather than reporting anything.
+            *count = count.saturating_add(1);
+            if limit.is_some_and(|limit| *count > limit) {
                 // A branch cycle that never converges. Save-time validation
                 // allows cycles (polling until ready is legitimate); this is
                 // what stops a runaway.
+                let limit = limit.expect("checked just above");
                 return HostOutcome::finished(
                     false,
                     format!(

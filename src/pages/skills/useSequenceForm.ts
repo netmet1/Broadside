@@ -76,6 +76,11 @@ export function useSequenceForm(editing: SkillDraft | null) {
   const [maxStepRepeats, setMaxStepRepeats] = useState(
     initial?.maxStepRepeats ?? DEFAULT_MAX_STEP_REPEATS,
   );
+  /** The cap removed altogether. Kept alongside the number rather than encoded
+   * in it, so turning it off restores whatever cap the author had set. */
+  const [unlimitedStepRepeats, setUnlimitedStepRepeats] = useState(
+    initial?.unlimitedStepRepeats ?? false,
+  );
 
   const addStep = useCallback(() => {
     setSteps((prev) => [...prev, blankStep(nextStepId(prev))]);
@@ -293,6 +298,7 @@ export function useSequenceForm(editing: SkillDraft | null) {
         steps,
         allowTransfer,
         maxStepRepeats,
+        unlimitedStepRepeats,
       }),
     }),
     [
@@ -303,6 +309,7 @@ export function useSequenceForm(editing: SkillDraft | null) {
       steps,
       allowTransfer,
       maxStepRepeats,
+      unlimitedStepRepeats,
     ],
   );
 
@@ -328,6 +335,8 @@ export function useSequenceForm(editing: SkillDraft | null) {
     setAllowTransfer,
     maxStepRepeats,
     setMaxStepRepeats,
+    unlimitedStepRepeats,
+    setUnlimitedStepRepeats,
     problems,
     warnings,
     toInput,

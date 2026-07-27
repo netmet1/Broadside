@@ -210,8 +210,11 @@ export function SequenceBuilder({
             the cap is the author's to set: "check every 10 seconds up to 30
             times" is a real intent, and so is "if this has run twice something
             is wrong". */}
+        <div className="space-y-2">
         <label
-          className="flex flex-wrap items-center gap-1.5 text-sm"
+          className={`flex flex-wrap items-center gap-1.5 text-sm ${
+            f.unlimitedStepRepeats ? "opacity-50" : ""
+          }`}
           {...hint(
             "How many times any one step may run before the host stops with a 'branches loop without finishing' message. Counted per step, so this is the retry budget for a step that loops back on itself, not a limit on how long the skill can be.",
           )}
@@ -244,12 +247,59 @@ export function SequenceBuilder({
               setRepeatsText(String(n));
               f.setMaxStepRepeats(n);
             }}
+            disabled={f.unlimitedStepRepeats}
             className="h-7 w-20 text-xs"
           />
           <span className="text-muted-foreground">
             times ({MAX_STEP_REPEATS_LIMIT} max)
           </span>
         </label>
+
+        {/* Taking the cap off removes the engine's only guarantee that a
+            looping skill ever ends, so it is opt-in, off by default, and says
+            plainly what it costs. Not refused: polling something that genuinely
+            has no bound is a real job, and an operator who knows that is better
+            served by a documented switch than by a limit they work around with
+            ninety-nine copies of a step. */}
+        <label
+          className="flex items-start gap-2 text-sm"
+          {...hint(
+            "Remove the repeat cap entirely. A skill that loops then runs until you stop the host yourself. Dangerous: only use it if you truly know what you are doing.",
+          )}
+        >
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-destructive"
+            checked={f.unlimitedStepRepeats}
+            onChange={(e) => f.setUnlimitedStepRepeats(e.target.checked)}
+          />
+          <span>
+            Let steps repeat without limit{" "}
+            <span className="text-muted-foreground">(no cap)</span>
+          </span>
+        </label>
+        {f.unlimitedStepRepeats && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/60 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <TriangleAlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              <span className="font-semibold">
+                Dangerous. Use this only if you truly know what you are doing.
+              </span>{" "}
+              With no cap, a skill whose branches loop will never finish on its
+              own: it keeps running steps against every host it is on until{" "}
+              <span className="font-medium">you</span> stop it. A loop that
+              writes files, starts processes or installs things can fill a disk
+              or exhaust memory on the far side, and every host it touched holds
+              an open shell for as long as it runs.{" "}
+              <span className="font-medium">Stop host</span> and the{" "}
+              <span className="font-medium">emergency stop</span> still work, and
+              they are the only things that will end it. Leave this off unless
+              the skill is genuinely waiting for something with no bound, and
+              watch it while it runs.
+            </span>
+          </div>
+        )}
+        </div>
 
         {/* Inputs the run will ask for. Collapsed by default (like the notes) so
             the pinned header stays short; adding an input opens it. */}

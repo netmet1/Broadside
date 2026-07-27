@@ -152,6 +152,27 @@ export function ParamForm({
         </div>
       </div>
 
+      {/* Said again here, not just in the editor: the person running a skill is
+          often not the person who built it, and "this one cannot stop itself"
+          is the kind of thing you want to know before you press the button, not
+          while you are hunting for the Stop host control. */}
+      {config.unlimitedStepRepeats === true && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/60 bg-destructive/10 p-3 text-xs text-destructive">
+          <TriangleAlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="min-w-0">
+            <p className="font-semibold">
+              This skill has no repeat cap, so it can run forever
+            </p>
+            <p className="opacity-90">
+              If any of its branches loop, it will keep going on every host until
+              you stop it: <span className="font-medium">Stop host</span> on a
+              pane, or the <span className="font-medium">emergency stop</span>{" "}
+              for all of them. Do not start it and walk away.
+            </p>
+          </div>
+        </div>
+      )}
+
       {preflight && preflight.hostsMissingSudo.length > 0 && (
         <div className="flex items-start gap-2 rounded-md border border-amber-300/70 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
           <TriangleAlertIcon className="mt-0.5 h-4 w-4 shrink-0" />

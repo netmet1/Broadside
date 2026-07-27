@@ -998,7 +998,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped",
     body: (
       <>
         <Lead>
@@ -1152,6 +1152,21 @@ const SECTIONS: HelpSection[] = [
             message naming the step. It counts per step, not per run, so it is
             the retry budget for the step that loops rather than a limit on how
             long a skill may be. The default is 100, which is also the ceiling.
+          </p>
+          <p>
+            <Nav>Let steps repeat without limit</Nav> removes the cap
+            altogether, and it is <span className="font-semibold">
+            dangerous: use it only if you truly know what you are doing</span>.
+            With no cap, a skill whose branches loop never finishes on its own.
+            It keeps running steps against every host it is on until you stop
+            it, and a loop that writes files, starts processes or installs
+            things can fill a disk or exhaust memory on the far side while every
+            host it touched holds an open shell. <Nav>Stop host</Nav> and the{" "}
+            <Nav>Emergency stop</Nav> still work and are the only things that
+            will end it. It is off by default, it is a switch of its own rather
+            than a number you can mistype into, the flow map's loop warnings say
+            so, and the run confirmation says so again before you dispatch. The
+            legitimate use is polling something with no bound, watched.
           </p>
           <H3>Running one</H3>
           <Bullets>

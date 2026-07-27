@@ -65,7 +65,10 @@ export function SkillOverview({
     () => buildFlowGraph(config.steps, config.startStepId),
     [config.steps, config.startStepId],
   );
-  const warnings = useMemo(() => flowWarnings(graph), [graph]);
+  const warnings = useMemo(
+    () => flowWarnings(graph, config.unlimitedStepRepeats === true),
+    [graph, config.unlimitedStepRepeats],
+  );
   const selected = config.steps.find((s) => s.id === selectedId) ?? null;
   const selectedIndex = config.steps.findIndex((s) => s.id === selectedId);
 
