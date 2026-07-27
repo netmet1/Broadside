@@ -363,8 +363,37 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // view. Skips the first render (nonce 0) so mounting never clears a pane.
   useEffect(() => {
     if (resetNonce === 0) return;
-    termRef.current?.reset();
-    if (containerRef.current?.offsetParent) fitRef.current?.fit();
+    const clear = () => {
+      termRef.current?.reset();
+      if (containerRef.current?.offsetParent) fitRef.current?.fit();
+    };
+    clear();
+    // Sweep up the echoed ^L.
+    //
+    // The reset is followed by a form feed asking the shell to redraw its
+    // prompt (see TerminalsPage). When a command is running in the foreground,
+    // the shell is not reading its keyboard: the tty echoes the keystroke as
+    // the two characters `^L` and queues the byte for whenever the shell gets
+    // round to it. So the pane cleared and then grew a `^L` and nothing else,
+    // which looks like the button half-worked.
+    //
+    // Nothing can stop that echo from our end, so it is cleaned up after the
+    // fact, and only in the case where it is the *entire* screen: a redrawn
+    // prompt, or a command still printing, leaves other text behind and is left
+    // well alone. One late frame is the trade for the check being this
+    // conservative.
+    const sweep = setTimeout(() => {
+      const term = termRef.current;
+      if (!term) return;
+      const buffer = term.buffer.active;
+      const lines = Math.min(buffer.length, term.rows);
+      let text = "";
+      for (let i = 0; i < lines && text.length < 8; i++) {
+        text += buffer.getLine(i)?.translateToString(true) ?? "";
+      }
+      if (text.trim() === "^L") clear();
+    }, 350);
+    return () => clearTimeout(sweep);
   }, [resetNonce]);
 
   useImperativeHandle(searchHandleRef, () => ({

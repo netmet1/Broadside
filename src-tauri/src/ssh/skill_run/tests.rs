@@ -568,6 +568,18 @@ async fn a_transient_match_that_repaints_away_does_not_fire() {
 
 // ------------------------------------------------------------------- log steps
 
+/// Every progress line as `phase:detail`, which is what the run log shows.
+fn details(host: &Host) -> Vec<String> {
+    host.events
+        .0
+        .lock()
+        .unwrap()
+        .progress
+        .iter()
+        .map(|p| format!("{}:{}", p.phase, p.detail))
+        .collect()
+}
+
 fn log_step(id: &str, level: LogLevel, message: &str, next: &str) -> SeqStep {
     SeqStep::Log {
         id: id.into(),
@@ -590,15 +602,7 @@ async fn a_log_step_posts_its_message_and_touches_nothing() {
     assert!(outcome.ok, "{outcome:?}");
     // The whole point: nothing was typed at the host.
     assert_eq!(host.typed(), "");
-    let details: Vec<String> = host
-        .events
-        .0
-        .lock()
-        .unwrap()
-        .progress
-        .iter()
-        .map(|p| format!("{}:{}", p.phase, p.detail))
-        .collect();
+    let details = details(&host);
     assert!(
         details
             .iter()
@@ -659,19 +663,41 @@ async fn an_error_log_step_that_goes_somewhere_is_not_the_end_of_the_host() {
 
 #[tokio::test(start_paused = true)]
 async fn a_failing_log_step_says_it_once_not_twice() {
-    // The failure line comes from run_sequence; emitting it in the step as well
-    // would double every refusal in the run log.
+    // A refusal is one line. The step announcement carries the message itself,
+    // so the failure is not also posted separately, and the generic "step log:
+    // no" that used to precede it (untinted, saying the same thing) is gone.
     let (mut engine, host) = harness();
     let c = cfg(vec![log_step("a", LogLevel::Error, "no", STOP)]);
     engine.run_sequence(&c).await;
+    let details = details(&host);
     assert_eq!(
-        host.events
-            .phases()
-            .iter()
-            .filter(|p| p.as_str() == "failed")
-            .count(),
-        1
+        details.iter().filter(|d| d.as_str() == "failed:no").count(),
+        1,
+        "{details:?}"
     );
+    assert!(
+        !details.iter().any(|d| d.starts_with("step:")),
+        "the log step announced itself twice: {details:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_log_steps_line_still_says_which_step_it_is() {
+    // The one line a log step posts is also its step announcement, so it has to
+    // carry the step metadata the run panel reads: without it the panel would
+    // sit on the previous step for the whole of a skill made of log steps.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![log_step("a", LogLevel::Info, "hello", STOP)]);
+    engine.run_sequence(&c).await;
+    let announced = host
+        .events
+        .0
+        .lock()
+        .unwrap()
+        .progress
+        .iter()
+        .any(|p| p.step_kind.as_deref() == Some("log") && p.step_id.as_deref() == Some("a"));
+    assert!(announced, "the log step never announced itself");
 }
 
 #[tokio::test(start_paused = true)]
@@ -695,11 +721,13 @@ async fn an_uncapped_skill_runs_far_past_the_cap_and_still_stops_when_told() {
     });
     let outcome = engine.run_sequence(&c).await;
     assert_eq!(outcome.disposition, Disposition::Aborted, "{outcome:?}");
+    // A log step announces itself under its own level, so `info` here is one
+    // line per step run.
     let steps = host
         .events
         .phases()
         .iter()
-        .filter(|p| p.as_str() == "step")
+        .filter(|p| p.as_str() == "info")
         .count();
     assert!(
         steps > DEFAULT_MAX_STEP_REPEATS as usize * 2,
