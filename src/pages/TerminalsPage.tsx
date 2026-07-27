@@ -140,6 +140,22 @@ type Props = {
   onOpenLocalShell: (shell: LocalShell, opts?: LocalShellOpenOpts) => void;
 };
 
+/** Whether this session's shell treats a form feed (Ctrl-L) as "redraw the
+ * prompt", which is what Reset display leans on to bring the prompt back
+ * without running anything.
+ *
+ * True for readline/zle shells (SSH hosts, WSL, Git Bash and friends) and for
+ * PowerShell, where PSReadLine binds Ctrl-L to ClearScreen. False for Command
+ * Prompt, whose console line editor has no binding for it and would leave the
+ * character sitting on the command line. Unknown kinds are treated as Command
+ * Prompt: a stray glyph on someone's prompt is a worse failure than a pane that
+ * needs one press of Enter. */
+function redrawsOnFormFeed(session: TermSession | undefined): boolean {
+  if (!session) return false;
+  if (session.type === "ssh") return true;
+  return ["wsl", "posix", "powershell", "pwsh"].includes(session.shell.kind);
+}
+
 export function TerminalsPage({
   sessions,
   activeId,
@@ -519,23 +535,33 @@ export function TerminalsPage({
   const [resetNonces, setResetNonces] = useState<Map<string, number>>(
     new Map(),
   );
-  const resetDisplay = useCallback((id: string) => {
-    setResetNonces((prev) => new Map(prev).set(id, (prev.get(id) ?? 0) + 1));
-    // Clearing our own view leaves nothing on screen until the shell prints
-    // something, so the pane sits blank and you have to press Enter to get a
-    // prompt back. Ctrl-L is the fix: a shell's line editor redraws the prompt
-    // (and anything half-typed on it) and nothing is executed.
-    //
-    // Deliberately NOT Ctrl-C, which is the obvious thing to reach for and the
-    // wrong one: it would turn a display-only button into one that can kill a
-    // running upgrade. This one cannot. A program that has the terminal treats
-    // ^L as "redraw" or ignores it; one that isn't reading the tty at all (the
-    // case that put a stuck prompt on screen in the first place) leaves the
-    // byte queued for the shell, which redraws its prompt when it gets it.
-    ptyWrite(id, "\x0c").catch(() => {
-      // A closed session has nothing to redraw; the local clear still stands.
-    });
-  }, []);
+  const resetDisplay = useCallback(
+    (id: string) => {
+      setResetNonces((prev) => new Map(prev).set(id, (prev.get(id) ?? 0) + 1));
+      // Clearing our own view leaves nothing on screen until the shell prints
+      // something, so the pane sits blank and you have to press Enter to get a
+      // prompt back. Ctrl-L is the fix: a shell's line editor redraws the
+      // prompt (and anything half-typed on it) and nothing is executed.
+      //
+      // Deliberately NOT Ctrl-C, which is the obvious thing to reach for and
+      // the wrong one: it would turn a display-only button into one that can
+      // kill a running upgrade. This one cannot. A program that has the
+      // terminal treats ^L as "redraw" or ignores it; one that isn't reading
+      // the tty at all (the case that put a stuck prompt on screen in the first
+      // place) leaves the byte queued for the shell, which redraws its prompt
+      // when it gets it.
+      //
+      // Except on Command Prompt, whose console line editor has no such
+      // binding: it takes the form feed as a literal character and leaves a
+      // stray glyph sitting on the command line. There the clear stands on its
+      // own, which is what this button did everywhere until now.
+      if (!redrawsOnFormFeed(sessions.find((s) => s.id === id))) return;
+      ptyWrite(id, "\x0c").catch(() => {
+        // A closed session has nothing to redraw; the local clear still stands.
+      });
+    },
+    [sessions],
+  );
 
   // PTY Find (D-015 — Find only; filtering live interactive output is
   // incoherent).

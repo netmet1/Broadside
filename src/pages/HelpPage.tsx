@@ -752,7 +752,9 @@ const SECTIONS: HelpSection[] = [
             it deliberately does not send <code>Ctrl+C</code>, so a long upgrade
             working away in that tab is safe from it. If a program has genuinely
             wedged the terminal, <em>you</em> still have to decide whether to
-            interrupt it.
+            interrupt it. A <Nav>Command Prompt</Nav> tab is cleared without the
+            redraw, as <code>cmd</code> has no such key: press <Nav>Enter</Nav>{" "}
+            there for a fresh prompt.
           </p>
           <H3>Shortcut commands</H3>
           <Bullets>
