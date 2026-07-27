@@ -305,6 +305,16 @@ pub struct SequenceConfig {
     /// default covers.
     #[serde(default)]
     pub max_step_repeats: Option<u32>,
+    /// Remove the repeat cap entirely, so a looping branch runs until something
+    /// outside the skill stops it.
+    ///
+    /// A separate flag rather than a sentinel value (a `max_step_repeats` of 0,
+    /// say) on purpose: this is the one setting that removes the engine's only
+    /// guarantee of termination, so it has to be something an author can only
+    /// reach by asking for it. A number that happens to be out of range is a
+    /// typo, and a typo must never turn a skill into a permanent one.
+    #[serde(default)]
+    pub unlimited_step_repeats: bool,
 }
 
 impl SequenceConfig {
@@ -319,6 +329,17 @@ impl SequenceConfig {
         self.max_step_repeats
             .unwrap_or(DEFAULT_MAX_STEP_REPEATS)
             .clamp(1, MAX_STEP_REPEATS_LIMIT)
+    }
+
+    /// The limit the engine enforces, or `None` when the author has explicitly
+    /// removed it. `None` means a looping skill never ends on its own: only the
+    /// operator (Stop host, the emergency stop, closing the shell) ends it.
+    pub fn step_repeat_limit(&self) -> Option<u32> {
+        if self.unlimited_step_repeats {
+            None
+        } else {
+            Some(self.max_step_repeats())
+        }
     }
 
     /// Every command/keystroke this sequence could send, for the pre-run guard
@@ -615,6 +636,7 @@ pub fn substituted_config(
         steps,
         allow_transfer: cfg.allow_transfer,
         max_step_repeats: cfg.max_step_repeats,
+        unlimited_step_repeats: cfg.unlimited_step_repeats,
     }
 }
 
@@ -721,6 +743,7 @@ pub fn resolve_next(cfg: &SequenceConfig) -> SequenceConfig {
         steps,
         allow_transfer: cfg.allow_transfer,
         max_step_repeats: cfg.max_step_repeats,
+        unlimited_step_repeats: cfg.unlimited_step_repeats,
     }
 }
 
@@ -899,6 +922,7 @@ mod tests {
             steps,
             allow_transfer: false,
             max_step_repeats: None,
+            unlimited_step_repeats: false,
         }
     }
 
@@ -1209,6 +1233,7 @@ mod tests {
             ],
             allow_transfer: false,
             max_step_repeats: None,
+            unlimited_step_repeats: false,
         };
         let out = substituted_config(&c, &vals(&[("v", "hi")]));
         match &out.steps[0] {

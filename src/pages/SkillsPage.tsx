@@ -171,6 +171,11 @@ export function SkillsPage({
   const runAllowsTransfer = runningSkill
     ? parseSequence(runningSkill.config_json).allowTransfer
     : false;
+  /** The live run's skill has no repeat cap, so it cannot end itself if it
+   * loops. The panel says so, because that is where Stop host is. */
+  const runUncapped = runningSkill
+    ? parseSequence(runningSkill.config_json).unlimitedStepRepeats === true
+    : false;
   /** The running skill's steps in list order, so each pane can say which step
    * of how many it is on. Read from the skill the run started with, not from
    * the rail: editing the skill mid-run must not renumber a live run's panes. */
@@ -460,6 +465,7 @@ export function SkillsPage({
               active={run.active}
               visible={view.kind === "run"}
               allowTransfer={runAllowsTransfer}
+              uncapped={runUncapped}
               setTakenOver={run.setTakenOver}
               finishHost={run.finishHost}
               onSendToTerminal={requestHandoff}

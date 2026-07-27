@@ -38,6 +38,7 @@ export function RunPanel({
   active,
   visible,
   allowTransfer,
+  uncapped,
   setTakenOver,
   finishHost,
   onSendToTerminal,
@@ -60,6 +61,8 @@ export function RunPanel({
   visible: boolean;
   /** The running skill allows handing a host's shell to a terminal tab. */
   allowTransfer: boolean;
+  /** The running skill has no repeat cap: if it loops, nothing here ends it. */
+  uncapped: boolean;
   setTakenOver: (hostId: number, takenOver: boolean) => void;
   /** Settle a host the backend has already forgotten about. */
   finishHost: (hostId: number, message: string) => void;
@@ -93,6 +96,15 @@ export function RunPanel({
           {skillName} is driving a live shell on{" "}
           {hosts.length === 1 ? "1 host" : `${hosts.length} hosts`}. A step whose
           prompt never arrives pauses and waits for you.
+          {uncapped && (
+            <>
+              {" "}
+              <span className="font-semibold">
+                This skill has no repeat cap: if it loops, only you can end it
+              </span>{" "}
+              (Stop host on a pane, or the emergency stop for all of them).
+            </>
+          )}
         </span>
         {paused.length > 0 && (
           <span className="ml-auto shrink-0 rounded-full bg-amber-500/20 px-2 py-0.5 font-semibold">

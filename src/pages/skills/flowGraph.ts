@@ -268,7 +268,13 @@ export function buildFlowGraph(
 /** Reader-friendly warnings about the graph, for the overview. Never blocking:
  * a loop is a legitimate pattern (poll until ready, with an exit branch) and
  * the engine caps runaway execution anyway. */
-export function flowWarnings(graph: FlowGraph): string[] {
+export function flowWarnings(
+  graph: FlowGraph,
+  /** The skill has had its repeat cap removed, so a loop is not stopped by
+   * anything the engine does. The warnings have to say that instead of
+   * promising a cap that is no longer there. */
+  uncapped = false,
+): string[] {
   const out: string[] = [];
   for (const id of graph.unreachable) {
     out.push(
@@ -282,10 +288,13 @@ export function flowWarnings(graph: FlowGraph): string[] {
     const key = members.join(",");
     if (seen.has(key)) continue;
     seen.add(key);
+    const ending = uncapped
+      ? "this skill has no repeat cap, so a run that reaches it never ends on its own: it keeps going until you stop the host"
+      : "a run that reaches it stops at the skill's repeat cap and fails the host";
     out.push(
       members.length === 1
-        ? `Step ${members[0]} branches back to itself. Give it a way out, or a run that reaches it stops at the skill's repeat cap and fails the host.`
-        : `Steps ${members.join(" and ")} loop back on each other (${cycle.join(" to ")}). Unless a branch leaves the loop, a run that enters it stops at the skill's repeat cap and fails the host.`,
+        ? `Step ${members[0]} branches back to itself. Give it a way out, or ${ending}.`
+        : `Steps ${members.join(" and ")} loop back on each other (${cycle.join(" to ")}). Unless a branch leaves the loop, ${ending}.`,
     );
   }
   return out;

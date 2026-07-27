@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use super::config::{
     LogLevel, MatchBranch, SeqStep, SequenceConfig, SkillParam, TimeoutAction,
-    DEFAULT_MAX_STEP_REPEATS, STOP,
+    DEFAULT_MAX_STEP_REPEATS, MAX_STEP_REPEATS_LIMIT, STOP,
 };
 use super::state::Ctl;
 use super::*;
@@ -201,6 +201,7 @@ fn cfg(steps: Vec<SeqStep>) -> SequenceConfig {
         steps,
         allow_transfer: false,
         max_step_repeats: None,
+        unlimited_step_repeats: false,
     }
 }
 
@@ -673,6 +674,63 @@ async fn a_failing_log_step_says_it_once_not_twice() {
     );
 }
 
+#[tokio::test(start_paused = true)]
+async fn an_uncapped_skill_runs_far_past_the_cap_and_still_stops_when_told() {
+    // Two log steps pointing at each other: no PTY traffic at all, so nothing
+    // in the loop waits on the host. With the cap removed this is the worst
+    // case for termination, and the run must still (a) keep going well past the
+    // cap and (b) stop the moment the operator says so.
+    let (mut engine, host) = harness();
+    let mut c = cfg(vec![
+        log_step("a", LogLevel::Info, "round trip", "b"),
+        log_step("b", LogLevel::Info, "and back", "a"),
+    ]);
+    c.unlimited_step_repeats = true;
+    let ctl = host.ctl.clone();
+    tokio::spawn(async move {
+        // Simulated time: the engine paces itself at STEP_GAP per step, so this
+        // lands after a few hundred of them.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        let _ = ctl.send(Ctl::Abort);
+    });
+    let outcome = engine.run_sequence(&c).await;
+    assert_eq!(outcome.disposition, Disposition::Aborted, "{outcome:?}");
+    let steps = host
+        .events
+        .phases()
+        .iter()
+        .filter(|p| p.as_str() == "step")
+        .count();
+    assert!(
+        steps > DEFAULT_MAX_STEP_REPEATS as usize * 2,
+        "an uncapped skill stopped early: {steps} steps"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_uncapped_skill_stops_when_its_run_is_cancelled() {
+    // The emergency stop drops the control sender rather than sending anything,
+    // so a disconnected channel has to read as "stop" here too.
+    let (mut engine, host) = harness();
+    let mut c = cfg(vec![log_step("a", LogLevel::Info, "forever", "a")]);
+    c.unlimited_step_repeats = true;
+    drop(host.ctl);
+    let outcome = engine.run_sequence(&c).await;
+    assert_eq!(outcome.disposition, Disposition::Aborted, "{outcome:?}");
+}
+
+#[test]
+fn removing_the_cap_is_explicit_not_a_number_out_of_range() {
+    // A bad number is a typo and stays capped; only the flag removes the limit.
+    let mut c = cfg(vec![run_step("a", "true", STOP, STOP)]);
+    c.max_step_repeats = Some(0);
+    assert_eq!(c.step_repeat_limit(), Some(1));
+    c.max_step_repeats = Some(9999);
+    assert_eq!(c.step_repeat_limit(), Some(MAX_STEP_REPEATS_LIMIT));
+    c.unlimited_step_repeats = true;
+    assert_eq!(c.step_repeat_limit(), None);
+}
+
 // -------------------------------------------------------- timeout and pause
 
 #[tokio::test(start_paused = true)]
@@ -1097,6 +1155,7 @@ async fn a_missing_branch_target_fails_the_host() {
         steps: vec![run_step("a", "true", STOP, STOP)],
         allow_transfer: false,
         max_step_repeats: None,
+        unlimited_step_repeats: false,
     };
     let outcome = engine.run_sequence(&c).await;
     assert!(!outcome.ok);
@@ -1205,6 +1264,7 @@ fn prepare_substitutes_validates_and_rejects_a_broken_graph() {
         steps: vec![run_step("a", "git clone {{repo}}", STOP, STOP)],
         allow_transfer: false,
         max_step_repeats: None,
+        unlimited_step_repeats: false,
     };
     let values: std::collections::HashMap<String, String> =
         [("repo".to_string(), "my repo".to_string())].into();

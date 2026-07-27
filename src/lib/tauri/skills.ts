@@ -127,6 +127,10 @@ export type SequenceConfig = {
    * a branch that loops without converging terminates. Undefined in skills
    * saved before this was configurable; the backend applies the default. */
   maxStepRepeats?: number;
+  /** Remove the cap entirely: a looping branch then runs until the operator
+   * stops the host. A separate flag rather than a sentinel number, so it can
+   * only ever be reached by asking for it. */
+  unlimitedStepRepeats?: boolean;
 };
 
 /** Default and ceiling for `maxStepRepeats`, mirroring the backend's
@@ -150,6 +154,7 @@ export function parseSequence(configJson: string): SequenceConfig {
       steps: parsed.steps ?? [],
       allowTransfer: parsed.allowTransfer ?? false,
       maxStepRepeats: parsed.maxStepRepeats,
+      unlimitedStepRepeats: parsed.unlimitedStepRepeats === true,
     };
   } catch {
     return emptySequence();
