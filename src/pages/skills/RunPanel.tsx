@@ -7,6 +7,7 @@ import {
   LockIcon,
   PlayIcon,
   RotateCcwIcon,
+  RotateCwIcon,
   SkipForwardIcon,
   SquareIcon,
   TerminalIcon,
@@ -41,6 +42,9 @@ export function RunPanel({
   finishHost,
   onSendToTerminal,
   onDone,
+  onRerun,
+  logOpen,
+  onLogOpenChange,
 }: {
   runId: string;
   hosts: HostRunState[];
@@ -62,6 +66,12 @@ export function RunPanel({
   /** Send one host's shell to a terminal tab (confirms first if it is root). */
   onSendToTerminal: (pane: HostRunState["pane"], isRoot: boolean) => void;
   onDone: () => void;
+  /** Close this run and go back to the run confirmation for the same skill. */
+  onRerun: () => void;
+  /** Whether a pane's step log starts open, remembered across runs so a rerun
+   * you opened the log for keeps it open. */
+  logOpen: boolean;
+  onLogOpenChange: (open: boolean) => void;
 }) {
   const hint = useHint();
   // Which pane fills the panel, or null for the grid. A run over eight hosts is
@@ -103,15 +113,27 @@ export function RunPanel({
           {hosts.filter((h) => h.status === "running").length} running
         </span>
         {!active && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={onDone}
-            {...hint("Clear this run and pick another skill")}
-          >
-            Close run
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRerun}
+              {...hint(
+                `Run ${skillName} again. Closes this run first, then takes you back to the confirmation so you can check the hosts and inputs.`,
+              )}
+            >
+              <RotateCwIcon className="mr-1 h-3 w-3" />
+              Rerun
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onDone}
+              {...hint("Clear this run and pick another skill")}
+            >
+              Close run
+            </Button>
+          </div>
         )}
       </div>
 
@@ -133,6 +155,8 @@ export function RunPanel({
             fill={single}
             visible={visible}
             allowTransfer={allowTransfer}
+            logOpen={logOpen}
+            onLogOpenChange={onLogOpenChange}
             onFocus={() => setFocused(h.pane.hostId)}
             onFinished={(m) => finishHost(h.pane.hostId, m)}
             setTakenOver={setTakenOver}
@@ -151,6 +175,8 @@ function HostPane({
   fill,
   visible,
   allowTransfer,
+  logOpen: logOpenDefault,
+  onLogOpenChange,
   onFocus,
   onFinished,
   setTakenOver,
@@ -167,6 +193,10 @@ function HostPane({
   visible: boolean;
   /** The running skill allows handing this shell to a terminal tab. */
   allowTransfer: boolean;
+  /** Whether this pane opens with its log showing. Panes are independent once
+   * the run is going; this is only the state a new pane starts in. */
+  logOpen: boolean;
+  onLogOpenChange: (open: boolean) => void;
   onFocus: () => void;
   /** Settle this pane when the backend says its run is already over. */
   onFinished: (message: string) => void;
@@ -179,8 +209,14 @@ function HostPane({
   // Bumped by the Reset display button to re-init a garbled xterm view.
   const [resetNonce, setResetNonce] = useState(0);
   // The narration, off by default: the terminal is the point of this pane, and
-  // the log is what you open when you want to know how it got here.
-  const [logOpen, setLogOpen] = useState(false);
+  // the log is what you open when you want to know how it got here. Seeded from
+  // the panel's remembered setting, so a rerun keeps the log you had open, then
+  // per-pane from there.
+  const [logOpen, setLogOpen] = useState(logOpenDefault);
+  const toggleLog = () => {
+    setLogOpen(!logOpen);
+    onLogOpenChange(!logOpen);
+  };
   const stepPos = host.stepId ? stepIds.indexOf(host.stepId) + 1 : 0;
 
   const control = async (fn: () => Promise<void>, what: string) => {
@@ -279,7 +315,7 @@ function HostPane({
         )}
         <button
           type="button"
-          onClick={() => setLogOpen((o) => !o)}
+          onClick={toggleLog}
           aria-expanded={logOpen}
           className={`flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-accent/50 ${
             logOpen ? "text-foreground" : "text-muted-foreground"
@@ -437,6 +473,9 @@ const PHASE_CLASS: Record<RunLine["phase"], string> = {
   sent: "text-sky-600 dark:text-sky-400",
   timeout: "text-amber-600 dark:text-amber-400",
   info: "text-muted-foreground",
+  // A skill's own warning, from a log step. Same amber as a timeout: both mean
+  // "look at this, it did not stop the run".
+  warn: "text-amber-600 dark:text-amber-400",
   failed: "text-red-600 dark:text-red-400",
 };
 

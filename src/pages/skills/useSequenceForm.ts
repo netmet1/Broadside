@@ -54,9 +54,22 @@ export function useSequenceForm(editing: SkillDraft | null) {
   const [steps, setSteps] = useState<SeqStep[]>(
     initial?.steps.length ? initial.steps : [blankStep("s1")],
   );
-  const [startStepId, setStartStepId] = useState(
+  const [chosenStartStepId, setStartStepId] = useState(
     initial?.startStepId || "s1",
   );
+  /** The start step, always naming a step that exists.
+   *
+   * Derived rather than stored, because the stored choice can be orphaned
+   * behind your back: delete every step and it points at nothing, and adding a
+   * step back does not adopt it. The editor then showed "Start at s1" (a select
+   * whose value matches no option renders as its first one) while insisting you
+   * had not picked a start step, and the only way out was to add a second step
+   * and toggle the dropdown to it and back. Falling back to the first step is
+   * also just what the operator means: the start of a skill with one step is
+   * that step. */
+  const startStepId = steps.some((s) => s.id === chosenStartStepId)
+    ? chosenStartStepId
+    : (steps[0]?.id ?? "");
   const [allowTransfer, setAllowTransfer] = useState(
     initial?.allowTransfer ?? false,
   );
@@ -124,11 +137,12 @@ export function useSequenceForm(editing: SkillDraft | null) {
               return { ...s, next: repoint(s.next) };
             case "wait":
               return { ...s, next: repoint(s.next) };
+            case "log":
+              return { ...s, next: repoint(s.next) };
           }
         });
-        setStartStepId((cur) =>
-          cur === gone.id ? (next[0]?.id ?? "") : cur,
-        );
+        // Nothing to do about the start step here: deleting the one it named
+        // orphans the choice, and `startStepId` falls back to the first step.
         return next;
       });
     },
@@ -177,11 +191,15 @@ export function useSequenceForm(editing: SkillDraft | null) {
             return { ...s, id, next: remap(s.next) };
           case "wait":
             return { ...s, id, next: remap(s.next) };
+          case "log":
+            return { ...s, id, next: remap(s.next) };
         }
       }),
     );
-    setStartStepId((cur) => map.get(cur) ?? cur);
-  }, [steps]);
+    // Remap the *effective* start step, so an orphaned stored choice can't
+    // survive a renumber and re-orphan itself against the new ids.
+    setStartStepId(map.get(startStepId) ?? startStepId);
+  }, [steps, startStepId]);
 
   const moveStep = useCallback((index: number, dir: -1 | 1) => {
     setSteps((prev) => {
@@ -232,9 +250,14 @@ export function useSequenceForm(editing: SkillDraft | null) {
         out.push(`Step ${s.id} has no pattern to wait for.`);
       if (s.kind === "send" && !s.input)
         out.push(`Step ${s.id} has nothing to send.`);
+      // An empty log line is worse than no log line: it appears in the run's
+      // log saying nothing, so the reader learns only that the skill went this
+      // way and not why.
+      if (s.kind === "log" && !s.message.trim())
+        out.push(`Step ${s.id} has no message to post.`);
     }
-    if (steps.length > 0 && !ids.has(startStepId))
-      out.push("Pick which step runs first.");
+    // No "pick a start step" check: `startStepId` always names a step that
+    // exists once there is one, and "add at least one step" covers the rest.
     for (const p of params) {
       if (!/^[A-Za-z0-9_]+$/.test(p.key))
         out.push(
@@ -242,7 +265,7 @@ export function useSequenceForm(editing: SkillDraft | null) {
         );
     }
     return out;
-  }, [name, steps, startStepId, params]);
+  }, [name, steps, params]);
 
   /** Soft warnings that don't block saving. A `next` on the last step is valid
    * (it resolves to stop), but it's usually a sign the operator meant to add

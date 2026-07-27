@@ -68,6 +68,35 @@ pub enum TimeoutAction {
     Goto,
 }
 
+/// How loud a `Log` step's message is. Decides how the run panel tints the
+/// line, and for [`LogLevel::Error`] whether stopping there counts as the host
+/// failing.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LogLevel {
+    /// A note: something worth recording about the path the skill took.
+    #[default]
+    Info,
+    /// Something the operator should look at, but not a failure.
+    Warn,
+    /// The skill has decided this host is a problem. Combined with a `stop`,
+    /// this is how a skill fails a host in its own words.
+    Error,
+}
+
+impl LogLevel {
+    /// The progress-event phase this level posts under, which is also what the
+    /// run panel tints by. `Error` reuses `failed` rather than adding a fourth
+    /// colour for the same meaning.
+    pub fn phase(&self) -> &'static str {
+        match self {
+            LogLevel::Info => "info",
+            LogLevel::Warn => "warn",
+            LogLevel::Error => "failed",
+        }
+    }
+}
+
 /// An optional output test on a `run` step, taking precedence over the exit
 /// code when set.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -138,6 +167,22 @@ pub enum SeqStep {
         seconds: u64,
         next: String,
     },
+    /// Write a line into the run's log and carry on. Sends nothing to the host,
+    /// touches nothing on it, and cannot fail.
+    ///
+    /// This is how a skill explains itself. A skill that branches three ways on
+    /// what it finds can say which way it went and why, so the operator reading
+    /// the log afterwards is not left inferring it from the terminal. With
+    /// `level: Error` and `next: stop` it is also how a skill refuses a host in
+    /// its own words: the host ends as a failure carrying this message, rather
+    /// than as a silent success that did nothing.
+    Log {
+        id: String,
+        #[serde(default)]
+        level: LogLevel,
+        message: String,
+        next: String,
+    },
 }
 
 impl SeqStep {
@@ -146,7 +191,8 @@ impl SeqStep {
             SeqStep::Run { id, .. }
             | SeqStep::Expect { id, .. }
             | SeqStep::Send { id, .. }
-            | SeqStep::Wait { id, .. } => id,
+            | SeqStep::Wait { id, .. }
+            | SeqStep::Log { id, .. } => id,
         }
     }
 
@@ -158,6 +204,7 @@ impl SeqStep {
             SeqStep::Expect { .. } => "expect",
             SeqStep::Send { .. } => "send",
             SeqStep::Wait { .. } => "wait",
+            SeqStep::Log { .. } => "log",
         }
     }
 
@@ -168,6 +215,7 @@ impl SeqStep {
             SeqStep::Expect { pattern, .. } => format!("wait for: {}", truncate(pattern, 80)),
             SeqStep::Send { input, .. } => format!("send: {}", truncate(&escape(input), 40)),
             SeqStep::Wait { seconds, .. } => format!("wait {}s", wait_secs(*seconds)),
+            SeqStep::Log { message, .. } => format!("log: {}", truncate(message, 80)),
         }
     }
 
@@ -176,8 +224,11 @@ impl SeqStep {
             SeqStep::Run { timeout_secs, .. } | SeqStep::Expect { timeout_secs, .. } => {
                 timeout_secs.unwrap_or(DEFAULT_STEP_TIMEOUT_SECS)
             }
-            // Not a match timeout: Send fires at once, Wait has its own duration.
-            SeqStep::Send { .. } | SeqStep::Wait { .. } => DEFAULT_STEP_TIMEOUT_SECS,
+            // Not a match timeout: Send and Log fire at once, Wait has its own
+            // duration.
+            SeqStep::Send { .. } | SeqStep::Wait { .. } | SeqStep::Log { .. } => {
+                DEFAULT_STEP_TIMEOUT_SECS
+            }
         };
         raw.clamp(1, MAX_STEP_TIMEOUT_SECS)
     }
@@ -186,7 +237,7 @@ impl SeqStep {
     /// timeout, or a wait's duration. `None` for a send (it fires at once).
     pub fn countdown_secs(&self) -> Option<u64> {
         match self {
-            SeqStep::Send { .. } => None,
+            SeqStep::Send { .. } | SeqStep::Log { .. } => None,
             SeqStep::Wait { seconds, .. } => Some(wait_secs(*seconds)),
             _ => Some(self.timeout_secs()),
         }
@@ -206,7 +257,9 @@ impl SeqStep {
     pub fn on_timeout(&self) -> TimeoutAction {
         match self {
             SeqStep::Run { on_timeout, .. } | SeqStep::Expect { on_timeout, .. } => *on_timeout,
-            SeqStep::Send { .. } | SeqStep::Wait { .. } => TimeoutAction::Fail,
+            SeqStep::Send { .. } | SeqStep::Wait { .. } | SeqStep::Log { .. } => {
+                TimeoutAction::Fail
+            }
         }
     }
 
@@ -223,7 +276,7 @@ impl SeqStep {
             | SeqStep::Expect {
                 on_timeout_target, ..
             } => on_timeout_target.as_deref().unwrap_or(STOP),
-            SeqStep::Send { .. } | SeqStep::Wait { .. } => STOP,
+            SeqStep::Send { .. } | SeqStep::Wait { .. } | SeqStep::Log { .. } => STOP,
         }
     }
 }
@@ -282,8 +335,10 @@ impl SequenceConfig {
                         out.push(s.clone());
                     }
                 }
-                // A wait dispatches nothing, so there is nothing to guard.
-                SeqStep::Wait { .. } => {}
+                // A wait dispatches nothing, so there is nothing to guard. Nor
+                // does a log: its message goes to the run's own log and never
+                // near the host, so it is not the guard's business.
+                SeqStep::Wait { .. } | SeqStep::Log { .. } => {}
             }
         }
         out
@@ -537,6 +592,19 @@ pub fn substituted_config(
                 input: substitute(&unescape(&input), values, false),
                 next,
             },
+            SeqStep::Log {
+                id,
+                level,
+                message,
+                next,
+            } => SeqStep::Log {
+                id,
+                level,
+                // Never quoted: the message is written to the run's log, not to
+                // a shell, so shell quoting would only put stray quotes in it.
+                message: substitute(&message, values, false),
+                next,
+            },
             // A wait carries no substitutable text.
             other @ SeqStep::Wait { .. } => other,
         })
@@ -631,6 +699,17 @@ pub fn resolve_next(cfg: &SequenceConfig) -> SequenceConfig {
                 SeqStep::Wait { id, seconds, next } => SeqStep::Wait {
                     id,
                     seconds,
+                    next: resolve(&next),
+                },
+                SeqStep::Log {
+                    id,
+                    level,
+                    message,
+                    next,
+                } => SeqStep::Log {
+                    id,
+                    level,
+                    message,
                     next: resolve(&next),
                 },
             }
@@ -766,6 +845,7 @@ fn branch_targets(step: &SeqStep) -> Vec<&str> {
         }
         SeqStep::Send { next, .. } => vec![next.as_str()],
         SeqStep::Wait { next, .. } => vec![next.as_str()],
+        SeqStep::Log { next, .. } => vec![next.as_str()],
     }
 }
 
@@ -773,7 +853,7 @@ fn patterns(step: &SeqStep) -> Vec<&str> {
     match step {
         SeqStep::Run { r#match, .. } => r#match.iter().map(|m| m.pattern.as_str()).collect(),
         SeqStep::Expect { pattern, .. } => vec![pattern.as_str()],
-        SeqStep::Send { .. } | SeqStep::Wait { .. } => vec![],
+        SeqStep::Send { .. } | SeqStep::Wait { .. } | SeqStep::Log { .. } => vec![],
     }
 }
 

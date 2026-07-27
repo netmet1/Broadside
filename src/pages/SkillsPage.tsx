@@ -29,6 +29,7 @@ import {
 import { errorMessage, type Host } from "@/lib/tauri/hosts";
 import { railTooltip } from "@/lib/hostTags";
 import { EmergencyCancel } from "@/pages/skills/EmergencyCancel";
+import { stepDetail } from "@/pages/skills/flowGraph";
 import { takePaneSnapshot } from "@/pages/skills/paneSnapshots";
 import { ParamForm } from "@/pages/skills/ParamForm";
 import { RunPanel } from "@/pages/skills/RunPanel";
@@ -101,6 +102,9 @@ export function SkillsPage({
    * to build another skill doesn't lose track of what's running. */
   const [runningSkill, setRunningSkill] = useState<Skill | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Skill | null>(null);
+  /** Whether run panes open with their step log showing. Lives here, above the
+   * run, so a rerun (which builds new panes) keeps the log you had open. */
+  const [runLogOpen, setRunLogOpen] = useState(false);
   /** Bumped every time the editor is opened, and used as its React key, so each
    * visit builds a fresh form. The editor seeds its fields once on mount, so
    * without this, going from one skill straight to another (or to New) kept the
@@ -157,7 +161,11 @@ export function SkillsPage({
   // A root shell awaiting the "leaving a root shell open" confirm, and the
   // Close-run confirm when root shells are still open.
   const [pendingHandoff, setPendingHandoff] = useState<SkillPane | null>(null);
-  const [pendingClose, setPendingClose] = useState(false);
+  /** Where to land once the "this closes root shells" confirm is answered, and
+   * null when it isn't open. Held as the destination rather than a flag so
+   * Rerun keeps its intent through the dialog instead of dropping you on the
+   * empty page. */
+  const [pendingClose, setPendingClose] = useState<View | null>(null);
 
   /** Whether the live run's skill permits handing shells to a terminal. */
   const runAllowsTransfer = runningSkill
@@ -215,25 +223,44 @@ export function SkillsPage({
     [handoff],
   );
 
-  /** Close a finished run: close any shells it still owns, then clear the panel. */
-  const closeRun = useCallback(async () => {
-    if (run.runId) {
-      try {
-        await skillCloseRun(run.runId);
-      } catch (e) {
-        toast.error(errorMessage(e));
+  /** Close a finished run: close any shells it still owns, then clear the panel.
+   * `then` is where to land afterwards, so Rerun can go straight to the same
+   * skill's confirmation instead of the empty page. */
+  const closeRun = useCallback(
+    async (then?: View) => {
+      if (run.runId) {
+        try {
+          await skillCloseRun(run.runId);
+        } catch (e) {
+          toast.error(errorMessage(e));
+        }
       }
-    }
-    run.reset();
-    setRunningSkill(null);
-    setView({ kind: "idle" });
-  }, [run]);
+      run.reset();
+      setRunningSkill(null);
+      setView(then ?? { kind: "idle" });
+    },
+    [run],
+  );
 
   /** Close run, confirming first if root shells are still open. */
   const requestCloseRun = useCallback(() => {
-    if (rootShellsOpen > 0) setPendingClose(true);
+    if (rootShellsOpen > 0) setPendingClose({ kind: "idle" });
     else void closeRun();
   }, [rootShellsOpen, closeRun]);
+
+  /** Run the same skill again: close this run (its shells included) and go back
+   * to the confirmation, so the hosts and inputs are checked rather than
+   * silently reused. Nothing is dispatched from here. */
+  const rerun = useCallback(() => {
+    const skill = runningSkill;
+    if (!skill) return;
+    // Same rule as Close run: shells left open as root are not closed silently.
+    if (rootShellsOpen > 0) {
+      setPendingClose({ kind: "params", skill });
+      return;
+    }
+    void closeRun({ kind: "params", skill });
+  }, [runningSkill, rootShellsOpen, closeRun]);
 
   const dispatch = useCallback(
     async (
@@ -437,6 +464,9 @@ export function SkillsPage({
               finishHost={run.finishHost}
               onSendToTerminal={requestHandoff}
               onDone={requestCloseRun}
+              onRerun={rerun}
+              logOpen={runLogOpen}
+              onLogOpenChange={setRunLogOpen}
             />
           </div>
         )}
@@ -549,15 +579,10 @@ export function SkillsPage({
                 {parseSequence(importing.config_json).steps.map((s) => (
                   <li key={s.id} className="flex gap-2">
                     <span className="shrink-0 text-muted-foreground">{s.id}</span>
-                    <span className="min-w-0 break-all">
-                      {s.kind === "run"
-                        ? `run: ${s.command}`
-                        : s.kind === "expect"
-                          ? `wait for: ${s.pattern}${s.sendOnMatch ? ` then send ${JSON.stringify(s.sendOnMatch)}` : ""}`
-                          : s.kind === "send"
-                            ? `send: ${JSON.stringify(s.input)}`
-                            : `wait ${s.seconds}s`}
-                    </span>
+                    {/* The same full-length description the flow map's detail
+                        panel uses, so a new step kind is described here without
+                        this list having to learn about it. */}
+                    <span className="min-w-0 break-all">{stepDetail(s)}</span>
                   </li>
                 ))}
               </ol>
@@ -652,9 +677,9 @@ export function SkillsPage({
 
       {/* Closing a run closes any shells it left open, incl. root ones. */}
       <AlertDialog
-        open={pendingClose}
+        open={pendingClose != null}
         onOpenChange={(open) => {
-          if (!open) setPendingClose(false);
+          if (!open) setPendingClose(null);
         }}
       >
         <AlertDialogContent>
@@ -672,11 +697,12 @@ export function SkillsPage({
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
-                setPendingClose(false);
-                void closeRun();
+                const then = pendingClose;
+                setPendingClose(null);
+                void closeRun(then ?? undefined);
               }}
             >
-              Close run
+              {pendingClose?.kind === "params" ? "Close and rerun" : "Close run"}
             </AlertDialogAction>
             <AlertDialogCancel autoFocus>Cancel</AlertDialogCancel>
           </AlertDialogFooter>

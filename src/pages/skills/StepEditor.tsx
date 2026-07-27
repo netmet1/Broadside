@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import {
   NEXT,
   STOP,
+  type LogLevel,
   type SeqStep,
   type TimeoutAction,
 } from "@/lib/tauri/skills";
@@ -80,6 +81,14 @@ const KIND_LABEL: Record<SeqStep["kind"], string> = {
   expect: "Wait for output",
   send: "Send keys",
   wait: "Wait a set time",
+  log: "Post to the skill log",
+};
+
+/** What each log level means, in the words the run log will use. */
+const LOG_LEVEL_LABEL: Record<LogLevel, string> = {
+  info: "Note",
+  warn: "Warning",
+  error: "Error",
 };
 
 /** One step's fields. The three kinds cover the whole vocabulary: run a command
@@ -89,6 +98,7 @@ export function StepEditor({
   index,
   steps,
   isStart,
+  isActive,
   collapsed,
   onToggleCollapsed,
   onChange,
@@ -100,6 +110,10 @@ export function StepEditor({
   index: number;
   steps: SeqStep[];
   isStart: boolean;
+  /** The step last clicked on, tinted so it stays findable. Above all when it
+   * moves: pressing the up arrow shifts a card a row at a time, and the tint is
+   * what tells you which card just moved. */
+  isActive: boolean;
   /** Folded down to its header, so a long skill reads as a list of steps rather
    * than a wall of fields. */
   collapsed: boolean;
@@ -140,6 +154,8 @@ export function StepEditor({
       });
     else if (kind === "send")
       onChange({ ...base, kind: "send", input: "", next: NEXT });
+    else if (kind === "log")
+      onChange({ ...base, kind: "log", level: "info", message: "", next: NEXT });
     else onChange({ ...base, kind: "wait", seconds: 30, next: NEXT });
   };
 
@@ -148,9 +164,17 @@ export function StepEditor({
     // distinct cards. A foreground overlay (not muted, which sits too close to
     // the page background to show) alternates a lifted card against the plain
     // page, so the stripe is actually visible in both themes.
+    //
+    // The active card overrides the stripe with the accent hue instead of
+    // layering on top of it, so "which step am I on" reads the same wherever it
+    // sits in the list, odd row or even.
     <div
-      className={`rounded border border-white/15 ${collapsed ? "" : "space-y-2 pb-3"} ${
-        index % 2 === 0 ? "bg-foreground/[0.07]" : "bg-transparent"
+      className={`rounded border ${collapsed ? "" : "space-y-2 pb-3"} ${
+        isActive
+          ? "border-primary/50 bg-primary/10 ring-1 ring-primary/25"
+          : index % 2 === 0
+            ? "border-white/15 bg-foreground/[0.07]"
+            : "border-white/15 bg-transparent"
       }`}
     >
       <div className="flex items-center gap-2 px-3 py-2">
@@ -554,6 +578,68 @@ export function StepEditor({
             label="Then"
             hintText="Where to go once the wait is up"
           />
+        </div>
+      )}
+
+      {!collapsed && step.kind === "log" && (
+        <div className="space-y-2 px-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <label
+              className="flex items-center gap-1.5 text-xs"
+              {...hint(
+                "How loud this line is in the run log. An Error whose Then is 'stop' also ends the host as a failure, carrying this message, so a skill can refuse a host in its own words instead of finishing with a green tick.",
+              )}
+            >
+              <span className="shrink-0 text-muted-foreground">Log type</span>
+              <select
+                value={step.level}
+                onChange={(e) =>
+                  onChange({ ...step, level: e.target.value as LogLevel })
+                }
+                className="rounded-md border border-input bg-background px-1.5 py-1 text-xs outline-none focus-visible:border-ring"
+              >
+                {(Object.keys(LOG_LEVEL_LABEL) as LogLevel[]).map((l) => (
+                  <option key={l} value={l}>
+                    {LOG_LEVEL_LABEL[l]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Message</Label>
+            <Input
+              value={step.message}
+              onChange={(e) => onChange({ ...step, message: e.target.value })}
+              placeholder="cancelled itself: this host is not a web server"
+              className="text-xs"
+              autoComplete="off"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Goes to this host's run log only. Nothing is typed at the host and
+              nothing on it is touched. Inputs work here:{" "}
+              <code className="rounded bg-muted px-1">{"{{key}}"}</code>.
+            </p>
+          </div>
+          <TargetSelect
+            value={step.next}
+            steps={steps}
+            selfId={step.id}
+            isLast={index === steps.length - 1}
+            onAddStep={onAddStep}
+            onChange={(v) => onChange({ ...step, next: v })}
+            label="Then"
+            hintText="Where to go after the line is posted"
+          />
+          {step.level === "error" &&
+            (step.next === STOP ||
+              (step.next === NEXT && index === steps.length - 1)) && (
+              <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                This ends the host as{" "}
+                <span className="font-medium">failed</span>, with this message
+                as the reason.
+              </p>
+            )}
         </div>
       )}
     </div>
