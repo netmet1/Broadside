@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 
@@ -41,6 +41,7 @@ import {
 } from "@/pages/skills/useSkillSelection";
 import { useSkillRun } from "@/pages/skills/useSkillRun";
 import { useSkillsModel } from "@/pages/skills/useSkillsModel";
+import type { SkillDraft } from "@/pages/skills/useSequenceForm";
 
 /** What the main panel is showing. The run is deliberately not carried here:
  * it outlives whatever you happen to be looking at, so it lives in its own
@@ -59,7 +60,16 @@ type View =
   // `from` is where Cancel and a finished save return to, so the pencil's
   // "straight to the editor" route doesn't detour through a screen the operator
   // deliberately skipped.
-  | { kind: "edit"; skill: Skill | null; from: "overview" | "list" }
+  //
+  // `template` seeds a new skill from an existing one (Clone). It is only ever
+  // set with `skill: null`: the copy is unsaved until Create, so cancelling one
+  // leaves the original alone.
+  | {
+      kind: "edit";
+      skill: Skill | null;
+      template?: SkillDraft | null;
+      from: "overview" | "list";
+    }
   | { kind: "params"; skill: Skill }
   | { kind: "run" };
 
@@ -91,6 +101,35 @@ export function SkillsPage({
    * to build another skill doesn't lose track of what's running. */
   const [runningSkill, setRunningSkill] = useState<Skill | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Skill | null>(null);
+  /** Bumped every time the editor is opened, and used as its React key, so each
+   * visit builds a fresh form. The editor seeds its fields once on mount, so
+   * without this, going from one skill straight to another (or to New) kept the
+   * previous skill's steps in the fields under the new heading, and saving then
+   * wrote them onto the wrong skill. */
+  const [editNonce, setEditNonce] = useState(0);
+  /** The one way into the editor, so nothing can open it without a fresh key. */
+  const openEditor = useCallback(
+    (v: { skill: Skill | null; template?: SkillDraft | null; from: "overview" | "list" }) => {
+      setEditNonce((n) => n + 1);
+      setView({ kind: "edit", ...v });
+    },
+    [],
+  );
+  /** Clone: open the editor as a *new* skill seeded from this one. Nothing is
+   * written until Create, so the original is untouched either way. */
+  const cloneSkill = useCallback(
+    (skill: Skill, from: "overview" | "list") =>
+      openEditor({
+        skill: null,
+        template: {
+          name: `${skill.name} (clone)`,
+          description: `Clone of ${skill.name}`,
+          config_json: skill.config_json,
+        },
+        from,
+      }),
+    [openEditor],
+  );
   /** The skill the overview is showing, resolved live from the model so a save
    * redraws it. Null when the view isn't the overview, or the skill is gone. */
   const overviewSkill =
@@ -124,6 +163,16 @@ export function SkillsPage({
   const runAllowsTransfer = runningSkill
     ? parseSequence(runningSkill.config_json).allowTransfer
     : false;
+  /** The running skill's steps in list order, so each pane can say which step
+   * of how many it is on. Read from the skill the run started with, not from
+   * the rail: editing the skill mid-run must not renumber a live run's panes. */
+  const runStepIds = useMemo(
+    () =>
+      runningSkill
+        ? parseSequence(runningSkill.config_json).steps.map((s) => s.id)
+        : [],
+    [runningSkill],
+  );
   /** Still-open shells that are root, once the run has finished. Only a
    * transfer-enabled skill keeps shells open, so a skill that doesn't allow
    * transfer never leaves one standing: its hosts' `isRoot` stays null (the
@@ -351,8 +400,9 @@ export function SkillsPage({
           onRun={(skill) => setView({ kind: "params", skill })}
           onWatch={() => setView({ kind: "run" })}
           onOpen={(skill) => setView({ kind: "overview", skillId: skill.id })}
-          onEdit={(skill) => setView({ kind: "edit", skill, from: "list" })}
-          onNew={() => setView({ kind: "edit", skill: null, from: "list" })}
+          onEdit={(skill) => openEditor({ skill, from: "list" })}
+          onNew={() => openEditor({ skill: null, from: "list" })}
+          onClone={(skill) => cloneSkill(skill, "list")}
           onImport={startImport}
           onExport={exportOne}
           onDelete={setPendingDelete}
@@ -379,6 +429,7 @@ export function SkillsPage({
               runId={run.runId}
               hosts={run.hosts}
               skillName={runningSkill.name}
+              stepIds={runStepIds}
               active={run.active}
               visible={view.kind === "run"}
               allowTransfer={runAllowsTransfer}
@@ -398,12 +449,9 @@ export function SkillsPage({
               skill={overviewSkill}
               canRun={sel.selected.size > 0 && !run.active}
               onEdit={() =>
-                setView({
-                  kind: "edit",
-                  skill: overviewSkill,
-                  from: "overview",
-                })
+                openEditor({ skill: overviewSkill, from: "overview" })
               }
+              onClone={() => cloneSkill(overviewSkill, "overview")}
               onRun={() => setView({ kind: "params", skill: overviewSkill })}
               onExport={() => void exportOne(overviewSkill)}
               onClose={() => setView({ kind: "idle" })}
@@ -411,7 +459,14 @@ export function SkillsPage({
           )
         ) : view.kind === "edit" ? (
           <SequenceBuilder
+            // Keyed, so switching what is being edited rebuilds the form.
+            // Without this, React keeps the mounted editor and its state: New
+            // opened with the previous skill's steps still in the fields, and
+            // the pencil on a second skill showed the first one's steps under
+            // the second one's name, so saving wrote them onto the wrong skill.
+            key={editNonce}
             editing={view.skill}
+            template={view.template}
             onSave={model.save}
             // Leaving the editor (saved or cancelled) returns where it was
             // opened from: back to the flow map if that's where you came in,

@@ -28,6 +28,20 @@ const GAP_Y = 74;
 const PAD = 16;
 const STOP_W = 96;
 const STOP_H = 30;
+/** How far left of a node's centre a back edge bows out, and where its label
+ * sits. Shared with the layout below, which has to reserve room for them: a
+ * loop drawn at a negative x is simply clipped away by the viewBox, which is
+ * what made a skill's retry edge vanish off the left of the map. */
+const BACK_EDGE_BOW = NODE_W * 0.9;
+const BACK_EDGE_LABEL_X = NODE_W * 0.55;
+/** The clear lane a back edge needs on the left, measured from the left edge of
+ * the leftmost node (hence the half node subtracted). The label reaches further
+ * out than the curve does, so it sets the width: its box is centred on
+ * BACK_EDGE_LABEL_X and the longest edge label we draw is "no match", about
+ * 30px wide, so 40px of half-box is comfortable. Reserved only when the flow
+ * actually has a back edge, so a linear skill isn't pushed off-centre by an
+ * empty margin. */
+const BACK_EDGE_GUTTER = BACK_EDGE_LABEL_X + 40 - NODE_W / 2 + PAD;
 
 /** Per-kind tint, matching how the step cards read in the builder. */
 const KIND_FILL: Record<SeqStep["kind"], string> = {
@@ -90,6 +104,8 @@ function layout(graph: FlowGraph): {
   width: number;
   height: number;
   unreachableRowY: number | null;
+  /** Width of the clear lane on the left that back edges loop through. */
+  gutter: number;
 } {
   const rows = new Map<number, string[]>();
   for (const node of graph.nodes) {
@@ -105,12 +121,16 @@ function layout(graph: FlowGraph): {
     ...depths.map((d) => rows.get(d)!.length),
     orphans.length,
   );
-  const width = PAD * 2 + widest * NODE_W + (widest - 1) * GAP_X;
+  const gutter = graph.edges.some((e) => e.isBackEdge) ? BACK_EDGE_GUTTER : 0;
+  const rowsWidth = PAD * 2 + widest * NODE_W + (widest - 1) * GAP_X;
+  const width = gutter + rowsWidth;
 
   const placed = new Map<string, Placed>();
+  // Rows are centred in the space *right* of the gutter, so the loop lane on
+  // the left stays clear whatever the widest row turns out to be.
   const place = (ids: string[], y: number) => {
     const rowWidth = ids.length * NODE_W + (ids.length - 1) * GAP_X;
-    const left = (width - rowWidth) / 2;
+    const left = gutter + (rowsWidth - rowWidth) / 2;
     ids.forEach((id, i) => {
       placed.set(id, {
         id,
@@ -137,7 +157,7 @@ function layout(graph: FlowGraph): {
   if (graph.hasStop) {
     placed.set(STOP_NODE, {
       id: STOP_NODE,
-      x: (width - STOP_W) / 2,
+      x: gutter + (rowsWidth - STOP_W) / 2,
       y,
       w: STOP_W,
       h: STOP_H,
@@ -147,7 +167,7 @@ function layout(graph: FlowGraph): {
     y -= GAP_Y;
   }
 
-  return { placed, width, height: y + PAD, unreachableRowY };
+  return { placed, width, height: y + PAD, unreachableRowY, gutter };
 }
 
 export function FlowMap({
@@ -176,7 +196,7 @@ export function FlowMap({
     () => buildFlowGraph(steps, startStepId),
     [steps, startStepId],
   );
-  const { placed, width, height, unreachableRowY } = useMemo(
+  const { placed, width, height, unreachableRowY, gutter } = useMemo(
     () => layout(graph),
     [graph],
   );
@@ -287,7 +307,7 @@ export function FlowMap({
 
           {unreachableRowY !== null && (
             <text
-              x={PAD}
+              x={gutter + PAD}
               y={unreachableRowY - 8}
               className="fill-amber-600 dark:fill-amber-400"
               fontSize="10"
@@ -309,10 +329,10 @@ export function FlowMap({
               // A back edge runs upward, so route it out to the side rather than
               // straight through the boxes between the two ends.
               const path = edge.isBackEdge
-                ? `M ${x1} ${from.y} C ${x1 - NODE_W * 0.9} ${from.y - 30}, ${x2 - NODE_W * 0.9} ${y2 + to.h + 30}, ${x2} ${y2 + to.h}`
+                ? `M ${x1} ${from.y} C ${x1 - BACK_EDGE_BOW} ${from.y - 30}, ${x2 - BACK_EDGE_BOW} ${y2 + to.h + 30}, ${x2} ${y2 + to.h}`
                 : `M ${x1} ${y1} C ${x1} ${y1 + GAP_Y / 2}, ${x2} ${y2 - GAP_Y / 2}, ${x2} ${y2}`;
               const midX = edge.isBackEdge
-                ? Math.min(x1, x2) - NODE_W * 0.55
+                ? Math.min(x1, x2) - BACK_EDGE_LABEL_X
                 : (x1 + x2) / 2;
               const midY = edge.isBackEdge
                 ? (from.y + y2 + to.h) / 2

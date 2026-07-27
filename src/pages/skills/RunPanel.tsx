@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckIcon,
   EyeIcon,
   KeyboardIcon,
+  ListIcon,
   LockIcon,
   PlayIcon,
   RotateCcwIcon,
@@ -24,7 +25,7 @@ import {
 } from "@/lib/tauri/skills";
 import { useHint } from "@/lib/status";
 import { SkillTerminalPane } from "@/pages/skills/SkillTerminalPane";
-import type { HostRunState } from "@/pages/skills/useSkillRun";
+import type { HostRunState, RunLine } from "@/pages/skills/useSkillRun";
 
 /** Live per-host terminals while a skill drives them, with the controls to take
  * one over. */
@@ -32,6 +33,7 @@ export function RunPanel({
   runId,
   hosts,
   skillName,
+  stepIds,
   active,
   visible,
   allowTransfer,
@@ -43,6 +45,11 @@ export function RunPanel({
   runId: string;
   hosts: HostRunState[];
   skillName: string;
+  /** The running skill's step ids in list order, so a pane can say "step 2 of
+   * 5". Position in the list, not in the run: branches mean a skill doesn't
+   * necessarily walk them in order, and the honest reading is "which of the
+   * skill's steps is this". */
+  stepIds: string[];
   active: boolean;
   /** Whether this panel is the thing on screen (it is kept mounted while
    * hidden, so its terminals need to refit when it returns). */
@@ -122,6 +129,7 @@ export function RunPanel({
             key={h.pane.hostId}
             runId={runId}
             host={h}
+            stepIds={stepIds}
             fill={single}
             visible={visible}
             allowTransfer={allowTransfer}
@@ -139,6 +147,7 @@ export function RunPanel({
 function HostPane({
   runId,
   host,
+  stepIds,
   fill,
   visible,
   allowTransfer,
@@ -149,6 +158,8 @@ function HostPane({
 }: {
   runId: string;
   host: HostRunState;
+  /** The skill's step ids in list order, for the "step 2 of 5" readout. */
+  stepIds: string[];
   /** This pane is the only one on screen, so it fills the panel and its own
    * focus control is spent. */
   fill: boolean;
@@ -167,6 +178,10 @@ function HostPane({
   const finished = status === "done" || status === "failed";
   // Bumped by the Reset display button to re-init a garbled xterm view.
   const [resetNonce, setResetNonce] = useState(0);
+  // The narration, off by default: the terminal is the point of this pane, and
+  // the log is what you open when you want to know how it got here.
+  const [logOpen, setLogOpen] = useState(false);
+  const stepPos = host.stepId ? stepIds.indexOf(host.stepId) + 1 : 0;
 
   const control = async (fn: () => Promise<void>, what: string) => {
     try {
@@ -212,6 +227,23 @@ function HostPane({
           {pane.label}
         </button>
         <StatusChip host={host} />
+        {/* Where the run is in the skill. Worth its own chip rather than being
+            folded into the summary: while a step counts down, "which step is
+            this" is the thing you actually want, above all when you are
+            building the skill and the countdown is the only sign of life. */}
+        {!finished && host.stepId && (
+          <span
+            className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+            title={
+              stepPos > 0
+                ? `On step ${host.stepId}, ${stepPos} of the skill's ${stepIds.length} steps`
+                : `On step ${host.stepId}`
+            }
+          >
+            {host.stepId}
+            {stepPos > 0 && ` · ${stepPos} of ${stepIds.length}`}
+          </span>
+        )}
         {status === "running" && host.stepSecs != null && (
           <Countdown secs={host.stepSecs} startedAt={host.stepStartedAt} />
         )}
@@ -245,6 +277,20 @@ function HostPane({
             )}
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => setLogOpen((o) => !o)}
+          aria-expanded={logOpen}
+          className={`flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-accent/50 ${
+            logOpen ? "text-foreground" : "text-muted-foreground"
+          }`}
+          {...hint(
+            "Show every step this host has been through, with timeouts and where each branch went. The terminal shows what the host printed; this shows what the skill decided.",
+          )}
+        >
+          <ListIcon className="h-3 w-3" />
+          Log
+        </button>
         <button
           type="button"
           onClick={() => setResetNonce((n) => n + 1)}
@@ -363,6 +409,8 @@ function HostPane({
         </div>
       )}
 
+      {logOpen && <StepLog lines={host.lines} />}
+
       <div className="min-h-0 flex-1 bg-[var(--terminal-bg)]">
         <SkillTerminalPane
           sessionId={pane.sessionId}
@@ -376,6 +424,54 @@ function HostPane({
           }}
         />
       </div>
+    </div>
+  );
+}
+
+/** Per-phase tint for a log line, so a timeout or a failure is findable by eye
+ * in a long transcript rather than by reading every line. */
+const PHASE_CLASS: Record<RunLine["phase"], string> = {
+  started: "text-muted-foreground",
+  step: "text-foreground",
+  matched: "text-emerald-600 dark:text-emerald-400",
+  sent: "text-sky-600 dark:text-sky-400",
+  timeout: "text-amber-600 dark:text-amber-400",
+  info: "text-muted-foreground",
+  failed: "text-red-600 dark:text-red-400",
+};
+
+/**
+ * The engine's narration for one host: what step it started, what it matched,
+ * what it sent, what timed out and where each branch went.
+ *
+ * The terminal beside it shows what the *host* said; this shows what the
+ * *skill* decided, which is the half you need when a run took a branch you
+ * didn't expect and the screen alone can't tell you why.
+ */
+function StepLog({ lines }: { lines: RunLine[] }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  // Follow the tail rather than stranding the operator at the top of a long
+  // transcript. Set directly on the box, not via scrollIntoView, which would
+  // also scroll the panel behind it.
+  useEffect(() => {
+    const box = boxRef.current;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [lines.length]);
+
+  return (
+    <div
+      ref={boxRef}
+      className="max-h-32 shrink-0 overflow-y-auto border-b border-border/40 bg-muted/20 px-2 py-1 font-mono text-[10px] leading-relaxed"
+    >
+      {lines.length === 0 ? (
+        <p className="text-muted-foreground">Nothing yet.</p>
+      ) : (
+        lines.map((l, i) => (
+          <p key={i} className={PHASE_CLASS[l.phase]}>
+            <span className="text-muted-foreground/60">{l.phase}</span> {l.detail}
+          </p>
+        ))
+      )}
     </div>
   );
 }

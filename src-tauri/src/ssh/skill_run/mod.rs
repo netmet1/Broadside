@@ -31,6 +31,7 @@ pub mod config;
 pub mod screen;
 pub mod state;
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use regex::Regex;
@@ -40,7 +41,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::error::{AppError, AppResult};
-use config::{SeqStep, SequenceConfig, TimeoutAction, MAX_STEP_EXECUTIONS, STOP};
+use config::{SeqStep, SequenceConfig, TimeoutAction, STOP};
 use screen::Screen;
 use state::Ctl;
 
@@ -84,6 +85,14 @@ const STEP_GAP: Duration = Duration::from_millis(30);
 /// Bound on shell detection. A shell that hasn't identified itself by now
 /// isn't going to.
 const SHELL_DETECT_SECS: u64 = 15;
+/// After a run step times out, its command is still running, so the engine
+/// interrupts it before moving on. How long output must be quiet for the shell
+/// to count as back at a prompt, and the ceiling on waiting for that. Short:
+/// this is a Ctrl-C landing at a live prompt, not a command doing work, and a
+/// command that ignores the interrupt is not going to be talked round by
+/// waiting longer.
+const INTERRUPT_QUIET: Duration = Duration::from_millis(400);
+const INTERRUPT_MAX: Duration = Duration::from_secs(5);
 
 /// Shells whose `$?` and `printf` behave identically, which is all the engine's
 /// completion marker relies on. Worded as "currently" everywhere it surfaces:
@@ -439,7 +448,13 @@ impl<E: SkillEvents> Engine<E> {
     /// reaches `stop` (or something goes wrong).
     pub async fn run_sequence(&mut self, cfg: &SequenceConfig) -> HostOutcome {
         let mut current = cfg.start_step_id.clone();
-        let mut executions = 0usize;
+        // How many times each step has run, against the skill's repeat limit.
+        // Per step rather than a total, so the message can name the step that
+        // is actually spinning, and so a long linear skill is never mistaken
+        // for a runaway just for having a lot of steps. It bounds the run just
+        // as firmly: nothing may run more than `limit` times.
+        let limit = cfg.max_step_repeats();
+        let mut runs: HashMap<&str, u32> = HashMap::new();
         loop {
             if current == STOP {
                 return HostOutcome::finished(true, "finished");
@@ -447,15 +462,17 @@ impl<E: SkillEvents> Engine<E> {
             let Some(step) = cfg.step(&current) else {
                 return HostOutcome::finished(false, format!("step not found: {current}"));
             };
-            executions += 1;
-            if executions > MAX_STEP_EXECUTIONS {
+            let count = runs.entry(step.id()).or_insert(0);
+            *count += 1;
+            if *count > limit {
                 // A branch cycle that never converges. Save-time validation
                 // allows cycles (polling until ready is legitimate); this is
                 // what stops a runaway.
                 return HostOutcome::finished(
                     false,
                     format!(
-                        "stopped after {MAX_STEP_EXECUTIONS} steps: the skill's branches loop without finishing"
+                        "stopped after step {} ran {limit} times: the skill's branches loop without finishing",
+                        step.id()
                     ),
                 );
             }
@@ -700,10 +717,26 @@ impl<E: SkillEvents> Engine<E> {
                 } else {
                     on_failure.to_string()
                 };
+                // The marker never arrived, so the command is still running and
+                // still owns the terminal. Abandoning it in the engine while
+                // leaving it running on the host means the next step's command
+                // is typed into a busy shell: it sits in the tty buffer behind
+                // the old one instead of running, and the step then times out
+                // too, for a reason that looks nothing like the real one. So
+                // interrupt it and wait for the prompt to come back first.
+                match self.interrupt_running().await {
+                    Wait::Aborted => return StepOutcome::Aborted,
+                    Wait::Detached => return StepOutcome::Detached,
+                    Wait::Closed => return StepOutcome::Closed,
+                    _ => {}
+                }
                 self.emit(
                     "timeout",
                     Some(step.id()),
-                    format!("timed out after {}s; going to {target}", step.timeout_secs()),
+                    format!(
+                        "timed out after {}s; interrupted it and went to {target}",
+                        step.timeout_secs()
+                    ),
                 );
                 StepOutcome::Goto(target)
             }
@@ -712,6 +745,40 @@ impl<E: SkillEvents> Engine<E> {
             Ok(Wait::Closed) => StepOutcome::Closed,
             Err(outcome) => outcome,
         }
+    }
+
+    /// Interrupts the command a timed-out `run` step left running, so the next
+    /// step types at a prompt rather than into a busy shell.
+    ///
+    /// Ctrl-C, then wait for the screen to go quiet. This is exactly what an
+    /// operator watching the pane would do, and it is why a shell abandons the
+    /// whole command line: the completion marker was appended to the command
+    /// with `;`, so it dies with it and no stale marker is left behind to
+    /// satisfy the *next* step's wait.
+    ///
+    /// Best effort, and deliberately so. A command that ignores SIGINT is still
+    /// running when this returns, and the following step will queue up behind
+    /// it exactly as before. Nothing stronger is attempted: from here the only
+    /// escalation is killing the process (or the shell), and a skill that
+    /// silently SIGKILLs an upgrade it decided was slow would be far worse than
+    /// one that runs on and says where it went.
+    ///
+    /// Only run steps get this. An `expect` step that times out has not
+    /// necessarily started anything: the thing holding the terminal may be a
+    /// nested shell or an editor an earlier interactive step opened on purpose,
+    /// and Ctrl-C into that is the engine breaking the operator's own setup.
+    async fn interrupt_running(&mut self) -> Wait {
+        if self.send_bytes("\x03").is_err() {
+            return Wait::Closed;
+        }
+        wait_quiet(
+            &mut self.screen,
+            &mut self.link.rx,
+            &mut self.ctl,
+            INTERRUPT_QUIET,
+            INTERRUPT_MAX,
+        )
+        .await
     }
 
     /// Waits for `re`, handling a timeout per the step's `onTimeout`: `fail`

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CopyIcon,
   DownloadIcon,
   PencilIcon,
   PlayIcon,
@@ -39,6 +40,7 @@ export function SkillOverview({
   skill,
   canRun,
   onEdit,
+  onClone,
   onRun,
   onExport,
   onClose,
@@ -47,6 +49,8 @@ export function SkillOverview({
   /** False when no host is checked, or a run is already going. */
   canRun: boolean;
   onEdit: () => void;
+  /** Open the editor on a fresh copy of this skill. */
+  onClone: () => void;
   onRun: () => void;
   onExport: () => void;
   onClose: () => void;
@@ -130,6 +134,16 @@ export function SkillOverview({
         <Button variant="outline" onClick={onEdit} {...hint("Edit the steps")}>
           <PencilIcon className="mr-1.5 h-3.5 w-3.5" />
           Edit
+        </Button>
+        <Button
+          variant="outline"
+          onClick={onClone}
+          {...hint(
+            "Start a new skill from a copy of this one. Nothing is saved until you press Create, and this skill is left alone.",
+          )}
+        >
+          <CopyIcon className="mr-1.5 h-3.5 w-3.5" />
+          Clone
         </Button>
         <Button
           variant="outline"
