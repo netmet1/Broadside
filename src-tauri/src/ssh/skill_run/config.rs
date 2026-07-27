@@ -1334,8 +1334,8 @@ mod tests {
 
     #[test]
     fn validate_allows_a_cycle_the_execution_cap_will_catch() {
-        // A loop is legitimate (poll until ready); MAX_STEP_EXECUTIONS is what
-        // stops a runaway, not save-time validation.
+        // A loop is legitimate (poll until ready); the per-step repeat cap is
+        // what stops a runaway, not save-time validation.
         let c = cfg(vec![run_full("a", "true", "a", "a", None)], "a");
         assert!(validate_sequence(&c).is_ok());
     }
