@@ -62,29 +62,33 @@ function TargetSelect({
   return (
     <label className="flex items-center gap-1.5 text-xs" {...hint(hintText)}>
       <span className="shrink-0 text-muted-foreground">{label}</span>
+      {/* No `flex-1` on the box below: it is only as wide as the longest thing
+          it can say, which is why the wording is kept short. Two of these sit
+          side by side in a half-width column, and a select clips its text
+          rather than wrapping it, so a long option in a stretched box was
+          being cut off. `min-w-0` lets it shrink (clipping again, but only
+          when it must) rather than overflow the card on a narrow window. */}
       <select
         value={value}
         onChange={(e) => {
           if (e.target.value === ADD_STEP) onChange(onAddStep());
           else onChange(e.target.value);
         }}
-        className="min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 py-1 text-xs outline-none focus-visible:border-ring sm:max-w-[15rem]"
+        className="min-w-0 max-w-full rounded-md border border-input bg-background px-1.5 py-1 text-xs outline-none focus-visible:border-ring"
       >
         <option value={NEXT}>
-          {isLast
-            ? "continue to next step (none after this yet)"
-            : "continue to next step"}
+          {isLast ? "next step (none yet)" : "next step below"}
         </option>
         {/* A step may loop back to itself (poll until ready); the cap stops a
             runaway, not this dropdown. */}
-        <option value={selfId}>{selfId} (repeat this step)</option>
+        <option value={selfId}>{selfId} (repeat)</option>
         {others.map((t) => (
           <option key={t} value={t}>
             {t}
           </option>
         ))}
-        <option value={STOP}>stop (finish this host)</option>
-        <option value={ADD_STEP}>+ add a new step</option>
+        <option value={STOP}>stop this host</option>
+        <option value={ADD_STEP}>+ add a step</option>
       </select>
       {/* Follow the branch. A dropdown reading `s7` says nothing about what s7
           does, and on a skill of any size s7 is somewhere off screen. */}
@@ -444,9 +448,9 @@ export function StepEditor({
                 value={step.onSuccess}
                 steps={steps}
                 selfId={step.id}
-              index={index}
-              onAddStep={onAddStep}
-              onJumpToStep={onJumpToStep}
+                index={index}
+                onAddStep={onAddStep}
+                onJumpToStep={onJumpToStep}
                 onChange={(v) => onChange({ ...step, onSuccess: v })}
                 label="If it works"
                 hintText="Where to go when the command exits 0"
@@ -455,9 +459,9 @@ export function StepEditor({
                 value={step.onFailure}
                 steps={steps}
                 selfId={step.id}
-              index={index}
-              onAddStep={onAddStep}
-              onJumpToStep={onJumpToStep}
+                index={index}
+                onAddStep={onAddStep}
+                onJumpToStep={onJumpToStep}
                 onChange={(v) => onChange({ ...step, onFailure: v })}
                 label="If it fails"
                 hintText="Where to go when the command exits non-zero (e.g. 127 = not installed)"
