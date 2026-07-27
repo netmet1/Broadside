@@ -111,10 +111,13 @@ pub struct SkillProgress {
     /// `failed`. `warn` only ever comes from a `log` step.
     pub phase: String,
     /// The kind of the step now running (`run`/`expect`/`send`/`wait`/`log`),
-    /// set on the `step` phase so the run panel can offer step-specific
-    /// controls.
+    /// set only on the event that announces a step, so the run panel can offer
+    /// step-specific controls. That event's phase is `step` for every kind
+    /// except `log`, which announces itself under its own level's phase so its
+    /// message is not posted twice: read this field, not the phase, to tell an
+    /// announcement from a mid-step event.
     pub step_kind: Option<String>,
-    /// The step's countdown budget in seconds, set on the `step` phase: a
+    /// The step's countdown budget in seconds, set on the announcing event: a
     /// run/expect timeout, or a wait's duration. The panel counts down from it.
     pub step_secs: Option<u64>,
     pub detail: String,
@@ -515,12 +518,22 @@ impl<E: SkillEvents> Engine<E> {
                     ),
                 );
             }
+            // A log step's line *is* its announcement. "step log: cancelled
+            // itself" followed by "cancelled itself" says the same sentence
+            // twice, and the first of the two is untinted, so the one that
+            // carries the meaning is the one that reads as boilerplate. So a
+            // log step announces itself under its own level's phase, carrying
+            // its message, and posts nothing further.
+            let (phase, detail) = match step {
+                SeqStep::Log { level, message, .. } => (level.phase(), message.clone()),
+                _ => ("step", step.summary()),
+            };
             self.emit_step(
-                "step",
+                phase,
                 Some(step.id()),
                 Some(step.kind_str()),
                 step.countdown_secs(),
-                step.summary(),
+                detail,
             );
             let was_wait = matches!(step, SeqStep::Wait { .. });
             match self.exec_step(step).await {
@@ -537,7 +550,12 @@ impl<E: SkillEvents> Engine<E> {
                     current = next;
                 }
                 StepOutcome::Failed(message) => {
-                    self.emit("failed", Some(step.id()), message.clone());
+                    // Except for a log step, whose announcement above was
+                    // already this message under this same `failed` phase: a
+                    // skill that refuses a host says so once.
+                    if !matches!(step, SeqStep::Log { .. }) {
+                        self.emit("failed", Some(step.id()), message.clone());
+                    }
                     return HostOutcome::finished(false, message);
                 }
                 StepOutcome::Aborted => {
@@ -580,17 +598,19 @@ impl<E: SkillEvents> Engine<E> {
                 next,
                 ..
             } => {
+                // Nothing to do: `run_sequence` has already posted the line,
+                // which is this step's whole job. All that is left is whether
+                // the host carries on.
+                //
                 // An Error that ends the host ends it as a *failure*, carrying
                 // the skill's own words. Without this a skill that decided this
                 // host was not for it would finish with a green tick and a
                 // "finished", which is exactly the wrong impression: the run
                 // panel and the error log should both say what it refused and
-                // why. `run_sequence` emits the `failed` line for this message,
-                // so it is deliberately not emitted here as well.
+                // why.
                 if *level == config::LogLevel::Error && next == STOP {
                     return StepOutcome::Failed(message.clone());
                 }
-                self.emit(level.phase(), Some(step.id()), message.clone());
                 StepOutcome::Goto(next.clone())
             }
             SeqStep::Wait { next, .. } => {

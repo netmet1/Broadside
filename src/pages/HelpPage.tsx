@@ -449,7 +449,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears",
     body: (
       <>
         <Lead>
@@ -756,6 +756,13 @@ const SECTIONS: HelpSection[] = [
             redraw, as <code>cmd</code> has no such key: press <Nav>Enter</Nav>{" "}
             there for a fresh prompt.
           </p>
+          <p>
+            While a command is running in that tab there is no prompt to
+            repaint, because the shell is not reading its keyboard until the
+            command finishes. The pane simply clears and stays clear, and the
+            prompt comes back on its own when the command is done. That is the
+            price of not interrupting it.
+          </p>
           <H3>Shortcut commands</H3>
           <Bullets>
             <li>
@@ -998,7 +1005,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed",
     body: (
       <>
         <Lead>
@@ -1054,6 +1061,11 @@ const SECTIONS: HelpSection[] = [
             failure with a reason instead of a green tick for a skill that did
             nothing. An <Nav>Error</Nav> that goes anywhere else is just a loud
             log line, so a skill can complain and still clean up after itself.
+          </p>
+          <p>
+            A log step's message is one line in the run log, tinted by its type,
+            and that line is also the step's own entry: it is not announced and
+            then repeated.
           </p>
           <H3>Patterns</H3>
           <p>
@@ -1257,6 +1269,15 @@ const SECTIONS: HelpSection[] = [
               <Nav>Import</Nav> reads one back, showing you its steps before
               anything is saved. Files carry the definition only, never
               credentials.
+            </li>
+            <li>
+              A skill file records which version of Broadside it needs, and only
+              when it needs one: a plain skill still imports into an older copy
+              of the app. One that uses something newer (a log step, a timeout
+              that goes to a step, a removed repeat cap) is refused there with{" "}
+              <em>made by a newer Broadside</em>, rather than a parse error that
+              reads as a corrupt file. If you see that, the app doing the
+              importing is the one to update.
             </li>
           </Bullets>
           <H3>What a skill needs from the host</H3>

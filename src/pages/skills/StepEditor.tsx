@@ -2,6 +2,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ChevronUpIcon,
+  TargetIcon,
   Trash2Icon,
 } from "lucide-react";
 
@@ -26,25 +27,38 @@ function TargetSelect({
   value,
   steps,
   selfId,
-  isLast,
+  index,
   onChange,
   onAddStep,
+  onJumpToStep,
   label,
   hintText,
 }: {
   value: string;
   steps: SeqStep[];
   selfId: string;
-  /** This step is last in the list, so `next` would resolve to stop. */
-  isLast: boolean;
+  /** Where this step sits in the list, so the dropdown knows what `next`
+   * resolves to (the step below it, or stop when there is nothing below). */
+  index: number;
   onChange: (v: string) => void;
   /** Creates a new step and returns its id, for the "add a new step" option. */
   onAddStep: () => string;
+  /** Scrolls the editor to a step, for the jump button beside the dropdown. */
+  onJumpToStep: (id: string) => void;
   label: string;
   hintText: string;
 }) {
   const hint = useHint();
   const others = steps.filter((s) => s.id !== selfId).map((s) => s.id);
+  const isLast = index === steps.length - 1;
+  // The step this branch actually lands on, or null when it lands on nothing to
+  // scroll to (stop, or a `next` with nothing below it).
+  const target =
+    value === STOP
+      ? null
+      : value === NEXT
+        ? (steps[index + 1]?.id ?? null)
+        : (steps.find((s) => s.id === value)?.id ?? null);
   return (
     <label className="flex items-center gap-1.5 text-xs" {...hint(hintText)}>
       <span className="shrink-0 text-muted-foreground">{label}</span>
@@ -54,7 +68,7 @@ function TargetSelect({
           if (e.target.value === ADD_STEP) onChange(onAddStep());
           else onChange(e.target.value);
         }}
-        className="min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 py-1 text-xs outline-none focus-visible:border-ring"
+        className="min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 py-1 text-xs outline-none focus-visible:border-ring sm:max-w-[15rem]"
       >
         <option value={NEXT}>
           {isLast
@@ -72,6 +86,23 @@ function TargetSelect({
         <option value={STOP}>stop (finish this host)</option>
         <option value={ADD_STEP}>+ add a new step</option>
       </select>
+      {/* Follow the branch. A dropdown reading `s7` says nothing about what s7
+          does, and on a skill of any size s7 is somewhere off screen. */}
+      {target && (
+        <button
+          type="button"
+          onClick={() => onJumpToStep(target)}
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          aria-label={`Go to step ${target}`}
+          {...hint(
+            `Scroll to step ${target}${
+              target === selfId ? " (this one)" : ""
+            } and open it`,
+          )}
+        >
+          <TargetIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
     </label>
   );
 }
@@ -103,6 +134,7 @@ export function StepEditor({
   onToggleCollapsed,
   onChange,
   onAddStep,
+  onJumpToStep,
   onRemove,
   onMove,
 }: {
@@ -121,6 +153,8 @@ export function StepEditor({
   onChange: (step: SeqStep) => void;
   /** Creates a new step and returns its id, for the branch dropdowns. */
   onAddStep: () => string;
+  /** Opens and scrolls to a step, for the button beside each branch. */
+  onJumpToStep: (id: string) => void;
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
 }) {
@@ -165,13 +199,15 @@ export function StepEditor({
     // the page background to show) alternates a lifted card against the plain
     // page, so the stripe is actually visible in both themes.
     //
-    // The active card overrides the stripe with the accent hue instead of
+    // The active card overrides the stripe with a faint orange wash instead of
     // layering on top of it, so "which step am I on" reads the same wherever it
-    // sits in the list, odd row or even.
+    // sits in the list, odd row or even. Orange rather than the accent blue
+    // because the blue is already spoken for here (the "first" badge, focus
+    // rings), and kept faint: this marks where you are, it is not a warning.
     <div
       className={`rounded border ${collapsed ? "" : "space-y-2 pb-3"} ${
         isActive
-          ? "border-primary/50 bg-primary/10 ring-1 ring-primary/25"
+          ? "border-orange-400/60 bg-orange-400/[0.09] ring-1 ring-orange-400/25"
           : index % 2 === 0
             ? "border-white/15 bg-foreground/[0.07]"
             : "border-white/15 bg-transparent"
@@ -338,8 +374,9 @@ export function StepEditor({
               value={step.onSuccess}
               steps={steps}
               selfId={step.id}
-              isLast={index === steps.length - 1}
+              index={index}
               onAddStep={onAddStep}
+              onJumpToStep={onJumpToStep}
               onChange={(v) => onChange({ ...step, onSuccess: v })}
               label="Then"
               hintText="Where to go once the command's output settles"
@@ -374,8 +411,9 @@ export function StepEditor({
                   value={step.match.ifMatch}
                   steps={steps}
                   selfId={step.id}
-                  isLast={index === steps.length - 1}
+                  index={index}
                   onAddStep={onAddStep}
+                  onJumpToStep={onJumpToStep}
                   onChange={(v) =>
                     onChange({ ...step, match: { ...step.match!, ifMatch: v } })
                   }
@@ -386,8 +424,9 @@ export function StepEditor({
                   value={step.match.ifNoMatch}
                   steps={steps}
                   selfId={step.id}
-                  isLast={index === steps.length - 1}
+                  index={index}
                   onAddStep={onAddStep}
+                  onJumpToStep={onJumpToStep}
                   onChange={(v) =>
                     onChange({
                       ...step,
@@ -405,8 +444,9 @@ export function StepEditor({
                 value={step.onSuccess}
                 steps={steps}
                 selfId={step.id}
-              isLast={index === steps.length - 1}
+              index={index}
               onAddStep={onAddStep}
+              onJumpToStep={onJumpToStep}
                 onChange={(v) => onChange({ ...step, onSuccess: v })}
                 label="If it works"
                 hintText="Where to go when the command exits 0"
@@ -415,8 +455,9 @@ export function StepEditor({
                 value={step.onFailure}
                 steps={steps}
                 selfId={step.id}
-              isLast={index === steps.length - 1}
+              index={index}
               onAddStep={onAddStep}
+              onJumpToStep={onJumpToStep}
                 onChange={(v) => onChange({ ...step, onFailure: v })}
                 label="If it fails"
                 hintText="Where to go when the command exits non-zero (e.g. 127 = not installed)"
@@ -432,8 +473,9 @@ export function StepEditor({
               failLabel="take the 'if it fails' branch"
               steps={steps}
               selfId={step.id}
-              isLast={index === steps.length - 1}
+              index={index}
               onAddStep={onAddStep}
+              onJumpToStep={onJumpToStep}
             />
           )}
         </div>
@@ -480,8 +522,9 @@ export function StepEditor({
             value={step.onMatch}
             steps={steps}
             selfId={step.id}
-            isLast={index === steps.length - 1}
+            index={index}
             onAddStep={onAddStep}
+            onJumpToStep={onJumpToStep}
             onChange={(v) => onChange({ ...step, onMatch: v })}
             label="Then"
             hintText="Where to go once the pattern appears"
@@ -494,8 +537,9 @@ export function StepEditor({
             failLabel="fail this host"
             steps={steps}
             selfId={step.id}
-            isLast={index === steps.length - 1}
+            index={index}
             onAddStep={onAddStep}
+            onJumpToStep={onJumpToStep}
           />
         </div>
       )}
@@ -523,8 +567,9 @@ export function StepEditor({
             value={step.next}
             steps={steps}
             selfId={step.id}
-            isLast={index === steps.length - 1}
+            index={index}
             onAddStep={onAddStep}
+            onJumpToStep={onJumpToStep}
             onChange={(v) => onChange({ ...step, next: v })}
             label="Then"
             hintText="Where to go next"
@@ -572,8 +617,9 @@ export function StepEditor({
             value={step.next}
             steps={steps}
             selfId={step.id}
-            isLast={index === steps.length - 1}
+            index={index}
             onAddStep={onAddStep}
+            onJumpToStep={onJumpToStep}
             onChange={(v) => onChange({ ...step, next: v })}
             label="Then"
             hintText="Where to go once the wait is up"
@@ -625,8 +671,9 @@ export function StepEditor({
             value={step.next}
             steps={steps}
             selfId={step.id}
-            isLast={index === steps.length - 1}
+            index={index}
             onAddStep={onAddStep}
+            onJumpToStep={onJumpToStep}
             onChange={(v) => onChange({ ...step, next: v })}
             label="Then"
             hintText="Where to go after the line is posted"
@@ -659,8 +706,9 @@ function TimeoutFields({
   failLabel,
   steps,
   selfId,
-  isLast,
+  index,
   onAddStep,
+  onJumpToStep,
 }: {
   timeoutSecs?: number;
   onTimeout?: TimeoutAction;
@@ -674,8 +722,9 @@ function TimeoutFields({
   failLabel: string;
   steps: SeqStep[];
   selfId: string;
-  isLast: boolean;
+  index: number;
   onAddStep: () => string;
+  onJumpToStep: (id: string) => void;
 }) {
   const hint = useHint();
   const secs = timeoutSecs ?? 60;
@@ -735,8 +784,9 @@ function TimeoutFields({
           value={target}
           steps={steps}
           selfId={selfId}
-          isLast={isLast}
+          index={index}
           onAddStep={onAddStep}
+          onJumpToStep={onJumpToStep}
           onChange={(v) =>
             onChange({ timeoutSecs: secs, onTimeout: "goto", onTimeoutTarget: v })
           }

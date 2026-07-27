@@ -102,6 +102,11 @@ export function useSkillRun() {
     const subs = [
       onSkillProgress((p) => {
         if (p.runId !== runIdRef.current) return;
+        // The event that announces a step, which is the one that moves the
+        // panel on. Told by `stepKind` rather than by the phase: a log step
+        // announces itself under its own level (info / warn / failed) so its
+        // message is one line rather than a "step log: x" followed by "x".
+        const announcesStep = p.stepKind != null;
         patch(p.hostId, (prev) => ({
           ...prev,
           // A progress event means the engine is driving again, so a pause is
@@ -109,11 +114,11 @@ export function useSkillRun() {
           status: prev.status === "paused" ? "running" : prev.status,
           pausedReason: null,
           takenOver: false,
-          step: p.phase === "step" ? p.detail : prev.step,
-          stepId: p.phase === "step" ? p.stepId : prev.stepId,
-          stepKind: p.phase === "step" ? p.stepKind : prev.stepKind,
-          stepSecs: p.phase === "step" ? p.stepSecs : prev.stepSecs,
-          stepStartedAt: p.phase === "step" ? Date.now() : prev.stepStartedAt,
+          step: announcesStep ? p.detail : prev.step,
+          stepId: announcesStep ? p.stepId : prev.stepId,
+          stepKind: announcesStep ? p.stepKind : prev.stepKind,
+          stepSecs: announcesStep ? p.stepSecs : prev.stepSecs,
+          stepStartedAt: announcesStep ? Date.now() : prev.stepStartedAt,
           isRoot: p.isRoot ?? prev.isRoot,
           lines: [...prev.lines, { phase: p.phase, detail: p.detail }].slice(
             -MAX_LINES,
@@ -130,18 +135,27 @@ export function useSkillRun() {
       }),
       onSkillDone((p) => {
         if (p.runId !== runIdRef.current) return;
-        patch(p.hostId, (prev) => ({
-          ...prev,
-          status: p.ok ? "done" : "failed",
-          pausedReason: null,
-          isRoot: p.isRoot ?? prev.isRoot,
-          shellOpen: p.shellOpen,
-          message: p.message,
-          lines: [
-            ...prev.lines,
-            { phase: p.ok ? ("info" as const) : ("failed" as const), detail: p.message },
-          ].slice(-MAX_LINES),
-        }));
+        patch(p.hostId, (prev) => {
+          const line = {
+            phase: p.ok ? ("info" as const) : ("failed" as const),
+            detail: p.message,
+          };
+          // A host's last progress line and its outcome are usually the same
+          // sentence: a step that fails posts the reason, and the reason is
+          // then what the host reports. Posting it again read as the run
+          // saying everything twice at the end.
+          const last = prev.lines[prev.lines.length - 1];
+          const repeats = last?.phase === line.phase && last.detail === line.detail;
+          return {
+            ...prev,
+            status: p.ok ? "done" : "failed",
+            pausedReason: null,
+            isRoot: p.isRoot ?? prev.isRoot,
+            shellOpen: p.shellOpen,
+            message: p.message,
+            lines: repeats ? prev.lines : [...prev.lines, line].slice(-MAX_LINES),
+          };
+        });
       }),
     ];
     return () => {

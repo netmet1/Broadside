@@ -33,15 +33,15 @@ import {
  * real flow, branches and all, is the flow map on the overview. */
 function StepConnector() {
   return (
-    <div className="flex h-8 items-center justify-center" aria-hidden="true">
+    <div className="flex h-11 items-center justify-center" aria-hidden="true">
       <svg
-        width="13"
-        height="18"
-        viewBox="0 0 13 18"
-        className="fill-muted-foreground/45"
+        width="16"
+        height="24"
+        viewBox="0 0 16 24"
+        className="fill-muted-foreground/70"
       >
-        <rect x="6" y="0" width="1" height="10" />
-        <path d="M6.5 18 0.5 8h12z" />
+        <rect x="7" y="0" width="2" height="13" />
+        <path d="M8 24 1 13h14z" />
       </svg>
     </div>
   );
@@ -98,6 +98,36 @@ export function SequenceBuilder({
   const addStep = () => {
     f.addStep();
     setAddedNonce((n) => n + 1);
+  };
+
+  /** Each card, by step id, so a branch can scroll to the step it points at. */
+  const cardRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  /** The step a branch's jump button asked for, bumped so the same target twice
+   * running still scrolls. The scroll waits for a render because the jump also
+   * unfolds the card, which moves everything below it. */
+  const [jump, setJump] = useState<{ id: string; nonce: number } | null>(null);
+  useEffect(() => {
+    if (!jump) return;
+    // `center`, not `start`: the toolbar above is sticky, and a card scrolled to
+    // the top of the area lands underneath it.
+    cardRefs.current
+      .get(jump.id)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [jump]);
+  /** Follow a branch to the step it names: open it, tint it, scroll to it.
+   *
+   * A branch dropdown reading `s7` tells you nothing about what s7 is, and on a
+   * skill of any size s7 is not on screen. This is the shortest path from "where
+   * does this go" to reading the step it goes to. */
+  const jumpToStep = (id: string) => {
+    setCollapsed((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setActiveStepId(id);
+    setJump((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
   };
 
   const toggleCollapsed = (id: string) => {
@@ -541,7 +571,16 @@ export function SequenceBuilder({
             // arrows included: pressing up should leave the tint on the card
             // that moved, not on whatever took its place. Capture, so it still
             // registers on controls that stop the click themselves.
-            <div key={s.id} onClickCapture={() => setActiveStepId(s.id)}>
+            <div
+              key={s.id}
+              ref={(el) => {
+                // Dropped on unmount, so a deleted step doesn't leave its
+                // detached card behind in the map.
+                if (el) cardRefs.current.set(s.id, el);
+                else cardRefs.current.delete(s.id);
+              }}
+              onClickCapture={() => setActiveStepId(s.id)}
+            >
               {i > 0 && <StepConnector />}
               <StepEditor
                 step={s}
@@ -553,6 +592,7 @@ export function SequenceBuilder({
                 onToggleCollapsed={() => toggleCollapsed(s.id)}
                 onChange={(next) => f.updateStep(i, next)}
                 onAddStep={f.addStepReturningId}
+                onJumpToStep={jumpToStep}
                 onRemove={() => f.removeStep(i)}
                 onMove={(dir) => f.moveStep(i, dir)}
               />

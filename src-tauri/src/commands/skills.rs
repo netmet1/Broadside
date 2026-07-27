@@ -80,7 +80,9 @@ pub fn reorder_skills(ids: Vec<i64>, state: State<'_, DbState>) -> AppResult<()>
 #[serde(rename_all = "camelCase")]
 struct PortableSkill {
     /// File format version, so a future change can be detected rather than
-    /// silently mis-parsed.
+    /// silently mis-parsed. See [`portable_version_for`]: a file is stamped
+    /// with the *lowest* version that can express it, so a build only refuses
+    /// what it genuinely cannot read.
     broadside_skill: u32,
     name: String,
     #[serde(default)]
@@ -91,7 +93,47 @@ struct PortableSkill {
     config: serde_json::Value,
 }
 
-const PORTABLE_VERSION: u32 = 1;
+/// The newest portable-file version this build can read. Files are written at
+/// [`portable_version_for`], which is usually lower.
+const PORTABLE_VERSION: u32 = 2;
+
+/// The lowest file version that can carry this config honestly.
+///
+/// Stamping a file with what it actually needs is what makes the version field
+/// worth having. An older Broadside reading a version it doesn't know says so
+/// in one clear sentence; without this it hits the raw parse error instead
+/// ("unknown variant `log`, expected one of `run`, `expect`, `send`, `wait`"),
+/// which reads as a corrupt file rather than an out-of-date app, and that is
+/// exactly what happened to a v1.2.0 build asked to import a v1.3.0 skill.
+///
+/// Version 2 covers everything added after v1.2.0. The match is exhaustive on
+/// purpose: a new step kind has to decide which side of the line it is on.
+fn portable_version_for(kind: &str, config_json: &str) -> u32 {
+    use crate::ssh::skill_run::config::{SeqStep, TimeoutAction};
+    if kind != skill_repo::KIND_SEQUENCE {
+        return 1;
+    }
+    let Ok(cfg) = skill_run::parse_sequence(config_json) else {
+        // Unreadable here means unreadable everywhere; export it as it is and
+        // let the importing build be the one to complain.
+        return 1;
+    };
+    // An older build ignores an unknown field, so an uncapped skill would
+    // import there as a capped one: silently a different skill. That counts.
+    let newer = cfg.unlimited_step_repeats
+        || cfg.steps.iter().any(|s| match s {
+            SeqStep::Log { .. } => true,
+            SeqStep::Run { on_timeout, .. } | SeqStep::Expect { on_timeout, .. } => {
+                *on_timeout == TimeoutAction::Goto
+            }
+            SeqStep::Send { .. } | SeqStep::Wait { .. } => false,
+        });
+    if newer {
+        2
+    } else {
+        1
+    }
+}
 
 /// Writes a skill to `path` as a portable JSON file (definition only).
 #[tauri::command]
@@ -100,7 +142,7 @@ pub fn export_skill(id: i64, path: String, state: State<'_, DbState>) -> AppResu
     let config: serde_json::Value =
         serde_json::from_str(&skill.config_json).unwrap_or_else(|_| serde_json::json!({}));
     let portable = PortableSkill {
-        broadside_skill: PORTABLE_VERSION,
+        broadside_skill: portable_version_for(&skill.kind, &skill.config_json),
         name: skill.name,
         description: skill.description,
         icon: skill.icon,
@@ -121,9 +163,11 @@ pub fn read_skill_file(path: String) -> AppResult<skill_repo::SkillInput> {
         .map_err(|e| AppError::InvalidInput(format!("could not read the file: {e}")))?;
     let portable: PortableSkill = serde_json::from_str(&text)
         .map_err(|_| AppError::InvalidInput("this isn't a Broadside skill file".into()))?;
-    if portable.broadside_skill != PORTABLE_VERSION {
+    // Older files are still ours to read; only a newer one is genuinely beyond
+    // this build, and it says which way the update has to go.
+    if portable.broadside_skill > PORTABLE_VERSION {
         return Err(AppError::InvalidInput(format!(
-            "this skill file is version {}, which this build doesn't understand",
+            "this skill file is version {}, and this build reads up to version {PORTABLE_VERSION}: it was made by a newer Broadside, so update this one to import it",
             portable.broadside_skill
         )));
     }
@@ -680,6 +724,80 @@ mod tests {
         assert_eq!(input.name, "Restart nginx");
         assert_eq!(input.kind, skill_repo::KIND_SEQUENCE);
         assert!(input.config_json.contains("\"startStepId\":\"s1\""));
+    }
+
+    /// A plain skill stays version 1, so a build that predates all of this can
+    /// still import it. Nothing in it is beyond such a build's reading.
+    #[test]
+    fn an_ordinary_skill_is_still_written_at_version_one() {
+        let config = r#"{"startStepId":"s1","steps":[
+            {"kind":"run","id":"s1","command":"uptime","onSuccess":"stop","onFailure":"stop"}]}"#;
+        assert_eq!(
+            super::portable_version_for(skill_repo::KIND_SEQUENCE, config),
+            1
+        );
+    }
+
+    /// The three things a v1.2.0 build cannot read (or would read as a
+    /// different skill) each move the file to version 2, so that build says
+    /// "made by a newer Broadside" instead of spitting a serde error.
+    #[test]
+    fn anything_newer_than_v1_2_0_moves_the_file_to_version_two() {
+        let log_step = r#"{"startStepId":"s1","steps":[
+            {"kind":"log","id":"s1","level":"error","message":"no","next":"stop"}]}"#;
+        let timeout_goto = r#"{"startStepId":"s1","steps":[
+            {"kind":"run","id":"s1","command":"x","onSuccess":"stop","onFailure":"stop",
+             "onTimeout":"goto","onTimeoutTarget":"stop"}]}"#;
+        let uncapped = r#"{"startStepId":"s1","unlimitedStepRepeats":true,"steps":[
+            {"kind":"run","id":"s1","command":"x","onSuccess":"s1","onFailure":"stop"}]}"#;
+        for config in [log_step, timeout_goto, uncapped] {
+            assert_eq!(
+                super::portable_version_for(skill_repo::KIND_SEQUENCE, config),
+                2,
+                "should need version 2: {config}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_version_one_file_still_imports() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old.json");
+        let portable = super::PortableSkill {
+            broadside_skill: 1,
+            name: "older".into(),
+            description: String::new(),
+            icon: None,
+            kind: skill_repo::KIND_SEQUENCE.into(),
+            config: serde_json::json!({
+                "startStepId": "s1",
+                "steps": [{"kind":"send","id":"s1","input":"q","next":"stop"}],
+            }),
+        };
+        std::fs::write(&path, serde_json::to_string(&portable).unwrap()).unwrap();
+        assert!(super::read_skill_file(path.to_string_lossy().into_owned()).is_ok());
+    }
+
+    #[test]
+    fn a_file_from_a_newer_build_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("future.json");
+        let portable = super::PortableSkill {
+            broadside_skill: super::PORTABLE_VERSION + 1,
+            name: "from the future".into(),
+            description: String::new(),
+            icon: None,
+            kind: skill_repo::KIND_SEQUENCE.into(),
+            config: serde_json::json!({
+                "startStepId": "s1",
+                "steps": [{"kind":"send","id":"s1","input":"q","next":"stop"}],
+            }),
+        };
+        std::fs::write(&path, serde_json::to_string(&portable).unwrap()).unwrap();
+        let err = super::read_skill_file(path.to_string_lossy().into_owned())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("newer Broadside"), "got: {err}");
     }
 
     #[test]
