@@ -156,6 +156,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const dataReadyRef = useRef<Promise<unknown> | null>(null);
   // Guards the one-time write of an adopted session's scrollback snapshot.
   const snapshotWrittenRef = useRef(false);
+  // Deadline (performance.now) until which a leading `^L` arriving from the
+  // shell is the echo of our own Reset display form feed and is dropped before
+  // it is drawn. Armed by the reset effect below, disarmed by the first hit.
+  // Zero means not armed.
+  const swallowEchoUntilRef = useRef(0);
   // A font change landed while this pane was hidden (display:none has no
   // measurable box, so the fit had to be skipped). Settled by the visible
   // effect below with a second-frame fit once the pane is back on screen.
@@ -316,7 +321,26 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     contextMenuEl?.addEventListener("mouseup", onMouseUp);
 
     const unlistenData = onPtyData((id, bytes) => {
-      if (id === sessionId) term.write(bytes);
+      if (id !== sessionId) return;
+      // Reset display sent a form feed. If a command is running in the
+      // foreground the shell is not reading its keyboard, so the tty echoes
+      // that keystroke back as the two characters `^L` (see the reset effect).
+      // Drop it on the way in, while it is still just bytes: the alternative is
+      // painting it and then clearing it, which is a visible flash. Only a
+      // chunk that *starts* with the echo, and only in the moment after the
+      // button was pressed, so a command that prints a caret and an L of its
+      // own keeps them.
+      if (swallowEchoUntilRef.current) {
+        if (performance.now() > swallowEchoUntilRef.current) {
+          swallowEchoUntilRef.current = 0;
+        } else if (bytes[0] === 0x5e && bytes[1] === 0x4c) {
+          swallowEchoUntilRef.current = 0;
+          const rest = bytes.subarray(2);
+          if (rest.length) term.write(rest);
+          return;
+        }
+      }
+      term.write(bytes);
     });
     dataReadyRef.current = unlistenData;
     const unlistenClosed = onPtyClosed((closed) => {
@@ -368,7 +392,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       if (containerRef.current?.offsetParent) fitRef.current?.fit();
     };
     clear();
-    // Sweep up the echoed ^L.
+    // The echoed ^L, dealt with twice over.
     //
     // The reset is followed by a form feed asking the shell to redraw its
     // prompt (see TerminalsPage). When a command is running in the foreground,
@@ -377,11 +401,17 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // round to it. So the pane cleared and then grew a `^L` and nothing else,
     // which looks like the button half-worked.
     //
-    // Nothing can stop that echo from our end, so it is cleaned up after the
-    // fact, and only in the case where it is the *entire* screen: a redrawn
-    // prompt, or a command still printing, leaves other text behind and is left
-    // well alone. One late frame is the trade for the check being this
-    // conservative.
+    // First line of defence is the data listener above, which drops the echo
+    // before it is ever drawn, so nothing appears, not even for a frame. That
+    // only catches the echo when it leads its chunk, which is the normal case
+    // (it comes back on its own, ahead of anything the command prints next).
+    //
+    // The sweep below is the fallback for when it does not: if a beat later
+    // `^L` is the *entire* screen, it can only be the echo, so clear again. A
+    // redrawn prompt, or a command still printing, leaves other text behind and
+    // is left well alone. That path still shows the character for a moment,
+    // which is the trade for a check this conservative.
+    swallowEchoUntilRef.current = performance.now() + 1000;
     const sweep = setTimeout(() => {
       const term = termRef.current;
       if (!term) return;

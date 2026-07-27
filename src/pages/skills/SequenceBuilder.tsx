@@ -29,7 +29,7 @@ import {
 /** The gap between two step cards, with a thin filled arrow centred in it.
  *
  * Decorative: it says "these run in order" at a glance, which is what the list
- * order actually means for a step whose branch is "continue to next step". The
+ * order actually means for a step whose branch is "next step below". The
  * real flow, branches and all, is the flow map on the overview. */
 function StepConnector() {
   return (

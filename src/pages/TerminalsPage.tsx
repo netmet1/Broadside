@@ -550,8 +550,8 @@ export function TerminalsPage({
       // the tty at all (the case that put a stuck prompt on screen in the first
       // place) leaves the byte queued for the shell, which redraws its prompt
       // when it gets it. In that second case the tty also echoes the keystroke
-      // as a literal `^L`; TerminalView sweeps that away once it is clear
-      // nothing else is coming.
+      // as a literal `^L`; TerminalView drops those two bytes on their way in
+      // so they are never drawn.
       //
       // Except on Command Prompt, whose console line editor has no such
       // binding: it takes the form feed as a literal character and leaves a
