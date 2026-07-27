@@ -449,7 +449,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt",
     body: (
       <>
         <Lead>
@@ -745,8 +745,14 @@ const SECTIONS: HelpSection[] = [
           <p>
             <Nav>Reset display</Nav> in the toolbar redraws the active terminal
             from scratch, for a pane one of these left garbled. It clears that
-            pane's screen and scrollback only; the session and anything running
-            in it carry on untouched.
+            pane's screen and scrollback, then asks the shell to repaint its
+            prompt (the same <code>Ctrl+L</code> you could press yourself), so
+            you are not left looking at a blank pane wondering whether the
+            session is still there. Nothing is run and nothing is interrupted:
+            it deliberately does not send <code>Ctrl+C</code>, so a long upgrade
+            working away in that tab is safe from it. If a program has genuinely
+            wedged the terminal, <em>you</em> still have to decide whether to
+            interrupt it.
           </p>
           <H3>Shortcut commands</H3>
           <Bullets>
@@ -990,7 +996,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step",
     body: (
       <>
         <Lead>
@@ -1002,7 +1008,7 @@ const SECTIONS: HelpSection[] = [
           terminal live.
         </Lead>
         <Detail>
-          <H3>The four kinds of step</H3>
+          <H3>The five kinds of step</H3>
           <Bullets>
             <li>
               <Nav>run</Nav> sends a command and waits for it to finish, then
@@ -1021,7 +1027,32 @@ const SECTIONS: HelpSection[] = [
               <Nav>hold</Nav> pauses for a fixed number of seconds, sending
               nothing, so a status screen has time to settle.
             </li>
+            <li>
+              <Nav>post to the skill log</Nav> writes a line into that host's run
+              log and carries on. It touches the host in no way at all; it is the
+              skill explaining itself.
+            </li>
           </Bullets>
+          <H3>A skill that explains itself</H3>
+          <p>
+            <Nav>Post to the skill log</Nav> is for a skill that does different
+            things depending on what it finds. The branch it took is obvious to
+            the skill and invisible to whoever reads the run afterwards, so let
+            it say so: <em>already on the current kernel, nothing to do</em>.
+            Pick a <Nav>Log type</Nav> of <Nav>Note</Nav>, <Nav>Warning</Nav> or{" "}
+            <Nav>Error</Nav>, write the message, and say where to go next. Inputs
+            work in the message, so it can name what it found.
+          </p>
+          <p>
+            One combination does more than log. An <Nav>Error</Nav> whose{" "}
+            <Nav>Then</Nav> is <Nav>stop</Nav> ends that host as a{" "}
+            <span className="font-medium">failure</span> carrying your message,
+            which is how a skill refuses a host in its own words:{" "}
+            <em>cancelled itself, this is not a web server</em> reads as a
+            failure with a reason instead of a green tick for a skill that did
+            nothing. An <Nav>Error</Nav> that goes anywhere else is just a loud
+            log line, so a skill can complain and still clean up after itself.
+          </p>
           <H3>Patterns</H3>
           <p>
             A <Nav>wait for</Nav> pattern is a regular expression tested against
@@ -1145,9 +1176,17 @@ const SECTIONS: HelpSection[] = [
             <li>
               <Nav>Log</Nav> in a pane's header shows what the skill decided for
               that host: each step it started, what matched, what it sent, what
-              timed out and which branch it took. The terminal beside it shows
-              what the host said; this is the half that explains why the run went
-              where it did.
+              timed out and which branch it took, along with anything a{" "}
+              <Nav>post to the skill log</Nav> step had to say. The terminal
+              beside it shows what the host said; this is the half that explains
+              why the run went where it did.
+            </li>
+            <li>
+              When the run is over, <Nav>Rerun</Nav> beside <Nav>Close run</Nav>{" "}
+              starts the same skill again. It closes this run first (shells and
+              all) and takes you back to the confirmation, so the hosts and
+              inputs are checked rather than silently reused. Panes you had the
+              log open on open it again.
             </li>
           </Bullets>
           <H3>Keeping the shell afterwards</H3>
@@ -1165,7 +1204,13 @@ const SECTIONS: HelpSection[] = [
               Steps in the editor are folded down to one line each, showing the
               id, the kind and what the step does. Click a step's header to open
               it, or use <Nav>Expand all</Nav> to open the lot. A step you add
-              opens ready to fill in.
+              opens ready to fill in, and the editor scrolls down to it.
+            </li>
+            <li>
+              The step you last clicked is tinted. That is mostly so it stays
+              findable while you work, but it earns its keep with the up and down
+              arrows: the tint travels with the card as it moves, so you can see
+              what you just moved and where it went.
             </li>
             <li>
               <Nav>Renumber</Nav> renames the ids to s1, s2, s3 in their current

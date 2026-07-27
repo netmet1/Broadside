@@ -10,7 +10,8 @@
 use std::sync::{Arc, Mutex};
 
 use super::config::{
-    MatchBranch, SeqStep, SequenceConfig, SkillParam, TimeoutAction, DEFAULT_MAX_STEP_REPEATS, STOP,
+    LogLevel, MatchBranch, SeqStep, SequenceConfig, SkillParam, TimeoutAction,
+    DEFAULT_MAX_STEP_REPEATS, STOP,
 };
 use super::state::Ctl;
 use super::*;
@@ -147,7 +148,7 @@ fn on_timeout(mut step: SeqStep, action: TimeoutAction) -> SeqStep {
         SeqStep::Run { on_timeout, .. } | SeqStep::Expect { on_timeout, .. } => {
             *on_timeout = action
         }
-        SeqStep::Send { .. } | SeqStep::Wait { .. } => {}
+        SeqStep::Send { .. } | SeqStep::Wait { .. } | SeqStep::Log { .. } => {}
     }
     step
 }
@@ -168,7 +169,7 @@ fn timeout_goto(mut step: SeqStep, target: &str) -> SeqStep {
             *on_timeout = TimeoutAction::Goto;
             *on_timeout_target = Some(target.into());
         }
-        SeqStep::Send { .. } | SeqStep::Wait { .. } => {}
+        SeqStep::Send { .. } | SeqStep::Wait { .. } | SeqStep::Log { .. } => {}
     }
     step
 }
@@ -562,6 +563,114 @@ async fn a_transient_match_that_repaints_away_does_not_fire() {
     let outcome = engine.run_sequence(&c).await;
     assert!(!outcome.ok, "answered a prompt that had vanished");
     assert_eq!(host.typed(), "", "should not have sent anything");
+}
+
+// ------------------------------------------------------------------- log steps
+
+fn log_step(id: &str, level: LogLevel, message: &str, next: &str) -> SeqStep {
+    SeqStep::Log {
+        id: id.into(),
+        level,
+        message: message.into(),
+        next: next.into(),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_log_step_posts_its_message_and_touches_nothing() {
+    let (mut engine, host) = harness();
+    let c = cfg(vec![log_step(
+        "a",
+        LogLevel::Info,
+        "took the already-patched branch",
+        STOP,
+    )]);
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    // The whole point: nothing was typed at the host.
+    assert_eq!(host.typed(), "");
+    let details: Vec<String> = host
+        .events
+        .0
+        .lock()
+        .unwrap()
+        .progress
+        .iter()
+        .map(|p| format!("{}:{}", p.phase, p.detail))
+        .collect();
+    assert!(
+        details
+            .iter()
+            .any(|d| d == "info:took the already-patched branch"),
+        "{details:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_warning_log_step_carries_on_to_its_next_step() {
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        log_step("a", LogLevel::Warn, "swap is nearly full", "b"),
+        run_step("b", "echo carried on", STOP, STOP),
+    ]);
+    host.say(&echo_of("echo carried on"));
+    host.say("carried on\r\n__bsdone_0__\r\n");
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(host.typed().contains("echo carried on"));
+    assert!(host.events.phases().iter().any(|p| p == "warn"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_error_log_step_that_stops_fails_the_host_in_its_own_words() {
+    // The whole reason the level matters: a skill that decides this host is not
+    // for it must not finish with a green tick.
+    let (mut engine, _host) = harness();
+    let c = cfg(vec![log_step(
+        "a",
+        LogLevel::Error,
+        "cancelled itself: this host is not a web server",
+        STOP,
+    )]);
+    let outcome = engine.run_sequence(&c).await;
+    assert!(!outcome.ok, "{outcome:?}");
+    assert_eq!(
+        outcome.message,
+        "cancelled itself: this host is not a web server"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_error_log_step_that_goes_somewhere_is_not_the_end_of_the_host() {
+    // Error is about how loud the line is, not about ending the run: a skill
+    // can log an error and still go and clean up after itself.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        log_step("a", LogLevel::Error, "the upgrade failed", "b"),
+        run_step("b", "echo cleaning up", STOP, STOP),
+    ]);
+    host.say(&echo_of("echo cleaning up"));
+    host.say("cleaning up\r\n__bsdone_0__\r\n");
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(host.typed().contains("echo cleaning up"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failing_log_step_says_it_once_not_twice() {
+    // The failure line comes from run_sequence; emitting it in the step as well
+    // would double every refusal in the run log.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![log_step("a", LogLevel::Error, "no", STOP)]);
+    engine.run_sequence(&c).await;
+    assert_eq!(
+        host.events
+            .phases()
+            .iter()
+            .filter(|p| p.as_str() == "failed")
+            .count(),
+        1
+    );
 }
 
 // -------------------------------------------------------- timeout and pause

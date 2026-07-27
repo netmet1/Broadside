@@ -521,6 +521,20 @@ export function TerminalsPage({
   );
   const resetDisplay = useCallback((id: string) => {
     setResetNonces((prev) => new Map(prev).set(id, (prev.get(id) ?? 0) + 1));
+    // Clearing our own view leaves nothing on screen until the shell prints
+    // something, so the pane sits blank and you have to press Enter to get a
+    // prompt back. Ctrl-L is the fix: a shell's line editor redraws the prompt
+    // (and anything half-typed on it) and nothing is executed.
+    //
+    // Deliberately NOT Ctrl-C, which is the obvious thing to reach for and the
+    // wrong one: it would turn a display-only button into one that can kill a
+    // running upgrade. This one cannot. A program that has the terminal treats
+    // ^L as "redraw" or ignores it; one that isn't reading the tty at all (the
+    // case that put a stuck prompt on screen in the first place) leaves the
+    // byte queued for the shell, which redraws its prompt when it gets it.
+    ptyWrite(id, "\x0c").catch(() => {
+      // A closed session has nothing to redraw; the local clear still stands.
+    });
   }, []);
 
   // PTY Find (D-015 — Find only; filtering live interactive output is
@@ -907,7 +921,7 @@ export function TerminalsPage({
             variant="outline"
             onClick={() => resetDisplay(activeId)}
             {...hint(
-              "Redraw this terminal from scratch if a full-screen program left it garbled or stuck. Clears this pane's screen and scrollback only. The session, and anything running in it, is untouched.",
+              "Redraw this terminal from scratch if a full-screen program left it garbled or stuck. Clears this pane's screen and scrollback, then asks the shell to redraw its prompt (Ctrl-L). Nothing is run and nothing is interrupted: anything working in this session keeps going.",
             )}
           >
             <RotateCcwIcon className="h-3.5 w-3.5" />

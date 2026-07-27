@@ -49,6 +49,10 @@ export type SkillParam = {
  * times out can take a recovery path instead of ending the host. */
 export type TimeoutAction = "fail" | "pause" | "goto";
 
+/** How loud a `log` step's message is: how the run panel tints it, and for
+ * `error` whether stopping there counts as the host failing. */
+export type LogLevel = "info" | "warn" | "error";
+
 export type MatchBranch = {
   pattern: string;
   ifMatch: string;
@@ -90,6 +94,17 @@ export type SeqStep =
       onMatch: string;
     }
   | { kind: "send"; id: string; input: string; next: string }
+  | {
+      // Write a line into the run's log and carry on. Sends nothing to the
+      // host: this is the skill explaining itself, so a run that branched three
+      // ways says which way it went and why. An `error` that goes to `stop`
+      // ends the host as a failure carrying the message.
+      kind: "log";
+      id: string;
+      level: LogLevel;
+      message: string;
+      next: string;
+    }
   | {
       // Hold on the current screen for a fixed time, sending nothing, while the
       // live pane keeps rendering. For letting a redrawing status screen sit
@@ -265,7 +280,16 @@ export type SkillProgress = {
   label: string;
   sessionId: string;
   stepId: string | null;
-  phase: "started" | "step" | "matched" | "sent" | "timeout" | "info" | "failed";
+  /** `warn` only ever comes from a `log` step; the rest are the engine's own. */
+  phase:
+    | "started"
+    | "step"
+    | "matched"
+    | "sent"
+    | "timeout"
+    | "info"
+    | "warn"
+    | "failed";
   /** The kind of the step now running, on the `step` phase. Lets the run panel
    * offer step-specific controls (ending a wait early). */
   stepKind: SeqStep["kind"] | null;

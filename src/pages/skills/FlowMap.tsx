@@ -49,18 +49,21 @@ const KIND_FILL: Record<SeqStep["kind"], string> = {
   expect: "rgb(168 85 247 / 0.12)",
   send: "rgb(16 185 129 / 0.12)",
   wait: "rgb(148 163 184 / 0.14)",
+  log: "rgb(234 179 8 / 0.12)",
 };
 const KIND_STROKE: Record<SeqStep["kind"], string> = {
   run: "rgb(59 130 246 / 0.55)",
   expect: "rgb(168 85 247 / 0.55)",
   send: "rgb(16 185 129 / 0.55)",
   wait: "rgb(148 163 184 / 0.6)",
+  log: "rgb(234 179 8 / 0.55)",
 };
 const KIND_LABEL: Record<SeqStep["kind"], string> = {
   run: "run",
   expect: "wait for",
   send: "send",
   wait: "hold",
+  log: "log",
 };
 
 /** Zoom stops. A long skill is unreadable at full size in a fixed box and a

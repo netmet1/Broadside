@@ -1,4 +1,11 @@
-import { NEXT, STOP, type SeqStep } from "@/lib/tauri/skills";
+import { NEXT, STOP, type LogLevel, type SeqStep } from "@/lib/tauri/skills";
+
+/** How a log step's level reads in a one-liner. */
+export const LOG_LEVEL_WORD: Record<LogLevel, string> = {
+  info: "log",
+  warn: "warn",
+  error: "error",
+};
 
 /**
  * Turns a sequence skill's steps into the branch graph they actually describe,
@@ -99,6 +106,7 @@ export function branchTargets(step: SeqStep): { target: string; label: string }[
       return [{ target: step.onMatch, label: "then" }, ...timeout];
     case "send":
     case "wait":
+    case "log":
       return [{ target: step.next, label: "next" }];
   }
 }
@@ -129,8 +137,13 @@ export function stepSummary(step: SeqStep): string {
       return truncate(`send ${JSON.stringify(step.input)}`);
     case "wait":
       return `wait ${step.seconds}s`;
+    case "log":
+      return truncate(
+        `${LOG_LEVEL_WORD[step.level]}: ${step.message || "(no message)"}`,
+      );
   }
 }
+
 
 /** The full, untruncated description, for the hint bar and the detail panel. */
 export function stepDetail(step: SeqStep): string {
@@ -145,6 +158,8 @@ export function stepDetail(step: SeqStep): string {
       return `Send ${JSON.stringify(step.input)}`;
     case "wait":
       return `Hold for ${step.seconds} seconds`;
+    case "log":
+      return `Post to the run log (${step.level}): ${step.message || "(no message)"}`;
   }
 }
 

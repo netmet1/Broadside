@@ -107,10 +107,12 @@ pub struct SkillProgress {
     pub label: String,
     pub session_id: String,
     pub step_id: Option<String>,
-    /// `started` | `step` | `matched` | `sent` | `timeout` | `info` | `failed`
+    /// `started` | `step` | `matched` | `sent` | `timeout` | `info` | `warn` |
+    /// `failed`. `warn` only ever comes from a `log` step.
     pub phase: String,
-    /// The kind of the step now running (`run`/`expect`/`send`/`wait`), set on
-    /// the `step` phase so the run panel can offer step-specific controls.
+    /// The kind of the step now running (`run`/`expect`/`send`/`wait`/`log`),
+    /// set on the `step` phase so the run panel can offer step-specific
+    /// controls.
     pub step_kind: Option<String>,
     /// The step's countdown budget in seconds, set on the `step` phase: a
     /// run/expect timeout, or a wait's duration. The panel counts down from it.
@@ -535,6 +537,25 @@ impl<E: SkillEvents> Engine<E> {
                 }
                 Err(e) => StepOutcome::Failed(format!("could not send: {e}")),
             },
+            SeqStep::Log {
+                level,
+                message,
+                next,
+                ..
+            } => {
+                // An Error that ends the host ends it as a *failure*, carrying
+                // the skill's own words. Without this a skill that decided this
+                // host was not for it would finish with a green tick and a
+                // "finished", which is exactly the wrong impression: the run
+                // panel and the error log should both say what it refused and
+                // why. `run_sequence` emits the `failed` line for this message,
+                // so it is deliberately not emitted here as well.
+                if *level == config::LogLevel::Error && next == STOP {
+                    return StepOutcome::Failed(message.clone());
+                }
+                self.emit(level.phase(), Some(step.id()), message.clone());
+                StepOutcome::Goto(next.clone())
+            }
             SeqStep::Wait { next, .. } => {
                 let duration = step.wait_duration().expect("wait step has a duration");
                 // Keep draining output into the screen while we hold, so the

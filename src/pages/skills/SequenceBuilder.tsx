@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  DEFAULT_MAX_STEP_REPEATS,
   MAX_STEP_REPEATS_LIMIT,
   type Skill,
   type SkillInput,
@@ -34,15 +33,15 @@ import {
  * real flow, branches and all, is the flow map on the overview. */
 function StepConnector() {
   return (
-    <div className="flex h-4 items-center justify-center" aria-hidden="true">
+    <div className="flex h-8 items-center justify-center" aria-hidden="true">
       <svg
-        width="9"
-        height="12"
-        viewBox="0 0 9 12"
+        width="13"
+        height="18"
+        viewBox="0 0 13 18"
         className="fill-muted-foreground/45"
       >
-        <rect x="4" y="0" width="1" height="7" />
-        <path d="M4.5 12 0.5 5.5h8z" />
+        <rect x="6" y="0" width="1" height="10" />
+        <path d="M6.5 18 0.5 8h12z" />
       </svg>
     </div>
   );
@@ -81,6 +80,25 @@ export function SequenceBuilder({
     f.steps.length > 1 ? new Set(f.steps.map((s) => s.id)) : new Set(),
   );
   const allCollapsed = f.steps.every((s) => collapsed.has(s.id));
+  /** The step last interacted with, tinted so it stands out and, more to the
+   * point, so it stays followable when the up/down arrows move it a row at a
+   * time. By id, so the tint travels with the card rather than staying on the
+   * position it left. */
+  const [activeStepId, setActiveStepId] = useState<string | null>(null);
+  /** Bumped by Add step, to scroll the new card into view. A step lands at the
+   * bottom of the list, which on a skill of any size is off screen, so without
+   * this the button appears to do nothing at all. */
+  const [addedNonce, setAddedNonce] = useState(0);
+  const listEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (addedNonce === 0) return;
+    listEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [addedNonce]);
+
+  const addStep = () => {
+    f.addStep();
+    setAddedNonce((n) => n + 1);
+  };
 
   const toggleCollapsed = (id: string) => {
     setCollapsed((prev) => {
@@ -101,6 +119,9 @@ export function SequenceBuilder({
     );
     f.renumberSteps();
   };
+  /** What the repeat-cap box shows while it is being edited. Held as text so it
+   * can legally be empty for a moment; `f.maxStepRepeats` is what gets saved. */
+  const [repeatsText, setRepeatsText] = useState(String(f.maxStepRepeats));
   // The guidance is long and most of it you learn once. Collapsed by default so
   // it does not push the steps down the page every time you open the editor.
   const [notesOpen, setNotesOpen] = useState(false);
@@ -200,15 +221,29 @@ export function SequenceBuilder({
             type="number"
             min={1}
             max={MAX_STEP_REPEATS_LIMIT}
-            value={f.maxStepRepeats}
-            onChange={(e) =>
-              f.setMaxStepRepeats(
-                Math.min(
-                  MAX_STEP_REPEATS_LIMIT,
-                  Math.max(1, Number(e.target.value) || DEFAULT_MAX_STEP_REPEATS),
-                ),
-              )
-            }
+            value={repeatsText}
+            onChange={(e) => {
+              // Keep what was typed, so clearing the box to type a new number
+              // doesn't snap to something under your cursor mid-keystroke. Only
+              // a value that is already in range is committed here; the rest is
+              // settled on blur.
+              setRepeatsText(e.target.value);
+              const n = Math.floor(Number(e.target.value));
+              if (Number.isFinite(n) && n >= 1) {
+                f.setMaxStepRepeats(Math.min(MAX_STEP_REPEATS_LIMIT, n));
+              }
+            }}
+            onBlur={() => {
+              // Empty or 0 means 1, not the default: a cleared box reads as
+              // "the smallest allowed", and jumping back to 100 there quietly
+              // undid what the operator was doing.
+              const n = Math.min(
+                MAX_STEP_REPEATS_LIMIT,
+                Math.max(1, Math.floor(Number(repeatsText)) || 1),
+              );
+              setRepeatsText(String(n));
+              f.setMaxStepRepeats(n);
+            }}
             className="h-7 w-20 text-xs"
           />
           <span className="text-muted-foreground">
@@ -386,7 +421,7 @@ export function SequenceBuilder({
               variant="outline"
               size="sm"
               className="h-7"
-              onClick={f.addStep}
+              onClick={addStep}
             >
               <PlusIcon className="mr-1 h-3 w-3" />
               Add step
@@ -452,13 +487,18 @@ export function SequenceBuilder({
 
         <section>
           {f.steps.map((s, i) => (
-            <div key={s.id}>
+            // Anything you touch inside a card makes it the active one, the
+            // arrows included: pressing up should leave the tint on the card
+            // that moved, not on whatever took its place. Capture, so it still
+            // registers on controls that stop the click themselves.
+            <div key={s.id} onClickCapture={() => setActiveStepId(s.id)}>
               {i > 0 && <StepConnector />}
               <StepEditor
                 step={s}
                 index={i}
                 steps={f.steps}
                 isStart={s.id === f.startStepId}
+                isActive={s.id === activeStepId}
                 collapsed={collapsed.has(s.id)}
                 onToggleCollapsed={() => toggleCollapsed(s.id)}
                 onChange={(next) => f.updateStep(i, next)}
@@ -468,6 +508,9 @@ export function SequenceBuilder({
               />
             </div>
           ))}
+          {/* The scroll target for Add step. Inside the list, so it sits below
+              the new card rather than below the buttons under it. */}
+          <div ref={listEndRef} />
         </section>
 
         {/* Blocking problems: Create/Save is disabled until these clear. */}
