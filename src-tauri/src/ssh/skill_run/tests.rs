@@ -9,7 +9,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use super::config::{MatchBranch, SeqStep, SequenceConfig, SkillParam, TimeoutAction, STOP};
+use super::config::{
+    MatchBranch, SeqStep, SequenceConfig, SkillParam, TimeoutAction, DEFAULT_MAX_STEP_REPEATS, STOP,
+};
 use super::state::Ctl;
 use super::*;
 
@@ -197,6 +199,7 @@ fn cfg(steps: Vec<SeqStep>) -> SequenceConfig {
         start_step_id: start,
         steps,
         allow_transfer: false,
+        max_step_repeats: None,
     }
 }
 
@@ -916,7 +919,64 @@ async fn a_branch_cycle_stops_at_the_execution_cap() {
     let outcome = engine.run_sequence(&c).await;
     assert!(!outcome.ok);
     assert!(outcome.message.contains("loop"), "{}", outcome.message);
-    assert_eq!(host.writes().len(), MAX_STEP_EXECUTIONS);
+    // The cap is per step, and this skill is one step sending to itself, so the
+    // step runs exactly the limit and stops on the attempt that would exceed it.
+    assert!(outcome.message.contains("step a"), "{}", outcome.message);
+    assert_eq!(host.writes().len(), DEFAULT_MAX_STEP_REPEATS as usize);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_repeat_cap_is_per_step_not_per_run() {
+    // Two steps in a loop: each runs up to the limit, so a two-step cycle gets
+    // twice the executions a one-step cycle does. The old total-executions cap
+    // cut both at the same number, which meant a skill was punished for the
+    // shape of its loop rather than for spinning.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        SeqStep::Send {
+            id: "a".into(),
+            input: "x".into(),
+            next: "b".into(),
+        },
+        SeqStep::Send {
+            id: "b".into(),
+            input: "y".into(),
+            next: "a".into(),
+        },
+    ]);
+    let outcome = engine.run_sequence(&c).await;
+    assert!(!outcome.ok);
+    assert_eq!(host.writes().len(), DEFAULT_MAX_STEP_REPEATS as usize * 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_lower_repeat_cap_is_honoured() {
+    let (mut engine, host) = harness();
+    let mut c = cfg(vec![SeqStep::Send {
+        id: "a".into(),
+        input: "x".into(),
+        next: "a".into(),
+    }]);
+    c.max_step_repeats = Some(3);
+    let outcome = engine.run_sequence(&c).await;
+    assert!(!outcome.ok);
+    assert_eq!(host.writes().len(), 3);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_out_of_range_repeat_cap_is_clamped_not_obeyed() {
+    // 0 would mean "no step may ever run", which is not a skill anyone meant to
+    // save. Clamped to 1 rather than refused.
+    let (mut engine, host) = harness();
+    let mut c = cfg(vec![SeqStep::Send {
+        id: "a".into(),
+        input: "x".into(),
+        next: "a".into(),
+    }]);
+    c.max_step_repeats = Some(0);
+    let outcome = engine.run_sequence(&c).await;
+    assert!(!outcome.ok);
+    assert_eq!(host.writes().len(), 1);
 }
 
 #[tokio::test(start_paused = true)]
@@ -927,6 +987,7 @@ async fn a_missing_branch_target_fails_the_host() {
         start_step_id: "ghost".into(),
         steps: vec![run_step("a", "true", STOP, STOP)],
         allow_transfer: false,
+        max_step_repeats: None,
     };
     let outcome = engine.run_sequence(&c).await;
     assert!(!outcome.ok);
@@ -1034,6 +1095,7 @@ fn prepare_substitutes_validates_and_rejects_a_broken_graph() {
         start_step_id: "a".into(),
         steps: vec![run_step("a", "git clone {{repo}}", STOP, STOP)],
         allow_transfer: false,
+        max_step_repeats: None,
     };
     let values: std::collections::HashMap<String, String> =
         [("repo".to_string(), "my repo".to_string())].into();

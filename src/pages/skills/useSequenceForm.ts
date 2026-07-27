@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import {
+  DEFAULT_MAX_STEP_REPEATS,
   NEXT,
   parseSequence,
   STOP,
@@ -34,9 +35,14 @@ function blankStep(id: string): SeqStep {
   };
 }
 
+/** Everything the form needs to seed itself. A whole `Skill` satisfies it, and
+ * so does a clone's starting point, which has no id because it isn't a saved
+ * skill yet. */
+export type SkillDraft = Pick<Skill, "name" | "description" | "config_json">;
+
 /** Form state for the sequence builder. Kept out of the component so the editor
  * stays presentational (and so this stays testable by hand). */
-export function useSequenceForm(editing: Skill | null) {
+export function useSequenceForm(editing: SkillDraft | null) {
   const initial = useMemo(
     () => (editing ? parseSequence(editing.config_json) : null),
     [editing],
@@ -53,6 +59,9 @@ export function useSequenceForm(editing: Skill | null) {
   );
   const [allowTransfer, setAllowTransfer] = useState(
     initial?.allowTransfer ?? false,
+  );
+  const [maxStepRepeats, setMaxStepRepeats] = useState(
+    initial?.maxStepRepeats ?? DEFAULT_MAX_STEP_REPEATS,
   );
 
   const addStep = useCallback(() => {
@@ -243,7 +252,7 @@ export function useSequenceForm(editing: Skill | null) {
     const last = steps[steps.length - 1];
     if (last && branchTargetIds(last).includes(NEXT)) {
       out.push(
-        `Step ${last.id} continues to the next step, but nothing follows it, so it will finish the host there. Add a step after it, or point it somewhere specific.`,
+        `Step ${last.id} continues to the next step and nothing follows it, so the host finishes there. That is a fine way to end a skill. If you meant to carry on, add the next step or point it somewhere specific.`,
       );
     }
     return out;
@@ -255,9 +264,23 @@ export function useSequenceForm(editing: Skill | null) {
       description: description.trim(),
       icon: null,
       kind: "sequence",
-      config_json: JSON.stringify({ params, startStepId, steps, allowTransfer }),
+      config_json: JSON.stringify({
+        params,
+        startStepId,
+        steps,
+        allowTransfer,
+        maxStepRepeats,
+      }),
     }),
-    [name, description, params, startStepId, steps, allowTransfer],
+    [
+      name,
+      description,
+      params,
+      startStepId,
+      steps,
+      allowTransfer,
+      maxStepRepeats,
+    ],
   );
 
   return {
@@ -280,6 +303,8 @@ export function useSequenceForm(editing: Skill | null) {
     setStartStepId,
     allowTransfer,
     setAllowTransfer,
+    maxStepRepeats,
+    setMaxStepRepeats,
     problems,
     warnings,
     toInput,

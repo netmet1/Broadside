@@ -108,7 +108,17 @@ export type SequenceConfig = {
    * terminal tab intact. Off by default (leaving a shell open, especially a
    * root one, is a standing exposure). */
   allowTransfer: boolean;
+  /** How many times any one step may run before the engine stops the host, so
+   * a branch that loops without converging terminates. Undefined in skills
+   * saved before this was configurable; the backend applies the default. */
+  maxStepRepeats?: number;
 };
+
+/** Default and ceiling for `maxStepRepeats`, mirroring the backend's
+ * DEFAULT_MAX_STEP_REPEATS / MAX_STEP_REPEATS_LIMIT. The backend clamps to this
+ * range whatever is stored, so these are the editor's bounds, not the gate. */
+export const DEFAULT_MAX_STEP_REPEATS = 100;
+export const MAX_STEP_REPEATS_LIMIT = 100;
 
 export function emptySequence(): SequenceConfig {
   return { params: [], startStepId: "", steps: [], allowTransfer: false };
@@ -124,6 +134,7 @@ export function parseSequence(configJson: string): SequenceConfig {
       startStepId: parsed.startStepId ?? "",
       steps: parsed.steps ?? [],
       allowTransfer: parsed.allowTransfer ?? false,
+      maxStepRepeats: parsed.maxStepRepeats,
     };
   } catch {
     return emptySequence();

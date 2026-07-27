@@ -1,6 +1,7 @@
 import {
   ChevronDownIcon,
   ChevronUpIcon,
+  CopyIcon,
   DownloadIcon,
   EyeIcon,
   PencilIcon,
@@ -27,6 +28,7 @@ export function SkillList({
   onOpen,
   onEdit,
   onNew,
+  onClone,
   onImport,
   onExport,
   onDelete,
@@ -50,6 +52,8 @@ export function SkillList({
    * is the "I already know what I want to change" route. */
   onEdit: (skill: Skill) => void;
   onNew: () => void;
+  /** Opens the editor on a fresh, unsaved copy of this skill. */
+  onClone: (skill: Skill) => void;
   onImport: () => void;
   onExport: (skill: Skill) => void;
   onDelete: (skill: Skill) => void;
@@ -213,6 +217,18 @@ export function SkillList({
                     )}
                   >
                     <PencilIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 shrink-0 p-0"
+                    onClick={() => onClone(s)}
+                    aria-label={`Clone ${s.name}`}
+                    {...hint(
+                      `Start a new skill from a copy of "${s.name}". Nothing is saved until you press Create.`,
+                    )}
+                  >
+                    <CopyIcon className="h-3.5 w-3.5" />
                   </Button>
                   <Button
                     variant="ghost"

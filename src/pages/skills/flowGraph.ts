@@ -269,8 +269,8 @@ export function flowWarnings(graph: FlowGraph): string[] {
     seen.add(key);
     out.push(
       members.length === 1
-        ? `Step ${members[0]} branches back to itself. Give it a way out, or a run that reaches it stops at the 100 step cap and fails the host.`
-        : `Steps ${members.join(" and ")} loop back on each other (${cycle.join(" to ")}). Unless a branch leaves the loop, a run that enters it stops at the 100 step cap and fails the host.`,
+        ? `Step ${members[0]} branches back to itself. Give it a way out, or a run that reaches it stops at the skill's repeat cap and fails the host.`
+        : `Steps ${members.join(" and ")} loop back on each other (${cycle.join(" to ")}). Unless a branch leaves the loop, a run that enters it stops at the skill's repeat cap and fails the host.`,
     );
   }
   return out;

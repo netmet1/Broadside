@@ -26,8 +26,18 @@ pub const DEFAULT_STEP_TIMEOUT_SECS: u64 = 60;
 /// Ceiling on a per-step timeout: an `apt upgrade` can legitimately run for
 /// tens of minutes, but nothing should wait longer than an hour.
 pub const MAX_STEP_TIMEOUT_SECS: u64 = 3600;
-/// Total step executions per host, so a cyclic branch graph terminates.
-pub const MAX_STEP_EXECUTIONS: usize = 100;
+/// How many times one step may run in a single host's sequence before the
+/// engine calls it a runaway. Cyclic graphs are legitimate (poll until ready),
+/// so this is what makes them terminate.
+///
+/// Counted per step rather than over the whole run, which is the number the
+/// skill author is actually thinking about ("retry this up to N times"). It
+/// bounds the run as a whole just as firmly: no step may run more than the
+/// limit, so a host can never execute more than `steps * limit` of them.
+pub const DEFAULT_MAX_STEP_REPEATS: u32 = 100;
+/// Ceiling on that setting. A skill needing to retry one step more than a
+/// hundred times is not waiting for something, it is stuck.
+pub const MAX_STEP_REPEATS_LIMIT: u32 = 100;
 
 /// A runtime input the user fills in just before the run.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -237,11 +247,25 @@ pub struct SequenceConfig {
     /// is a standing exposure, so it is the skill author's explicit choice.
     #[serde(default)]
     pub allow_transfer: bool,
+    /// How many times any one step may run before the engine stops the host.
+    /// Absent in skills saved before this was configurable, which is what the
+    /// default covers.
+    #[serde(default)]
+    pub max_step_repeats: Option<u32>,
 }
 
 impl SequenceConfig {
     pub fn step(&self, id: &str) -> Option<&SeqStep> {
         self.steps.iter().find(|s| s.id() == id)
+    }
+
+    /// The per-step repeat limit to enforce, clamped into range. Clamped rather
+    /// than rejected: a config that says 0 or 5000 is a bad number, not a
+    /// broken skill, and refusing to run over it would be a poor trade.
+    pub fn max_step_repeats(&self) -> u32 {
+        self.max_step_repeats
+            .unwrap_or(DEFAULT_MAX_STEP_REPEATS)
+            .clamp(1, MAX_STEP_REPEATS_LIMIT)
     }
 
     /// Every command/keystroke this sequence could send, for the pre-run guard
@@ -522,6 +546,7 @@ pub fn substituted_config(
         start_step_id: cfg.start_step_id.clone(),
         steps,
         allow_transfer: cfg.allow_transfer,
+        max_step_repeats: cfg.max_step_repeats,
     }
 }
 
@@ -616,6 +641,7 @@ pub fn resolve_next(cfg: &SequenceConfig) -> SequenceConfig {
         start_step_id: cfg.start_step_id.clone(),
         steps,
         allow_transfer: cfg.allow_transfer,
+        max_step_repeats: cfg.max_step_repeats,
     }
 }
 
@@ -792,6 +818,7 @@ mod tests {
             start_step_id: start.into(),
             steps,
             allow_transfer: false,
+            max_step_repeats: None,
         }
     }
 
@@ -1101,6 +1128,7 @@ mod tests {
                 },
             ],
             allow_transfer: false,
+            max_step_repeats: None,
         };
         let out = substituted_config(&c, &vals(&[("v", "hi")]));
         match &out.steps[0] {
@@ -1306,8 +1334,8 @@ mod tests {
 
     #[test]
     fn validate_allows_a_cycle_the_execution_cap_will_catch() {
-        // A loop is legitimate (poll until ready); MAX_STEP_EXECUTIONS is what
-        // stops a runaway, not save-time validation.
+        // A loop is legitimate (poll until ready); the per-step repeat cap is
+        // what stops a runaway, not save-time validation.
         let c = cfg(vec![run_full("a", "true", "a", "a", None)], "a");
         assert!(validate_sequence(&c).is_ok());
     }

@@ -449,7 +449,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive",
     body: (
       <>
         <Lead>
@@ -720,6 +720,34 @@ const SECTIONS: HelpSection[] = [
               not have to hunt for it.
             </li>
           </Bullets>
+          <H3>Full-screen prompts, and a stuck one</H3>
+          <p>
+            A tab is a real terminal, so the box-drawing prompts an upgrade puts
+            up (a kernel restart notice, a config file question) work normally:
+            arrow keys, <Nav>Tab</Nav> and <Nav>Enter</Nav> all reach them.
+            Broadside claims no keys of its own beyond{" "}
+            <Nav>Ctrl+F</Nav>, <Nav>Ctrl+Shift+C/V</Nav> and{" "}
+            <Nav>Alt+Left/Right</Nav>.
+          </p>
+          <p>
+            If one of those boxes ignores everything you press, and your
+            keystrokes appear on screen as <code>^[[A</code> or <code>^[</code>{" "}
+            instead of moving the selection, the prompt is not listening: it was
+            drawn by a program whose input is not this terminal, which is what
+            happens when a script runs the upgrade rather than you. The keys are
+            reaching the host and its shell is echoing them, so there is nothing
+            to answer at that end. Press <Nav>Ctrl+C</Nav> to get back to a
+            prompt, then run the command yourself, or run it non-interactively:{" "}
+            <code>DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a</code> in
+            front of an <code>apt</code> command stops both the config prompt and
+            the restart prompt appearing at all.
+          </p>
+          <p>
+            <Nav>Reset display</Nav> in the toolbar redraws the active terminal
+            from scratch, for a pane one of these left garbled. It clears that
+            pane's screen and scrollback only; the session and anything running
+            in it carry on untouched.
+          </p>
           <H3>Shortcut commands</H3>
           <Bullets>
             <li>
@@ -962,7 +990,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times",
     body: (
       <>
         <Lead>
@@ -1072,11 +1100,26 @@ const SECTIONS: HelpSection[] = [
             <li>
               The map catches two mistakes a list of steps cannot show you: a step
               nothing branches to, which will never run, and a loop with no way
-              out, which will run into the 100 step cap and fail the host. Both
+              out, which will run into the repeat cap and fail the host. Both
               appear as amber warnings above the diagram. Neither blocks you, as a
               loop with an exit branch is a perfectly good pattern.
             </li>
+            <li>
+              A loop is drawn as a dashed amber arrow that runs back up the left
+              of the diagram, so it reads as going backwards rather than being
+              mistaken for another branch forward.
+            </li>
           </Bullets>
+          <H3>Runaway loops</H3>
+          <p>
+            A branch that loops is a legitimate way to poll until something is
+            ready, so Broadside caps it rather than refusing it.{" "}
+            <Nav>Stop a host after a step runs N times</Nav> in the editor sets
+            the budget: any single step reaching it stops that host with a
+            message naming the step. It counts per step, not per run, so it is
+            the retry budget for the step that loops rather than a limit on how
+            long a skill may be. The default is 100, which is also the ceiling.
+          </p>
           <H3>Running one</H3>
           <Bullets>
             <li>
@@ -1094,6 +1137,18 @@ const SECTIONS: HelpSection[] = [
               You can type into any host's pane while it runs. That takes the host
               over: the skill stops driving it and it is yours.
             </li>
+            <li>
+              Each pane's header names the step it is on and where that sits in
+              the skill, next to the countdown, so a long wait still tells you
+              what is being waited for.
+            </li>
+            <li>
+              <Nav>Log</Nav> in a pane's header shows what the skill decided for
+              that host: each step it started, what matched, what it sent, what
+              timed out and which branch it took. The terminal beside it shows
+              what the host said; this is the half that explains why the run went
+              where it did.
+            </li>
           </Bullets>
           <H3>Keeping the shell afterwards</H3>
           <p>
@@ -1104,11 +1159,36 @@ const SECTIONS: HelpSection[] = [
             checks whether that shell is root and warns you before you leave a
             privileged one open. Closing the run closes any it still holds.
           </p>
+          <H3>Building one</H3>
+          <Bullets>
+            <li>
+              Steps in the editor are folded down to one line each, showing the
+              id, the kind and what the step does. Click a step's header to open
+              it, or use <Nav>Expand all</Nav> to open the lot. A step you add
+              opens ready to fill in.
+            </li>
+            <li>
+              <Nav>Renumber</Nav> renames the ids to s1, s2, s3 in their current
+              order and rewrites every branch to match, so the flow is unchanged.
+              Use it to tidy up after reordering.
+            </li>
+            <li>
+              Amber notes below the steps are advice, not errors: they never stop
+              you saving or running. Only the red list does that.
+            </li>
+          </Bullets>
           <H3>Organising them</H3>
           <Bullets>
             <li>
               The arrows on each skill in the rail move it up and down the list.
               The order is yours and it is remembered.
+            </li>
+            <li>
+              <Nav>Clone</Nav> starts a new skill from a copy of an existing one,
+              named <Nav>(clone)</Nav>, which is the way to build a variant of
+              something that works. It opens in the editor unsaved, so nothing is
+              written until you press <Nav>Create skill</Nav>, and the original is
+              untouched whatever you do next.
             </li>
             <li>
               <Nav>Export</Nav> writes a skill to a <code>.json</code> file, and{" "}

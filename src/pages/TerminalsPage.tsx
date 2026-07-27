@@ -13,6 +13,7 @@ import {
   PencilIcon,
   PlusIcon,
   RadioTowerIcon,
+  RotateCcwIcon,
   Rows2Icon,
   TextIcon,
   Trash2Icon,
@@ -513,6 +514,14 @@ export function TerminalsPage({
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
     new Map(),
   );
+  /** Per-session counter for the Reset display control. Bumping one re-inits
+   * that terminal's xterm view without touching the session behind it. */
+  const [resetNonces, setResetNonces] = useState<Map<string, number>>(
+    new Map(),
+  );
+  const resetDisplay = useCallback((id: string) => {
+    setResetNonces((prev) => new Map(prev).set(id, (prev.get(id) ?? 0) + 1));
+  }, []);
 
   // PTY Find (D-015 — Find only; filtering live interactive output is
   // incoherent).
@@ -884,6 +893,25 @@ export function TerminalsPage({
               <Rows2Icon className="h-3.5 w-3.5" />
             )}
             {twoUpSplit === "cols" ? "Side by side" : "Top / bottom"}
+          </Button>
+        )}
+
+        {/* Recovery for a pane a full-screen program left in a mess: an
+            upgrade's restart dialog, a monitor that took the alternate screen,
+            or a prompt nothing was reading, which echoes the arrow keys you
+            pressed at it as ^[[A across the box it drew. Clears this pane's
+            view only; the session and everything running in it carry on. */}
+        {activeId !== null && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => resetDisplay(activeId)}
+            {...hint(
+              "Redraw this terminal from scratch if a full-screen program left it garbled or stuck. Clears this pane's screen and scrollback only. The session, and anything running in it, is untouched.",
+            )}
+          >
+            <RotateCcwIcon className="h-3.5 w-3.5" />
+            Reset display
           </Button>
         )}
 
@@ -1600,6 +1628,7 @@ export function TerminalsPage({
                   // tabs mode is told, or it would fit against a zero size.
                   visible={visible && (gridMode ? !excluded : isActive)}
                   retryNonce={retryNonces.get(s.id) ?? 0}
+                  resetNonce={resetNonces.get(s.id) ?? 0}
                   onGate={handleGate}
                   onClosed={closeSession}
                   onReconnect={reconnectSession}

@@ -20,6 +20,9 @@ export type HostRunState = {
   status: "running" | "paused" | "done" | "failed";
   /** The step the engine is on, for the pane overlay. */
   step: string;
+  /** That step's id, so the panel can say where it sits in the skill. Null
+   * before the first step, and for events that aren't about one. */
+  stepId: string | null;
   /** The kind of that step, so the panel can offer step-specific controls. */
   stepKind: SkillProgress["stepKind"];
   /** The step's countdown budget in seconds, and when it started (epoch ms), so
@@ -107,6 +110,7 @@ export function useSkillRun() {
           pausedReason: null,
           takenOver: false,
           step: p.phase === "step" ? p.detail : prev.step,
+          stepId: p.phase === "step" ? p.stepId : prev.stepId,
           stepKind: p.phase === "step" ? p.stepKind : prev.stepKind,
           stepSecs: p.phase === "step" ? p.stepSecs : prev.stepSecs,
           stepStartedAt: p.phase === "step" ? Date.now() : prev.stepStartedAt,
@@ -178,6 +182,7 @@ export function useSkillRun() {
               pane,
               status: "running" as const,
               step: "starting…",
+              stepId: null,
               stepKind: null,
               stepSecs: null,
               stepStartedAt: Date.now(),

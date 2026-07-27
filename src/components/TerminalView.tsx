@@ -94,6 +94,12 @@ type Props = {
   visible: boolean;
   /** Bumps when the user resolves a TOFU gate — triggers a reconnect. */
   retryNonce: number;
+  /** Bumped to re-initialize the xterm view, for recovering a display a
+   * full-screen program left garbled (alternate screen, a stray scroll region,
+   * a half-drawn dialog with escape sequences smeared over it). Local only: it
+   * clears this pane's buffer and scrollback, the remote is untouched and keeps
+   * running. */
+  resetNonce: number;
   onGate: (sessionId: string, gate: ConnectionGate) => void;
   onClosed: (sessionId: string) => void;
   /** Re-open the PTY on this same session id (Reconnect button on the closed
@@ -127,6 +133,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       source,
       visible,
       retryNonce,
+      resetNonce,
       onGate,
       onClosed,
       onReconnect,
@@ -346,6 +353,19 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     };
 
   }, [sessionId, setPhase]);
+
+  // Reset display: re-initialize the xterm view and refit. Recovers a pane a
+  // full-screen program left in a state the shell won't clean up on its own,
+  // typically after a dialog-drawing program (a debconf or needrestart prompt)
+  // was interrupted, leaving its box and any escape sequences that got echoed
+  // painted over the screen. Local only: the buffer and scrollback go, the
+  // remote session is untouched and its next output renders into the fresh
+  // view. Skips the first render (nonce 0) so mounting never clears a pane.
+  useEffect(() => {
+    if (resetNonce === 0) return;
+    termRef.current?.reset();
+    if (containerRef.current?.offsetParent) fitRef.current?.fit();
+  }, [resetNonce]);
 
   useImperativeHandle(searchHandleRef, () => ({
     findNext: (pattern, options, incremental) => {

@@ -1,4 +1,9 @@
-import { ChevronDownIcon, ChevronUpIcon, Trash2Icon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+  Trash2Icon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +15,7 @@ import {
   type TimeoutAction,
 } from "@/lib/tauri/skills";
 import { useHint } from "@/lib/status";
+import { stepSummary } from "@/pages/skills/flowGraph";
 
 /** Sentinel picked in a branch dropdown to spin up a fresh step and point the
  * branch at it. Not a real target; handled before it reaches state. */
@@ -83,6 +89,8 @@ export function StepEditor({
   index,
   steps,
   isStart,
+  collapsed,
+  onToggleCollapsed,
   onChange,
   onAddStep,
   onRemove,
@@ -92,6 +100,10 @@ export function StepEditor({
   index: number;
   steps: SeqStep[];
   isStart: boolean;
+  /** Folded down to its header, so a long skill reads as a list of steps rather
+   * than a wall of fields. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   onChange: (step: SeqStep) => void;
   /** Creates a new step and returns its id, for the branch dropdowns. */
   onAddStep: () => string;
@@ -137,31 +149,65 @@ export function StepEditor({
     // the page background to show) alternates a lifted card against the plain
     // page, so the stripe is actually visible in both themes.
     <div
-      className={`space-y-2 rounded border border-white/15 p-3 ${
+      className={`rounded border border-white/15 ${collapsed ? "" : "space-y-2 pb-3"} ${
         index % 2 === 0 ? "bg-foreground/[0.07]" : "bg-transparent"
       }`}
     >
-      <div className="flex items-center gap-2">
-        <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-          {step.id}
-        </code>
-        {isStart && (
-          <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-            first
-          </span>
-        )}
-        <select
-          value={step.kind}
-          onChange={(e) => changeKind(e.target.value as SeqStep["kind"])}
-          className="rounded-md border border-input bg-background px-1.5 py-1 text-xs outline-none focus-visible:border-ring"
-          aria-label={`Step ${step.id} kind`}
+      <div className="flex items-center gap-2 px-3 py-2">
+        {/* The whole left side of the header is the fold control: a collapsed
+            card's one-liner is the biggest, most obvious target, and hunting
+            for a chevron to reopen a step you just closed is needless work. */}
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-expanded={!collapsed}
+          className={`flex min-w-0 items-center gap-2 text-left ${collapsed ? "flex-1" : "shrink-0"}`}
+          {...hint(
+            collapsed
+              ? `Open step ${step.id}`
+              : `Fold step ${step.id} down to one line`,
+          )}
         >
-          {(Object.keys(KIND_LABEL) as SeqStep["kind"][]).map((k) => (
-            <option key={k} value={k}>
-              {KIND_LABEL[k]}
-            </option>
-          ))}
-        </select>
+          {collapsed ? (
+            <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          )}
+          <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+            {step.id}
+          </code>
+          {isStart && (
+            <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              first
+            </span>
+          )}
+          {/* Collapsed, the header has to carry what the fields would have
+              said: what kind of step it is and what it actually does. */}
+          {collapsed && (
+            <>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {KIND_LABEL[step.kind]}
+              </span>
+              <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/80">
+                {stepSummary(step)}
+              </span>
+            </>
+          )}
+        </button>
+        {!collapsed && (
+          <select
+            value={step.kind}
+            onChange={(e) => changeKind(e.target.value as SeqStep["kind"])}
+            className="rounded-md border border-input bg-background px-1.5 py-1 text-xs outline-none focus-visible:border-ring"
+            aria-label={`Step ${step.id} kind`}
+          >
+            {(Object.keys(KIND_LABEL) as SeqStep["kind"][]).map((k) => (
+              <option key={k} value={k}>
+                {KIND_LABEL[k]}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <Button
             variant="ghost"
@@ -195,8 +241,8 @@ export function StepEditor({
         </div>
       </div>
 
-      {step.kind === "run" && (
-        <div className="space-y-2">
+      {!collapsed && step.kind === "run" && (
+        <div className="space-y-2 px-3">
           <Input
             value={step.command}
             onChange={(e) => onChange({ ...step, command: e.target.value })}
@@ -369,8 +415,8 @@ export function StepEditor({
         </div>
       )}
 
-      {step.kind === "expect" && (
-        <div className="space-y-2">
+      {!collapsed && step.kind === "expect" && (
+        <div className="space-y-2 px-3">
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">
               Wait until the screen shows (regular expression)
@@ -430,8 +476,8 @@ export function StepEditor({
         </div>
       )}
 
-      {step.kind === "send" && (
-        <div className="space-y-2">
+      {!collapsed && step.kind === "send" && (
+        <div className="space-y-2 px-3">
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">
               Type these keys, without waiting for anything
@@ -462,8 +508,8 @@ export function StepEditor({
         </div>
       )}
 
-      {step.kind === "wait" && (
-        <div className="space-y-2">
+      {!collapsed && step.kind === "wait" && (
+        <div className="space-y-2 px-3">
           <label
             className="flex flex-wrap items-center gap-1.5 text-xs"
             {...hint(
