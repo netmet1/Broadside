@@ -329,12 +329,26 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // painting it and then clearing it, which is a visible flash. Only a
       // chunk that *starts* with the echo, and only in the moment after the
       // button was pressed, so a command that prints a caret and an L of its
-      // own keeps them.
+      // own keeps them. Seeing it also tells us the form feed is queued rather
+      // than acted on, which is the more important half — see below.
       if (swallowEchoUntilRef.current) {
         if (performance.now() > swallowEchoUntilRef.current) {
           swallowEchoUntilRef.current = 0;
         } else if (bytes[0] === 0x5e && bytes[1] === 0x4c) {
           swallowEchoUntilRef.current = 0;
+          // That echo is also proof the shell never read the form feed: a
+          // shell at its prompt redraws, it does not echo. So the byte is
+          // still sitting in the tty's line buffer, and when the command
+          // finally ends the shell reads it and clears the screen out from
+          // under everything the command just printed. (Verified: the shell
+          // prints `survived`, draws its prompt, and only then acts on the
+          // form feed with a `[H[2J` that wipes both.)
+          //
+          // So take it back. One ERASE byte deletes the last character in
+          // that buffer, which is ours, and leaves anything typed ahead of it
+          // alone. Nothing runs; the pane simply stays clear until the command
+          // finishes and the shell prints its own next prompt.
+          ptyWrite(sessionId, "\x7f").catch(() => {});
           const rest = bytes.subarray(2);
           if (rest.length) term.write(rest);
           return;
@@ -392,19 +406,23 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       if (containerRef.current?.offsetParent) fitRef.current?.fit();
     };
     clear();
-    // The echoed ^L, dealt with twice over.
+    // The echoed ^L: hidden, and the form feed behind it taken back.
     //
     // The reset is followed by a form feed asking the shell to redraw its
     // prompt (see TerminalsPage). When a command is running in the foreground,
     // the shell is not reading its keyboard: the tty echoes the keystroke as
     // the two characters `^L` and queues the byte for whenever the shell gets
     // round to it. So the pane cleared and then grew a `^L` and nothing else,
-    // which looks like the button half-worked.
+    // which looks like the button half-worked. Worse, the queued byte is still
+    // coming: when the command ends the shell reads it and clears the screen,
+    // taking the command's own last output with it.
     //
-    // First line of defence is the data listener above, which drops the echo
-    // before it is ever drawn, so nothing appears, not even for a frame. That
-    // only catches the echo when it leads its chunk, which is the normal case
-    // (it comes back on its own, ahead of anything the command prints next).
+    // Both are handled in the data listener above, off the back of that echo:
+    // the two characters are dropped before they are ever drawn, and the form
+    // feed they came from is retracted with an ERASE so nothing is queued to
+    // clear the screen later. That only catches the echo when it leads its
+    // chunk, which is the normal case (it comes back on its own, ahead of
+    // anything the command prints next).
     //
     // The sweep below is the fallback for when it does not: if a beat later
     // `^L` is the *entire* screen, it can only be the echo, so clear again. A
