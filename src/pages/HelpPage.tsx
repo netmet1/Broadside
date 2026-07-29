@@ -449,7 +449,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen f10 strip reveal slide drag resize tile edge corner handle reset size custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept",
     body: (
       <>
         <Lead>
@@ -653,27 +653,35 @@ const SECTIONS: HelpSection[] = [
               quick, in-place version.
             </li>
             <li>
-              <Nav>Fullscreen</Nav> (also <Nav>F10</Nav>) gives the grid the
-              whole screen: the toolbar, the tab strip, the sidebar and the
-              status bar all slide away, leaving a thin strip at the very top.
-              Move the mouse to that strip and everything slides back down, so
-              you can pick a tab, close one, or use the dropdown without leaving
-              fullscreen; move away and it hides again. <Nav>F10</Nav>,{" "}
-              <Nav>Esc</Nav>, or the button brings the chrome back. Note that
-              while the grid is on screen, F10 belongs to Broadside, so a
-              full-screen program that uses it (such as{" "}
-              <code>mc</code> or <code>nano</code>) will not see it; use the
-              button in that case.
+              <Nav>Fullscreen</Nav> (also <Nav>Ctrl+Shift+G</Nav>) gives the
+              grid the whole screen: the toolbar, the tab strip, the sidebar and
+              the status bar all slide away, leaving a thin strip at the very
+              top. Move the mouse to that strip and everything slides back down,
+              so you can pick a tab, close one, or use the dropdown without
+              leaving fullscreen; move away and it hides again.{" "}
+              <Nav>Ctrl+Shift+G</Nav>, <Nav>Esc</Nav>, or the button brings the
+              chrome back. The shortcut is a Ctrl+Shift one on purpose: a
+              terminal cannot tell Ctrl+Shift+G from Ctrl+G, so nothing is taken
+              away from a program running in a tile, which a function key like
+              F10 would have been.
+            </li>
+            <li>
+              <Nav>Ctrl+Shift+T</Nav> puts the keyboard into the controls, which
+              slides the strip down as it goes. <Nav>Tab</Nav> and{" "}
+              <Nav>Shift+Tab</Nav> then move along them and <Nav>Esc</Nav>{" "}
+              leaves fullscreen. Tab on its own cannot do this: a terminal has
+              the focus in a grid, and Tab there belongs to the shell.
             </li>
             <li>
               Drag the right or bottom edge of any tile (or its bottom-right
               corner) to set the tile size. It sets the size for{" "}
               <strong className="font-semibold">every</strong> tile, not just
               that one, so the grid stays even; tiles that no longer fit scroll
-              rather than shrink. The drag writes the same <Nav>Grid</Nav>{" "}
-              settings described below, so Settings shows the size you dragged
-              to. <Nav>Reset size</Nav> in the toolbar clears it and goes back
-              to tiles that fit the window.
+              rather than shrink. A dragged size lasts as long as Broadside is
+              running and is then forgotten, and it does not change the{" "}
+              <Nav>Grid</Nav> settings described below, which stay the one place
+              a size is set for good. <Nav>Reset size</Nav> in the toolbar goes
+              back to tiles that fit the window, clearing both.
             </li>
             <li>
               To take one terminal out of the grid, click the small{" "}
@@ -692,9 +700,11 @@ const SECTIONS: HelpSection[] = [
               window scroll sideways rather than shrinking, so panes keep the
               character size you asked for. Changing the terminal font resizes
               pinned tiles to keep those dimensions. The settings apply the next
-              time you open the Terminals page. Exactly two terminals are the
-              one exception: they always take the full window, side by side or
-              stacked, and ignore the Grid settings entirely.
+              time you open the Terminals page. One and two terminals are the
+              exception: a single terminal fills the whole area and two take the
+              full window side by side or stacked, both ignoring the Grid
+              settings entirely, because at those counts a pinned size can only
+              waste screen you could have been using.
             </li>
           </Bullets>
           <H3>Copy, paste and jumping to a tab</H3>

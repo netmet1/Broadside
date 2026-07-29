@@ -41,9 +41,11 @@ export function GridSection({ id }: { id: string }) {
         hint="Pin the Terminals grid: how many panes tile across and each pane's size in characters. Auto keeps the default fit-to-window layout."
       />
       <p className="max-w-md text-xs text-muted-foreground">
-        Exactly two terminals always split the window side by side (or top and
-        bottom) and ignore these settings, so the two-pane comparison view is
-        never shrunk by a pinned tile size.
+        One terminal always fills the grid and two always split the window side
+        by side (or top and bottom), both ignoring these settings, so a single
+        pane and the two-pane comparison view are never shrunk by a pinned tile
+        size. Dragging a tile's edge in the grid also sets a size, but only
+        until Broadside is closed; it does not change the numbers here.
       </p>
       <div className="grid max-w-md gap-4">
         <GridField

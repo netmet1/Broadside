@@ -10,7 +10,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { isAutoGrid, loadGridPrefs, type GridPrefs } from "@/lib/gridPrefs";
+import {
+  isAutoGrid,
+  loadGridPrefs,
+  saveGridItemCols,
+  saveGridItemRows,
+  type GridPrefs,
+} from "@/lib/gridPrefs";
 import { measureTerminalCell } from "@/lib/terminalCell";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import type { TermSession } from "@/pages/terminals/session";
@@ -63,9 +69,17 @@ export type GridLayout = {
   twoUpSplit: "cols" | "rows";
   toggleTwoUpSplit: () => void;
 
+  /** The Settings -> Grid prefs with this session's dragged tile size applied
+   * over the top (see `setDragCols`). What the grid actually lays out to. */
   gridPrefs: GridPrefs;
-  /** Re-read the Settings -> Grid prefs (after a drag-resize writes them). */
-  refreshGridPrefs: () => void;
+
+  /** Set the dragged tile width / height, in characters, for this session only.
+   * Drives the tile size without touching the saved Settings values. */
+  setDragCols: (cols: number) => void;
+  setDragRows: (rows: number) => void;
+  /** Drop the dragged size and clear any pinned tile size in Settings, putting
+   * the grid back to tiles that fit the window. */
+  resetTileSize: () => void;
   /** Measured cell size for the current terminal font, for char <-> px maths. */
   cell: { cellW: number; cellH: number };
 
@@ -179,11 +193,56 @@ export function useGridLayout({
   // Grid layout prefs (Settings -> Grid): pinned column count and character-based
   // tile size, or auto. Re-read whenever the page is shown so a change made in
   // Settings (this page stays mounted) takes effect on return, like disabledShells.
-  const [gridPrefs, setGridPrefs] = useState<GridPrefs>(loadGridPrefs);
-  const refreshGridPrefs = useCallback(() => setGridPrefs(loadGridPrefs()), []);
+  const [savedPrefs, setSavedPrefs] = useState<GridPrefs>(loadGridPrefs);
   useEffect(() => {
-    if (visible) setGridPrefs(loadGridPrefs());
+    if (visible) setSavedPrefs(loadGridPrefs());
   }, [visible]);
+
+  // A tile size dragged out with the resize handles, in characters. Plain
+  // component state, deliberately NOT persisted and deliberately NOT written
+  // into Settings: dragging a tile is an adjustment to the wall you are looking
+  // at right now, not a decision about how the grid should open next time. It
+  // lasts as long as the program is running (the page stays mounted), and a
+  // restart comes back to whatever Settings says. Settings -> Grid stays the
+  // one place a lasting size is set.
+  const [dragSize, setDragSize] = useState<{
+    cols: number | null;
+    rows: number | null;
+  }>({ cols: null, rows: null });
+  const setDragCols = useCallback(
+    (cols: number) =>
+      setDragSize((s) => (s.cols === cols ? s : { ...s, cols })),
+    [],
+  );
+  const setDragRows = useCallback(
+    (rows: number) =>
+      setDragSize((s) => (s.rows === rows ? s : { ...s, rows })),
+    [],
+  );
+  // Reset size means "tiles that fit the window", so it has to clear both the
+  // dragged size and any size pinned in Settings, or the button would appear to
+  // do nothing for someone who set the numbers by hand.
+  const resetTileSize = useCallback(() => {
+    setDragSize({ cols: null, rows: null });
+    saveGridItemCols(null);
+    saveGridItemRows(null);
+    setSavedPrefs(loadGridPrefs());
+  }, []);
+
+  // What the grid lays out to: the saved prefs with the dragged size over the
+  // top. A drag only ever overrides the tile size; the column count stays
+  // whatever Settings says, since there is no handle for it.
+  const gridPrefs = useMemo<GridPrefs>(
+    () =>
+      dragSize.cols === null && dragSize.rows === null
+        ? savedPrefs
+        : {
+            cols: savedPrefs.cols,
+            itemCols: dragSize.cols ?? savedPrefs.itemCols,
+            itemRows: dragSize.rows ?? savedPrefs.itemRows,
+          },
+    [savedPrefs, dragSize],
+  );
 
   // One cell measurement serves every tile (all terminals share the app font).
   const { prefs: uiPrefs } = useUiPrefs();
@@ -193,15 +252,15 @@ export function useGridLayout({
     [uiPrefs.terminalFontFamily, uiPrefs.terminalFontSize],
   );
 
-  // A non-auto grid switches to a uniform, settings-driven layout that bypasses
-  // the 1/3+-tile special cases.
+  // A non-auto grid switches to a uniform, settings-driven layout.
   //
-  // Two tiles are the deliberate exception: they always get the full-viewport
-  // side-by-side split (and its top/bottom flip), whatever the Grid settings
-  // say. Pinning a tile size to compare two machines side by side is exactly
-  // the case where the pinned size gets in the way, so two terminals ignore
-  // the Grid section outright.
-  const customGrid = gridMode && !isAutoGrid(gridPrefs) && gridCount !== 2;
+  // One and two tiles are the deliberate exceptions: a single terminal fills the
+  // whole area and two split it (with the top/bottom flip), whatever the Grid
+  // settings say. Those are the two cases where the point is to see one or two
+  // machines as large as the window allows, so a pinned column count or tile
+  // size can only get in the way: three columns with one terminal open left a
+  // third of a screen in use and two thirds empty.
+  const customGrid = gridMode && !isAutoGrid(gridPrefs) && gridCount > 2;
   // When custom but neither cols nor item width is pinned (only rows), columns
   // fall back to the shipped responsive default via a class, not inline style.
   const customColsAuto =
@@ -251,7 +310,9 @@ export function useGridLayout({
     twoUpSplit,
     toggleTwoUpSplit,
     gridPrefs,
-    refreshGridPrefs,
+    setDragCols,
+    setDragRows,
+    resetTileSize,
     cell,
     customGrid,
     customColsAuto,

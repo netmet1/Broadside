@@ -1,11 +1,11 @@
 /**
  * Drag a grid tile's edge to set the tile size for the whole grid.
  *
- * The drag writes the same Settings -> Grid preferences the Grid settings
- * section writes (item width in characters, item height in rows), so there is
- * exactly one source of truth: drag a tile and the Settings numbers show what
- * you dragged to, and everything that already falls out of a pinned size
- * (every tile matching, horizontal scroll when they overflow) comes for free.
+ * The drag sets the size for this session only (see `dragSize` in
+ * useGridLayout): it does not touch the Settings -> Grid numbers and it is gone
+ * on the next start. Dragging a tile is a tweak to the wall in front of you,
+ * and the surprise of finding it still there tomorrow, in Settings, as a value
+ * you never typed, is worse than having to drag again.
  *
  * Pixels are converted to characters with the same cell metrics the layout uses
  * in reverse, so a drag lands on whole cells rather than an arbitrary pixel
@@ -19,8 +19,6 @@ import {
   GRID_ITEM_COLS_MIN,
   GRID_ITEM_ROWS_MAX,
   GRID_ITEM_ROWS_MIN,
-  saveGridItemCols,
-  saveGridItemRows,
 } from "@/lib/gridPrefs";
 import {
   GRID_HEADER_H,
@@ -45,18 +43,20 @@ type Drag = {
 
 export function useGridResize({
   cell,
-  onChange,
+  onCols,
+  onRows,
 }: {
   cell: { cellW: number; cellH: number };
-  /** Called after a write so the caller can re-read the prefs and re-render. */
-  onChange: () => void;
+  /** New tile width / height in characters, once a whole cell is crossed. */
+  onCols: (cols: number) => void;
+  onRows: (rows: number) => void;
 }) {
   const [resizing, setResizing] = useState(false);
   const drag = useRef<Drag | null>(null);
-  // The last values written, so a drag only touches localStorage when the
+  // The last values reported, so a drag only re-renders the grid when the
   // character count actually changes (roughly once per cell crossed) instead of
   // on every mouse move.
-  const lastWritten = useRef<{ cols: number | null; rows: number | null }>({
+  const lastSent = useRef<{ cols: number | null; rows: number | null }>({
     cols: null,
     rows: null,
   });
@@ -76,7 +76,7 @@ export function useGridResize({
         startX: e.clientX,
         startY: e.clientY,
       };
-      lastWritten.current = { cols: null, rows: null };
+      lastSent.current = { cols: null, rows: null };
       setResizing(true);
     },
     [],
@@ -97,10 +97,9 @@ export function useGridResize({
             Math.round((px - TILE_BORDER_X) / cell.cellW),
           ),
         );
-        if (cols !== lastWritten.current.cols) {
-          lastWritten.current.cols = cols;
-          saveGridItemCols(cols);
-          onChange();
+        if (cols !== lastSent.current.cols) {
+          lastSent.current.cols = cols;
+          onCols(cols);
         }
       }
       if (d.axis === "y" || d.axis === "both") {
@@ -112,10 +111,9 @@ export function useGridResize({
             Math.round((px - GRID_HEADER_H - TILE_BORDER_Y) / cell.cellH),
           ),
         );
-        if (rows !== lastWritten.current.rows) {
-          lastWritten.current.rows = rows;
-          saveGridItemRows(rows);
-          onChange();
+        if (rows !== lastSent.current.rows) {
+          lastSent.current.rows = rows;
+          onRows(rows);
         }
       }
     };
@@ -135,14 +133,7 @@ export function useGridResize({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [resizing, cell, onChange]);
+  }, [resizing, cell, onCols, onRows]);
 
-  /** Clear both pinned dimensions, putting the grid back to fit-to-window. */
-  const resetSize = useCallback(() => {
-    saveGridItemCols(null);
-    saveGridItemRows(null);
-    onChange();
-  }, [onChange]);
-
-  return { resizing, begin, resetSize };
+  return { resizing, begin };
 }
