@@ -382,23 +382,26 @@ export function TerminalsPage({
     twoUpSplit,
     toggleTwoUpSplit,
     gridPrefs,
-    refreshGridPrefs,
+    setDragCols,
+    setDragRows,
+    resetTileSize,
     cell,
     customGrid,
     customColsAuto,
     gridStyle,
   } = useGridLayout({ sessions, visible, maximized });
 
-  // Drag a tile's edge to set the tile size for the whole grid. Writes the same
-  // Settings -> Grid prefs, so there is one source of truth and the Settings
-  // numbers show what you dragged to.
-  const { resizing, begin: beginResize, resetSize } = useGridResize({
+  // Drag a tile's edge to set the tile size for the whole grid, for as long as
+  // the program is running. It does not write the Settings -> Grid numbers: a
+  // drag adjusts the wall you are looking at, Settings decides how it opens.
+  const { resizing, begin: beginResize } = useGridResize({
     cell,
-    onChange: refreshGridPrefs,
+    onCols: setDragCols,
+    onRows: setDragRows,
   });
   // Handles are pointless where a pinned tile size has no effect: in Tabs, and
-  // at exactly two tiles (which always take the full window by design).
-  const canResizeTiles = gridMode && gridCount !== 2;
+  // at one or two tiles (which always take the full window by design).
+  const canResizeTiles = gridMode && gridCount > 2;
   const sizeIsPinned =
     gridPrefs.itemCols !== null || gridPrefs.itemRows !== null;
 
@@ -431,18 +434,21 @@ export function TerminalsPage({
   // Grid fullscreen: the tiles take the whole window and every bit of chrome
   // collapses to a hover strip at the top.
   //
-  // F10 is registered here rather than in App (where F11 lives) so it can be
-  // gated on this page being visible AND the grid being the active layout,
-  // which is state App doesn't have. Capture phase, like F11, so xterm doesn't
-  // swallow it first.
+  // Ctrl+Shift+G rather than a function key. Anything a terminal program might
+  // use is a key we would be taking away from it: F10 quits mc and opens nano's
+  // menu, and those are exactly the programs you run in a wall of terminals.
+  // Ctrl+Shift+<letter> is safe because a terminal cannot see the Shift at all
+  // (Ctrl+Shift+G and Ctrl+G arrive at the shell as the same byte), so taking
+  // it costs a program nothing it could have told apart from plain Ctrl+G.
   //
-  // Trade-off worth knowing: while the grid is showing, F10 no longer reaches a
-  // terminal, and full-screen programs like mc and nano use it to quit. The
-  // toolbar button is the primary affordance; the key is the accelerator.
+  // Registered here rather than in App (where F11 lives) so it can be gated on
+  // this page being visible AND the grid being the active layout, which is
+  // state App doesn't have. Capture phase, like F11, so xterm doesn't swallow
+  // it first.
   useEffect(() => {
     if (!visible || !gridMode) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "F10") {
+      if (e.ctrlKey && e.shiftKey && !e.altKey && (e.key === "G" || e.key === "g")) {
         e.preventDefault();
         e.stopPropagation();
         onGridFullscreen(!gridFullscreen);
@@ -456,6 +462,32 @@ export function TerminalsPage({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [visible, gridMode, gridFullscreen, onGridFullscreen]);
+
+  // Ctrl+Shift+T puts keyboard focus into the controls. In grid fullscreen they
+  // are slid up out of the way and the mouse was the only way back to them:
+  // pressing Tab cannot do it, because Tab belongs to whatever has focus, and
+  // in a grid that is a terminal, where Tab is the shell's own completion key.
+  // The strip slides down whenever anything inside it takes focus, so this is
+  // the whole of the way in; Tab and Shift+Tab then walk it, and Esc still
+  // leaves fullscreen. Same reasoning as Ctrl+Shift+G for the letter: a
+  // terminal cannot see the Shift, so nothing is taken from the program.
+  const chromeRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!visible || maximized) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || !e.shiftKey || e.altKey) return;
+      if (e.key !== "T" && e.key !== "t") return;
+      const first = chromeRef.current?.querySelector<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!first) return;
+      e.preventDefault();
+      e.stopPropagation();
+      first.focus();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [visible, maximized]);
 
   // Leaving Grid (or maximizing a pane) has to give the chrome back, or it
   // would be missing with nothing on screen able to restore it.
@@ -769,6 +801,7 @@ export function TerminalsPage({
           the strip. */}
       {!maximized && (
         <div
+          ref={chromeRef}
           className={cn(
             gridFullscreen &&
               "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 focus-within:translate-y-0 hover:translate-y-0",
@@ -857,9 +890,9 @@ export function TerminalsPage({
           <Button
             size="sm"
             variant="outline"
-            onClick={resetSize}
+            onClick={resetTileSize}
             {...hint(
-              "Clear the pinned tile size and go back to tiles that fit the window.",
+              "Clear the tile size (dragged or set in Settings) and go back to tiles that fit the window.",
             )}
           >
             <UndoIcon className="h-3.5 w-3.5" />
@@ -878,8 +911,8 @@ export function TerminalsPage({
             aria-pressed={gridFullscreen}
             {...hint(
               gridFullscreen
-                ? "The grid fills the screen. Click (or press F10, or Esc) to come back."
-                : "Fill the screen with the grid (F10). The controls collapse to a strip you hover to reveal.",
+                ? "The grid fills the screen. Click (or press Ctrl+Shift+G, or Esc) to come back."
+                : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a strip you hover to reveal, or reach with Ctrl+Shift+T.",
             )}
           >
             {gridFullscreen ? (
@@ -1412,7 +1445,10 @@ export function TerminalsPage({
       {/* The sliver left showing when the strip is slid up: a grab handle, so
           it reads as "there is something here" rather than a stray border. */}
       {gridFullscreen && (
-        <div className="flex h-1.5 items-center justify-center bg-border/70">
+        <div
+          className="flex h-1.5 items-center justify-center bg-border/70"
+          title="Hover to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
+        >
           <div className="h-0.5 w-16 rounded-full bg-muted-foreground/70" />
         </div>
       )}
