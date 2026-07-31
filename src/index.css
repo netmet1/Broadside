@@ -169,17 +169,10 @@
   outline-offset: 2px;
 }
 
-/* What the Help filter matched, marked on the words themselves.
- *
- * Painted by the browser from a set of Ranges (see useHelpHighlight.ts), so no
- * element is wrapped and nothing in React's tree is touched. Amber because it
- * is the one accent the app does not already spend on status: emerald and red
- * mean connected and failed, sky means a named control, and a search result
- * means none of those. */
-::highlight(help-search) {
-  background-color: #fbbf2466;
-  color: inherit;
-}
+/* The Help filter's match colour lives in useHelpHighlight.ts, not here: its
+ * `::highlight()` rule is newer than the CSS parser this build runs through,
+ * which passes it along but complains about it every time. It is injected at
+ * runtime instead, next to the code that decides there is anything to paint. */
 
 @layer utilities {
   /* Smooth composer caret (D-009): blink + eased horizontal travel. The

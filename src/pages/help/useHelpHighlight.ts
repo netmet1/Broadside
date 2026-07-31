@@ -18,8 +18,31 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Named in `index.css` as `::highlight(help-search)`. */
 const HIGHLIGHT_NAME = "help-search";
+
+/**
+ * The colour a match is painted in, installed the first time it is needed.
+ *
+ * In a stylesheet this would be four lines in `index.css`, and it was — but
+ * `::highlight()` is newer than the CSS parser the production build runs
+ * through, which passes the rule along and warns about it on every build. A
+ * rule added at runtime skips that parser entirely, and it belongs here anyway:
+ * the same support check gates the style and the highlighting itself, so
+ * neither exists without the other.
+ *
+ * Amber because it is the one accent the app does not already spend on status:
+ * emerald and red mean connected and failed, sky means a named control, and a
+ * search result means none of those. The 40% alpha reads on both themes and
+ * leaves the text its own colour.
+ */
+function ensureHighlightStyle(): void {
+  const id = "help-search-highlight-style";
+  if (document.getElementById(id)) return;
+  const style = document.createElement("style");
+  style.id = id;
+  style.textContent = `::highlight(${HIGHLIGHT_NAME}) { background-color: #fbbf2466; color: inherit; }`;
+  document.head.appendChild(style);
+}
 
 /** Below this, a term matches so much of the page that marking it is noise.
  * Two characters is enough for `mc`, `vi`, `ls`. */
@@ -143,6 +166,7 @@ export function useHelpHighlight(
       setCount(ranges.length);
       setIndex(0);
       if (ranges.length === 0) return;
+      ensureHighlightStyle();
       CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
       scrollTo(0);
     });
