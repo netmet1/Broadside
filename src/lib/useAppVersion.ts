@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 
+import { withBuildTag } from "@/lib/buildTag";
+
 /**
  * The app version, read once from `tauri.conf.json` (the value the installer
- * stamps and `@tauri-apps/api/app`'s `getVersion` returns) — e.g. "1.0.0".
+ * stamps and `@tauri-apps/api/app`'s `getVersion` returns) — e.g. "1.0.0", with
+ * the build tag appended on a test build (see `buildTag.ts`).
  *
  * Single source of truth for every version label in the UI, so a release only
  * needs the manifest bumps (package.json / Cargo.toml / tauri.conf.json) and
@@ -16,7 +19,7 @@ export function useAppVersion(fallback = ""): string {
   const [version, setVersion] = useState(fallback);
   useEffect(() => {
     getVersion()
-      .then(setVersion)
+      .then((v) => setVersion(withBuildTag(v)))
       .catch(() => setVersion(fallback));
   }, [fallback]);
   return version;

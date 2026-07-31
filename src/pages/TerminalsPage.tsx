@@ -892,7 +892,7 @@ export function TerminalsPage({
             variant="outline"
             onClick={resetTileSize}
             {...hint(
-              "Clear the tile size (dragged or set in Settings) and go back to tiles that fit the window.",
+              "Clear the tile size (dragged or set in Settings) and go back to original configured grid settings.",
             )}
           >
             <UndoIcon className="h-3.5 w-3.5" />

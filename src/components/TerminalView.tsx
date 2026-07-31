@@ -216,12 +216,20 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     });
 
     // Ctrl+F opens the Find bar instead of sending ^F to the remote shell.
+    //
+    // Returning false only tells xterm to keep its hands off the key; it does
+    // NOT stop the webview acting on it. Every branch here therefore calls
+    // preventDefault as well, or the browser's own handling runs on top of
+    // ours — which is exactly what made Ctrl+Shift+V paste twice: we wrote the
+    // clipboard to the PTY, then Chromium's paste-and-match-style fired a
+    // `paste` event at xterm's hidden textarea and xterm wrote it again.
     term.attachCustomKeyEventHandler((e) => {
       if (
         e.type === "keydown" &&
         e.ctrlKey &&
         (e.key === "f" || e.key === "F")
       ) {
+        e.preventDefault();
         onSearchRequestRef.current();
         return false;
       }
@@ -230,10 +238,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // right-click-paste — Ctrl+C/Ctrl+V alone stay reserved for the shell
       // (SIGINT / literal paste-through the shell may want).
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
+        e.preventDefault();
         copySelection(term.getSelection());
         return false;
       }
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) {
+        e.preventDefault();
         navigator.clipboard
           ?.readText()
           .then((text) => {
@@ -714,13 +724,28 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
             {phase.kind === "failed" && (
               <>
                 <p className="text-sm text-red-400">{phase.message}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onClosed(sessionId)}
-                >
-                  Close tab
-                </Button>
+                {/* Try again before Close tab: a failed connect is usually
+                    transient (a busy sshd refusing a burst of handshakes is the
+                    common one), and the alternative was closing the tab, going
+                    back to Hosts and opening it again for something a second
+                    attempt fixes. Same path as the disconnected banner's
+                    Reconnect — it bumps the retry nonce and re-runs connect. */}
+                <div className="flex items-center justify-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onReconnect(sessionId)}
+                  >
+                    Try again
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onClosed(sessionId)}
+                  >
+                    Close tab
+                  </Button>
+                </div>
               </>
             )}
           </div>
