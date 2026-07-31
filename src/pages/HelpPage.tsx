@@ -750,7 +750,11 @@ const SECTIONS: HelpSection[] = [
               instead grows the tile above the gap down into it, giving one top
               left, one full height on the right and one bottom left; and{" "}
               <strong className="font-semibold">Leave the gap</strong> keeps
-              every tile the same shape and lets the empty cell stay empty.
+              every tile the same shape and lets the empty cell stay empty. A
+              size you pinned wins over all of this: a stretched tile is wider
+              than the <Nav>Item width</Nav> and a tall one is taller than the{" "}
+              <Nav>Item height</Nav>, so where you have set that dimension by
+              hand the gap simply stays.
             </li>
           </Bullets>
           <H3>Copy, paste and jumping to a tab</H3>

@@ -401,6 +401,13 @@ export function useGridLayout({
   // Placement is left to CSS grid's own auto-flow, which follows the `order`
   // the tiles carry. A tall tile occupies its second row before the short row
   // is reached, so the tiles after it fill in beside it without being told to.
+  //
+  // Both fills make a tile a different size from its neighbours, so neither is
+  // allowed to argue with a size you pinned (D4): a stretched tile is wider
+  // than the item width, a tall one is taller than the item height. Where the
+  // dimension is set by hand, the gap stays — what you asked for wins.
+  const spanCols = gridPrefs.itemCols == null;
+  const spanRows = gridPrefs.itemRows == null;
   const tileSpan = useCallback(
     (slot: number): React.CSSProperties | undefined => {
       if (rowFill === "gaps") return undefined;
@@ -414,12 +421,12 @@ export function useGridLayout({
 
       if (rowFill === "tall" && gap === 1) {
         // The tile directly above the hole: the last one on the row before.
-        return slot === lastRowStart - 1
+        return spanRows && slot === lastRowStart - 1
           ? { gridRow: "span 2" }
           : undefined;
       }
 
-      if (slot < lastRowStart) return undefined;
+      if (!spanCols || slot < lastRowStart) return undefined;
       // Share `cols` columns between `lastRowCount` tiles, the remainder going
       // to the leftmost ones so the row ends flush.
       const nth = slot - lastRowStart;
@@ -427,7 +434,7 @@ export function useGridLayout({
         Math.floor(cols / lastRowCount) + (nth < cols % lastRowCount ? 1 : 0);
       return span > 1 ? { gridColumn: `span ${span}` } : undefined;
     },
-    [rowFill, effectiveCols, gridCount],
+    [rowFill, effectiveCols, gridCount, spanCols, spanRows],
   );
 
   return {

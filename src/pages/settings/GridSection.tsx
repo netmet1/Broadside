@@ -167,7 +167,10 @@ export function GridSection({ id }: { id: string }) {
           </div>
           <p className="text-xs text-muted-foreground">
             What fills the gap when the terminals don't divide evenly into
-            columns — three tiles in two columns, for instance.
+            columns — three tiles in two columns, for instance. A pinned Item
+            width or Item height wins: a stretched tile is wider than one and a
+            tall tile is taller than the other, so where you have set that
+            dimension by hand the gap stays.
           </p>
         </div>
       </div>
