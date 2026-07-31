@@ -15,6 +15,21 @@
 const COLS_KEY = "terminal-grid-cols";
 const ITEM_COLS_KEY = "terminal-grid-item-cols";
 const ITEM_ROWS_KEY = "terminal-grid-item-rows";
+const STRICT_KEY = "terminal-grid-strict";
+const ROW_FILL_KEY = "terminal-grid-row-fill";
+
+/** Fired on this window whenever any grid pref is written.
+ *
+ * The browser's own `storage` event only reaches *other* documents, so a write
+ * made here is invisible to the rest of this one. Settings and Terminals both
+ * hold their own copy of these values, and with strict mode off a drag in the
+ * grid changes what Settings should be showing — this is how the other copy
+ * finds out, rather than each screen re-reading on a timer or on focus. */
+export const GRID_PREFS_EVENT = "broadside:grid-prefs";
+
+function announce(): void {
+  window.dispatchEvent(new Event(GRID_PREFS_EVENT));
+}
 
 /** Clamp bounds. Deliberately conservative: the max column count and the
  * character extents keep a fixed grid from being pathological, and the minimums
@@ -92,8 +107,63 @@ function writeField(
 ): void {
   if (v === null) {
     localStorage.removeItem(key);
-    return;
+  } else {
+    const clamped = Math.min(Math.max(Math.round(v), min), max);
+    localStorage.setItem(key, String(clamped));
   }
-  const clamped = Math.min(Math.max(Math.round(v), min), max);
-  localStorage.setItem(key, String(clamped));
+  announce();
+}
+
+/* ------------------------------------------------------------------ *
+ * How the grid behaves, as opposed to what shape it is. Kept apart from
+ * `GridPrefs` on purpose: `isAutoGrid` asks whether the *layout* is pinned, and
+ * neither of these two is a layout dimension.
+ * ------------------------------------------------------------------ */
+
+/** What to do with a last row that isn't full — three tiles in two columns
+ * leaves a tile-shaped hole, and this decides what fills it.
+ *
+ *  - `stretch` — the tiles on the short row widen to take the whole width.
+ *  - `tall`    — when exactly one space is left, the tile above it grows down
+ *                into the gap, giving a full-height tile in the last column.
+ *  - `gaps`    — leave the hole. Every tile keeps the same shape.
+ */
+export type RowFill = "stretch" | "tall" | "gaps";
+
+export const DEFAULT_ROW_FILL: RowFill = "stretch";
+
+export function loadRowFill(): RowFill {
+  const raw = localStorage.getItem(ROW_FILL_KEY);
+  return raw === "tall" || raw === "gaps" || raw === "stretch"
+    ? raw
+    : DEFAULT_ROW_FILL;
+}
+
+export function saveRowFill(v: RowFill): void {
+  localStorage.setItem(ROW_FILL_KEY, v);
+  announce();
+}
+
+/**
+ * Whether the Grid settings are the last word (`true`, the default).
+ *
+ * Strict: a tile size dragged out in the Terminals grid is an adjustment to the
+ * wall you are looking at right now. It lasts while Broadside runs and is then
+ * forgotten, and the numbers in Settings never move — so what you set here is
+ * what you get back on every restart.
+ *
+ * Not strict: a drag is a decision. It writes the tile width and height straight
+ * into these settings, Settings shows the new numbers, and the size comes back
+ * after a restart. Nothing else about the grid follows the drag either way; the
+ * column count, the layout, the tile headers and the two-up flip are unchanged.
+ */
+export function loadGridStrict(): boolean {
+  // Absent means never set, and the default is on — so only an explicit "0"
+  // turns it off. Written this way round so a fresh install is strict.
+  return localStorage.getItem(STRICT_KEY) !== "0";
+}
+
+export function saveGridStrict(v: boolean): void {
+  localStorage.setItem(STRICT_KEY, v ? "1" : "0");
+  announce();
 }
