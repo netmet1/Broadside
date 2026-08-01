@@ -22,10 +22,22 @@ import { isValidElement, type ReactNode } from "react";
  * the two cannot drift apart. */
 export type Searchable = { searchText: string };
 
+/** A component that renders one of its own props as text — `<Term term="SSH" />`
+ * puts "SSH" on the page while having no children at all. Naming the props here
+ * is how a walk of the tree sees those words. */
+export type PropSearchable = { searchProps: readonly string[] };
+
 function hasSearchText(type: unknown): type is Searchable {
   return (
     typeof type === "function" &&
     typeof (type as Partial<Searchable>).searchText === "string"
+  );
+}
+
+function hasSearchProps(type: unknown): type is PropSearchable {
+  return (
+    typeof type === "function" &&
+    Array.isArray((type as Partial<PropSearchable>).searchProps)
   );
 }
 
@@ -48,8 +60,16 @@ export function textOf(node: ReactNode): string {
   }
   if (isValidElement(node)) {
     if (hasSearchText(node.type)) return node.type.searchText;
-    const { children } = node.props as { children?: ReactNode };
-    return textOf(children);
+    const props = node.props as Record<string, unknown> & {
+      children?: ReactNode;
+    };
+    const fromProps = hasSearchProps(node.type)
+      ? node.type.searchProps
+          .map((p) => (typeof props[p] === "string" ? props[p] : ""))
+          .filter(Boolean)
+          .join(" ")
+      : "";
+    return [fromProps, textOf(props.children)].filter(Boolean).join(" ");
   }
   // Anything else (a portal, an iterable) contributes nothing. Nothing in Help
   // is built that way, and a wrong guess here would be silent.

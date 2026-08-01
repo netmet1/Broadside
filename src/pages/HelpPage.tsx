@@ -60,6 +60,10 @@ function Term({ term, children }: { term: string; children?: ReactNode }) {
   );
 }
 
+// Without children this puts the term itself on the page, and a walk of the
+// element tree would find nothing there to search for. See ./help/searchText.
+Term.searchProps = ["term"] as const;
+
 /** Accent for the names of app areas and named controls (tabs, buttons, key
  * settings), so they stand out from the surrounding prose. Distinct from the
  * dotted-underline glossary links above and from the emerald/amber/red status
