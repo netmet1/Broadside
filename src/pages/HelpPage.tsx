@@ -840,9 +840,25 @@ const SECTIONS: HelpSection[] = [
               terminal changes together,
               one step a notch, between 8 and 32 px, and the size you stop on is
               saved as the terminal font size in <Nav>Settings</Nav> under{" "}
-              <Nav>Appearance</Nav>. If you would rather that number only ever
-              changed by being typed, tick <Nav>Strict</Nav> beside it and the
-              wheel is ignored.
+              <Nav>Appearance</Nav>.
+            </li>
+            <li>
+              <strong className="font-semibold">
+                Giving Ctrl and the wheel back
+              </strong>
+              : while the zoom is on, that combination belongs to Broadside and
+              the terminal never sees it. Two things go with it. The scrollback
+              no longer scrolls faster when you hold <Nav>Ctrl</Nav>, and a
+              full-screen program running with mouse reporting on (tmux with{" "}
+              <code>mouse on</code>, vim with <code>set mouse=a</code>, htop) no
+              longer receives the notch, so a mapping such as{" "}
+              <code>&lt;C-ScrollWheelUp&gt;</code> stops firing. Little binds it
+              by default, but if you rely on one, tick <Nav>Strict</Nav> beside
+              the terminal font size in <Nav>Settings</Nav> under{" "}
+              <Nav>Appearance</Nav>: the zoom stops, the size then only changes
+              by being typed there, and Ctrl with the wheel goes back to the
+              terminal exactly as it behaved before. The plain wheel, without
+              Ctrl, is never taken either way.
             </li>
             <li>
               Every key Broadside takes, here and everywhere else, is listed in{" "}

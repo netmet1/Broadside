@@ -1163,7 +1163,7 @@ export function SettingsPage({
                 className="flex cursor-pointer items-center gap-1.5 text-sm"
                 {...hint(
                   termFontStrict
-                    ? "Strict: Ctrl and the mouse wheel over a terminal are ignored, and only this field changes the size."
+                    ? "Strict: only this field changes the size. Ctrl and the mouse wheel are left to the terminal, so a program with mouse reporting on receives them again and the scrollback fast-scrolls as it used to."
                     : "Not strict: Ctrl and the mouse wheel over a terminal resize the text, and the new size is saved here as you go.",
                 )}
               >
@@ -1180,7 +1180,9 @@ export function SettingsPage({
               8-32 px. Hold <span className="font-medium">Ctrl</span> and turn
               the mouse wheel over a terminal to change it from there; the size
               you land on is saved. Tick <span className="font-medium">Strict</span>{" "}
-              to ignore the wheel and keep this field the only way to set it.
+              to make this field the only way to set it, which also hands Ctrl
+              and the wheel back to the terminal for anything that wants them
+              itself.
             </p>
           </div>
           <div className="grid gap-1">
