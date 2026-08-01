@@ -46,6 +46,7 @@ import {
   clearCommandHistory,
   commandHistory,
 } from "@/lib/tauri/settings";
+import { announceCommandHistory } from "@/lib/commandHistory";
 import {
   buildMatcher,
   isMatcher,
@@ -78,6 +79,7 @@ const SOURCE_LABEL: Record<string, string> = {
   broadcast: "Broadcast",
   ptybroadcast: "PTY Broadcast",
   multiterminal: "MultiTerminal",
+  terminals: "Terminals",
 };
 
 /** The target hosts of a command-history entry, colour-tinted live by id
@@ -698,6 +700,8 @@ export function LogsPage({ visible }: { visible: boolean }) {
                 try {
                   await clearCommandHistory();
                   setHistoryEntries([]);
+                  // The composers recall from this same list; tell them.
+                  announceCommandHistory();
                 } catch (e) {
                   toast.error(errorMessage(e));
                 }

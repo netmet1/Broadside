@@ -269,6 +269,23 @@ pub fn pty_history_add(
     })
 }
 
+/// Records a Terminals-rail broadcast in the shared command history, so Up/Down
+/// recall is the same list there as on the PTY Broadcast page.
+///
+/// The rail deliberately does not persist run reports (that page owns those, and
+/// a second copy of every run would double the report), so this writes the
+/// recall entry and nothing else.
+#[tauri::command]
+pub fn rail_log_command(
+    command: String,
+    hosts: Vec<crate::db::history::HistoryHost>,
+    state: State<'_, DbState>,
+) -> AppResult<()> {
+    with_db(&state, |conn| {
+        crate::db::history::add(conn, &command, &hosts, "terminals")
+    })
+}
+
 /// Records an MultiTerminal dispatch in the shared command history (D-061
 /// sub-4). Rendered as `MultiTerminal <hosts> <command>` with the hosts tinted
 /// by their live colour. Never blocks the dispatch (best-effort).

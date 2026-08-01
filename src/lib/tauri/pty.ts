@@ -119,6 +119,16 @@ export function onPtyBlock(
   return listen<PtyBlock>("pty:block", (event) => handler(event.payload));
 }
 
+/** Records a Terminals-rail broadcast in the shared command history. The rail
+ * keeps no run reports of its own, so this is the only trace it leaves: enough
+ * for Up/Down recall to be the same list as the PTY Broadcast page's. */
+export function railLogCommand(
+  command: string,
+  hosts: { id: number | null; label: string }[],
+): Promise<void> {
+  return invoke<void>("rail_log_command", { command, hosts });
+}
+
 /** Records an MultiTerminal dispatch in the shared command history, rendered as
  * `MultiTerminal <hosts> <command>` with the hosts tinted live (D-061 sub-4). */
 export function omniLogCommand(

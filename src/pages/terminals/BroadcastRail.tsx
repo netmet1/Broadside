@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { AlertTriangleIcon, SendIcon } from "lucide-react";
+import { AlertTriangleIcon, EraserIcon, SendIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -13,7 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Composer } from "@/components/Composer";
 import { checkDestructive, type GuardHit } from "@/lib/tauri/broadcast";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { useHint } from "@/lib/status";
@@ -111,14 +111,20 @@ export function BroadcastRail({
     command,
     setCommand,
     sending,
+    history,
     dispatch,
+    clearCmdHistory,
   } = useSessionBroadcast({
     sessions: targets,
     connectedSessions,
     lineEnding: isSsh ? "\n" : "\r",
-    // The standalone page owns the persisted history; this is the live view, so
-    // it stays in memory and never writes a second copy of the same run.
+    // The standalone page owns the persisted run reports; this is the live
+    // view, so it never writes a second copy of the same run.
     persist: false,
+    // The recall list is a different matter: there is only one of those, and
+    // typing the same command in a different place should not mean losing the
+    // last one you typed. Up/Down here is the PTY Broadcast page's history.
+    sharedRecall: true,
     describe,
   });
 
@@ -127,8 +133,17 @@ export function BroadcastRail({
   const [pending, setPending] = useState<string | null>(null);
   const [guardHits, setGuardHits] = useState<GuardHit[]>([]);
 
+  // Only a connected session can be a target, so it is the connected ones that
+  // "Select all" covers and the ones "all" is measured against. A rail full of
+  // dropped sessions leaves the box unchecked and does nothing, which is the
+  // truth of what would be sent.
+  const connectedTargets = useMemo(
+    () => targets.filter((s) => connectedSessions.has(s.id)),
+    [targets, connectedSessions],
+  );
   const allSelected =
-    targets.length > 0 && targets.every((s) => selected.has(s.id));
+    connectedTargets.length > 0 &&
+    connectedTargets.every((s) => selected.has(s.id));
 
   const send = useCallback(async () => {
     const cmd = command.trim();
@@ -195,9 +210,12 @@ export function BroadcastRail({
             type="checkbox"
             className="accent-primary"
             checked={allSelected}
+            disabled={connectedTargets.length === 0}
             onChange={() =>
               setSelected(
-                allSelected ? new Set() : new Set(targets.map((s) => s.id)),
+                allSelected
+                  ? new Set()
+                  : new Set(connectedTargets.map((s) => s.id)),
               )
             }
           />
@@ -216,13 +234,24 @@ export function BroadcastRail({
             return (
               <label
                 key={s.id}
-                className="flex cursor-pointer items-center gap-2 px-2 py-1 text-xs hover:bg-accent/30"
+                title={
+                  connected
+                    ? undefined
+                    : "Disconnected: reconnect the terminal to broadcast to it"
+                }
+                className={cn(
+                  "flex items-center gap-2 px-2 py-1 text-xs",
+                  connected
+                    ? "cursor-pointer hover:bg-accent/30"
+                    : "cursor-not-allowed",
+                )}
               >
                 <input
                   type="checkbox"
                   className="accent-primary"
                   checked={selected.has(s.id)}
                   onChange={() => toggleSession(s.id)}
+                  disabled={!connected}
                 />
                 {s.type === "ssh" ? (
                   <span
@@ -235,12 +264,14 @@ export function BroadcastRail({
                     className="h-3 w-3 shrink-0 text-muted-foreground"
                   />
                 )}
+                {/* Red, and still listed: a session that has dropped is worth
+                    seeing. The row's own title says why it cannot be checked,
+                    so this one no longer carries a shorter version of it. */}
                 <span
                   className={cn(
                     "truncate",
                     !connected && "text-red-500 dark:text-red-400",
                   )}
-                  title={connected ? undefined : "not connected"}
                 >
                   {sessionLabel(s)}
                 </span>
@@ -251,21 +282,19 @@ export function BroadcastRail({
       </div>
 
       <div className="shrink-0 space-y-1.5 border-t border-border/50 p-2">
-        <Input
-          value={command}
-          onChange={(e) => setCommand(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void send();
-            }
-          }}
-          placeholder="Command to broadcast"
-          spellCheck={false}
-          autoComplete="off"
-          className="h-8 font-mono text-xs"
-          aria-label="Command to broadcast"
-        />
+        {/* The same composer the PTY Broadcast page uses, so Up and Down recall
+            the same commands here as they do there. Kept short: this is a rail,
+            not a page, and four lines is already a long command. */}
+        <div className="flex">
+          <Composer
+            value={command}
+            onChange={setCommand}
+            onSubmit={() => void send()}
+            history={history}
+            maxRows={4}
+            placeholder="Command to broadcast"
+          />
+        </div>
         <Button
           size="sm"
           className="w-full"
@@ -276,6 +305,19 @@ export function BroadcastRail({
         >
           <SendIcon className="h-3.5 w-3.5" />
           Send to {selectedCount}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full"
+          disabled={history.length === 0}
+          onClick={() => void clearCmdHistory()}
+          {...hint(
+            "Empty the Up/Down recall list. There is only one of them, so this clears the PTY Broadcast page's history too.",
+          )}
+        >
+          <EraserIcon className="h-3.5 w-3.5" />
+          Clear history
         </Button>
         <p className="text-[10px] leading-tight text-muted-foreground">
           Types into every checked session. Watch the result in the panes; the

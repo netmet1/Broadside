@@ -210,10 +210,19 @@ export function SshBroadcastPanel({
     });
   }, [visibleIds, setSelected]);
 
+  // Only a connected session can receive anything, so a dropped one cannot be
+  // checked (its box is disabled below) and "Select all" passes over it.
+  const selectableSessions = useMemo(
+    () => visibleRailSessions.filter((s) => connectedSessions.has(s.id)),
+    [visibleRailSessions, connectedSessions],
+  );
   const allSelected =
-    visibleRailSessions.length > 0 && visibleRailSessions.every((s) => selected.has(s.id));
+    selectableSessions.length > 0 &&
+    selectableSessions.every((s) => selected.has(s.id));
   const toggleAll = () => {
-    setSelected(allSelected ? new Set() : new Set(visibleIds));
+    setSelected(
+      allSelected ? new Set() : new Set(selectableSessions.map((s) => s.id)),
+    );
   };
 
   const hasOutput = runs.length > 0;
@@ -254,14 +263,14 @@ export function SshBroadcastPanel({
             {!railCollapsed && (
               <label
                 className="flex cursor-pointer items-center gap-2 text-sm font-medium"
-                {...hint("Select or deselect every open terminal session")}
+                {...hint("Select or deselect every connected terminal session")}
               >
                 <input
                   type="checkbox"
                   className="accent-primary"
                   checked={allSelected}
                   onChange={toggleAll}
-                  disabled={sending || visibleRailSessions.length === 0}
+                  disabled={sending || selectableSessions.length === 0}
                 />
                 Select all
                 <span className="ml-auto text-xs font-normal text-muted-foreground">
@@ -298,12 +307,14 @@ export function SshBroadcastPanel({
                   key={s.id}
                   type="button"
                   onClick={() => toggleSession(s.id)}
-                  disabled={sending}
+                  disabled={sending || !connectedSessions.has(s.id)}
                   title={
                     railTooltip(s.host) +
-                    (connectedSessions.has(s.id) ? "" : "\n(not connected)")
+                    (connectedSessions.has(s.id)
+                      ? ""
+                      : "\n(disconnected: reconnect the terminal to dispatch to it)")
                   }
-                  className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 ${
+                  className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${
                     selected.has(s.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""
                   }`}
                 >
@@ -318,14 +329,23 @@ export function SshBroadcastPanel({
               ) : (
                 <label
                   key={s.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+                  title={
+                    connectedSessions.has(s.id)
+                      ? undefined
+                      : "Disconnected: reconnect the terminal to dispatch to it"
+                  }
+                  className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                    connectedSessions.has(s.id)
+                      ? "cursor-pointer hover:bg-accent/50"
+                      : "cursor-not-allowed opacity-60"
+                  }`}
                 >
                   <input
                     type="checkbox"
                     className="accent-primary"
                     checked={selected.has(s.id)}
                     onChange={() => toggleSession(s.id)}
-                    disabled={sending}
+                    disabled={sending || !connectedSessions.has(s.id)}
                   />
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-full"

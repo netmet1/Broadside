@@ -45,6 +45,10 @@ import {
   type BlockInteractivity,
 } from "@/lib/tauri/pty";
 import { clearCommandHistory, commandHistory } from "@/lib/tauri/settings";
+import {
+  COMMAND_HISTORY_EVENT,
+  announceCommandHistory,
+} from "@/lib/commandHistory";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import type { SshTermSession } from "@/pages/TerminalsPage";
@@ -290,9 +294,16 @@ export function MultiTerminalPage({
         ),
       )
       .catch(() => {});
-    commandHistory(100)
-      .then((entries) => setHistory(entries.map((e) => e.command)))
-      .catch(() => {});
+    // One recall list, several composers: re-read whenever another one adds to
+    // it or empties it, so this copy cannot go stale behind a tab switch.
+    const loadRecall = () => {
+      commandHistory(100)
+        .then((entries) => setHistory(entries.map((e) => e.command)))
+        .catch(() => {});
+    };
+    loadRecall();
+    window.addEventListener(COMMAND_HISTORY_EVENT, loadRecall);
+    return () => window.removeEventListener(COMMAND_HISTORY_EVENT, loadRecall);
   }, []);
 
   // Refresh live host colours each time the page is shown.
@@ -376,7 +387,9 @@ export function MultiTerminalPage({
       omniLogCommand(
         cmd,
         targets.map((s) => ({ id: s.host.id, label: s.host.label })),
-      ).catch(() => {});
+      )
+        .then(announceCommandHistory)
+        .catch(() => {});
       for (const s of targets) {
         const queue = pendingDispatched.current.get(s.id) ?? [];
         queue.push(cmd);
@@ -439,6 +452,7 @@ export function MultiTerminalPage({
     try {
       await clearCommandHistory();
       setHistory([]);
+      announceCommandHistory();
       toast.success("Command history cleared");
     } catch (e) {
       toast.error(errorMessage(e));
