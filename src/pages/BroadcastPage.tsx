@@ -29,11 +29,12 @@ import {
 import {
   COMMAND_HISTORY_EVENT,
   announceCommandHistory,
+  clearRecall,
+  recallFor,
 } from "@/lib/commandHistory";
 import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
 import { RAIL_SORT_OPTIONS } from "@/lib/railSort";
 import {
-  clearCommandHistory,
   commandHistory,
   getAppSettings,
 } from "@/lib/tauri/settings";
@@ -191,14 +192,14 @@ export function BroadcastPage({
   useEffect(() => {
     const loadRecall = () => {
       commandHistory(100)
-        .then((entries) => setHistory(entries.map((e) => e.command)))
+        .then((entries) => setHistory(recallFor(entries, "broadcast")))
         .catch(() => {
           // Recall is a convenience; the composer works without it.
         });
     };
     loadRecall();
-    // One recall list, several composers: re-read when another one adds to it
-    // or empties it, rather than holding a copy that quietly goes stale.
+    // One recall list, several composers: re-read when another one adds to it,
+    // rather than holding a copy that quietly goes stale.
     window.addEventListener(COMMAND_HISTORY_EVENT, loadRecall);
     // Reload persisted result history so output survives restarts (D-059).
     broadcastHistoryList(HISTORY_RUNS)
@@ -507,16 +508,12 @@ export function BroadcastPage({
     toast.success("Broadcast results cleared");
   }, []);
 
-  /** Clears the Up/Down command recall history, everywhere it is recalled. */
-  const clearCmdHistory = useCallback(async () => {
-    try {
-      await clearCommandHistory();
-      setHistory([]);
-      announceCommandHistory();
-      toast.success("Command history cleared");
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
+  /** Empties the Up/Down recall on this page only. The list is shared to read,
+   * so the other composers keep theirs, and nothing leaves the Logs history. */
+  const clearCmdHistory = useCallback(() => {
+    clearRecall("broadcast");
+    setHistory([]);
+    toast.success("Command history cleared here");
   }, []);
 
   const activeRun = runs.find((r) => r.pending.size > 0);
@@ -704,7 +701,9 @@ export function BroadcastPage({
               size="sm"
               className="w-full"
               onClick={clearCmdHistory}
-              {...hint("Clear the Up/Down command recall history")}
+              {...hint(
+                "Clear the Up/Down recall on this page. The other composers keep theirs, and nothing leaves the Logs history.",
+              )}
             >
               Clear command history
             </Button>

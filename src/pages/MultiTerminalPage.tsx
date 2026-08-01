@@ -44,10 +44,12 @@ import {
   ptyWrite,
   type BlockInteractivity,
 } from "@/lib/tauri/pty";
-import { clearCommandHistory, commandHistory } from "@/lib/tauri/settings";
+import { commandHistory } from "@/lib/tauri/settings";
 import {
   COMMAND_HISTORY_EVENT,
   announceCommandHistory,
+  clearRecall,
+  recallFor,
 } from "@/lib/commandHistory";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
@@ -298,7 +300,7 @@ export function MultiTerminalPage({
     // it or empties it, so this copy cannot go stale behind a tab switch.
     const loadRecall = () => {
       commandHistory(100)
-        .then((entries) => setHistory(entries.map((e) => e.command)))
+        .then((entries) => setHistory(recallFor(entries, "multiterminal")))
         .catch(() => {});
     };
     loadRecall();
@@ -446,17 +448,14 @@ export function MultiTerminalPage({
     setBlocks([]);
   }, []);
 
-  // Clear the shared Up/Down command-recall history (same store as Broadcast /
-  // PTY Broadcast). Separate from "Clear results", which clears the block log.
-  const clearCmdHistory = useCallback(async () => {
-    try {
-      await clearCommandHistory();
-      setHistory([]);
-      announceCommandHistory();
-      toast.success("Command history cleared");
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
+  // Empty the Up/Down recall on this page. The list itself is shared to read
+  // (Broadcast, PTY Broadcast, the Terminals rail), but a clear is local: the
+  // others keep what they had, and nothing leaves the Logs history. Separate
+  // from "Clear results", which clears the block log.
+  const clearCmdHistory = useCallback(() => {
+    clearRecall("multiterminal");
+    setHistory([]);
+    toast.success("Command history cleared here");
   }, []);
 
   // "Close all terminals" rail action — OK/Cancel guard (no typed confirmation).
@@ -642,7 +641,9 @@ export function MultiTerminalPage({
                 className="h-8 w-8"
                 onClick={clearCmdHistory}
                 aria-label="Clear command history"
-                {...hint("Clear the Up/Down command recall history")}
+                {...hint(
+                  "Clear the Up/Down recall on this page. The other composers keep theirs, and nothing leaves the Logs history.",
+                )}
               >
                 <HistoryIcon className="h-4 w-4" />
               </Button>
@@ -676,7 +677,9 @@ export function MultiTerminalPage({
                 size="sm"
                 className="w-full"
                 onClick={clearCmdHistory}
-                {...hint("Clear the Up/Down command recall history")}
+                {...hint(
+                  "Clear the Up/Down recall on this page. The other composers keep theirs, and nothing leaves the Logs history.",
+                )}
               >
                 Clear command history
               </Button>

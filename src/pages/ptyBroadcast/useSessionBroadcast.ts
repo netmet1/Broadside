@@ -3,7 +3,10 @@ import { toast } from "sonner";
 
 import {
   COMMAND_HISTORY_EVENT,
+  type RecallScope,
   announceCommandHistory,
+  clearRecall,
+  recallFor,
 } from "@/lib/commandHistory";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
@@ -13,7 +16,7 @@ import {
   ptyWrite,
   railLogCommand,
 } from "@/lib/tauri/pty";
-import { clearCommandHistory, commandHistory } from "@/lib/tauri/settings";
+import { commandHistory } from "@/lib/tauri/settings";
 
 const HISTORY_RUNS = 200;
 
@@ -59,6 +62,9 @@ type TargetIdentity = Omit<DispatchResult, "ok" | "message">;
  *    every broadcasting screen writes to. Defaults to `persist`, because a
  *    panel that saves its runs was already sharing it; the Terminals rail turns
  *    it on without `persist` (shared recall, no second copy of the runs).
+ *  - `recallScope` — which screen this is, for the per-screen clear. Sharing is
+ *    for reading only: clearing empties this composer and leaves the others
+ *    holding what they had.
  *  - `describe` — maps a session to its report identity (host snapshot vs
  *    shell icon/label).
  */
@@ -68,6 +74,7 @@ export function useSessionBroadcast<T extends { id: string }>({
   lineEnding,
   persist,
   sharedRecall = persist,
+  recallScope = "ptybroadcast",
   describe,
 }: {
   sessions: T[];
@@ -75,6 +82,7 @@ export function useSessionBroadcast<T extends { id: string }>({
   lineEnding: "\r" | "\n";
   persist: boolean;
   sharedRecall?: boolean;
+  recallScope?: RecallScope;
   describe: (session: T) => TargetIdentity;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -120,20 +128,20 @@ export function useSessionBroadcast<T extends { id: string }>({
   }, [persist]);
 
   // The recall list, read on mount and again whenever anything anywhere in the
-  // app changes it. Without the second half, a command sent from one composer
-  // would not reach another until a restart, and a clear in one place would
-  // leave the other still holding the list.
+  // app adds to it. Without the second half, a command sent from one composer
+  // would not reach another until a restart. What this screen sees is the part
+  // of the list that is newer than its own last clear.
   useEffect(() => {
     if (!sharedRecall) return;
     const load = () => {
       commandHistory(100)
-        .then((entries) => setHistory(entries.map((e) => e.command)))
+        .then((entries) => setHistory(recallFor(entries, recallScope)))
         .catch(() => {});
     };
     load();
     window.addEventListener(COMMAND_HISTORY_EVENT, load);
     return () => window.removeEventListener(COMMAND_HISTORY_EVENT, load);
-  }, [sharedRecall]);
+  }, [sharedRecall, recallScope]);
 
   const toggleSession = useCallback((id: string) => {
     setSelected((prev) => {
@@ -207,22 +215,14 @@ export function useSessionBroadcast<T extends { id: string }>({
     toast.success("Dispatch history cleared");
   }, [persist]);
 
-  // One list, so one clear: this empties the stored recall list and tells every
-  // other composer to drop its copy, rather than clearing the box in front of
-  // you and leaving the same commands recallable one tab away.
+  // Shared to read, private to clear: this empties the recall here and leaves
+  // the other composers holding what they had. Nothing is deleted, so the Logs
+  // page still has the record of what was run.
   const clearCmdHistory = useCallback(async () => {
-    if (sharedRecall) {
-      try {
-        await clearCommandHistory();
-      } catch (e) {
-        toast.error(errorMessage(e));
-        return;
-      }
-    }
+    if (sharedRecall) clearRecall(recallScope);
     setHistory([]);
-    if (sharedRecall) announceCommandHistory();
-    toast.success("Command history cleared");
-  }, [sharedRecall]);
+    toast.success("Command history cleared here");
+  }, [sharedRecall, recallScope]);
 
   return {
     selected,

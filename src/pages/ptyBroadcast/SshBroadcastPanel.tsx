@@ -401,7 +401,9 @@ export function SshBroadcastPanel({
                 size="sm"
                 className="w-full"
                 onClick={clearCmdHistory}
-                {...hint("Clear the Up/Down command recall history")}
+                {...hint(
+                  "Clear the Up/Down recall on this page. The Terminals rail keeps its own, and nothing leaves the Logs history.",
+                )}
               >
                 Clear command history
               </Button>

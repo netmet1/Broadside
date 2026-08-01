@@ -124,7 +124,9 @@ export function BroadcastRail({
     // The recall list is a different matter: there is only one of those, and
     // typing the same command in a different place should not mean losing the
     // last one you typed. Up/Down here is the PTY Broadcast page's history.
+    // Clearing, though, is this rail's own business: see `recallScope`.
     sharedRecall: true,
+    recallScope: "terminals",
     describe,
   });
 
@@ -313,7 +315,7 @@ export function BroadcastRail({
           disabled={history.length === 0}
           onClick={() => void clearCmdHistory()}
           {...hint(
-            "Empty the Up/Down recall list. There is only one of them, so this clears the PTY Broadcast page's history too.",
+            "Empty the Up/Down recall here. The PTY Broadcast page keeps its own, and nothing is deleted from the Logs history.",
           )}
         >
           <EraserIcon className="h-3.5 w-3.5" />

@@ -724,7 +724,11 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Up</Nav> and <Nav>Down</Nav> walk one shared list, so
               something you sent from that tab is a keypress away here and the
               other way around. <Nav>Clear history</Nav>, under the send button,
-              empties that one list, which means it empties it in both places.
+              empties the recall here and only here: the list is shared for
+              reading, not for tidying, so clearing the box in front of you is
+              never an act on another tab. Nothing is deleted either, so the{" "}
+              <SectionLink id="help-sec-logs">Logs</SectionLink> record of what
+              was run is untouched.
             </li>
             <li>
               A session that has dropped its connection stays in the list and
@@ -1092,13 +1096,17 @@ export const SECTIONS: HelpSection[] = [
               that has exited.
             </li>
             <li>
-              <Nav>Clear command history</Nav> at the foot of the rail empties
-              the <Nav>Up</Nav> / <Nav>Down</Nav> recall list. There is one such
-              list for the whole app, shared with <Nav>Broadcast</Nav>,{" "}
-              <Nav>MultiTerminal</Nav> and the broadcast rail on{" "}
-              <SectionLink id="help-sec-terminals">Terminals</SectionLink>, so
-              clearing it here clears it everywhere, and a command typed in any
-              of them is recallable in the rest.
+              There is one recall list for the whole app, shared with{" "}
+              <Nav>Broadcast</Nav>, <Nav>MultiTerminal</Nav> and the broadcast
+              rail on{" "}
+              <SectionLink id="help-sec-terminals">Terminals</SectionLink>: a
+              command sent from any of them is a press of <Nav>Up</Nav> away in
+              the rest. <Nav>Clear command history</Nav> at the foot of the rail
+              empties the recall on this page alone, though. Sharing is for
+              reading; each page forgets on its own account, and nothing is
+              deleted, so the{" "}
+              <SectionLink id="help-sec-logs">Logs</SectionLink> record of what
+              was run stays as it was.
             </li>
           </Bullets>
           <H3>Local shells (PowerShell, Command Prompt, WSL)</H3>
@@ -1182,9 +1190,11 @@ export const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               <Nav>Clear results</Nav> empties the block log (and the saved
-              history). <Nav>Clear command history</Nav> clears the Up/Down recall
-              shared with <Nav>Broadcast</Nav>. <Nav>Close all terminals</Nav>
-              tears down every open terminal after a confirmation.
+              history). <Nav>Clear command history</Nav> empties the Up/Down
+              recall on this page; the list is read from the one every composer
+              shares, but each page clears its own view of it.{" "}
+              <Nav>Close all terminals</Nav> tears down every open terminal
+              after a confirmation.
             </li>
           </Bullets>
         </Detail>
