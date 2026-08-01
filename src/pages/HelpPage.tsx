@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { SearchIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon, SearchIcon, XIcon } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
+import { ShortcutMatrix, WarningMatrix } from "@/pages/help/matrices";
+import { useHelpHighlight } from "@/pages/help/useHelpHighlight";
 import { cn } from "@/lib/utils";
 
 /** Help scroll position, remembered while the app runs (sessionStorage clears on
@@ -343,7 +345,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-hosts",
     title: "Hosts",
     keywords:
-      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow",
+      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean",
     body: (
       <>
         <Lead>
@@ -370,6 +372,15 @@ const SECTIONS: HelpSection[] = [
               will not display the stored value. See the{" "}
               <SectionLink id="help-sec-security">Security section</SectionLink>{" "}
               for where these are kept.
+            </li>
+            <li>
+              A host row can carry a small amber chip — most often the name of a
+              login shell Broadside cannot fully drive.{" "}
+              <SectionLink id="help-sec-warnings">
+                Warnings and messages
+              </SectionLink>{" "}
+              lists every chip, banner and error the app can show you and what
+              each one actually means.
             </li>
           </Bullets>
           <H3>Importing many hosts</H3>
@@ -449,7 +460,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab",
     body: (
       <>
         <Lead>
@@ -680,8 +691,18 @@ const SECTIONS: HelpSection[] = [
               rather than shrink. A dragged size lasts as long as Broadside is
               running and is then forgotten, and it does not change the{" "}
               <Nav>Grid</Nav> settings described below, which stay the one place
-              a size is set for good. <Nav>Reset size</Nav> in the toolbar goes
+              a size is set for good. <Nav>Reset grid</Nav> in the toolbar goes
               back to tiles that fit the window, clearing both.
+            </li>
+            <li>
+              That last part is the <Nav>Strict</Nav> checkbox in{" "}
+              <Nav>Settings → Grid</Nav>, and it is on to start with. Turn it
+              off if you would rather a drag counted: the tile width and height
+              you drag out are written into the settings as you go, Settings
+              shows the new numbers straight away, and the size is still there
+              after a restart. Nothing else follows the drag either way — the
+              column count, the layout, the tile headers and the side-by-side
+              flip are yours to set and are never written by dragging.
             </li>
             <li>
               To take one terminal out of the grid, click the small{" "}
@@ -706,6 +727,35 @@ const SECTIONS: HelpSection[] = [
               settings entirely, because at those counts a pinned size can only
               waste screen you could have been using.
             </li>
+            <li>
+              A pinned <Nav>Columns across</Nav> is trimmed to the number of
+              terminals actually open, so six columns with three terminals up
+              lays out three across the window rather than using half of it and
+              leaving the rest empty. It follows as you open and close them, and
+              it only ever narrows the count — a tile's pinned width or height
+              is untouched and stays exactly what you set.
+            </li>
+            <li>
+              When the terminals do not divide evenly into columns, the last row
+              is short and something has to fill the gap.{" "}
+              <Nav>Short last row</Nav> in <Nav>Settings → Grid</Nav> decides
+              what:{" "}
+              <strong className="font-semibold">Stretch the row</strong> (the
+              default) widens the tiles on it to take the whole width, so three
+              tiles in two columns give two on top and one full-width
+              underneath;{" "}
+              <strong className="font-semibold">
+                Tall tile in the last column
+              </strong>{" "}
+              instead grows the tile above the gap down into it, giving one top
+              left, one full height on the right and one bottom left; and{" "}
+              <strong className="font-semibold">Leave the gap</strong> keeps
+              every tile the same shape and lets the empty cell stay empty. A
+              size you pinned wins over all of this: a stretched tile is wider
+              than the <Nav>Item width</Nav> and a tall one is taller than the{" "}
+              <Nav>Item height</Nav>, so where you have set that dimension by
+              hand the gap simply stays.
+            </li>
           </Bullets>
           <H3>Copy, paste and jumping to a tab</H3>
           <Bullets>
@@ -722,6 +772,13 @@ const SECTIONS: HelpSection[] = [
               <Nav>Ctrl+Shift+V</Nav>. Plain <Nav>Ctrl+C</Nav> and{" "}
               <Nav>Ctrl+V</Nav> are left alone so the shell still receives them
               (for example Ctrl+C to interrupt a running command).
+            </li>
+            <li>
+              Every key Broadside takes, here and everywhere else, is listed in{" "}
+              <SectionLink id="help-sec-shortcuts">
+                Keyboard shortcuts
+              </SectionLink>
+              .
             </li>
             <li>
               With many tabs open, use the <Nav>Go to session…</Nav> picker at
@@ -1735,6 +1792,49 @@ const SECTIONS: HelpSection[] = [
     ),
   },
   {
+    id: "help-sec-shortcuts",
+    title: "Keyboard shortcuts",
+    keywords:
+      "keyboard shortcuts keys shortcut matrix table list all hotkeys key bindings chord ctrl shift alt f11 f10 esc escape tab enter arrow alt left right ctrl shift g fullscreen ctrl shift t controls strip ctrl shift c copy ctrl shift v paste ctrl f find search right click paste select mouse copy on select composer history up down shift enter newline sftp commander ctrl click shift click multi select rename commit cancel what does key do reference",
+    body: (
+      <>
+        <Lead>
+          Every key Broadside takes for itself, and what it does. Anything not
+          on this list belongs to whatever has the focus — in a terminal that
+          means the shell, which is why the shortcuts here are nearly all{" "}
+          <Nav>Ctrl+Shift</Nav> chords: a terminal cannot see the Shift, so{" "}
+          <Nav>Ctrl+Shift+G</Nav> costs a program running in a tile nothing at
+          all, while a function key would have taken <Nav>F10</Nav> away from{" "}
+          <code className="font-mono text-xs">mc</code> and{" "}
+          <code className="font-mono text-xs">nano</code>.
+        </Lead>
+        <ShortcutMatrix />
+      </>
+    ),
+  },
+  {
+    id: "help-sec-warnings",
+    title: "Warnings and messages",
+    keywords:
+      "warning warnings message messages error errors matrix table what does mean unreachable os error 10054 forcibly closed connection reset maxstartups timed out timeout authentication failed no credentials stored host key changed refused unknown key tofu shell chip fish csh unsupported login shell amber chip disconnected banner reconnect every terminal hidden from the grid latency explain meaning troubleshooting",
+    body: (
+      <>
+        <Lead>
+          What Broadside can put in front of you, and what each one actually
+          means. Warnings name the thing that went wrong rather than the thing
+          you should do about it, so this is the other half.
+        </Lead>
+        <WarningMatrix />
+        <p>
+          Anything that reaches the{" "}
+          <SectionLink id="help-sec-logs">Logs</SectionLink> tab is recorded
+          with the host it happened on and the operation that was running, which
+          is the place to look when a message went by too quickly to read.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "help-sec-glossary",
     title: "Glossary",
     keywords:
@@ -1766,6 +1866,8 @@ export function HelpPage() {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  /** The rendered sections, which is where the search marks its matches. */
+  const contentRef = useRef<HTMLDivElement>(null);
   // The id of the section nearest the top of the scroll area, for the live TOC
   // highlight.
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -1779,6 +1881,11 @@ export function HelpPage() {
         s.keywords.toLowerCase().includes(q),
     );
   }, [query]);
+
+  // Filtering to a section is only half the answer: the section can be long,
+  // and the words that matched are somewhere in it. Mark them and go to the
+  // first one, so the search does not end with a hunt.
+  const highlight = useHelpHighlight(contentRef, query, visibleSections);
 
   // Restore the last scroll position on mount, then track scrolling to (a) keep
   // the TOC highlight in sync and (b) remember the position for the next visit.
@@ -1863,6 +1970,40 @@ export function HelpPage() {
               </button>
             )}
           </div>
+          {/* Where the marks are, and a way through them. A filter that keeps a
+              section whose keywords matched but whose words did not is normal,
+              so say "no matches on the page" rather than implying a dead end. */}
+          {query.trim() !== "" && (
+            <div className="flex items-center justify-between gap-2 px-0.5 text-xs text-muted-foreground">
+              {highlight.count === 0 ? (
+                <span>No matches on the page</span>
+              ) : (
+                <>
+                  <span>
+                    Match {highlight.index + 1} of {highlight.count}
+                  </span>
+                  <span className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => highlight.go(-1)}
+                      aria-label="Previous match"
+                      className="rounded-sm p-0.5 hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <ChevronUpIcon className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => highlight.go(1)}
+                      aria-label="Next match"
+                      className="rounded-sm p-0.5 hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <ChevronDownIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                </>
+              )}
+            </div>
+          )}
           <nav className="space-y-0.5">
             {visibleSections.map((s) => (
               <button
@@ -1901,7 +2042,7 @@ export function HelpPage() {
           </p>
         </header>
 
-        <div className="space-y-10">
+        <div ref={contentRef} className="space-y-10">
           {visibleSections.map((s) => (
             <Section key={s.id} id={s.id} title={s.title}>
               {s.body}

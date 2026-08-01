@@ -149,6 +149,31 @@
     }
 }
 
+/* Where the keyboard is, in the Terminals controls.
+ *
+ * Ctrl+Shift+T is the only route into this strip from a terminal (Tab there
+ * belongs to the shell), and in grid fullscreen the strip is hidden until
+ * something in it takes focus — so if you cannot see what took focus, the
+ * shortcut has told you nothing and Tab from there is walking blind. The
+ * default ring is `--ring` at half opacity, a neutral grey, sitting on a
+ * neutral grey strip. This is the same idea, said out loud: a solid ring in
+ * `--primary`, which is near-black on the light theme and near-white on the
+ * dark one, with an offset so it reads clear of the button's own border. The
+ * outline follows the button's radius on its own.
+ *
+ * `:focus-visible`, so it only appears for the keyboard. A mouse click on the
+ * same button looks exactly as it always did. */
+.terminal-chrome
+  :is(button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* The Help filter's match colour lives in useHelpHighlight.ts, not here: its
+ * `::highlight()` rule is newer than the CSS parser this build runs through,
+ * which passes it along but complains about it every time. It is injected at
+ * runtime instead, next to the code that decides there is anything to paint. */
+
 @layer utilities {
   /* Smooth composer caret (D-009): blink + eased horizontal travel. The
      native caret is hidden on the composer input only. */

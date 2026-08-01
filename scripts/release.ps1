@@ -44,6 +44,24 @@ $conf = Get-Content (Join-Path $repoRoot "src-tauri/tauri.conf.json") -Raw | Con
 $version = $conf.version
 $tag = "v$version"
 
+# --- A test build must not be released ---
+# src/lib/buildTag.ts carries the smoke-test number a hand-over build was cut
+# for, so the running window can be told apart from the installed copy. A
+# release is the one build where the version alone is the whole truth, so a tag
+# still set here means the bump was forgotten.
+$buildTagFile = Join-Path $repoRoot "src/lib/buildTag.ts"
+if (Test-Path $buildTagFile) {
+  $buildTagMatch = [regex]::Match(
+    (Get-Content $buildTagFile -Raw),
+    'BUILD_TAG\s*=\s*"([^"]*)"')
+  if ($buildTagMatch.Success -and $buildTagMatch.Groups[1].Value -ne "") {
+    Write-Host "FAILED: this is still a smoke-test build." -ForegroundColor Red
+    Write-Host ("  src/lib/buildTag.ts has BUILD_TAG = ""{0}""" -f $buildTagMatch.Groups[1].Value) -ForegroundColor Red
+    Write-Host "Clear it to "" and merge that before releasing $tag." -ForegroundColor Yellow
+    exit 1
+  }
+}
+
 # --- Matching gitignored notes file (1.1.0 -> v1-1-0.md) ---
 $notesName = "v" + ($version -replace '\.', '-') + ".md"
 $notesPath = Join-Path $repoRoot "internal_only/release notes/$notesName"

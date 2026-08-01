@@ -17,6 +17,58 @@ pub mod sudo_inject;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How many SSH handshakes may be in flight at once, across the whole program.
+///
+/// Opening a wall of terminals fires every connect at the same instant, and an
+/// OpenSSH server counts connections that have not finished authenticating
+/// against `MaxStartups` — `10:30:100` by default, meaning it starts randomly
+/// dropping past ten and refuses everything past a hundred. A dropped one
+/// arrives here as a TCP reset ("An existing connection was forcibly closed by
+/// the remote host. (os error 10054)"), which is what an operator opening a
+/// dozen hosts kept hitting.
+///
+/// Eight is under that default ceiling with room for the other tabs to breathe,
+/// and the wait is only for the handshake: a permit is released the moment auth
+/// finishes, so the sessions themselves are as parallel as they ever were. On a
+/// small batch nothing queues at all.
+const MAX_CONCURRENT_HANDSHAKES: usize = 8;
+
+/// How many times a *reset* connect is retried before it is reported. Only
+/// resets: a refused or timed-out connect means the host is not there, and
+/// retrying that would just make a slow failure slower.
+const HANDSHAKE_RETRIES: usize = 2;
+
+fn handshake_slots() -> &'static tokio::sync::Semaphore {
+    static SLOTS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    SLOTS.get_or_init(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_HANDSHAKES))
+}
+
+/// Whether a failure is the server hanging up mid-handshake rather than a host
+/// that isn't answering. Matched on the message because it reaches us as a
+/// stringified `std::io::Error` from inside russh: Windows says "forcibly
+/// closed" (WSAECONNRESET, os error 10054), Unix says "reset by peer".
+fn is_connection_reset(message: &str) -> bool {
+    let m = message.to_ascii_lowercase();
+    m.contains("forcibly closed")
+        || m.contains("reset by peer")
+        || m.contains("connection reset")
+        || m.contains("10054")
+}
+
+/// Backoff before retry `attempt` (0-based), spread out so a batch that was
+/// dropped together does not come back in lockstep and get dropped together
+/// again. The spread is derived from the clock rather than a random number
+/// generator, which is plenty for jitter and costs no dependency.
+fn handshake_backoff(attempt: usize) -> Duration {
+    let base = 250u64 << attempt;
+    let jitter = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0))
+        % 250;
+    Duration::from_millis(base + jitter)
+}
 /// Bound on the `echo $SHELL` probe. Short on purpose: it is a nicety, and a
 /// server that will not answer it must not hold up opening the terminal.
 const SHELL_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -42,6 +94,24 @@ pub fn shell_can_parse_integration(shell: &str) -> bool {
 /// [`shell_can_parse_integration`]: the others parse the line and no-op.
 pub fn shell_supports_integration(shell: &str) -> bool {
     matches!(shell_name(shell).as_str(), "bash" | "zsh")
+}
+
+/// Whether a line of the shell probe's output could be the value of `$SHELL`:
+/// a single absolute path, no whitespace in it, not a bare directory.
+///
+/// Deliberately strict. Everything a chatty rc file prints — banners, `Last
+/// login:` lines, MOTD fragments, the literal `$SHELL` from a shell that does
+/// not expand it — fails at least one of these, and a line we cannot vouch for
+/// is better dropped than believed: the only thing the answer drives is a
+/// warning chip, and a wrong chip is worse than no chip.
+fn looks_like_shell_path(line: &str) -> bool {
+    line.starts_with('/')
+        && line.len() > 1
+        && !line.ends_with('/')
+        && !line.contains(char::is_whitespace)
+        // A path is all we accept, so anything shell-ish left in the line
+        // (an unexpanded variable, a substitution) means we misread it.
+        && !line.contains('$')
 }
 
 /// The bare shell name from whatever we were given: `/usr/bin/fish` and `fish`
@@ -85,9 +155,18 @@ pub(crate) async fn detect_login_shell(handle: &Handle<TofuHandler>) -> Option<S
                 Some(_) => {}
             }
         }
-        // Take the last non-empty line: an rc file that prints on non-interactive
-        // login would otherwise be read as the answer.
-        let line = out.lines().rev().find(|l| !l.trim().is_empty())?;
+        // Take the last line that could actually *be* `$SHELL`, not simply the
+        // last non-empty one. An rc file that prints on a non-interactive login
+        // puts its output on both sides of the echo, and taking whatever came
+        // last read one operator's rc banner as their login shell — the host
+        // then wore an "unsupported shell" chip naming a line of their own
+        // startup script. Finding nothing that looks like a shell is not an
+        // error: `None` means "we could not tell", which warns about nothing.
+        let line = out
+            .lines()
+            .map(str::trim)
+            .rev()
+            .find(|l| looks_like_shell_path(l))?;
         let name = shell_name(line);
         // `$SHELL` unset echoes back empty, and a shell that does not expand it
         // echoes the literal. Either way we know nothing.
@@ -156,6 +235,9 @@ pub enum ConnectFailure {
     },
 }
 
+/// `Clone` so a handshake can be retried after a reset without the caller
+/// having to re-read the credential (see `connect_and_auth`).
+#[derive(Clone)]
 pub enum AuthMethod {
     Password(String),
     Key {
@@ -191,7 +273,52 @@ impl client::Handler for TofuHandler {
 
 /// TOFU-verified connect + authenticate. `Ok(Err(_))` are expected outcomes
 /// (unknown key, wrong password, host down); `Err(_)` are our own failures.
+///
+/// Wraps [`connect_and_auth_once`] in the two things a burst of connections
+/// needs: a permit, so we never present a server with more unauthenticated
+/// connections than it will hold open, and a short retry on a reset, for the
+/// ones it drops anyway (see [`MAX_CONCURRENT_HANDSHAKES`]).
 pub(crate) async fn connect_and_auth(
+    hostname: &str,
+    port: u16,
+    username: &str,
+    trusted_fingerprints: Vec<String>,
+    auth: AuthMethod,
+) -> AppResult<Result<Handle<TofuHandler>, ConnectFailure>> {
+    // The permit is held for the whole handshake and dropped on return.
+    // `acquire` only fails on a closed semaphore, and this one is never closed.
+    let _permit = handshake_slots()
+        .acquire()
+        .await
+        .map_err(|e| AppError::Ssh(format!("handshake slot unavailable: {e}")))?;
+
+    for attempt in 0..=HANDSHAKE_RETRIES {
+        let outcome = connect_and_auth_once(
+            hostname,
+            port,
+            username,
+            // Each attempt gets its own copy; the handler consumes them.
+            trusted_fingerprints.clone(),
+            auth.clone(),
+        )
+        .await?;
+        match &outcome {
+            Err(ConnectFailure::Unreachable { message })
+                if attempt < HANDSHAKE_RETRIES && is_connection_reset(message) =>
+            {
+                tokio::time::sleep(handshake_backoff(attempt)).await;
+            }
+            _ => return Ok(outcome),
+        }
+    }
+    // Unreachable in practice: the loop either returns or exhausts the retries
+    // on the last iteration, which the guard above excludes.
+    Ok(Err(ConnectFailure::Unreachable {
+        message: "connection reset by the server".into(),
+    }))
+}
+
+async fn connect_and_auth_once(
     hostname: &str,
     port: u16,
     username: &str,
@@ -379,5 +506,70 @@ mod shell_tests {
         // sh parses the line but takes neither branch, so no block tracking.
         assert!(!shell_supports_integration("/bin/sh"));
         assert!(!shell_supports_integration("/usr/bin/fish"));
+    }
+
+    #[test]
+    fn a_shell_path_is_recognised() {
+        assert!(looks_like_shell_path("/bin/bash"));
+        assert!(looks_like_shell_path("/usr/local/bin/zsh"));
+    }
+
+    #[test]
+    fn rc_file_noise_is_not_a_shell_path() {
+        // The reported case: a startup script's own output, taken as the shell
+        // because it was simply the last line the probe read.
+        assert!(!looks_like_shell_path("rc.inital"));
+        assert!(!looks_like_shell_path("Last login: Tue Jul 28 09:14:02 2026"));
+        assert!(!looks_like_shell_path("== welcome to prod =="));
+        assert!(!looks_like_shell_path(""));
+        // A shell that does not expand it echoes the literal back.
+        assert!(!looks_like_shell_path("$SHELL"));
+        // A bare directory is not an executable.
+        assert!(!looks_like_shell_path("/usr/bin/"));
+        assert!(!looks_like_shell_path("/"));
+    }
+
+    /// The whole point of the change: the probe must reach past trailing rc
+    /// output to the line that is actually the shell.
+    #[test]
+    fn the_shell_is_found_under_trailing_rc_output() {
+        let out = "welcome\n/bin/bash\nrc.inital\n";
+        let line = out
+            .lines()
+            .map(str::trim)
+            .rev()
+            .find(|l| looks_like_shell_path(l));
+        assert_eq!(line, Some("/bin/bash"));
+        assert_eq!(shell_name(line.unwrap()), "bash");
+    }
+
+    #[test]
+    fn a_dropped_handshake_is_recognised_as_a_reset() {
+        // What Windows hands us when sshd's MaxStartups drops the connection.
+        assert!(is_connection_reset(
+            "An existing connection was forcibly closed by the remote host. (os error 10054)"
+        ));
+        assert!(is_connection_reset("Connection reset by peer (os error 104)"));
+    }
+
+    #[test]
+    fn a_host_that_is_not_there_is_not_a_reset() {
+        // These must not be retried: the host is down, and three attempts would
+        // only make the failure slower to report.
+        assert!(!is_connection_reset("connection timed out after 10s"));
+        assert!(!is_connection_reset(
+            "No connection could be made because the target machine actively refused it. (os error 10061)"
+        ));
+    }
+
+    #[test]
+    fn the_handshake_backoff_grows_and_stays_bounded() {
+        // Base doubles per attempt, plus up to 250ms of clock-derived jitter.
+        let first = handshake_backoff(0);
+        let second = handshake_backoff(1);
+        assert!(first >= Duration::from_millis(250));
+        assert!(first < Duration::from_millis(500));
+        assert!(second >= Duration::from_millis(500));
+        assert!(second < Duration::from_millis(750));
     }
 }

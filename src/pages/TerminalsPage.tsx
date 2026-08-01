@@ -386,14 +386,16 @@ export function TerminalsPage({
     setDragRows,
     resetTileSize,
     cell,
+    gridSlot,
+    tileSpan,
     customGrid,
     customColsAuto,
     gridStyle,
   } = useGridLayout({ sessions, visible, maximized });
 
   // Drag a tile's edge to set the tile size for the whole grid, for as long as
-  // the program is running. It does not write the Settings -> Grid numbers: a
-  // drag adjusts the wall you are looking at, Settings decides how it opens.
+  // the program is running. Whether it also writes the Settings -> Grid numbers
+  // is the strict setting's business, not this page's (see gridPrefs.ts).
   const { resizing, begin: beginResize } = useGridResize({
     cell,
     onCols: setDragCols,
@@ -803,6 +805,11 @@ export function TerminalsPage({
         <div
           ref={chromeRef}
           className={cn(
+            // `terminal-chrome` is the hook for the loud focus ring (index.css).
+            // Ctrl+Shift+T is the only way into these controls from a terminal,
+            // so where it landed has to be obvious; the default ring is a grey
+            // at half opacity on a grey strip, and it was not.
+            "terminal-chrome",
             gridFullscreen &&
               "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 focus-within:translate-y-0 hover:translate-y-0",
           )}
@@ -892,11 +899,11 @@ export function TerminalsPage({
             variant="outline"
             onClick={resetTileSize}
             {...hint(
-              "Clear the tile size (dragged or set in Settings) and go back to tiles that fit the window.",
+              "Clear the tile size (dragged or set in Settings) and go back to original configured grid settings.",
             )}
           >
             <UndoIcon className="h-3.5 w-3.5" />
-            Reset size
+            Reset grid
           </Button>
         )}
 
@@ -1566,6 +1573,9 @@ export function TerminalsPage({
                 // Visual position in the grid = position in the tab strip, so
                 // dragging a tab rearranges the grid. See displayIndex.
                 order: displayIndex.get(s.id) ?? 0,
+                // Filling a short last row (Settings -> Grid). Nothing for most
+                // tiles; a span for the ones that take up the slack.
+                ...(excluded ? {} : tileSpan(gridSlot.get(s.id) ?? 0)),
                 ...(hostTint
                   ? {
                       borderColor: hostColor!,
