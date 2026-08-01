@@ -93,9 +93,9 @@ pub async fn test_connection(
             for key in &trusted {
                 host_keys::touch_last_seen(conn, &key.hostname, key.port, &key.key_type)?;
             }
-            if let Some(shell) = &login_shell {
-                host_repo::set_login_shell(conn, host.id, shell)?;
-            }
+            // Including when it read nothing: the probe completed, so its
+            // silence is the current answer and it clears the old one.
+            host_repo::set_login_shell(conn, host.id, login_shell.as_deref())?;
             Ok(())
         })?;
     }

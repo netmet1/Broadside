@@ -162,9 +162,19 @@
  * outline follows the button's radius on its own.
  *
  * `:focus-visible`, so it only appears for the keyboard. A mouse click on the
- * same button looks exactly as it always did. */
+ * same button looks exactly as it always did.
+ *
+ * The second selector is the same ring on plain `:focus`, and only while the
+ * strip carries `data-chrome-keyboard` — set by Ctrl+Shift+T, cleared by a
+ * click in the strip or by focus leaving it. :focus-visible alone was not
+ * enough: it is the browser's guess at whether the keyboard is driving, and a
+ * programmatic focus() out of a terminal does not always satisfy it, so the
+ * first press of the shortcut moved focus with nothing on screen to show for
+ * it and the ring only turned up after a Tab. The flag is not a guess. */
 .terminal-chrome
-  :is(button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+  :is(button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible,
+.terminal-chrome[data-chrome-keyboard]
+  :is(button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }

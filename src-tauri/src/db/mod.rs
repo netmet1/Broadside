@@ -189,6 +189,20 @@ const MIGRATIONS: &[&str] = &[
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );",
+    // 17: heal login_shell values written by the old probe. It took the last
+    // non-empty line of `echo $SHELL`, so a startup script that printed after
+    // the answer got stored as the shell, and the Hosts row then wore an
+    // "unsupported shell" chip naming a line of the operator's own rc file.
+    // The probe is fixed, but the value it wrote lives in the database and
+    // nothing re-reads a host you do not reconnect to.
+    //
+    // A shell name here is always a bare basename, lowercased by shell_name, so
+    // anything outside [a-z0-9_-] is not one and cannot have come from a real
+    // `$SHELL`. NULL means "not probed yet", which warns about nothing, and the
+    // next connect writes the real answer.
+    "UPDATE hosts SET login_shell = NULL
+      WHERE login_shell IS NOT NULL
+        AND (login_shell = '' OR login_shell GLOB '*[^a-z0-9_-]*');",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -304,9 +318,56 @@ mod tests {
         // Not probed yet: absent, which must not read as "unsupported".
         assert_eq!(host.login_shell, None);
 
-        hosts::set_login_shell(&conn, host.id, "fish").unwrap();
+        hosts::set_login_shell(&conn, host.id, Some("fish")).unwrap();
         let host = hosts::get(&conn, host.id).unwrap();
         assert_eq!(host.login_shell.as_deref(), Some("fish"));
+
+        // And a probe that reads nothing takes it back off, rather than leaving
+        // a shell nobody can confirm on the row.
+        hosts::set_login_shell(&conn, host.id, None).unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().login_shell, None);
+    }
+
+    #[test]
+    fn the_upgrade_drops_a_login_shell_that_cannot_be_one() {
+        // Migration 17. The old probe stored whatever the last line of
+        // `echo $SHELL` was, so an rc file that printed after the answer got
+        // saved as the host's shell and the row wore a chip naming it. The
+        // upgrade clears those and leaves real shell names alone.
+        let conn = database_at_version(16);
+        for (label, shell) in [
+            ("noisy", "rc.inital"),
+            ("banner", "== welcome =="),
+            ("blank", ""),
+            ("fishy", "fish"),
+            ("plain", "bash"),
+            ("dashed", "ksh93"),
+        ] {
+            conn.execute(
+                "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at, login_shell)
+                 VALUES (?1, 'example.test', 22, 'joe', '#aabbcc', 'then', 'then', ?2)",
+                rusqlite::params![label, shell],
+            )
+            .unwrap();
+        }
+
+        bootstrap(&conn).unwrap();
+
+        let shell_of = |label: &str| -> Option<String> {
+            conn.query_row(
+                "SELECT login_shell FROM hosts WHERE label = ?1",
+                rusqlite::params![label],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(shell_of("noisy"), None);
+        assert_eq!(shell_of("banner"), None);
+        assert_eq!(shell_of("blank"), None);
+        // Real answers are not touched: the fish host keeps its warning.
+        assert_eq!(shell_of("fishy").as_deref(), Some("fish"));
+        assert_eq!(shell_of("plain").as_deref(), Some("bash"));
+        assert_eq!(shell_of("dashed").as_deref(), Some("ksh93"));
     }
 
     #[test]

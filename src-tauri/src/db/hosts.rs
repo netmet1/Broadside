@@ -160,7 +160,14 @@ pub fn set_has_sudo_password(conn: &Connection, id: i64, value: bool) -> AppResu
 /// stale one. A host that has gone away is not an error here: this is called
 /// from connect paths where failing the connect over a bookkeeping write would
 /// be the wrong trade.
-pub fn set_login_shell(conn: &Connection, id: i64, shell: &str) -> AppResult<()> {
+///
+/// `None` clears the column, and callers pass it: the field means "what the
+/// last completed connect could read", so a connect that could not read it has
+/// to erase the old answer rather than let it stand. Without that a wrong value
+/// written once is worn forever — which is what happened to the host that went
+/// on naming a line of its own rc file long after the probe that misread it was
+/// fixed.
+pub fn set_login_shell(conn: &Connection, id: i64, shell: Option<&str>) -> AppResult<()> {
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "UPDATE hosts SET login_shell = ?1, updated_at = ?2 WHERE id = ?3",
