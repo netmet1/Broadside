@@ -90,6 +90,26 @@ export function queryPattern(
   return new RegExp(terms.join(SEPARATORS), flags);
 }
 
+/** No query, no marks: one shared empty map, so a render with nothing searched
+ * hands back the same object every time. */
+const NO_MARKS: ReadonlyMap<string, number> = new Map();
+
+/** Which section a range landed in, counted per section id.
+ *
+ * Only [`Section`](../HelpPage.tsx) renders a `<section>`, and it puts the
+ * section's id on it, so the nearest one above a marked word names the section
+ * the reader is looking at. A range with no section above it (nothing in Help
+ * is built that way today) is left out rather than guessed at. */
+function countBySection(ranges: Range[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const range of ranges) {
+    const id = range.startContainer.parentElement?.closest("section[id]")?.id;
+    if (!id) continue;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /** Every match of `pattern` in the text under `root`, as ranges. */
 function findRanges(root: HTMLElement, pattern: RegExp): Range[] {
   const ranges: Range[] = [];
@@ -131,6 +151,12 @@ export type HelpHighlight = {
   count: number;
   /** Which match is current, 0-based. */
   index: number;
+  /** How many of those matches are in each section, by DOM id. A section the
+   * filter kept that is missing from this map holds none of them: it was found
+   * by a keyword, a word deliberately not written on the page. The list of
+   * sections says so rather than leaving the reader hunting for a mark that was
+   * never there. */
+  countsById: ReadonlyMap<string, number>;
   /** Scroll to the next / previous match, wrapping at the ends. */
   go: (dir: 1 | -1) => void;
 };
@@ -148,6 +174,8 @@ export function useHelpHighlight(
 ): HelpHighlight {
   const [count, setCount] = useState(0);
   const [index, setIndex] = useState(0);
+  const [countsById, setCountsById] =
+    useState<ReadonlyMap<string, number>>(NO_MARKS);
   const rangesRef = useRef<Range[]>([]);
 
   const scrollTo = useCallback((i: number) => {
@@ -169,6 +197,7 @@ export function useHelpHighlight(
     if (!root || !pattern) {
       setCount(0);
       setIndex(0);
+      setCountsById(NO_MARKS);
       return;
     }
 
@@ -179,6 +208,7 @@ export function useHelpHighlight(
       rangesRef.current = ranges;
       setCount(ranges.length);
       setIndex(0);
+      setCountsById(ranges.length === 0 ? NO_MARKS : countBySection(ranges));
       if (ranges.length === 0) return;
       ensureHighlightStyle();
       CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
@@ -208,5 +238,5 @@ export function useHelpHighlight(
     [scrollTo],
   );
 
-  return { count, index, go };
+  return { count, index, countsById, go };
 }

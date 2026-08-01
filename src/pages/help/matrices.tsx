@@ -220,7 +220,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Type in the filter</Kbd>,
         where: "Help",
-        what: "Searches everything a section says, including these tables, and keeps the ones that match: if you can read it here you can find it here. Matching words are marked in amber and the first is scrolled to, with arrows beside the count for the rest. Punctuation is optional: typing ctrl shift g finds Ctrl+Shift+G, and 16 20 finds 16/20. A section can also be found by words it does not use, in which case it is kept with nothing marked in it.",
+        what: "Searches everything a section says, including these tables, and keeps the ones that match: if you can read it here you can find it here. Matching words are marked in amber and the first is scrolled to, with arrows beside the count for the rest. Punctuation is optional: typing ctrl shift g finds Ctrl+Shift+G, and 16 20 finds 16/20. Each section in the list on the left carries the number of marks inside it. A section can also be found by words it does not use, such as the wrong name for a thing; it is kept with nothing marked in it and the list says keyword instead of a number.",
       },
     ],
   },
