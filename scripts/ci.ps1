@@ -94,7 +94,15 @@ try {
 
 # ---- Rust (src-tauri) ----
 # A running dev build locks the exe and blocks cargo build; stop it first.
-try { Stop-Process -Name broadside -Force -ErrorAction Stop; Write-Host "stopped running broadside" } catch {}
+# Only the copy inside this repo's target directory: the handover build people
+# smoke-test with is the same program under a different path, and a CI run has
+# no business closing the window someone is testing in.
+$targetDir = Join-Path $srcTauri "target"
+try {
+  $ours = Get-Process -Name broadside -ErrorAction Stop |
+    Where-Object { $_.Path -and $_.Path.StartsWith($targetDir, [StringComparison]::OrdinalIgnoreCase) }
+  if ($ours) { $ours | Stop-Process -Force; Write-Host "stopped running broadside (target build)" }
+} catch {}
 
 Push-Location $srcTauri
 try {
