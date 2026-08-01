@@ -15,7 +15,7 @@
  * that quietly loses its font on a different machine would be worse than one
  * that never had it.
  *
- * Usage: node render.mjs <repoRoot> <outHtmlPath> <paper: letter|a4>
+ * Usage: node render.mjs <repoRoot> <outHtmlPath> <paper> <version>
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -27,18 +27,14 @@ import { SECTIONS } from "@/pages/help/content";
 
 import { PAGE } from "./page.mjs";
 
-const [repoRoot, outPath, paper = "letter"] = process.argv.slice(2);
-if (!repoRoot || !outPath) {
-  throw new Error("usage: render.mjs <repoRoot> <outHtmlPath> [letter|a4]");
+const [repoRoot, outPath, paper = "letter", version] = process.argv.slice(2);
+if (!repoRoot || !outPath || !version) {
+  throw new Error("usage: render.mjs <repoRoot> <outHtmlPath> <paper> <version>");
 }
 
 const read = (...parts: string[]) => readFileSync(join(repoRoot, ...parts));
 const dataUri = (mime: string, bytes: Buffer) =>
   `data:${mime};base64,${bytes.toString("base64")}`;
-
-const version: string = JSON.parse(
-  read("src-tauri", "tauri.conf.json").toString("utf8"),
-).version;
 
 const fontDir = ["node_modules", "@fontsource-variable", "geist", "files"];
 const fonts = {

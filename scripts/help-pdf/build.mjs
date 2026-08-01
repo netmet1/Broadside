@@ -35,9 +35,19 @@ const args = process.argv.slice(2);
 const paper = args.includes("--a4") ? "a4" : "letter";
 const keepHtml = args.includes("--keep");
 
-const version = JSON.parse(
-  readFileSync(join(repoRoot, "src-tauri", "tauri.conf.json"), "utf8"),
-).version;
+// The version exactly as the app shows it: the manifest number, plus the smoke
+// test tag when this is a hand-over build. Read the same way `release.ps1`
+// reads it, because neither can import a TypeScript module. A release has the
+// tag cleared, so the cover reads a bare 1.3.0 and nothing else.
+const version = (() => {
+  const manifest = JSON.parse(
+    readFileSync(join(repoRoot, "src-tauri", "tauri.conf.json"), "utf8"),
+  ).version;
+  const tag = /BUILD_TAG\s*=\s*"([^"]*)"/.exec(
+    readFileSync(join(repoRoot, "src", "lib", "buildTag.ts"), "utf8"),
+  )?.[1];
+  return tag ? `${manifest}-build${tag}` : manifest;
+})();
 
 console.log(`Building the Broadside ${version} help PDF (${paper}).`);
 
@@ -47,7 +57,7 @@ await build({ configFile: join(here, "vite.config.mjs") });
 // 2. The document, as one HTML file with the font and the logo inside it.
 const render = spawnSync(
   process.execPath,
-  [join(cacheDir, "render.mjs"), repoRoot, htmlPath, paper],
+  [join(cacheDir, "render.mjs"), repoRoot, htmlPath, paper, version],
   { stdio: "inherit" },
 );
 if (render.status !== 0) {

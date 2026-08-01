@@ -121,6 +121,10 @@ class Cdp {
   }
 }
 
+/** The running footer. It lands on the cover as well, which is not a choice:
+ * the browser draws this strip on every sheet, and there is no selector for
+ * "not the first one". The cover is laid out around it, with its own version
+ * line well clear of the bottom edge. */
 const footerTemplate = (version) => `
 <div style="width:100%;padding:0 ${PAGE.sideMm}mm;font-family:'Segoe UI',Arial,sans-serif;
             font-size:7pt;color:#8a94a0;display:flex;justify-content:space-between;">
