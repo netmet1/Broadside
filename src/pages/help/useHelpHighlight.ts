@@ -61,8 +61,22 @@ function escapeRegExp(s: string): string {
  * The pattern for a query. Words are joined by "any run of separators", so the
  * spaces someone types stand in for the punctuation the app actually writes.
  * Returns `null` for a query with nothing long enough to be worth marking.
+ *
+ * Exported because the filter that decides which sections to keep has to agree
+ * with the marks painted inside them: a search that keeps a section and then
+ * highlights nothing in it is fine, but the reverse would be a section quietly
+ * dropped while holding the words asked for.
+ *
+ * `flags` is `"gi"` for a scan that walks every match and `"i"` for a plain
+ * yes/no test — a `g` pattern carries `lastIndex` between calls and would skip
+ * every other section. `floor` is the shortest single term worth matching, and
+ * the filter sets it to 1: keeping a section is cheap, painting the page amber
+ * is not.
  */
-function queryPattern(query: string): RegExp | null {
+export function queryPattern(
+  query: string,
+  { flags = "gi", floor = MIN_TERM_LEN }: { flags?: string; floor?: number } = {},
+): RegExp | null {
   const terms = query
     .trim()
     .toLowerCase()
@@ -72,8 +86,8 @@ function queryPattern(query: string): RegExp | null {
   if (terms.length === 0) return null;
   // A single term still has to clear the length floor; a phrase does not, since
   // `ctrl shift g` is specific enough as a whole even though `g` is not.
-  if (terms.length === 1 && terms[0]!.length < MIN_TERM_LEN) return null;
-  return new RegExp(terms.join(SEPARATORS), "gi");
+  if (terms.length === 1 && terms[0]!.length < floor) return null;
+  return new RegExp(terms.join(SEPARATORS), flags);
 }
 
 /** Every match of `pattern` in the text under `root`, as ranges. */

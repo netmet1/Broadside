@@ -3,7 +3,8 @@ import { ChevronDownIcon, ChevronUpIcon, SearchIcon, XIcon } from "lucide-react"
 
 import { Input } from "@/components/ui/input";
 import { ShortcutMatrix, WarningMatrix } from "@/pages/help/matrices";
-import { useHelpHighlight } from "@/pages/help/useHelpHighlight";
+import { searchableText } from "@/pages/help/searchText";
+import { queryPattern, useHelpHighlight } from "@/pages/help/useHelpHighlight";
 import { cn } from "@/lib/utils";
 
 /** Help scroll position, remembered while the app runs (sessionStorage clears on
@@ -286,7 +287,9 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
 type HelpSection = {
   id: string;
   title: string;
-  /** Extra words (beyond the title) the filter box matches against. */
+  /** Words the section does *not* say that should still find it: the wrong name
+   * for a thing, the symptom rather than the feature, the term someone arrives
+   * with. What the section does say is searched from the body itself. */
   keywords: string;
   body: ReactNode;
 };
@@ -497,6 +500,17 @@ const SECTIONS: HelpSection[] = [
               shell's own name back. The rename lasts for the rest of the
               session and is not kept across restarts. Tabs opened from a
               profile already carry the profile's name, so they have no pencil.
+            </li>
+            <li>
+              A second tab on the same shell or the same host is numbered:{" "}
+              <Nav>PowerShell</Nav>, then <Nav>PowerShell 02</Nav>,{" "}
+              <Nav>PowerShell 03</Nav>. The number counts the order you opened
+              them in, not the order they sit in, so dragging a tab about never
+              renames anything. A tab you have renamed keeps its number without
+              showing it, which is why renaming the second one leaves you with{" "}
+              <Nav>PowerShell</Nav>, your own name, and{" "}
+              <Nav>PowerShell 03</Nav>: renaming one tab is not a reason to
+              relabel a different one under you.
             </li>
           </Bullets>
           <H3>How local shells are detected (important)</H3>
@@ -1874,6 +1888,18 @@ const SECTIONS: HelpSection[] = [
   },
 ];
 
+/** What each section can be found by: its title, its keywords, and every word
+ * it actually says. Built once — the sections are fixed at module load, and
+ * walking fourteen of them on every keystroke would be work for nothing. */
+const SECTION_TEXT = new Map<string, string>(
+  SECTIONS.map((s) => [
+    s.id,
+    `${s.title} ${s.keywords} ${searchableText(s.body)}`
+      .replace(/\s+/g, " ")
+      .toLowerCase(),
+  ]),
+);
+
 export function HelpPage() {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -1885,13 +1911,13 @@ export function HelpPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const visibleSections = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (q === "") return SECTIONS;
-    return SECTIONS.filter(
-      (s) =>
-        s.title.toLowerCase().includes(q) ||
-        s.keywords.toLowerCase().includes(q),
-    );
+    if (query.trim() === "") return SECTIONS;
+    // The same pattern the highlighter uses, so the spaces someone types stand
+    // in for the punctuation the page writes: `ctrl shift g` finds the section
+    // that says Ctrl+Shift+G, and `16 20` finds the one that says 16/20.
+    const pattern = queryPattern(query, { flags: "i", floor: 1 });
+    if (!pattern) return SECTIONS;
+    return SECTIONS.filter((s) => pattern.test(SECTION_TEXT.get(s.id) ?? ""));
   }, [query]);
 
   // Filtering to a section is only half the answer: the section can be long,
