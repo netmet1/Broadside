@@ -3,6 +3,7 @@ pub mod backup;
 pub mod broadcast;
 pub mod credentials;
 pub mod errlog;
+pub mod help;
 pub mod hosts;
 pub mod import;
 pub mod localfs;

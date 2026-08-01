@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint .",
+    "help:pdf": "node scripts/help-pdf/build.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
