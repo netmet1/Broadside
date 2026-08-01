@@ -146,10 +146,19 @@ export function LocalBroadcastPanel({
     visible,
   );
 
+  // A shell that has exited is still listed, but nothing can be typed into it,
+  // so it cannot be checked and "Select all" passes over it.
+  const selectableSessions = useMemo(
+    () => sessions.filter((s) => connectedSessions.has(s.id)),
+    [sessions, connectedSessions],
+  );
   const allSelected =
-    sessions.length > 0 && sessions.every((s) => selected.has(s.id));
+    selectableSessions.length > 0 &&
+    selectableSessions.every((s) => selected.has(s.id));
   const toggleAll = () => {
-    setSelected(allSelected ? new Set() : new Set(sessions.map((s) => s.id)));
+    setSelected(
+      allSelected ? new Set() : new Set(selectableSessions.map((s) => s.id)),
+    );
   };
 
   // Ask before sending — never dispatch straight from the composer.
@@ -234,7 +243,7 @@ export function LocalBroadcastPanel({
                   className="accent-primary"
                   checked={allSelected}
                   onChange={toggleAll}
-                  disabled={sending || sessions.length === 0}
+                  disabled={sending || selectableSessions.length === 0}
                 />
                 Select all
                 <span className="ml-auto text-xs font-normal text-muted-foreground">
@@ -250,9 +259,12 @@ export function LocalBroadcastPanel({
                   key={s.id}
                   type="button"
                   onClick={() => toggleSession(s.id)}
-                  disabled={sending}
-                  title={labelFor(s)}
-                  className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 ${
+                  disabled={sending || !connectedSessions.has(s.id)}
+                  title={
+                    labelFor(s) +
+                    (connectedSessions.has(s.id) ? "" : "\n(shell has exited)")
+                  }
+                  className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${
                     selected.has(s.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""
                   }`}
                 >
@@ -264,14 +276,23 @@ export function LocalBroadcastPanel({
               ) : (
                 <label
                   key={s.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+                  title={
+                    connectedSessions.has(s.id)
+                      ? undefined
+                      : "This shell has exited, so nothing can be typed into it"
+                  }
+                  className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                    connectedSessions.has(s.id)
+                      ? "cursor-pointer hover:bg-accent/50"
+                      : "cursor-not-allowed opacity-60"
+                  }`}
                 >
                   <input
                     type="checkbox"
                     className="accent-primary"
                     checked={selected.has(s.id)}
                     onChange={() => toggleSession(s.id)}
-                    disabled={sending}
+                    disabled={sending || !connectedSessions.has(s.id)}
                   />
                   <LocalShellIcon
                     kind={s.shell.kind}

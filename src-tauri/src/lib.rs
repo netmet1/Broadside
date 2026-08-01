@@ -181,6 +181,7 @@ pub fn run() {
             commands::pty::pty_history_add,
             commands::pty::pty_history_list,
             commands::pty::pty_history_clear,
+            commands::pty::rail_log_command,
             commands::pty::omni_log_command,
             commands::pty::omni_blocks_add,
             commands::pty::omni_blocks_list,

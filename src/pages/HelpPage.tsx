@@ -288,17 +288,16 @@ export function HelpPage() {
       </aside>
 
       <div className="min-w-0 flex-1">
-        <header className="mb-6 flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="font-heading text-2xl font-semibold tracking-tight">
-              Help center
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              How Broadside works, tab by tab, with a glossary for the technical
-              terms. Hover any control in the app to see a short explanation in
-              the status bar.
-            </p>
-          </div>
+        {/* Pinned to the top of the scroll area, so someone reading the
+            glossary at the far end of the page can still see which tab they
+            are on and still reach the handbook. Only the title and the button
+            are pinned: the strip has to stay under the 4rem scroll-margin the
+            sections are given in index.css, or jumping to a section would put
+            its heading behind this. The standfirst below scrolls away. */}
+        <header className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b bg-background py-3">
+          <h1 className="min-w-0 truncate font-heading text-2xl font-semibold tracking-tight">
+            Help center
+          </h1>
           {pdfReady && (
             <Button
               variant="outline"
@@ -314,6 +313,11 @@ export function HelpPage() {
             </Button>
           )}
         </header>
+        <p className="mb-6 mt-3 text-sm text-muted-foreground">
+          How Broadside works, tab by tab, with a glossary for the technical
+          terms. Hover any control in the app to see a short explanation in the
+          status bar.
+        </p>
 
         <div ref={contentRef} className="space-y-10">
           {visibleSections.map((s) => (

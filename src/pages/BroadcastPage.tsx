@@ -26,10 +26,15 @@ import {
   checkDestructive,
   onBroadcastResult,
 } from "@/lib/tauri/broadcast";
+import {
+  COMMAND_HISTORY_EVENT,
+  announceCommandHistory,
+  clearRecall,
+  recallFor,
+} from "@/lib/commandHistory";
 import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
 import { RAIL_SORT_OPTIONS } from "@/lib/railSort";
 import {
-  clearCommandHistory,
   commandHistory,
   getAppSettings,
 } from "@/lib/tauri/settings";
@@ -185,11 +190,17 @@ export function BroadcastPage({
   }, [visible]);
 
   useEffect(() => {
-    commandHistory(100)
-      .then((entries) => setHistory(entries.map((e) => e.command)))
-      .catch(() => {
-        // Recall is a convenience; the composer works without it.
-      });
+    const loadRecall = () => {
+      commandHistory(100)
+        .then((entries) => setHistory(recallFor(entries, "broadcast")))
+        .catch(() => {
+          // Recall is a convenience; the composer works without it.
+        });
+    };
+    loadRecall();
+    // One recall list, several composers: re-read when another one adds to it,
+    // rather than holding a copy that quietly goes stale.
+    window.addEventListener(COMMAND_HISTORY_EVENT, loadRecall);
     // Reload persisted result history so output survives restarts (D-059).
     broadcastHistoryList(HISTORY_RUNS)
       .then((stored) =>
@@ -215,6 +226,8 @@ export function BroadcastPage({
       .catch(() => {
         // History is best-effort; the page works without it.
       });
+    return () =>
+      window.removeEventListener(COMMAND_HISTORY_EVENT, loadRecall);
   }, []);
 
   useEffect(() => {
@@ -377,6 +390,9 @@ export function BroadcastPage({
           timeoutSecs: parsedTimeout ?? DEFAULT_TIMEOUT_SECS,
           confirmed,
         });
+        // The backend recorded the command in the shared recall list; the other
+        // composers hold their own copy of that list and want to know.
+        announceCommandHistory();
         const unknown: UnknownKeyEntry[] = [];
         for (const r of reports) {
           if (r.result.status === "unknown_key") {
@@ -492,15 +508,12 @@ export function BroadcastPage({
     toast.success("Broadcast results cleared");
   }, []);
 
-  /** Clears the Up/Down command recall history. */
-  const clearCmdHistory = useCallback(async () => {
-    try {
-      await clearCommandHistory();
-      setHistory([]);
-      toast.success("Command history cleared");
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
+  /** Empties the Up/Down recall on this page only. The list is shared to read,
+   * so the other composers keep theirs, and nothing leaves the Logs history. */
+  const clearCmdHistory = useCallback(() => {
+    clearRecall("broadcast");
+    setHistory([]);
+    toast.success("Command history cleared here");
   }, []);
 
   const activeRun = runs.find((r) => r.pending.size > 0);
@@ -688,7 +701,9 @@ export function BroadcastPage({
               size="sm"
               className="w-full"
               onClick={clearCmdHistory}
-              {...hint("Clear the Up/Down command recall history")}
+              {...hint(
+                "Clear the Up/Down recall on this page. The other composers keep theirs, and nothing leaves the Logs history.",
+              )}
             >
               Clear command history
             </Button>

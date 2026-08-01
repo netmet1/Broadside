@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import {
+  COMMAND_HISTORY_EVENT,
+  type RecallScope,
+  announceCommandHistory,
+  clearRecall,
+  recallFor,
+} from "@/lib/commandHistory";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
   ptyHistoryAdd,
   ptyHistoryClear,
   ptyHistoryList,
   ptyWrite,
+  railLogCommand,
 } from "@/lib/tauri/pty";
-import { clearCommandHistory, commandHistory } from "@/lib/tauri/settings";
+import { commandHistory } from "@/lib/tauri/settings";
 
 const HISTORY_RUNS = 200;
 
@@ -50,6 +58,13 @@ type TargetIdentity = Omit<DispatchResult, "ok" | "message">;
  *  - `persist` — SSH reloads/saves runs + command recall via `ptyHistory*`;
  *    local runs stay in memory (local shells don't survive a restart, so no
  *    backend schema change is needed).
+ *  - `sharedRecall` — whether Up/Down reads the one stored recall list that
+ *    every broadcasting screen writes to. Defaults to `persist`, because a
+ *    panel that saves its runs was already sharing it; the Terminals rail turns
+ *    it on without `persist` (shared recall, no second copy of the runs).
+ *  - `recallScope` — which screen this is, for the per-screen clear. Sharing is
+ *    for reading only: clearing empties this composer and leaves the others
+ *    holding what they had.
  *  - `describe` — maps a session to its report identity (host snapshot vs
  *    shell icon/label).
  */
@@ -58,12 +73,16 @@ export function useSessionBroadcast<T extends { id: string }>({
   connectedSessions,
   lineEnding,
   persist,
+  sharedRecall = persist,
+  recallScope = "ptybroadcast",
   describe,
 }: {
   sessions: T[];
   connectedSessions: Set<string>;
   lineEnding: "\r" | "\n";
   persist: boolean;
+  sharedRecall?: boolean;
+  recallScope?: RecallScope;
   describe: (session: T) => TargetIdentity;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -74,17 +93,22 @@ export function useSessionBroadcast<T extends { id: string }>({
   const [history, setHistory] = useState<string[]>([]);
 
   // Nothing is pre-selected — the user opts into each broadcast. Keep their
-  // choices; drop any selected id whose session has closed. State persists
-  // across tab switches (the page stays mounted) but not restarts.
+  // choices; drop any selected id whose session has closed or dropped its
+  // connection. A checked box on a session that cannot receive anything is a
+  // command silently going nowhere, so the box is unchecked and (in the panels)
+  // disabled while it is down. State persists across tab switches (the page
+  // stays mounted) but not restarts.
   useEffect(() => {
     setSelected((prev) => {
-      const live = new Set(sessions.map((s) => s.id));
+      const live = new Set(
+        sessions.filter((s) => connectedSessions.has(s.id)).map((s) => s.id),
+      );
       const next = new Set([...prev].filter((id) => live.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [sessions]);
+  }, [sessions, connectedSessions]);
 
-  // Reload persisted dispatch history + command recall on mount (SSH only).
+  // Reload persisted dispatch history on mount (SSH only).
   useEffect(() => {
     if (!persist) return;
     ptyHistoryList(HISTORY_RUNS)
@@ -101,10 +125,23 @@ export function useSessionBroadcast<T extends { id: string }>({
       .catch(() => {
         // History is best-effort; the page works without it.
       });
-    commandHistory(100)
-      .then((entries) => setHistory(entries.map((e) => e.command)))
-      .catch(() => {});
   }, [persist]);
+
+  // The recall list, read on mount and again whenever anything anywhere in the
+  // app adds to it. Without the second half, a command sent from one composer
+  // would not reach another until a restart. What this screen sees is the part
+  // of the list that is newer than its own last clear.
+  useEffect(() => {
+    if (!sharedRecall) return;
+    const load = () => {
+      commandHistory(100)
+        .then((entries) => setHistory(recallFor(entries, recallScope)))
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener(COMMAND_HISTORY_EVENT, load);
+    return () => window.removeEventListener(COMMAND_HISTORY_EVENT, load);
+  }, [sharedRecall, recallScope]);
 
   const toggleSession = useCallback((id: string) => {
     setSelected((prev) => {
@@ -137,13 +174,32 @@ export function useSessionBroadcast<T extends { id: string }>({
       const runId = crypto.randomUUID();
       const ts = new Date().toISOString();
       setRuns((prev) => [...prev, { runId, command: cmd, ts, results: out }]);
-      // Persist the run (also records the command in shared recall history).
+      // Persist the run, which also records the command in the shared recall
+      // list. The rail keeps no runs of its own, so there it is the recall
+      // entry alone. Either way the other composers are told to re-read.
       if (persist) {
-        ptyHistoryAdd({ runId, ts, command: cmd, results: out }).catch(() => {});
+        ptyHistoryAdd({ runId, ts, command: cmd, results: out })
+          .then(announceCommandHistory)
+          .catch(() => {});
+      } else if (sharedRecall) {
+        railLogCommand(
+          cmd,
+          out.map((r) => ({ id: r.host_id, label: r.label })),
+        )
+          .then(announceCommandHistory)
+          .catch(() => {});
       }
       setSending(false);
     },
-    [sessions, selected, connectedSessions, lineEnding, persist, describe],
+    [
+      sessions,
+      selected,
+      connectedSessions,
+      lineEnding,
+      persist,
+      sharedRecall,
+      describe,
+    ],
   );
 
   const clearResults = useCallback(async () => {
@@ -159,18 +215,14 @@ export function useSessionBroadcast<T extends { id: string }>({
     toast.success("Dispatch history cleared");
   }, [persist]);
 
+  // Shared to read, private to clear: this empties the recall here and leaves
+  // the other composers holding what they had. Nothing is deleted, so the Logs
+  // page still has the record of what was run.
   const clearCmdHistory = useCallback(async () => {
-    if (persist) {
-      try {
-        await clearCommandHistory();
-      } catch (e) {
-        toast.error(errorMessage(e));
-        return;
-      }
-    }
+    if (sharedRecall) clearRecall(recallScope);
     setHistory([]);
-    toast.success("Command history cleared");
-  }, [persist]);
+    toast.success("Command history cleared here");
+  }, [sharedRecall, recallScope]);
 
   return {
     selected,

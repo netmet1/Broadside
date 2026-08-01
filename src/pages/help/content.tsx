@@ -719,6 +719,25 @@ export const SECTIONS: HelpSection[] = [
               quick, in-place version.
             </li>
             <li>
+              The rail's command box is the same composer as the one on{" "}
+              <Nav>PTY Broadcast</Nav>, and it recalls the same commands:{" "}
+              <Nav>Up</Nav> and <Nav>Down</Nav> walk one shared list, so
+              something you sent from that tab is a keypress away here and the
+              other way around. <Nav>Clear history</Nav>, under the send button,
+              empties the recall here and only here: the list is shared for
+              reading, not for tidying, so clearing the box in front of you is
+              never an act on another tab. Nothing is deleted either, so the{" "}
+              <SectionLink id="help-sec-logs">Logs</SectionLink> record of what
+              was run is untouched.
+            </li>
+            <li>
+              A session that has dropped its connection stays in the list and
+              turns red, but its checkbox is disabled: a checked box on a
+              terminal that cannot receive anything is a command going quietly
+              nowhere. Reconnect the terminal and it can be checked again.{" "}
+              <Nav>Select all</Nav> passes over anything disconnected.
+            </li>
+            <li>
               <Nav>Fullscreen</Nav> (also <Nav>Ctrl+Shift+G</Nav>) gives the
               grid the whole screen: the toolbar, the tab strip, the sidebar and
               the status bar all slide away, leaving a thin strip at the very
@@ -1068,6 +1087,27 @@ export const SECTIONS: HelpSection[] = [
               (filtering a session out unchecks it), applied to each session's
               host, plus the persisted dispatch history.
             </li>
+            <li>
+              A session whose connection has dropped keeps its place in the rail
+              with a red dot, but it cannot be checked and <Nav>Select all</Nav>{" "}
+              skips it. Nothing can be typed into a terminal that is not there,
+              and a checked box that quietly does nothing is worse than a box
+              that says it is out of action. The same is true of a local shell
+              that has exited.
+            </li>
+            <li>
+              There is one recall list for the whole app, shared with{" "}
+              <Nav>Broadcast</Nav>, <Nav>MultiTerminal</Nav> and the broadcast
+              rail on{" "}
+              <SectionLink id="help-sec-terminals">Terminals</SectionLink>: a
+              command sent from any of them is a press of <Nav>Up</Nav> away in
+              the rest. <Nav>Clear command history</Nav> at the foot of the rail
+              empties the recall on this page alone, though. Sharing is for
+              reading; each page forgets on its own account, and nothing is
+              deleted, so the{" "}
+              <SectionLink id="help-sec-logs">Logs</SectionLink> record of what
+              was run stays as it was.
+            </li>
           </Bullets>
           <H3>Local shells (PowerShell, Command Prompt, WSL)</H3>
           <Bullets>
@@ -1150,9 +1190,11 @@ export const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               <Nav>Clear results</Nav> empties the block log (and the saved
-              history). <Nav>Clear command history</Nav> clears the Up/Down recall
-              shared with <Nav>Broadcast</Nav>. <Nav>Close all terminals</Nav>
-              tears down every open terminal after a confirmation.
+              history). <Nav>Clear command history</Nav> empties the Up/Down
+              recall on this page; the list is read from the one every composer
+              shares, but each page clears its own view of it.{" "}
+              <Nav>Close all terminals</Nav> tears down every open terminal
+              after a confirmation.
             </li>
           </Bullets>
         </Detail>

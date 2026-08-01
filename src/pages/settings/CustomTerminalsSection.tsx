@@ -261,10 +261,17 @@ export function CustomTerminalsSection({ id }: { id: string }) {
                 autoComplete="off"
                 className="font-mono text-xs"
               />
+              {/* Git Bash opens perfectly well without arguments: a program
+                  started in a terminal tab already has a screen and a keyboard.
+                  What --login buys is the Git for Windows profile. Say that,
+                  because the older wording sent people hunting for a prompt
+                  that was never missing. Help's Terminals section agrees. */}
               <p className="text-[10px] text-muted-foreground">
                 Separated by spaces. Passed to the program directly, so there is
-                no shell to quote for. Git Bash needs{" "}
-                <code>{GIT_BASH_ARGS}</code> to give you a prompt.
+                no shell to quote for. Git Bash runs without them;{" "}
+                <code>{GIT_BASH_ARGS}</code> is what loads the Git for Windows
+                profile, with its coloured <code>MINGW64</code> prompt and the
+                Unix tools on the path.
               </p>
             </div>
 
