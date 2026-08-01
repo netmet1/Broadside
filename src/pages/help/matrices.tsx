@@ -13,6 +13,8 @@
 
 import { Fragment, type ReactNode } from "react";
 
+import { textOf } from "./searchText";
+
 /** A key or chord, set apart from the prose around it. */
 export function Kbd({ children }: { children: ReactNode }) {
   return (
@@ -218,7 +220,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Type in the filter</Kbd>,
         where: "Help",
-        what: "Keeps the sections that match and marks the matching words in amber, jumping to the first one. The arrows beside the count step through the rest. Punctuation is optional: typing ctrl shift g finds Ctrl+Shift+G.",
+        what: "Searches everything a section says, including these tables, and keeps the ones that match: if you can read it here you can find it here. Matching words are marked in amber and the first is scrolled to, with arrows beside the count for the rest. Punctuation is optional: typing ctrl shift g finds Ctrl+Shift+G, and 16 20 finds 16/20. Each section in the list on the left carries the number of marks inside it. A section can also be found by words it does not use, such as the wrong name for a thing; it is kept with nothing marked in it and the list says keyword instead of a number.",
       },
     ],
   },
@@ -255,6 +257,16 @@ export function ShortcutMatrix() {
     </TableFrame>
   );
 }
+
+// The help filter searches what a section says, and a table built from data is
+// invisible to a walk of the element tree. Publishing the words here, off the
+// same array the table renders from, means a row that is added is searchable
+// the moment it is added.
+ShortcutMatrix.searchText = SHORTCUTS.map((g) =>
+  [g.group, ...g.rows.map((r) => `${textOf(r.keys)} ${r.where} ${r.what}`)].join(
+    " ",
+  ),
+).join(" ");
 
 type WarningRow = { message: ReactNode; where: string; means: string };
 type WarningGroup = { group: string; rows: WarningRow[] };
@@ -409,3 +421,12 @@ export function WarningMatrix() {
     </TableFrame>
   );
 }
+
+// As above: the words of every warning, so searching the message you are
+// actually looking at finds the row that explains it.
+WarningMatrix.searchText = WARNINGS.map((g) =>
+  [
+    g.group,
+    ...g.rows.map((r) => `${textOf(r.message)} ${r.where} ${r.means}`),
+  ].join(" "),
+).join(" ");

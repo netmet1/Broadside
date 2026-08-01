@@ -3,7 +3,8 @@ import { ChevronDownIcon, ChevronUpIcon, SearchIcon, XIcon } from "lucide-react"
 
 import { Input } from "@/components/ui/input";
 import { ShortcutMatrix, WarningMatrix } from "@/pages/help/matrices";
-import { useHelpHighlight } from "@/pages/help/useHelpHighlight";
+import { searchableText } from "@/pages/help/searchText";
+import { queryPattern, useHelpHighlight } from "@/pages/help/useHelpHighlight";
 import { cn } from "@/lib/utils";
 
 /** Help scroll position, remembered while the app runs (sessionStorage clears on
@@ -58,6 +59,10 @@ function Term({ term, children }: { term: string; children?: ReactNode }) {
     </a>
   );
 }
+
+// Without children this puts the term itself on the page, and a walk of the
+// element tree would find nothing there to search for. See ./help/searchText.
+Term.searchProps = ["term"] as const;
 
 /** Accent for the names of app areas and named controls (tabs, buttons, key
  * settings), so they stand out from the surrounding prose. Distinct from the
@@ -286,7 +291,14 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
 type HelpSection = {
   id: string;
   title: string;
-  /** Extra words (beyond the title) the filter box matches against. */
+  /** Words the section does *not* say that should still find it: the wrong name
+   * for a thing, the symptom rather than the feature, the term someone arrives
+   * with. What the section does say is searched from the body itself.
+   *
+   * Not a phrase another section *does* say. `16/20 sessions connected` was
+   * kept here from when keywords were the whole index, and it listed Terminals
+   * beside the Overview that could actually show the words, with nothing in it
+   * to mark. Once a phrase is on the page, it belongs to the page that says it. */
   keywords: string;
   body: ReactNode;
 };
@@ -466,7 +478,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count 16/20 sessions connected red tab not connected",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected",
     body: (
       <>
         <Lead>
@@ -497,6 +509,17 @@ const SECTIONS: HelpSection[] = [
               shell's own name back. The rename lasts for the rest of the
               session and is not kept across restarts. Tabs opened from a
               profile already carry the profile's name, so they have no pencil.
+            </li>
+            <li>
+              A second tab on the same shell or the same host is numbered:{" "}
+              <Nav>PowerShell</Nav>, then <Nav>PowerShell 02</Nav>,{" "}
+              <Nav>PowerShell 03</Nav>. The number counts the order you opened
+              them in, not the order they sit in, so dragging a tab about never
+              renames anything. A tab you have renamed keeps its number without
+              showing it, which is why renaming the second one leaves you with{" "}
+              <Nav>PowerShell</Nav>, your own name, and{" "}
+              <Nav>PowerShell 03</Nav>: renaming one tab is not a reason to
+              relabel a different one under you.
             </li>
           </Bullets>
           <H3>How local shells are detected (important)</H3>
@@ -1569,7 +1592,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-security",
     title: "Security",
     keywords:
-      "security credentials storage credential manager age encrypted file sqlite transmitted telemetry tofu host key sudo auto-fill admin lock argon2 recovery code isolation separate logins privacy",
+      "security credentials storage credential manager age encrypted file sqlite transmitted telemetry tofu host key sudo auto-fill admin lock argon2 recovery code isolation separate logins privacy why was my password not typed nothing filled in did not fill",
     body: (
       <>
         <Lead>
@@ -1626,6 +1649,15 @@ const SECTIONS: HelpSection[] = [
               the app answers a host's sudo password prompt using the password you
               stored for that host. Turn it off to always type sudo passwords
               yourself.
+            </li>
+            <li>
+              It answers a <Nav>sudo</Nav> prompt and nothing else. A password
+              prompt from <Nav>chsh</Nav>, <Nav>su</Nav>, an inner{" "}
+              <Nav>ssh</Nav> or a database client looks much the same on screen,
+              but it is a different program asking, sometimes on a different
+              machine, and a stored password typed into it would have travelled
+              somewhere you never chose to send it. Those prompts are yours to
+              answer.
             </li>
             <li>
               The admin lock is an optional passcode that protects the credential
@@ -1874,6 +1906,18 @@ const SECTIONS: HelpSection[] = [
   },
 ];
 
+/** What each section can be found by: its title, its keywords, and every word
+ * it actually says. Built once — the sections are fixed at module load, and
+ * walking fourteen of them on every keystroke would be work for nothing. */
+const SECTION_TEXT = new Map<string, string>(
+  SECTIONS.map((s) => [
+    s.id,
+    `${s.title} ${s.keywords} ${searchableText(s.body)}`
+      .replace(/\s+/g, " ")
+      .toLowerCase(),
+  ]),
+);
+
 export function HelpPage() {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -1884,14 +1928,16 @@ export function HelpPage() {
   // highlight.
   const [activeId, setActiveId] = useState<string | null>(null);
 
+  const searching = query.trim() !== "";
+
   const visibleSections = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (q === "") return SECTIONS;
-    return SECTIONS.filter(
-      (s) =>
-        s.title.toLowerCase().includes(q) ||
-        s.keywords.toLowerCase().includes(q),
-    );
+    if (query.trim() === "") return SECTIONS;
+    // The same pattern the highlighter uses, so the spaces someone types stand
+    // in for the punctuation the page writes: `ctrl shift g` finds the section
+    // that says Ctrl+Shift+G, and `16 20` finds the one that says 16/20.
+    const pattern = queryPattern(query, { flags: "i", floor: 1 });
+    if (!pattern) return SECTIONS;
+    return SECTIONS.filter((s) => pattern.test(SECTION_TEXT.get(s.id) ?? ""));
   }, [query]);
 
   // Filtering to a section is only half the answer: the section can be long,
@@ -1985,7 +2031,7 @@ export function HelpPage() {
           {/* Where the marks are, and a way through them. A filter that keeps a
               section whose keywords matched but whose words did not is normal,
               so say "no matches on the page" rather than implying a dead end. */}
-          {query.trim() !== "" && (
+          {searching && (
             <div className="flex items-center justify-between gap-2 px-0.5 text-xs text-muted-foreground">
               {highlight.count === 0 ? (
                 <span>No matches on the page</span>
@@ -2017,22 +2063,45 @@ export function HelpPage() {
             </div>
           )}
           <nav className="space-y-0.5">
-            {visibleSections.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => scrollToId(s.id)}
-                aria-current={activeId === s.id ? "true" : undefined}
-                className={cn(
-                  "block w-full truncate rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground",
-                  activeId === s.id
-                    ? "bg-accent font-medium text-accent-foreground"
-                    : "text-muted-foreground",
-                )}
-              >
-                {s.title}
-              </button>
-            ))}
+            {/* While filtering, each section says how many marks are in it, so
+                a section kept for a keyword — a word deliberately not written on
+                the page — reads as "keyword" instead of looking like a match the
+                reader has failed to spot. */}
+            {visibleSections.map((s) => {
+              const marks = searching
+                ? (highlight.countsById.get(s.id) ?? 0)
+                : 0;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => scrollToId(s.id)}
+                  aria-current={activeId === s.id ? "true" : undefined}
+                  title={
+                    !searching
+                      ? undefined
+                      : marks === 0
+                        ? "Kept by a keyword: this wording is not on the page"
+                        : marks === 1
+                          ? "1 match on the page"
+                          : `${marks} matches on the page`
+                  }
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground",
+                    activeId === s.id
+                      ? "bg-accent font-medium text-accent-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                  {searching && (
+                    <span className="shrink-0 text-[0.7rem] tabular-nums opacity-70">
+                      {marks === 0 ? "keyword" : marks}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
             {visibleSections.length === 0 && (
               <p className="px-2.5 py-1.5 text-sm text-muted-foreground">
                 No sections match.

@@ -7,8 +7,16 @@ import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 
 /** Per-host connection test ("Test" action). Owns the in-flight host id, the
  * set of hosts whose last test failed (drives the red Test-button icon), plus
- * the TOFU (unknown key) and key-mismatch dialog state the test can surface. */
-export function useHostConnTest() {
+ * the TOFU (unknown key) and key-mismatch dialog state the test can surface.
+ *
+ * `onShellRead` is how the row on screen keeps up with the test. A test that
+ * connects stores what it read of the login shell on the host row, so the amber
+ * chip is stale the moment the toast appears: it was drawn from the list the
+ * page loaded, and nothing told that list the answer had changed. The page had
+ * to be left and come back for it to catch up. */
+export function useHostConnTest(
+  onShellRead?: (hostId: number, loginShell: string | null) => void,
+) {
   const [testingId, setTestingId] = useState<number | null>(null);
   // Hosts whose most recent test ended in a definitive failure (auth /
   // unreachable / no-credentials / error). Cleared by a successful re-test or
@@ -53,6 +61,11 @@ export function useHostConnTest() {
             if (result.login_shell && !isShellSupported(result.login_shell)) {
               toast.warning(unsupportedShellMessage(result.login_shell));
             }
+            // The row is now out of date in both directions: a shell that has
+            // become unsupported has no chip yet, and one that has been put
+            // back to bash still has the old one. This is the only outcome
+            // that writes the column, so it is the only one that reports.
+            onShellRead?.(host.id, result.login_shell);
             markFailed(host.id, false);
             break;
           case "unknown_key":
@@ -90,7 +103,7 @@ export function useHostConnTest() {
         setTestingId(null);
       }
     },
-    [markFailed],
+    [markFailed, onShellRead],
   );
 
   return {

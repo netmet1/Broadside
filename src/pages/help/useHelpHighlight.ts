@@ -61,8 +61,22 @@ function escapeRegExp(s: string): string {
  * The pattern for a query. Words are joined by "any run of separators", so the
  * spaces someone types stand in for the punctuation the app actually writes.
  * Returns `null` for a query with nothing long enough to be worth marking.
+ *
+ * Exported because the filter that decides which sections to keep has to agree
+ * with the marks painted inside them: a search that keeps a section and then
+ * highlights nothing in it is fine, but the reverse would be a section quietly
+ * dropped while holding the words asked for.
+ *
+ * `flags` is `"gi"` for a scan that walks every match and `"i"` for a plain
+ * yes/no test — a `g` pattern carries `lastIndex` between calls and would skip
+ * every other section. `floor` is the shortest single term worth matching, and
+ * the filter sets it to 1: keeping a section is cheap, painting the page amber
+ * is not.
  */
-function queryPattern(query: string): RegExp | null {
+export function queryPattern(
+  query: string,
+  { flags = "gi", floor = MIN_TERM_LEN }: { flags?: string; floor?: number } = {},
+): RegExp | null {
   const terms = query
     .trim()
     .toLowerCase()
@@ -72,8 +86,28 @@ function queryPattern(query: string): RegExp | null {
   if (terms.length === 0) return null;
   // A single term still has to clear the length floor; a phrase does not, since
   // `ctrl shift g` is specific enough as a whole even though `g` is not.
-  if (terms.length === 1 && terms[0]!.length < MIN_TERM_LEN) return null;
-  return new RegExp(terms.join(SEPARATORS), "gi");
+  if (terms.length === 1 && terms[0]!.length < floor) return null;
+  return new RegExp(terms.join(SEPARATORS), flags);
+}
+
+/** No query, no marks: one shared empty map, so a render with nothing searched
+ * hands back the same object every time. */
+const NO_MARKS: ReadonlyMap<string, number> = new Map();
+
+/** Which section a range landed in, counted per section id.
+ *
+ * Only [`Section`](../HelpPage.tsx) renders a `<section>`, and it puts the
+ * section's id on it, so the nearest one above a marked word names the section
+ * the reader is looking at. A range with no section above it (nothing in Help
+ * is built that way today) is left out rather than guessed at. */
+function countBySection(ranges: Range[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const range of ranges) {
+    const id = range.startContainer.parentElement?.closest("section[id]")?.id;
+    if (!id) continue;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /** Every match of `pattern` in the text under `root`, as ranges. */
@@ -117,6 +151,12 @@ export type HelpHighlight = {
   count: number;
   /** Which match is current, 0-based. */
   index: number;
+  /** How many of those matches are in each section, by DOM id. A section the
+   * filter kept that is missing from this map holds none of them: it was found
+   * by a keyword, a word deliberately not written on the page. The list of
+   * sections says so rather than leaving the reader hunting for a mark that was
+   * never there. */
+  countsById: ReadonlyMap<string, number>;
   /** Scroll to the next / previous match, wrapping at the ends. */
   go: (dir: 1 | -1) => void;
 };
@@ -134,6 +174,8 @@ export function useHelpHighlight(
 ): HelpHighlight {
   const [count, setCount] = useState(0);
   const [index, setIndex] = useState(0);
+  const [countsById, setCountsById] =
+    useState<ReadonlyMap<string, number>>(NO_MARKS);
   const rangesRef = useRef<Range[]>([]);
 
   const scrollTo = useCallback((i: number) => {
@@ -155,6 +197,7 @@ export function useHelpHighlight(
     if (!root || !pattern) {
       setCount(0);
       setIndex(0);
+      setCountsById(NO_MARKS);
       return;
     }
 
@@ -165,6 +208,7 @@ export function useHelpHighlight(
       rangesRef.current = ranges;
       setCount(ranges.length);
       setIndex(0);
+      setCountsById(ranges.length === 0 ? NO_MARKS : countBySection(ranges));
       if (ranges.length === 0) return;
       ensureHighlightStyle();
       CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
@@ -194,5 +238,5 @@ export function useHelpHighlight(
     [scrollTo],
   );
 
-  return { count, index, go };
+  return { count, index, countsById, go };
 }
