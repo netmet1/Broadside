@@ -182,6 +182,23 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     ),
   },
   {
+    term: "posix",
+    label: "POSIX",
+    def: (
+      <>
+        The standard that Unix-like systems agree on, and the reason a command
+        typed for Linux usually works on macOS or inside WSL. In Broadside it is
+        the name of a <Term term="shell" /> family: a Bash-like terminal such as
+        Git Bash, MSYS2 or Cygwin speaks the same command language as a Linux
+        host, so those tabs are grouped with WSL rather than with PowerShell or
+        Command Prompt. A custom terminal set to the Bash-like language is shown
+        with a <code>posix</code> tag and joins the <Nav>WSL / POSIX</Nav> tab in{" "}
+        <Nav>PTY Broadcast</Nav>, which keeps a broadcast command valid for
+        everything it reaches.
+      </>
+    ),
+  },
+  {
     term: "sudo",
     label: "sudo",
     def: (
@@ -478,7 +495,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read",
     body: (
       <>
         <Lead>
@@ -557,7 +574,14 @@ const SECTIONS: HelpSection[] = [
               Give it a name (used in the launcher and as the tab title), the
               full path to the program (the <Nav>Browse</Nav> button finds it),
               any arguments it needs, and which command language it speaks. Git
-              Bash needs <code>--login -i</code> or it opens without a prompt.
+              Bash is normally given <code>--login -i</code>. It opens without
+              those, because a program started in a terminal tab already has a
+              screen and a keyboard and Bash goes interactive on its own; what
+              <code> --login</code> adds is the profile Git for Windows ships,
+              which is where the coloured <code>MINGW64</code> prompt with the
+              branch name and the full set of Unix tools on the path come from.
+              Without it you get a working but plain <code>bash-5.2$</code>{" "}
+              shell.
             </li>
             <li>
               The program must be a full path to a real <code>.exe</code>.
@@ -570,7 +594,8 @@ const SECTIONS: HelpSection[] = [
               The command language matters for more than the icon: it decides
               which <Nav>PTY Broadcast</Nav> tab the terminal belongs to, so a
               broadcast command is always valid for everything it reaches. A
-              Bash-like terminal joins the <Nav>WSL / POSIX</Nav> tab.
+              Bash-like (<Term term="posix" />) terminal joins the{" "}
+              <Nav>WSL / POSIX</Nav> tab.
             </li>
             <li>
               A terminal you add appears in the <Nav>+</Nav> menu straight away,
@@ -807,6 +832,17 @@ const SECTIONS: HelpSection[] = [
               <Nav>Ctrl+Shift+V</Nav>. Plain <Nav>Ctrl+C</Nav> and{" "}
               <Nav>Ctrl+V</Nav> are left alone so the shell still receives them
               (for example Ctrl+C to interrupt a running command).
+            </li>
+            <li>
+              <strong className="font-semibold">Text too small</strong> is fixed
+              from where you are reading it: hold <Nav>Ctrl</Nav> and turn the
+              mouse wheel over a terminal to zoom the text in or out. Every open
+              terminal changes together,
+              one step a notch, between 8 and 32 px, and the size you stop on is
+              saved as the terminal font size in <Nav>Settings</Nav> under{" "}
+              <Nav>Appearance</Nav>. If you would rather that number only ever
+              changed by being typed, tick <Nav>Strict</Nav> beside it and the
+              wheel is ignored.
             </li>
             <li>
               Every key Broadside takes, here and everywhere else, is listed in{" "}
@@ -1553,9 +1589,14 @@ const SECTIONS: HelpSection[] = [
               scope.
             </li>
             <li>
-              <Nav>Appearance</Nav>: light or dark theme, which{" "}
-              <Nav>Hosts</Nav> columns to show, and which detected local shells
-              appear in the Terminals <Nav>plus button</Nav> menu.
+              <Nav>Appearance</Nav>: light or dark theme, the terminal font and
+              its size, the size of the application text, which <Nav>Hosts</Nav>{" "}
+              columns to show, and which detected local shells appear in the
+              Terminals <Nav>plus button</Nav> menu. Holding <Nav>Ctrl</Nav> and
+              turning the mouse wheel over any terminal changes the terminal
+              font size from where you are reading and saves it here, unless{" "}
+              <Nav>Strict</Nav> beside that field is ticked, which leaves the
+              wheel alone.
             </li>
             <li>
               <Nav>Backup &amp; Restore</Nav>: save a copy of your app data, or

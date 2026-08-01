@@ -9,6 +9,10 @@ import {
 } from "@/lib/localShellPrefs";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import { type AppSettings, setUiSettings } from "@/lib/tauri/settings";
+import {
+  loadTerminalFontStrict,
+  saveTerminalFontStrict,
+} from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
 
 /** Appearance section: terminal/app fonts, host-table column visibility and the
@@ -67,6 +71,23 @@ export function useAppearance() {
     setAppFontSize(String(s.app_font_size));
   }, []);
 
+  // Ctrl + wheel over a terminal writes the size straight into the prefs (see
+  // lib/terminalZoom), and Settings stays mounted, so without this the field
+  // would go on showing the old number: the same complaint the grid had when a
+  // drag changed a tile size behind its back. Typing in the box does not move
+  // `prefs`, so this cannot fight the reader mid-edit.
+  useEffect(() => {
+    setTermFontSize(String(prefs.terminalFontSize));
+  }, [prefs.terminalFontSize]);
+
+  // Whether the field above is the last word. Off by default: the wheel works
+  // out of the box and this is how it is turned off.
+  const [termFontStrict, setTermFontStrict] = useState(loadTerminalFontStrict);
+  const toggleTermFontStrict = (v: boolean) => {
+    setTermFontStrict(v);
+    saveTerminalFontStrict(v);
+  };
+
   const parsedTermFontSize = (() => {
     const n = Number(termFontSize);
     return Number.isInteger(n) && n >= 8 && n <= 32 ? n : undefined;
@@ -110,6 +131,8 @@ export function useAppearance() {
     setTermFontFamily,
     termFontSize,
     setTermFontSize,
+    termFontStrict,
+    toggleTermFontStrict,
     appFontSize,
     setAppFontSize,
     savingUi,

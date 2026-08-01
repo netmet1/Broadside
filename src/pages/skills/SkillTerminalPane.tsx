@@ -5,6 +5,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import "@xterm/xterm/css/xterm.css";
 import { useTheme } from "next-themes";
 
+import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import { onPtyData, ptyResize } from "@/lib/tauri/pty";
 import {
@@ -78,6 +79,9 @@ export function SkillTerminalPane({
   const { prefs } = useUiPrefs();
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
+  // Same Ctrl + wheel zoom a Terminals pane has: this is a terminal too, and a
+  // skill's output is exactly the kind of thing worth leaning in to read.
+  useTerminalFontZoom(containerRef);
   const { resolvedTheme } = useTheme();
 
   useEffect(() => {

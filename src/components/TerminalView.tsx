@@ -32,6 +32,7 @@ import {
   unsupportedShellMessage,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
+import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
 
 /** Copy `sel` to the clipboard and flash a short confirmation toast. Nothing
@@ -174,6 +175,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
   const { prefs } = useUiPrefs();
+  // Ctrl + wheel over this pane resizes the terminal text (unless Strict is set
+  // in Settings). The size change lands back in `prefs`, so the effect below
+  // applies it here and in every other open pane.
+  useTerminalFontZoom(containerRef);
   const { resolvedTheme } = useTheme();
   // Read once at terminal creation; live changes are applied by the
   // prefs effect below without recreating the terminal.

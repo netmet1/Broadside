@@ -154,6 +154,11 @@ const SHORTCUTS: ShortcutGroup[] = [
         what: "Copies as soon as you let go of the button, with a short toast to confirm it. There is no separate copy step.",
       },
       {
+        keys: <Kbd>Ctrl+mouse wheel</Kbd>,
+        where: "Terminals, Skills",
+        what: "Make the terminal text bigger or smaller, one step a notch, between 8 and 32 px. Every open terminal follows, and the size you stop on is saved in Settings, Appearance. Tick Strict beside that field and the wheel is ignored instead.",
+      },
+      {
         keys: <Kbd>Tab</Kbd>,
         where: "Terminals",
         what: "The shell's own completion, always. Nothing in Broadside takes it.",
