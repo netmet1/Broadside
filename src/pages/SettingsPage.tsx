@@ -64,6 +64,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   SCOPE_LABELS,
+  SECTION_KEYWORDS,
   SECTION_SCROLL_KEY,
   SECTION_TITLES,
   SEARCH_STORAGE_KEY,
@@ -114,6 +115,8 @@ export function SettingsPage({
     setTermFontFamily,
     termFontSize,
     setTermFontSize,
+    termFontStrict,
+    toggleTermFontStrict,
     appFontSize,
     setAppFontSize,
     savingUi,
@@ -212,10 +215,22 @@ export function SettingsPage({
   useEffect(() => {
     sessionStorage.setItem(SEARCH_STORAGE_KEY, query);
   }, [query]);
+  // A section is kept when every word typed is somewhere in its title or its
+  // keywords (SECTION_KEYWORDS), so "git" finds Custom terminals and "font
+  // size" finds Appearance without having to be the exact heading. Every word
+  // rather than the whole string: "custom git" is a reader narrowing down, not
+  // a phrase anything is expected to contain.
   const sectionVisible = useCallback(
-    (title: string) =>
-      query.trim() === "" ||
-      title.toLowerCase().includes(query.trim().toLowerCase()),
+    (title: string) => {
+      const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (terms.length === 0) return true;
+      const haystack = (
+        title +
+        " " +
+        (SECTION_KEYWORDS[title] ?? "")
+      ).toLowerCase();
+      return terms.every((t) => haystack.includes(t));
+    },
     [query],
   );
   const anyVisible = SECTION_TITLES.some(sectionVisible);
@@ -498,7 +513,9 @@ export function SettingsPage({
               placeholder="Search sections…"
               className="h-8 pl-8 pr-7 text-sm"
               aria-label="Search settings sections"
-              {...hint("Filter the settings sections by name")}
+              {...hint(
+                "Filter the settings sections by what they are about, not only their name: “git” finds Custom terminals",
+              )}
             />
             {query !== "" && (
               <button
@@ -1132,14 +1149,41 @@ export function SettingsPage({
           </div>
           <div className="grid gap-1">
             <Label htmlFor="term-font-size">Terminal font size</Label>
-            <Input
-              id="term-font-size"
-              value={termFontSize}
-              onChange={(e) => setTermFontSize(e.target.value)}
-              className={`w-40 font-mono text-sm ${parsedTermFontSize === undefined ? "border-destructive" : ""}`}
-              autoComplete="off"
-            />
-            <p className="text-xs text-muted-foreground">8-32 px.</p>
+            <div className="flex items-center gap-3">
+              <Input
+                id="term-font-size"
+                value={termFontSize}
+                onChange={(e) => setTermFontSize(e.target.value)}
+                className={`w-40 font-mono text-sm ${parsedTermFontSize === undefined ? "border-destructive" : ""}`}
+                autoComplete="off"
+              />
+              {/* Strict sits with the field it protects, not in a list of
+                  toggles somewhere else: it is only about this number. */}
+              <label
+                className="flex cursor-pointer items-center gap-1.5 text-sm"
+                {...hint(
+                  termFontStrict
+                    ? "Strict: only this field changes the size. Ctrl and the mouse wheel are left to the terminal, so a program with mouse reporting on receives them again and the scrollback fast-scrolls as it used to."
+                    : "Not strict: Ctrl and the mouse wheel over a terminal resize the text, and the new size is saved here as you go.",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-primary"
+                  checked={termFontStrict}
+                  onChange={(e) => toggleTermFontStrict(e.target.checked)}
+                />
+                <span className="font-medium">Strict</span>
+              </label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              8-32 px. Hold <span className="font-medium">Ctrl</span> and turn
+              the mouse wheel over a terminal to change it from there; the size
+              you land on is saved. Tick <span className="font-medium">Strict</span>{" "}
+              to make this field the only way to set it, which also hands Ctrl
+              and the wheel back to the terminal for anything that wants them
+              itself.
+            </p>
           </div>
           <div className="grid gap-1">
             <Label htmlFor="app-font-size">Application font size</Label>

@@ -1424,6 +1424,10 @@ export function TerminalsPage({
                     >
                       How many
                     </label>
+                    {/* The box is sized for the widest count it will ever hold
+                        (three digits plus the spinner), and the reset sits
+                        against it rather than out by the cap, so the pair reads
+                        as one control. */}
                     <input
                       id="shell-count"
                       type="number"
@@ -1431,8 +1435,19 @@ export function TerminalsPage({
                       max={maxShells}
                       value={shellCount}
                       onChange={(e) => setShellCount(e.target.value)}
-                      className="w-16 rounded border border-input bg-background px-1.5 py-0.5 text-center font-mono text-xs"
+                      className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center font-mono text-xs"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShellCount("1")}
+                      disabled={shellCount === "1"}
+                      aria-label="Reset the count to 1"
+                      title="Back to 1"
+                      {...hint("Set the number of copies to open back to 1")}
+                      className="-ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                    >
+                      <RotateCcwIcon className="h-3 w-3" />
+                    </button>
                     <span className="ml-auto text-[11px] text-muted-foreground">
                       max {maxShells}
                     </span>
