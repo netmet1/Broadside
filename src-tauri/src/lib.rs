@@ -152,6 +152,8 @@ pub fn run() {
             commands::hosts::delete_host,
             commands::hosts::export_hosts,
             commands::hosts::path_is_file,
+            commands::help::help_pdf_available,
+            commands::help::export_help_pdf,
             commands::credentials::set_host_credentials,
             commands::credentials::clear_host_credentials,
             commands::credentials::is_credentials_unlocked,

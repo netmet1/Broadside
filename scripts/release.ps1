@@ -62,6 +62,33 @@ if (Test-Path $buildTagFile) {
   }
 }
 
+# --- The handbook PDF must not be older than the help it is a copy of ---
+# The PDF is built at release and committed (see CLAUDE.md), because the MSI is
+# assembled in the cloud from what is in the repository. Nothing can tell whether
+# it is CORRECT, but git can tell whether it is STALE: if a help source has been
+# committed since the PDF was, the release would ship a handbook missing the
+# newest words. Rebuild with: npm run help:pdf
+$helpPdf = "src-tauri/resources/broadside-help.pdf"
+if (-not (Test-Path (Join-Path $repoRoot $helpPdf))) {
+  Write-Host "FAILED: the help PDF is missing." -ForegroundColor Red
+  Write-Host "  Build it with: npm run help:pdf" -ForegroundColor Yellow
+  exit 1
+}
+$helpSources = @(
+  "src/pages/help",
+  "src/pages/HelpPage.tsx",
+  "scripts/help-pdf"
+)
+$pdfDate = git -C $repoRoot log -1 --format=%ct -- $helpPdf
+$srcDate = git -C $repoRoot log -1 --format=%ct -- $helpSources
+if ($pdfDate -and $srcDate -and ([int]$srcDate -gt [int]$pdfDate)) {
+  Write-Host "FAILED: the help PDF is older than the help it prints." -ForegroundColor Red
+  Write-Host ("  Last help change: {0}" -f ([DateTimeOffset]::FromUnixTimeSeconds([int]$srcDate).LocalDateTime)) -ForegroundColor Red
+  Write-Host ("  Last PDF build  : {0}" -f ([DateTimeOffset]::FromUnixTimeSeconds([int]$pdfDate).LocalDateTime)) -ForegroundColor Red
+  Write-Host "Rebuild and commit it: npm run help:pdf" -ForegroundColor Yellow
+  exit 1
+}
+
 # --- Matching gitignored notes file (1.1.0 -> v1-1-0.md) ---
 $notesName = "v" + ($version -replace '\.', '-') + ".md"
 $notesPath = Join-Path $repoRoot "internal_only/release notes/$notesName"

@@ -1,0 +1,347 @@
+/*
+ * How the help reads on paper.
+ *
+ * The elements arriving here are the app's, Tailwind classes and all, and those
+ * classes are not loaded: nothing below matches one. What it matches instead is
+ * the element itself and the `data-h` attributes the help components carry, so
+ * this file is the whole appearance of the document and can be changed without
+ * touching a word of the help.
+ *
+ * Sizes are in points because the destination is a page, not a screen. The
+ * palette is the app's own, darkened where a screen colour would print thin.
+ */
+
+:root {
+  --ink: #14181d;
+  --body: #24292f;
+  --muted: #6b7280;
+  --faint: #8a94a0;
+  --rule: #e3e7ec;
+  --rule-soft: #eef1f4;
+  --accent: #0b6ba8;
+  --wash: #f4f6f8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+body {
+  margin: 0;
+  font-family: "Geist Doc", "Segoe UI", Arial, sans-serif;
+  font-size: 10pt;
+  line-height: 1.55;
+  color: var(--body);
+  orphans: 3;
+  widows: 3;
+}
+
+/* --- Cover -------------------------------------------------------------- */
+/* The first page has no margin (see the @page rule), so the artwork runs to
+   the edge of the sheet and the logo's own black background becomes the band
+   rather than a square floating on white. */
+
+.cover-art {
+  height: 112mm;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cover-art img {
+  width: 88mm;
+  height: 88mm;
+}
+
+.cover-text {
+  padding: 20mm var(--side) 0;
+}
+
+.cover-eyebrow {
+  margin: 0;
+  font-size: 8.5pt;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.cover h1 {
+  margin: 5pt 0 0;
+  font-size: 30pt;
+  font-weight: 620;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.cover-subtitle {
+  margin: 2pt 0 0;
+  font-size: 15pt;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: #4a5563;
+}
+
+.cover-standfirst {
+  max-width: 122mm;
+  margin: 11pt 0 0;
+  font-size: 11pt;
+  line-height: 1.5;
+  color: #4a5563;
+}
+
+.cover-meta {
+  display: flex;
+  gap: 7pt;
+  margin: 26mm 0 0;
+  padding-top: 7pt;
+  border-top: 1px solid var(--rule);
+  font-size: 9.5pt;
+  color: var(--muted);
+}
+
+.cover-version {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cover-dot {
+  color: var(--faint);
+}
+
+/* --- Contents ----------------------------------------------------------- */
+
+.toc {
+  break-before: page;
+}
+
+.toc h1,
+.chapter-title {
+  margin: 0 0 12pt;
+  padding-bottom: 7pt;
+  border-bottom: 2px solid var(--ink);
+  font-size: 19pt;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--ink);
+  break-after: avoid;
+}
+
+.toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toc li {
+  margin: 0;
+}
+
+.toc a {
+  display: flex;
+  gap: 12pt;
+  padding: 6pt 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.toc-num {
+  width: 16pt;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.toc-title {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.toc-note {
+  margin-top: 14pt;
+  font-size: 9pt;
+  color: var(--muted);
+}
+
+/* --- Sections ----------------------------------------------------------- */
+
+.chapter {
+  break-before: page;
+}
+
+.chapter-num {
+  margin: 0 0 3pt;
+  font-size: 8pt;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+h3,
+[data-h="h3"] {
+  margin: 13pt 0 5pt;
+  font-size: 10.5pt;
+  font-weight: 650;
+  color: var(--ink);
+  break-after: avoid;
+}
+
+p,
+ul,
+ol,
+dl {
+  margin: 0 0 7pt;
+}
+
+[data-h="lead"] {
+  margin: 0 0 9pt;
+  font-size: 10.5pt;
+  color: var(--ink);
+}
+
+[data-h="detail"] {
+  margin: 0 0 9pt;
+  padding-left: 11pt;
+  border-left: 2px solid var(--rule);
+}
+
+[data-h="detail"] > :last-child {
+  margin-bottom: 0;
+}
+
+ul {
+  padding-left: 13pt;
+  list-style: disc;
+}
+
+ol {
+  padding-left: 15pt;
+}
+
+li {
+  margin-bottom: 3.5pt;
+}
+
+li > ul,
+li > ol {
+  margin: 3.5pt 0 0;
+}
+
+strong {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* A word with a definition at the back. Dotted was the screen's way of saying
+   so and printed like a spellchecker's complaint, so on paper it is a thin
+   rule: still a link, no longer an accusation. */
+[data-h="term"] {
+  border-bottom: 0.5pt solid #b9c1ca;
+}
+
+[data-h="link"] {
+  color: var(--accent);
+  font-weight: 550;
+}
+
+[data-h="nav"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+code {
+  padding: 0.5pt 3pt;
+  border-radius: 2pt;
+  background: var(--wash);
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 0.88em;
+  color: var(--ink);
+}
+
+kbd {
+  padding: 0.5pt 4pt;
+  border: 1px solid #d7dde4;
+  border-bottom-width: 2px;
+  border-radius: 3pt;
+  background: #fafbfc;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 0.84em;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* --- Reference tables --------------------------------------------------- */
+
+table {
+  width: 100%;
+  margin: 0 0 9pt;
+  border-collapse: collapse;
+  border-top: 1px solid var(--rule);
+  font-size: 8.6pt;
+  line-height: 1.45;
+}
+
+/* The header repeats when a table runs past the foot of a page; a row never
+   splits across one. */
+thead {
+  display: table-header-group;
+}
+
+tr {
+  break-inside: avoid;
+}
+
+th {
+  padding: 4pt 6pt;
+  border-bottom: 1px solid #d7dde4;
+  background: var(--wash);
+  text-align: left;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+td {
+  padding: 4pt 6pt;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+
+/* A row that spans every column is the tables' way of naming the part of the
+   app the rows beneath it belong to. */
+tbody td[colspan] {
+  background: #f8fafc;
+  font-size: 7.6pt;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* --- Glossary ----------------------------------------------------------- */
+
+dl > div {
+  margin-bottom: 9pt;
+  break-inside: avoid;
+}
+
+dt {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+dd {
+  margin: 2pt 0 0;
+}
