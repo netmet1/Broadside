@@ -86,11 +86,14 @@ pub async fn pty_open(
             // Remember what we saw so the Hosts table can flag an unsupported
             // shell without anyone having to open a terminal first (X4). Purely
             // informational, so a write failure never fails the open.
-            if let Some(shell) = login_shell {
-                let _ = with_db(&state, |conn| {
-                    host_repo::set_login_shell(conn, host.id, shell)
-                });
-            }
+            //
+            // Written even when the probe read nothing: we got a terminal open
+            // on this host, so "no answer" is this connect's answer and it
+            // replaces whatever the last one stored. A stale value would go on
+            // flagging a shell nobody can confirm.
+            let _ = with_db(&state, |conn| {
+                host_repo::set_login_shell(conn, host.id, login_shell.as_deref())
+            });
             let _ = audit.append(&AuditEvent::PtyOpened {
                 host_label: host.label,
                 hostname: host.hostname,

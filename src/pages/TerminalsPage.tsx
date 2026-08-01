@@ -97,6 +97,21 @@ const BULK_STARTUP_WARN = 1;
  * yet (the real cap is the configured/suggested max concurrent sessions). */
 const DEFAULT_MAX_SHELLS = 32;
 
+/** Everything in the controls strip the keyboard can land on, in the order Tab
+ * walks them. Ctrl+Shift+T focuses the first, and Tab wraps at the last: with
+ * no wrap it walks off the end into the grid, where the next stops are per-tab
+ * buttons that only appear on hover and then a terminal, and focusing a
+ * terminal scrolls the grid under it. Hidden controls are skipped — the "+"
+ * launcher's menu items are not in the DOM until it opens, but a disabled or
+ * display:none control would otherwise be a stop with nothing to see. */
+function focusablesIn(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
+  const found = root.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  );
+  return [...found].filter((el) => el.offsetParent !== null);
+}
+
 /** Session shapes and naming live in ./terminals/session, so anything that only
  * needs "what is this tab called" can have it without importing this page.
  * Re-exported here because App and the broadcast pages already import the types
@@ -338,8 +353,23 @@ export function TerminalsPage({
   );
 
   const hint = useHint();
+  // How many of the open tabs are actually up. Same rule the tab strip paints
+  // red with: an SSH tab that is connecting, dropped or failed is not
+  // connected, and a local shell never is anything else. Twenty tabs of which
+  // four are red is not twenty sessions, and a count that says it is hides the
+  // only number worth reading in a wall of terminals.
+  const liveCount = useMemo(
+    () =>
+      sessions.filter((s) => s.type !== "ssh" || connectedSessions.has(s.id))
+        .length,
+    [sessions, connectedSessions],
+  );
   usePageStatus(
-    `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`,
+    liveCount === sessions.length
+      ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`
+      : // Only when they differ, so the ordinary case still reads as a plain
+        // count and the slash is a signal that something is down.
+        `${liveCount}/${sessions.length} sessions connected`,
     visible,
   );
 
@@ -433,6 +463,18 @@ export function TerminalsPage({
     });
   }, []);
 
+  // The controls + tab strip, and whether the keyboard is currently driving
+  // them. See the Ctrl+Shift+T effect below for what the flag is for.
+  const chromeRef = useRef<HTMLDivElement | null>(null);
+  const [chromeKeyboard, setChromeKeyboard] = useState(false);
+  const chromeHasFocus = useCallback(
+    () =>
+      document.activeElement !== null &&
+      chromeRef.current !== null &&
+      chromeRef.current.contains(document.activeElement),
+    [],
+  );
+
   // Grid fullscreen: the tiles take the whole window and every bit of chrome
   // collapses to a hover strip at the top.
   //
@@ -454,8 +496,11 @@ export function TerminalsPage({
         e.preventDefault();
         e.stopPropagation();
         onGridFullscreen(!gridFullscreen);
-      } else if (e.key === "Escape" && gridFullscreen) {
+      } else if (e.key === "Escape" && gridFullscreen && !chromeHasFocus()) {
         // Esc only exits; it must stay available to the shell otherwise.
+        // With the keyboard in the strip it means "give me the terminal back"
+        // instead, handled below, or one press would both drop focus and take
+        // the grid out of fullscreen and you could never walk the strip twice.
         e.preventDefault();
         e.stopPropagation();
         onGridFullscreen(false);
@@ -463,33 +508,77 @@ export function TerminalsPage({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [visible, gridMode, gridFullscreen, onGridFullscreen]);
+  }, [visible, gridMode, gridFullscreen, onGridFullscreen, chromeHasFocus]);
 
   // Ctrl+Shift+T puts keyboard focus into the controls. In grid fullscreen they
   // are slid up out of the way and the mouse was the only way back to them:
   // pressing Tab cannot do it, because Tab belongs to whatever has focus, and
   // in a grid that is a terminal, where Tab is the shell's own completion key.
   // The strip slides down whenever anything inside it takes focus, so this is
-  // the whole of the way in; Tab and Shift+Tab then walk it, and Esc still
-  // leaves fullscreen. Same reasoning as Ctrl+Shift+G for the letter: a
-  // terminal cannot see the Shift, so nothing is taken from the program.
-  const chromeRef = useRef<HTMLDivElement | null>(null);
+  // the whole of the way in; Tab and Shift+Tab then walk it, and Esc hands the
+  // keyboard back to the terminal. Same reasoning as Ctrl+Shift+G for the
+  // letter: a terminal cannot see the Shift, so nothing is taken from the
+  // program.
+  //
+  // `chromeKeyboard` says the keyboard got here by this shortcut, and it does
+  // two things nothing else can:
+  //
+  //  - It paints the ring. Programmatic focus does not reliably satisfy
+  //    :focus-visible, so the first press moved focus with nothing on screen to
+  //    show for it and the ring only appeared after a Tab. A flag we set
+  //    ourselves does not guess.
+  //  - It keeps Tab in the strip. Walking off the end used to fall into the
+  //    grid, first through per-tab buttons that are invisible until hovered and
+  //    then into a tile, where focusing a terminal scrolls the grid and leaves
+  //    the tile looking broken. Tab wraps within the strip instead; Esc is the
+  //    way out, and ordinary Tab from elsewhere in the app is untouched.
   useEffect(() => {
     if (!visible || maximized) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && chromeHasFocus()) {
+        // Not from a text field in the strip: Esc in the tab-rename box means
+        // "abandon the rename", and this listener is on the capture phase, so
+        // without this it would take that key before the box ever saw it.
+        const el = document.activeElement;
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        setChromeKeyboard(false);
+        searchHandles.current.get(activeId ?? "")?.focusTerminal();
+        return;
+      }
       if (!e.ctrlKey || !e.shiftKey || e.altKey) return;
       if (e.key !== "T" && e.key !== "t") return;
-      const first = chromeRef.current?.querySelector<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      );
+      const first = focusablesIn(chromeRef.current)[0];
       if (!first) return;
       e.preventDefault();
       e.stopPropagation();
+      setChromeKeyboard(true);
       first.focus();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [visible, maximized]);
+  }, [visible, maximized, activeId, chromeHasFocus]);
+
+  // Tab and Shift+Tab while the strip has the keyboard: wrap at both ends
+  // rather than let focus escape into the grid.
+  const onChromeKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "Tab" || !chromeKeyboard) return;
+      const items = focusablesIn(chromeRef.current);
+      if (items.length === 0) return;
+      const here = items.indexOf(document.activeElement as HTMLElement);
+      if (here === -1) return;
+      const next = e.shiftKey ? here - 1 : here + 1;
+      // Anywhere in the middle is the browser's job; only the two ends are ours.
+      if (next >= 0 && next < items.length) return;
+      e.preventDefault();
+      items[e.shiftKey ? items.length - 1 : 0]?.focus();
+    },
+    [chromeKeyboard],
+  );
 
   // Leaving Grid (or maximizing a pane) has to give the chrome back, or it
   // would be missing with nothing on screen able to restore it.
@@ -804,6 +893,18 @@ export function TerminalsPage({
       {!maximized && (
         <div
           ref={chromeRef}
+          onKeyDown={onChromeKeyDown}
+          // A click is the mouse taking over: drop the keyboard mark so the
+          // ring goes away and Tab stops wrapping.
+          onPointerDown={() => setChromeKeyboard(false)}
+          // And so does focus leaving the strip by any other route (a dialog,
+          // a click into a tile, navigating away).
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              setChromeKeyboard(false);
+            }
+          }}
+          data-chrome-keyboard={chromeKeyboard ? "1" : undefined}
           className={cn(
             // `terminal-chrome` is the hook for the loud focus ring (index.css).
             // Ctrl+Shift+T is the only way into these controls from a terminal,
@@ -1203,7 +1304,10 @@ export function TerminalsPage({
             {s.type === "local" && !s.profileLabel && renamingId !== s.id && (
               <button
                 type="button"
-                className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                // group-focus-within, not just group-hover: these buttons are in
+                // the tab order, and a ring around something invisible tells you
+                // nothing about where the keyboard is.
+                className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation();
                   startRename(s);
@@ -1226,7 +1330,7 @@ export function TerminalsPage({
                   // you can find the hidden ones at a glance.
                   excludedFromGrid.has(s.id)
                     ? "text-amber-600 opacity-100 dark:text-amber-500"
-                    : "text-muted-foreground opacity-0 group-hover:opacity-100",
+                    : "text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100",
                 )}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1253,7 +1357,7 @@ export function TerminalsPage({
             )}
             <button
               type="button"
-              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
                 onMaximize(s.id);
@@ -1265,7 +1369,7 @@ export function TerminalsPage({
             </button>
             <button
               type="button"
-              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
                 closeSession(s.id);

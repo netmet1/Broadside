@@ -101,7 +101,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Esc</Kbd>,
         where: "Grid fullscreen",
-        what: "Leave fullscreen.",
+        what: "Leave fullscreen. With the keyboard in the controls strip it hands focus back to the terminal instead, and the next press leaves fullscreen.",
       },
       {
         keys: <Kbd>Ctrl+Shift+T</Kbd>,
@@ -115,7 +115,7 @@ const SHORTCUTS: ShortcutGroup[] = [
           </>
         ),
         where: "Terminal controls",
-        what: "Walk forwards and backwards along the toolbar and tab strip once Ctrl+Shift+T has put you there. The strip stays down the whole time.",
+        what: "Walk forwards and backwards along the toolbar and tab strip once Ctrl+Shift+T has put you there. The strip stays down the whole time, and Tab wraps round at the last control rather than dropping into the grid. Esc is the way out.",
       },
       {
         keys: (
@@ -276,7 +276,7 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>An amber chip naming a shell (fish, csh, tcsh, …)</Msg>,
         where: "Hosts",
         means:
-          "This host's login shell is not one of the Bourne-family shells Broadside can drive. Terminals, broadcast and file transfer all work as normal; command block tracking is unavailable and skills cannot run here. Sudo password auto-fill still works. The chip names whatever the host reported, and Broadside only reads a name it can recognise as a shell path — a chip naming something from your own startup script was a bug, fixed in 1.3.0.",
+          "This host's login shell is not one of the Bourne-family shells Broadside can drive. Terminals, broadcast and file transfer all work as normal; command block tracking is unavailable and skills cannot run here. Sudo password auto-fill still works. The chip names whatever the host reported, and Broadside only reads a name it can recognise as a shell path — a chip naming something from your own startup script was a bug, fixed in 1.3.0. The chip is what the last completed connection read: if it could not read one at all the chip goes, and upgrading to 1.3.0 clears any name that could never have been a shell.",
       },
       {
         message: <Msg>No credentials set</Msg>,

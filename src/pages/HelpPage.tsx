@@ -321,7 +321,13 @@ const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               Hover almost any control and a short explanation appears in the
-              status bar along the bottom of the window.
+              status bar along the bottom of the window. The right-hand end of
+              that bar counts what the page is showing. On{" "}
+              <Nav>Terminals</Nav> that is how many tabs are open, and it
+              becomes a pair like <Nav>16/20 sessions connected</Nav> as soon as
+              one of them is not: the second number is the tabs, the first is
+              the ones with a live connection, and the difference is the tabs
+              showing red.
             </li>
             <li>
               The current app version is shown next to the Broadside name at
@@ -460,7 +466,7 @@ const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count 16/20 sessions connected red tab not connected",
     body: (
       <>
         <Lead>
@@ -678,10 +684,16 @@ const SECTIONS: HelpSection[] = [
             </li>
             <li>
               <Nav>Ctrl+Shift+T</Nav> puts the keyboard into the controls, which
-              slides the strip down as it goes. <Nav>Tab</Nav> and{" "}
-              <Nav>Shift+Tab</Nav> then move along them and <Nav>Esc</Nav>{" "}
-              leaves fullscreen. Tab on its own cannot do this: a terminal has
-              the focus in a grid, and Tab there belongs to the shell.
+              slides the strip down as it goes, and puts a ring around the
+              button that has the focus. <Nav>Tab</Nav> and <Nav>Shift+Tab</Nav>{" "}
+              then move along the toolbar and into the tab strip, where each
+              tab's buttons show themselves as they take the focus instead of
+              waiting for the mouse. Tab wraps round at the last control rather
+              than walking off into the grid, and <Nav>Esc</Nav> hands the
+              keyboard back to the terminal you came from (a second{" "}
+              <Nav>Esc</Nav> then leaves fullscreen). Tab on its own cannot get
+              you in here: a terminal has the focus in a grid, and Tab there
+              belongs to the shell.
             </li>
             <li>
               Drag the right or bottom edge of any tile (or its bottom-right
