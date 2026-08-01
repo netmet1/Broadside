@@ -99,6 +99,23 @@ export function HostsPage({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState<Host | null>(null);
 
+  // A test that connects re-reads the login shell and stores it, so the row
+  // takes the new answer straight away rather than waiting for the page to be
+  // left and come back. Patched in place, not re-listed: the test says exactly
+  // what it stored, and a reload here would fight the sort and the filters.
+  const applyLoginShell = useCallback(
+    (hostId: number, loginShell: string | null) => {
+      setHosts((prev) =>
+        prev.map((h) =>
+          h.id === hostId && h.login_shell !== loginShell
+            ? { ...h, login_shell: loginShell }
+            : h,
+        ),
+      );
+    },
+    [],
+  );
+
   // Per-host connection test + the TOFU / key-mismatch dialogs it can surface.
   const {
     testingId,
@@ -109,7 +126,7 @@ export function HostsPage({
     mismatch,
     setMismatch,
     runTest,
-  } = useHostConnTest();
+  } = useHostConnTest(applyLoginShell);
 
   const defaultColor = useMemo(
     () => nextColor(hosts.map((h) => h.color)),
