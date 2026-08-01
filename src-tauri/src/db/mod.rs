@@ -203,6 +203,15 @@ const MIGRATIONS: &[&str] = &[
     "UPDATE hosts SET login_shell = NULL
       WHERE login_shell IS NOT NULL
         AND (login_shell = '' OR login_shell GLOB '*[^a-z0-9_-]*');",
+    // 18: the same heal as 17, run once more. 17 assumed only the old probe
+    // could have written such a name, but the fixed probe still believed any
+    // absolute path — and on a pfSense host `$SHELL` genuinely is
+    // /etc/rc.initial, the console menu — so every connect or test since the
+    // upgrade wrote the name straight back. set_login_shell itself now holds
+    // the column to this alphabet; this clears what was stored in between.
+    "UPDATE hosts SET login_shell = NULL
+      WHERE login_shell IS NOT NULL
+        AND (login_shell = '' OR login_shell GLOB '*[^a-z0-9_-]*');",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -326,6 +335,13 @@ mod tests {
         // a shell nobody can confirm on the row.
         hosts::set_login_shell(&conn, host.id, None).unwrap();
         assert_eq!(hosts::get(&conn, host.id).unwrap().login_shell, None);
+
+        // The setter holds the column to the shell alphabet itself: pfSense's
+        // rc.initial is a real $SHELL but not a shell, and storing it is how
+        // the chip migrations 17 and 18 clear kept coming back.
+        hosts::set_login_shell(&conn, host.id, Some("fish")).unwrap();
+        hosts::set_login_shell(&conn, host.id, Some("rc.initial")).unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().login_shell, None);
     }
 
     #[test]
@@ -368,6 +384,35 @@ mod tests {
         assert_eq!(shell_of("fishy").as_deref(), Some("fish"));
         assert_eq!(shell_of("plain").as_deref(), Some("bash"));
         assert_eq!(shell_of("dashed").as_deref(), Some("ksh93"));
+    }
+
+    #[test]
+    fn the_heal_runs_again_for_what_the_probe_wrote_after_it() {
+        // Migration 18. Between 17 and the probe learning the same alphabet,
+        // a connect to a pfSense host stored `rc.initial` again — its passwd
+        // shell really is /etc/rc.initial, so the path check believed it.
+        let conn = database_at_version(17);
+        for (label, shell) in [("firewall", "rc.initial"), ("plain", "bash")] {
+            conn.execute(
+                "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at, login_shell)
+                 VALUES (?1, 'example.test', 22, 'joe', '#aabbcc', 'then', 'then', ?2)",
+                rusqlite::params![label, shell],
+            )
+            .unwrap();
+        }
+
+        bootstrap(&conn).unwrap();
+
+        let shell_of = |label: &str| -> Option<String> {
+            conn.query_row(
+                "SELECT login_shell FROM hosts WHERE label = ?1",
+                rusqlite::params![label],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(shell_of("firewall"), None);
+        assert_eq!(shell_of("plain").as_deref(), Some("bash"));
     }
 
     #[test]

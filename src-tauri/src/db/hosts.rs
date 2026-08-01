@@ -167,7 +167,14 @@ pub fn set_has_sudo_password(conn: &Connection, id: i64, value: bool) -> AppResu
 /// written once is worn forever — which is what happened to the host that went
 /// on naming a line of its own rc file long after the probe that misread it was
 /// fixed.
+///
+/// A name that cannot be a shell's (pfSense's `rc.initial`, the console menu
+/// that really is the account's `$SHELL`) is stored as `None` no matter who
+/// writes it. Migrations 17 and 18 each cleaned such names out of the column
+/// once; holding the setter to the same alphabet is what stops a third one
+/// being needed.
 pub fn set_login_shell(conn: &Connection, id: i64, shell: Option<&str>) -> AppResult<()> {
+    let shell = shell.filter(|name| crate::ssh::is_shell_name(name));
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "UPDATE hosts SET login_shell = ?1, updated_at = ?2 WHERE id = ?3",

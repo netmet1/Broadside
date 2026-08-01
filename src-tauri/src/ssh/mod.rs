@@ -114,6 +114,24 @@ fn looks_like_shell_path(line: &str) -> bool {
         && !line.contains('$')
 }
 
+/// Whether a bare basename could be the *name of a shell*: letters, digits,
+/// `_` and `-`, nothing else — bash, zsh, ksh93, busybox-ash all fit.
+///
+/// [`looks_like_shell_path`] is about the line; this is about the name.
+/// `/etc/rc.initial` — pfSense's console menu, and genuinely the admin
+/// account's `$SHELL` — is a perfectly good absolute path, so the path check
+/// believes it; but `rc.initial` is a script that happens to live in passwd,
+/// not a shell, and a Hosts chip naming it is noise. This alphabet (the same
+/// one migrations 17 and 18 enforce with a GLOB) gates what is stored and
+/// shown, *not* what [`detect_login_shell`] learns: the terminal path needs
+/// the truthful answer to keep the integration line out of the menu.
+pub(crate) fn is_shell_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-'))
+}
+
 /// The bare shell name from whatever we were given: `/usr/bin/fish` and `fish`
 /// both come back as `fish`, lowercased.
 pub fn shell_name(shell: &str) -> String {
@@ -170,6 +188,12 @@ pub(crate) async fn detect_login_shell(handle: &Handle<TofuHandler>) -> Option<S
         let name = shell_name(line);
         // `$SHELL` unset echoes back empty, and a shell that does not expand it
         // echoes the literal. Either way we know nothing.
+        //
+        // Deliberately NOT held to `is_shell_name` here: the terminal path uses
+        // this answer to decide against injecting the integration line, and on
+        // a pfSense host the truthful `rc.initial` is exactly what keeps a
+        // POSIX `if` from being typed into the console menu. The alphabet is
+        // enforced where the answer is stored or shown, not where it is learned.
         if name.is_empty() || name.contains('$') {
             return None;
         }
@@ -409,7 +433,14 @@ pub async fn probe(
             // Latency is measured before the shell probe, so Test connection
             // still reports the connect+auth time it always did.
             let latency_ms = started.elapsed().as_millis() as u64;
-            let login_shell = detect_login_shell(&handle).await;
+            // Held to the shell alphabet here because this result is both
+            // shown (the warning toast, the Hosts chip) and stored. pfSense's
+            // /etc/rc.initial is a real `$SHELL` but not a shell, and a chip
+            // naming it is the bug migration 17 cleared. Reporting exactly
+            // what will be stored keeps the row and the database in agreement.
+            let login_shell = detect_login_shell(&handle)
+                .await
+                .filter(|name| is_shell_name(name));
             let _ = handle
                 .disconnect(russh::Disconnect::ByApplication, "", "en")
                 .await;
@@ -527,6 +558,25 @@ mod shell_tests {
         // A bare directory is not an executable.
         assert!(!looks_like_shell_path("/usr/bin/"));
         assert!(!looks_like_shell_path("/"));
+    }
+
+    #[test]
+    fn a_real_shell_is_not_always_a_shell_name() {
+        // The pfSense case: the admin account's passwd shell really is
+        // /etc/rc.initial, the console menu. It sails through the path check
+        // because it is exactly what `$SHELL` said — the terminal path needs
+        // that truth to keep the integration line out of the menu — but the
+        // name is no shell, and storing it re-created the chip migration 17
+        // clears. The probe result and the column both gate on this.
+        assert!(looks_like_shell_path("/etc/rc.initial"));
+        assert!(!is_shell_name("rc.initial"));
+        // The same alphabet the migration's GLOB enforces on the column.
+        for good in ["bash", "zsh", "sh", "ksh93", "busybox-ash", "mk_sh"] {
+            assert!(is_shell_name(good), "{good} should be a shell name");
+        }
+        for bad in ["rc.initial", "", "$SHELL", "menu.sh", "sh 2"] {
+            assert!(!is_shell_name(bad), "{bad:?} should not be a shell name");
+        }
     }
 
     /// The whole point of the change: the probe must reach past trailing rc
