@@ -9,27 +9,29 @@ import {
 import { type Host, errorMessage } from "@/lib/tauri/hosts";
 import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 
-/** Per-host connection test ("Test" action). Owns the in-flight host id, the
- * set of hosts whose last test failed (drives the red Test-button icon), plus
+/** Per-host connection test ("Test" action). Owns the in-flight host id, plus
  * the TOFU (unknown key) and key-mismatch dialog state the test can surface.
  *
- * `onShellRead` is how the row on screen keeps up with the test. A test that
- * connects stores what it read of the login shell on the host row, so the amber
- * chip is stale the moment the toast appears: it was drawn from the list the
- * page loaded, and nothing told that list the answer had changed. The page had
- * to be left and come back for it to catch up. */
+ * Whether the last attempt failed is no longer kept here. It lives on the host
+ * row (`connect_failed_at`), written by the backend from every path that
+ * connects, because a machine being down outlives the page that noticed: the
+ * red mark used to be forgotten by the next launch, which is precisely when it
+ * was worth having. This hook only reports what it just learned so the row on
+ * screen keeps up.
+ *
+ * `onShellRead` is the same idea for the shell columns. A test that connects
+ * stores what it read of the login shell, so the amber chip is stale the moment
+ * the toast appears: it was drawn from the list the page loaded, and nothing
+ * told that list the answer had changed. */
 export function useHostConnTest(
   onShellRead?: (
     hostId: number,
     loginShell: string | null,
     capability: ShellCapability | null,
   ) => void,
+  onReachability?: (hostId: number, failed: boolean) => void,
 ) {
   const [testingId, setTestingId] = useState<number | null>(null);
-  // Hosts whose most recent test ended in a definitive failure (auth /
-  // unreachable / no-credentials / error). Cleared by a successful re-test or
-  // by opening the host's edit form.
-  const [failedIds, setFailedIds] = useState<Set<number>>(new Set());
   const [tofu, setTofu] = useState<{ host: Host; key: PresentedKey } | null>(
     null,
   );
@@ -39,21 +41,14 @@ export function useHostConnTest(
     presented: PresentedKey;
   } | null>(null);
 
-  const markFailed = useCallback((hostId: number, failed: boolean) => {
-    setFailedIds((prev) => {
-      if (failed === prev.has(hostId)) return prev;
-      const next = new Set(prev);
-      if (failed) next.add(hostId);
-      else next.delete(hostId);
-      return next;
-    });
-  }, []);
-
-  /** Reset a host's failed indicator — called when its edit form opens so the
-   * operator can correct the credentials/details without a stale red mark. */
-  const clearFailed = useCallback((hostId: number) => {
-    markFailed(hostId, false);
-  }, [markFailed]);
+  // Mirrors what the backend just wrote to `connect_failed_at`, so the button
+  // changes colour with the toast rather than on the next visit to the page.
+  const markFailed = useCallback(
+    (hostId: number, failed: boolean) => {
+      onReachability?.(hostId, failed);
+    },
+    [onReachability],
+  );
 
   const runTest = useCallback(
     async (host: Host) => {
@@ -121,8 +116,6 @@ export function useHostConnTest(
 
   return {
     testingId,
-    failedIds,
-    clearFailed,
     tofu,
     setTofu,
     mismatch,

@@ -2046,7 +2046,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-warnings",
     title: "Warnings and messages",
     keywords:
-      "warning warnings message messages error errors matrix table what does mean unreachable os error 10054 forcibly closed connection reset maxstartups timed out timeout authentication failed no credentials stored host key changed refused unknown key tofu shell chip fish csh unsupported login shell amber chip disconnected banner reconnect every terminal hidden from the grid latency explain meaning troubleshooting no shell chip shell unread no integration console menu printed twice menu reprints pfsense rc.initial checked hosts report no blocks multiterminal silent no output",
+      "warning warnings message messages error errors matrix table what does mean red test button red plug icon unreachable host down still red after restart os error 10054 forcibly closed connection reset maxstartups timed out timeout authentication failed no credentials stored host key changed refused unknown key tofu shell chip fish csh unsupported login shell amber chip disconnected banner reconnect every terminal hidden from the grid latency explain meaning troubleshooting no shell chip shell unread no integration console menu printed twice menu reprints pfsense rc.initial checked hosts report no blocks multiterminal silent no output",
     body: (
       <>
         <Lead>

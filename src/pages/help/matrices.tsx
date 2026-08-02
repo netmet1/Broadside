@@ -320,6 +320,12 @@ const WARNINGS: WarningGroup[] = [
           "Those hosts will take every command you send and show nothing here, because this page reads markers that only bash and zsh install. It is not a hang and nothing is lost: the output is in each host's own terminal tab. Hover the message to see which hosts, and which of the two reasons applies — a shell that cannot take the markers, or one that could not be read and can be overridden in Hosts.",
       },
       {
+        message: <Msg>A red Test connection icon</Msg>,
+        where: "Hosts",
+        means:
+          "The last attempt to reach this host failed — a test, a terminal, a broadcast, an SFTP session or a skill run, whichever happened most recently. It is stored with the host rather than remembered for the session, so it is still there after a restart, which is the point: a machine that is down is usually still down tomorrow. It clears itself the first time anything connects to that host successfully, so there is nothing to dismiss. Hover the button for the wording, and see Logs for what actually went wrong.",
+      },
+      {
         message: <Msg>No credentials set</Msg>,
         where: "Hosts",
         means:

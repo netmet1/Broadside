@@ -210,8 +210,14 @@ pub async fn broadcast_command(
                 result,
             };
             // Per-host failures persist to the error log (D-055); never
-            // blocks the broadcast.
+            // blocks the broadcast. They also mark the host reachable or not,
+            // so a run that finds a machine down leaves the Hosts tab saying so
+            // rather than making the operator go and test it by hand.
+            let db = app.state::<crate::db::DbState>();
             match &report.result {
+                ExecResult::Completed { .. } => {
+                    crate::commands::ssh::note_connect(&db, report.host_id, false);
+                }
                 ExecResult::AuthFailed { message } => {
                     app.state::<crate::errlog::ErrLogState>().log(
                         "broadcast",
@@ -219,6 +225,7 @@ pub async fn broadcast_command(
                         Some(&report.label),
                         &format!("authentication failed — {message}"),
                     );
+                    crate::commands::ssh::note_connect(&db, report.host_id, true);
                 }
                 ExecResult::Unreachable { message } => {
                     app.state::<crate::errlog::ErrLogState>().log(
@@ -227,6 +234,7 @@ pub async fn broadcast_command(
                         Some(&report.label),
                         &format!("unreachable — {message}"),
                     );
+                    crate::commands::ssh::note_connect(&db, report.host_id, true);
                 }
                 // D-055 amendment (2026-06-13): a host skipped for missing
                 // credentials is a logged failure, not a silent no-op.
@@ -237,6 +245,7 @@ pub async fn broadcast_command(
                         Some(&report.label),
                         "no credentials stored",
                     );
+                    crate::commands::ssh::note_connect(&db, report.host_id, true);
                 }
                 _ => {}
             }

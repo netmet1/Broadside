@@ -30,6 +30,11 @@ export type Host = {
   /** The operator's standing override. Null means "auto", i.e. believe the
    * probe. The one shell field the host form writes. */
   shell_integration: ShellIntegrationPref | null;
+  /** When the last attempt to reach this host failed (RFC3339), or null if the
+   * last one worked or nobody has tried. Backend-written by every path that
+   * connects, so the red Test button is the database's answer and not the
+   * page's memory of this session. */
+  connect_failed_at: string | null;
 };
 
 export type HostInput = {

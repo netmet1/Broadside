@@ -1,6 +1,6 @@
 use tauri::{AppHandle, State};
 
-use super::ssh::{auth_for_host, with_db};
+use super::ssh::{auth_for_host, note_connect, with_db};
 use crate::audit::{AuditEvent, AuditState};
 use crate::credentials::CredentialState;
 use crate::db::host_keys;
@@ -49,6 +49,7 @@ pub async fn pty_open(
                 Some(&host.label),
                 "no credentials stored",
             );
+            note_connect(&state, host.id, true);
             return Ok(PtyOpenResult::NoCredentials);
         }
     };
@@ -96,7 +97,10 @@ pub async fn pty_open(
             // replaces whatever the last one stored. A stale value would go on
             // flagging a shell nobody can confirm.
             let _ = with_db(&state, |conn| {
-                host_repo::set_login_shell(conn, host.id, login_shell.as_deref(), *capability)
+                host_repo::set_login_shell(conn, host.id, login_shell.as_deref(), *capability)?;
+                // Opening a terminal is the most convincing proof there is that
+                // a host is reachable, so it clears the failure mark too.
+                host_repo::set_connect_failed(conn, host.id, false)
             });
             let _ = audit.append(&AuditEvent::PtyOpened {
                 host_label: host.label,
@@ -104,19 +108,26 @@ pub async fn pty_open(
                 port: host.port,
             });
         }
-        // Failures that toast also persist to the error log (D-055).
-        PtyOpenResult::AuthFailed { message } => errlog.log(
-            "pty_open",
-            Some(host.id),
-            Some(&host.label),
-            &format!("authentication failed — {message}"),
-        ),
-        PtyOpenResult::Unreachable { message } => errlog.log(
-            "pty_open",
-            Some(host.id),
-            Some(&host.label),
-            &format!("unreachable — {message}"),
-        ),
+        // Failures that toast also persist to the error log (D-055), and mark
+        // the host so the red Test button on the Hosts tab outlives this run.
+        PtyOpenResult::AuthFailed { message } => {
+            errlog.log(
+                "pty_open",
+                Some(host.id),
+                Some(&host.label),
+                &format!("authentication failed — {message}"),
+            );
+            note_connect(&state, host.id, true);
+        }
+        PtyOpenResult::Unreachable { message } => {
+            errlog.log(
+                "pty_open",
+                Some(host.id),
+                Some(&host.label),
+                &format!("unreachable — {message}"),
+            );
+            note_connect(&state, host.id, true);
+        }
         PtyOpenResult::KeyMismatch { .. } => errlog.log(
             "pty_open",
             Some(host.id),

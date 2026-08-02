@@ -20,6 +20,19 @@ pub(crate) fn with_db<T>(
     f(&conn)
 }
 
+/// Records how the last attempt to reach this host went, for the Test button
+/// that stays red until the host answers again.
+///
+/// Called from every path that connects with a host id in hand: the test, a
+/// terminal, a broadcast, an SFTP session and a skill run. Deliberately
+/// swallows its own errors -- this is bookkeeping *about* a connection, and
+/// losing the bookkeeping must never lose the connection.
+pub(crate) fn note_connect(state: &State<'_, DbState>, host_id: i64, failed: bool) {
+    let _ = with_db(state, |conn| {
+        host_repo::set_connect_failed(conn, host_id, failed)
+    });
+}
+
 /// Builds the auth method for a host from its stored credentials, or None
 /// when no usable credentials exist.
 pub(crate) fn auth_for_host(
@@ -66,6 +79,7 @@ pub async fn test_connection(
                 Some(&host.label),
                 "no credentials stored",
             );
+            note_connect(&state, host.id, true);
             return Ok(ProbeResult::NoCredentials);
         }
     };
@@ -102,23 +116,34 @@ pub async fn test_connection(
             // Including when it read nothing: the probe completed, so its
             // silence is the current answer and it clears the old one.
             host_repo::set_login_shell(conn, host.id, login_shell.as_deref(), capability)?;
+            // It answered, so whatever was wrong with it before is over.
+            host_repo::set_connect_failed(conn, host.id, false)?;
             Ok(())
         })?;
     }
-    // Failures that toast also persist to the error log (D-055).
+    // Failures that toast also persist to the error log (D-055), and the ones
+    // that are the host's own fault mark it so the red Test button survives a
+    // restart. An unknown or mismatched key is not one of those: the host
+    // answered, and what happens next is a trust decision, not a failure.
     match &result {
-        ProbeResult::AuthFailed { message } => errlog.log(
-            "test_connection",
-            Some(host.id),
-            Some(&host.label),
-            &format!("authentication failed — {message}"),
-        ),
-        ProbeResult::Unreachable { message } => errlog.log(
-            "test_connection",
-            Some(host.id),
-            Some(&host.label),
-            &format!("unreachable — {message}"),
-        ),
+        ProbeResult::AuthFailed { message } => {
+            errlog.log(
+                "test_connection",
+                Some(host.id),
+                Some(&host.label),
+                &format!("authentication failed — {message}"),
+            );
+            note_connect(&state, host.id, true);
+        }
+        ProbeResult::Unreachable { message } => {
+            errlog.log(
+                "test_connection",
+                Some(host.id),
+                Some(&host.label),
+                &format!("unreachable — {message}"),
+            );
+            note_connect(&state, host.id, true);
+        }
         ProbeResult::KeyMismatch { .. } => errlog.log(
             "test_connection",
             Some(host.id),

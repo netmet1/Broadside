@@ -231,6 +231,16 @@ const MIGRATIONS: &[&str] = &[
     // saving the form cannot clobber a probed value.
     "ALTER TABLE hosts ADD COLUMN shell_capability TEXT;
      ALTER TABLE hosts ADD COLUMN shell_integration TEXT;",
+    // 20: when the last attempt to reach this host failed, RFC3339, NULL for a
+    // host that answered the last time anyone asked.
+    //
+    // The red Test button lived in page state, so a host you could not reach
+    // was red until you closed the program and forgotten by the time you opened
+    // it again -- which is the wrong way round for a machine that is down: the
+    // fact outlives the session, and the session is what was remembering it.
+    // Written by every path that finds out (test, terminal, broadcast, SFTP,
+    // skill run), and cleared by the first one that connects.
+    "ALTER TABLE hosts ADD COLUMN connect_failed_at TEXT;",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -413,6 +423,57 @@ mod tests {
         // than sitting in the column looking meaningful.
         hosts::set_shell_integration(&conn, host.id, Some("sometimes")).unwrap();
         assert_eq!(hosts::get(&conn, host.id).unwrap().shell_integration, None);
+    }
+
+    #[test]
+    fn a_failed_connection_is_remembered_until_the_host_answers() {
+        // Migration 20, on a database that already has host rows.
+        let conn = database_at_version(19);
+        conn.execute(
+            "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at)
+             VALUES ('web01', 'example.test', 22, 'joe', '#aabbcc', 'then', 'then')",
+            [],
+        )
+        .unwrap();
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        let host = &hosts::list_all(&conn).unwrap()[0];
+        // Nobody has tried, which is not the same as a host that failed.
+        assert_eq!(host.connect_failed_at, None);
+
+        hosts::set_connect_failed(&conn, host.id, true).unwrap();
+        let down = hosts::get(&conn, host.id).unwrap();
+        assert!(down.connect_failed_at.is_some());
+        // The record itself was not edited, so its timestamp must not move: a
+        // machine being unreachable is news about the machine, not a change to
+        // what is stored about it.
+        assert_eq!(down.updated_at, "then");
+
+        // Anything that connects clears it, which is the whole contract.
+        hosts::set_connect_failed(&conn, host.id, false).unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().connect_failed_at, None);
+
+        // And saving the form cannot resurrect or clear it: the column is not
+        // in `update`, for the same reason `login_shell` is not.
+        hosts::set_connect_failed(&conn, host.id, true).unwrap();
+        hosts::update(
+            &conn,
+            host.id,
+            hosts::HostInput {
+                label: "web01".into(),
+                hostname: "example.test".into(),
+                port: 22,
+                username: "joe".into(),
+                color: "#aabbcc".into(),
+                tag: None,
+                linux_flavor: None,
+                notes: None,
+            },
+        )
+        .unwrap();
+        assert!(hosts::get(&conn, host.id).unwrap().connect_failed_at.is_some());
     }
 
     #[test]

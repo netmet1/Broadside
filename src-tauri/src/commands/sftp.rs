@@ -18,7 +18,7 @@ use crate::ssh::sftp::{
     self, SftpConnectResult, SftpEntry, SftpState, TransferMode, TransferStats,
 };
 
-use super::ssh::{auth_for_host, with_db};
+use super::ssh::{auth_for_host, note_connect, with_db};
 
 /// Live progress for a recursive folder transfer, emitted as `sftp:transfer_progress`.
 /// The frontend already knows the name/direction/totals (from its pre-flight
@@ -57,6 +57,7 @@ pub async fn sftp_connect(
                 Some(&host.label),
                 "no credentials stored",
             );
+            note_connect(&state, host.id, true);
             return Ok(SftpConnectResult::NoCredentials);
         }
     };
@@ -78,20 +79,28 @@ pub async fn sftp_connect(
     .await?;
 
     // Failure modes that surface to the operator also persist to the error log
-    // (mirrors test_connection / D-055).
+    // (mirrors test_connection / D-055), and say whether the host answered, so
+    // the Hosts tab's red Test button agrees with what happened here.
     match &result {
-        SftpConnectResult::AuthFailed { message } => errlog.log(
-            "sftp_connect",
-            Some(host.id),
-            Some(&host.label),
-            &format!("authentication failed — {message}"),
-        ),
-        SftpConnectResult::Unreachable { message } => errlog.log(
-            "sftp_connect",
-            Some(host.id),
-            Some(&host.label),
-            &format!("unreachable — {message}"),
-        ),
+        SftpConnectResult::Ok { .. } => note_connect(&state, host.id, false),
+        SftpConnectResult::AuthFailed { message } => {
+            errlog.log(
+                "sftp_connect",
+                Some(host.id),
+                Some(&host.label),
+                &format!("authentication failed — {message}"),
+            );
+            note_connect(&state, host.id, true);
+        }
+        SftpConnectResult::Unreachable { message } => {
+            errlog.log(
+                "sftp_connect",
+                Some(host.id),
+                Some(&host.label),
+                &format!("unreachable — {message}"),
+            );
+            note_connect(&state, host.id, true);
+        }
         SftpConnectResult::KeyMismatch { .. } => errlog.log(
             "sftp_connect",
             Some(host.id),

@@ -125,17 +125,24 @@ export function HostsPage({
     [],
   );
 
+  // Same idea for the reachability mark the backend just wrote. The button goes
+  // red (or stops being red) with the toast, and the timestamp here is only ever
+  // read as "set or not", so being milliseconds out from the stored one is of no
+  // consequence: the next load takes the database's value anyway.
+  const applyReachability = useCallback((hostId: number, failed: boolean) => {
+    const at = failed ? new Date().toISOString() : null;
+    setHosts((prev) =>
+      prev.map((h) =>
+        h.id === hostId && (h.connect_failed_at === null) === failed
+          ? { ...h, connect_failed_at: at }
+          : h,
+      ),
+    );
+  }, []);
+
   // Per-host connection test + the TOFU / key-mismatch dialogs it can surface.
-  const {
-    testingId,
-    failedIds,
-    clearFailed,
-    tofu,
-    setTofu,
-    mismatch,
-    setMismatch,
-    runTest,
-  } = useHostConnTest(applyLoginShell);
+  const { testingId, tofu, setTofu, mismatch, setMismatch, runTest } =
+    useHostConnTest(applyLoginShell, applyReachability);
 
   const defaultColor = useMemo(
     () => nextColor(hosts.map((h) => h.color)),
@@ -271,9 +278,10 @@ export function HostsPage({
   };
 
   const openEdit = (host: Host) => {
-    // Editing the host is the operator's chance to fix bad details/credentials,
-    // so drop any stale failed-test mark on its Test button.
-    clearFailed(host.id);
+    // Opening the form used to clear the failed mark, on the theory that the
+    // operator was about to fix whatever was wrong. It no longer does: the mark
+    // now means "the last attempt to reach this host failed", and editing the
+    // row is not an attempt. It clears when the host answers.
     setEditing(host);
     setFormOpen(true);
   };
@@ -823,8 +831,8 @@ export function HostsPage({
                       disabled={testingId !== null}
                       aria-label="Test connection"
                       {...hint(
-                        failedIds.has(h.id)
-                          ? `Last connection test for ${h.label} failed — retry, or edit the host to fix it`
+                        h.connect_failed_at !== null
+                          ? `The last attempt to reach ${h.label} failed. Retry, or edit the host.`
                           : `Test SSH connectivity and host key for ${h.label}`,
                       )}
                     >
@@ -832,7 +840,11 @@ export function HostsPage({
                         <Loader2Icon className="animate-spin" />
                       ) : (
                         <PlugZapIcon
-                          className={failedIds.has(h.id) ? "text-red-500" : undefined}
+                          className={
+                            h.connect_failed_at !== null
+                              ? "text-red-500"
+                              : undefined
+                          }
                         />
                       )}
                     </Button>

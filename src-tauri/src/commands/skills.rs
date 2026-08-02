@@ -435,6 +435,11 @@ pub async fn run_skill(
             };
             match job.auth {
                 None => {
+                    crate::commands::ssh::note_connect(
+                        &app.state::<crate::db::DbState>(),
+                        job.host.id,
+                        true,
+                    );
                     guard.report(false, "no credentials stored".into());
                 }
                 Some(auth) => {
@@ -460,6 +465,16 @@ pub async fn run_skill(
                         rows.clamp(2, 1000),
                     )
                     .await;
+                    // Whether this host answered, for the Hosts tab's Test
+                    // button. A skill run is a connection like any other, and
+                    // one that fails on a host is exactly when the operator
+                    // wants that host marked.
+                    let db = app.state::<crate::db::DbState>();
+                    crate::commands::ssh::note_connect(
+                        &db,
+                        job.host.id,
+                        !matches!(opened, Ok(crate::ssh::pty::PtyOpenResult::Opened { .. })),
+                    );
                     match opened {
                         Ok(crate::ssh::pty::PtyOpenResult::Opened {
                             login_shell,
