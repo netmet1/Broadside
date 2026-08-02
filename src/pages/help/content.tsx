@@ -429,7 +429,10 @@ export const SECTIONS: HelpSection[] = [
               default. <Nav>Always</Nav> says the host really is bash or zsh
               whatever it reports, which is what to use for a machine that will
               not answer the question (a forced command, a restricted account)
-              and is losing command block tracking because of it.{" "}
+              and is losing command block tracking because of it. It answers a
+              question the connection could not, rather than overruling one it
+              could: a host that named its shell keeps its chip, because sending
+              the line to fish does not make fish able to use it.{" "}
               <Nav>Never</Nav> sends the host nothing at all and leaves its
               login screen exactly as it draws it. Appliances that greet you
               with a console menu rather than a shell are detected and left

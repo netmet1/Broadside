@@ -52,13 +52,23 @@ export function capabilityIsWarning(cap: ShellCapability | null | undefined): bo
  * what actually happens on connect. `always` and `never` are answers in their
  * own right, so a row shows what the host will really do rather than what the
  * probe would have decided on its own.
+ *
+ * `never` overrules everything: nothing is written, whatever the host runs.
+ *
+ * `always` is narrower, and deliberately so. It answers a question the probe
+ * could not: "it really is bash, I promise", for a host behind a forced command
+ * or a restricted account. It does **not** overrule a positive reading. A host
+ * that answered `fish` is still fish, and sending it the setup line does not
+ * make it install markers it cannot parse. Letting it overrule the answer is
+ * how a host row came to say nothing at all about a shell that Test connection
+ * had just named in a toast.
  */
 export function effectiveCapability(
   cap: ShellCapability | null | undefined,
   pref: ShellIntegrationPref | null | undefined,
 ): ShellCapability | null {
-  if (pref === "always") return "full";
   if (pref === "never") return "unsupported";
+  if (pref === "always") return cap == null || cap === "unreadable" ? "full" : cap;
   return cap ?? null;
 }
 
@@ -133,11 +143,17 @@ export function shellNotice(
         "Shell integration is set to Never here, so nothing is sent to its shell. No command blocks and no skills. Change it in Hosts.",
     };
   }
-  // A name is only worth showing when it is the host's own answer.
+  // Reaching here with `always` set means the probe read a shell it can name
+  // and the override did not change the answer, which is worth saying: the
+  // setup line is being sent to something that cannot use it.
+  const message =
+    pref === "always"
+      ? `${shellCapabilityMessage(cap, loginShell)} Shell integration is set to Always, so the setup line is sent anyway, and this shell may object to it.`
+      : shellCapabilityMessage(cap, loginShell);
   return {
-    key: cap,
+    key: pref === "always" ? `always:${cap}` : cap,
     label: capabilityChipLabel(cap, loginShell),
-    message: shellCapabilityMessage(cap, loginShell),
+    message,
   };
 }
 

@@ -1,11 +1,7 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
-import {
-  capabilityIsWarning,
-  shellCapabilityMessage,
-  type ShellCapability,
-} from "@/lib/shells";
+import { shellNotice, type ShellCapability } from "@/lib/shells";
 import { type Host, errorMessage } from "@/lib/tauri/hosts";
 import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 
@@ -64,10 +60,17 @@ export function useHostConnTest(
             // Driven off the capability rather than the name, because the two
             // cases worth reporting most (a console menu, an unanswered probe)
             // have no name to test.
-            if (capabilityIsWarning(result.capability)) {
-              toast.warning(
-                shellCapabilityMessage(result.capability, result.login_shell),
+            // Through the same helper the chip and the terminal strip use, so
+            // the toast cannot say "this host runs fish" a second after the row
+            // stopped marking it (or the reverse: nag about an unread shell on
+            // a host that has already been told what it is).
+            {
+              const notice = shellNotice(
+                result.capability,
+                host.shell_integration,
+                result.login_shell,
               );
+              if (notice) toast.warning(notice.message);
             }
             // The row is now out of date in both directions: a shell that has
             // become unsupported has no chip yet, and one that has been put

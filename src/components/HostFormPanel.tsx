@@ -993,7 +993,9 @@ export function HostFormPanel({
                       — this host runs bash or zsh, whatever it reports. Use it
                       when the shell cannot be read (a forced command, a
                       restricted account) and command block tracking is worth
-                      having back.
+                      having back. It does not clear a mark from a host that
+                      named its shell: sending the line to fish does not make
+                      fish able to use it.
                     </span>
                   </span>
                 </label>
