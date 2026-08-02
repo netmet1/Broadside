@@ -67,7 +67,9 @@ pub async fn pty_open(
     } else {
         None
     };
-    let result = pty::open(
+    // As in `test_connection`: an error out of the open is a failed attempt, and
+    // `?` alone would leave it unlogged and the host unmarked.
+    let result = match pty::open(
         app,
         &pty_state,
         session_id,
@@ -82,7 +84,20 @@ pub async fn pty_open(
         cols.clamp(2, 1000),
         rows.clamp(2, 1000),
     )
-    .await?;
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            errlog.log(
+                "pty_open",
+                Some(host.id),
+                Some(&host.label),
+                &format!("connection failed: {e}"),
+            );
+            note_connect(&state, host.id, true);
+            return Err(e);
+        }
+    };
     match &result {
         PtyOpenResult::Opened {
             login_shell,

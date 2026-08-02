@@ -89,14 +89,33 @@ pub async fn test_connection(
         .map(|k: &HostKey| k.fingerprint_sha256.clone())
         .collect();
 
-    let result = ssh::probe(
+    // An error out of the connect path is a failed attempt like any other, and
+    // it has to be recorded here: `?` would carry it straight to the frontend,
+    // which turns the button red from the toast alone. That red lived only in
+    // the page's memory, so this whole class of failure (a key file that will
+    // not load, a handshake that breaks mid-auth) went red once and came back
+    // clean after a restart, unlike every failure that arrives as a result.
+    let result = match ssh::probe(
         &host.hostname,
         host.port,
         &host.username,
         fingerprints,
         auth,
     )
-    .await?;
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            errlog.log(
+                "test_connection",
+                Some(host.id),
+                Some(&host.label),
+                &format!("connection failed: {e}"),
+            );
+            note_connect(&state, host.id, true);
+            return Err(e);
+        }
+    };
 
     if let ProbeResult::Ok {
         login_shell,

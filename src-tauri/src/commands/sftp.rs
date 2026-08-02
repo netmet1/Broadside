@@ -67,7 +67,9 @@ pub async fn sftp_connect(
         .map(|k: &HostKey| k.fingerprint_sha256.clone())
         .collect();
 
-    let result = sftp::open(
+    // As in `test_connection`: an error out of the open is a failed attempt, and
+    // `?` alone would leave it unlogged and the host unmarked.
+    let result = match sftp::open(
         &sftp_state,
         session_id,
         &host.hostname,
@@ -76,7 +78,20 @@ pub async fn sftp_connect(
         fingerprints,
         auth,
     )
-    .await?;
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            errlog.log(
+                "sftp_connect",
+                Some(host.id),
+                Some(&host.label),
+                &format!("connection failed: {e}"),
+            );
+            note_connect(&state, host.id, true);
+            return Err(e);
+        }
+    };
 
     // Failure modes that surface to the operator also persist to the error log
     // (mirrors test_connection / D-055), and say whether the host answered, so
