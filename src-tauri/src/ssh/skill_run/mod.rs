@@ -41,6 +41,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::error::{AppError, AppResult};
+use crate::ssh::ShellCapability;
 use config::{SeqStep, SequenceConfig, TimeoutAction, STOP};
 use screen::Screen;
 use state::Ctl;
@@ -293,6 +294,10 @@ pub struct Engine<E: SkillEvents> {
     /// on fish (`$0` is a parse error there), which is how a fish host used to
     /// be refused as "unknown".
     known_shell: Option<String>,
+    /// What the connect-time probe concluded about that shell. Lets a host
+    /// already known to be undrivable be refused before the `$0` probe is even
+    /// sent, instead of after it times out.
+    known_capability: Option<ShellCapability>,
 }
 
 impl<E: SkillEvents> Engine<E> {
@@ -310,6 +315,7 @@ impl<E: SkillEvents> Engine<E> {
             meta,
             is_root: None,
             known_shell: None,
+            known_capability: None,
         }
     }
 
@@ -317,6 +323,18 @@ impl<E: SkillEvents> Engine<E> {
     /// refusal can name it. Purely cosmetic; it never permits a run.
     pub fn with_known_shell(mut self, shell: Option<String>) -> Self {
         self.known_shell = shell;
+        self
+    }
+
+    /// Tells the engine what the connect-time probe concluded, so a shell that
+    /// already cannot take a skill is refused without typing at it first.
+    ///
+    /// Like [`with_known_shell`](Self::with_known_shell) this never *permits* a
+    /// run: `Full` and `ParseSafe` still go on to the in-shell `$0` probe,
+    /// because bash and zsh are not the same set as the shells a skill needs,
+    /// and the login shell is not necessarily the shell that answers.
+    pub fn with_known_capability(mut self, capability: ShellCapability) -> Self {
+        self.known_capability = Some(capability);
         self
     }
 
@@ -353,6 +371,24 @@ impl<E: SkillEvents> Engine<E> {
     /// Identifies the running shell before any step runs, so an unsupported one
     /// is refused up front rather than silently mis-executing.
     pub async fn detect_shell(&mut self) -> Result<String, String> {
+        // Refuse a shell the connect-time probe already settled, before typing
+        // anything at it. Two reasons, and the second is the important one:
+        // the `$0` probe below only catches fish by timing out, which parks the
+        // pane on "starting…" for SHELL_DETECT_SECS to reach an answer the host
+        // row already had; and on a host that is not running a shell at all
+        // (pfSense's console menu) sending the probe is the very thing this
+        // whole change exists to stop.
+        if let Some(cap) = self.known_capability {
+            if !cap.sends_setup() {
+                return Err(match &self.known_shell {
+                    Some(shell) => format!(
+                        "This host's shell ({shell}) is not supported. Currently only bash, zsh and sh are supported."
+                    ),
+                    None => "Could not identify this host's shell, so nothing was sent to it. Currently only bash, zsh and sh are supported."
+                        .into(),
+                });
+            }
+        }
         // A leading space keeps this out of shell history on the Debian/Ubuntu
         // default (HISTCONTROL=ignoreboth), since an operator pressing Up in the
         // pane afterwards shouldn't find our plumbing.

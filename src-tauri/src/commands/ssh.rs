@@ -84,18 +84,24 @@ pub async fn test_connection(
     )
     .await?;
 
-    if let ProbeResult::Ok { login_shell, .. } = &result {
+    if let ProbeResult::Ok {
+        login_shell,
+        capability,
+        ..
+    } = &result
+    {
         // Refresh last_seen on whichever stored key matched, and record the
         // login shell the probe read (X4) so the Hosts table can flag an
         // unsupported one from Test connection alone.
         let login_shell = login_shell.clone();
+        let capability = *capability;
         with_db(&state, |conn| {
             for key in &trusted {
                 host_keys::touch_last_seen(conn, &key.hostname, key.port, &key.key_type)?;
             }
             // Including when it read nothing: the probe completed, so its
             // silence is the current answer and it clears the old one.
-            host_repo::set_login_shell(conn, host.id, login_shell.as_deref())?;
+            host_repo::set_login_shell(conn, host.id, login_shell.as_deref(), capability)?;
             Ok(())
         })?;
     }

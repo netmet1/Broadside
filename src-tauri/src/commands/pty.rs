@@ -77,12 +77,16 @@ pub async fn pty_open(
         fingerprints,
         auth,
         sudo_password,
+        crate::ssh::ShellIntegrationPref::from_stored(host.shell_integration.as_deref()),
         cols.clamp(2, 1000),
         rows.clamp(2, 1000),
     )
     .await?;
     match &result {
-        PtyOpenResult::Opened { login_shell } => {
+        PtyOpenResult::Opened {
+            login_shell,
+            capability,
+        } => {
             // Remember what we saw so the Hosts table can flag an unsupported
             // shell without anyone having to open a terminal first (X4). Purely
             // informational, so a write failure never fails the open.
@@ -92,7 +96,7 @@ pub async fn pty_open(
             // replaces whatever the last one stored. A stale value would go on
             // flagging a shell nobody can confirm.
             let _ = with_db(&state, |conn| {
-                host_repo::set_login_shell(conn, host.id, login_shell.as_deref())
+                host_repo::set_login_shell(conn, host.id, login_shell.as_deref(), *capability)
             });
             let _ = audit.append(&AuditEvent::PtyOpened {
                 host_label: host.label,

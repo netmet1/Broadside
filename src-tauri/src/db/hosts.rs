@@ -39,6 +39,17 @@ pub struct Host {
     /// `fish`. Backend-written after a successful connect, so it is absent from
     /// [`HostInput`] exactly like `has_sudo_password`. `None` means not probed.
     pub login_shell: Option<String>,
+    /// What Broadside decided it could send this host (migration 19): one of
+    /// `full` | `parse_safe` | `unsupported` | `unreadable`, `None` until it has
+    /// been probed. Backend-written, like `login_shell`.
+    ///
+    /// Separate from `login_shell` because that column is held to the shell
+    /// alphabet and so cannot hold `rc.initial`, and because both silent cases
+    /// leave it `None` while meaning quite different things to the operator.
+    pub shell_capability: Option<String>,
+    /// The operator's standing override (migration 19): `auto` | `always` |
+    /// `never`, `None` meaning auto. The one shell field the *form* writes.
+    pub shell_integration: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -70,11 +81,13 @@ fn from_row(row: &Row) -> rusqlite::Result<Host> {
         has_sudo_password: row.get::<_, i64>(12)? != 0,
         tag: row.get(13)?,
         login_shell: row.get(14)?,
+        shell_capability: row.get(15)?,
+        shell_integration: row.get(16)?,
     })
 }
 
 const SELECT_COLS: &str =
-    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path, has_sudo_password, tag, login_shell";
+    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path, has_sudo_password, tag, login_shell, shell_capability, shell_integration";
 
 fn validate(input: &HostInput) -> AppResult<()> {
     if input.label.trim().is_empty() {
@@ -173,15 +186,48 @@ pub fn set_has_sudo_password(conn: &Connection, id: i64, value: bool) -> AppResu
 /// writes it. Migrations 17 and 18 each cleaned such names out of the column
 /// once; holding the setter to the same alphabet is what stops a third one
 /// being needed.
-pub fn set_login_shell(conn: &Connection, id: i64, shell: Option<&str>) -> AppResult<()> {
+/// The capability is written in the same statement, from the same probe, for
+/// the reason the two columns exist separately at all: the name is filtered to
+/// the shell alphabet and the capability is not, so `rc.initial` stores as
+/// `(NULL, 'unsupported')` and an unanswered probe as `(NULL, 'unreadable')`.
+/// Writing them apart would let those two drift into agreeing.
+///
+/// What is stored is what the *probe* determined, before the per-host override.
+/// The override lives in its own column and is applied when a session opens and
+/// when the row is drawn, so turning it off again reveals the real answer
+/// underneath rather than a value overwritten while it was on.
+pub fn set_login_shell(
+    conn: &Connection,
+    id: i64,
+    shell: Option<&str>,
+    capability: crate::ssh::ShellCapability,
+) -> AppResult<()> {
     let shell = shell.filter(|name| crate::ssh::is_shell_name(name));
     let now = Utc::now().to_rfc3339();
     conn.execute(
-        "UPDATE hosts SET login_shell = ?1, updated_at = ?2 WHERE id = ?3",
-        params![shell, now, id],
+        "UPDATE hosts SET login_shell = ?1, shell_capability = ?2, updated_at = ?3 WHERE id = ?4",
+        params![shell, capability.as_str(), now, id],
     )?;
     Ok(())
 }
+
+/// The operator's standing override for this host. Written only from the host
+/// form, and kept out of [`update`] so saving the form for any other reason
+/// cannot disturb it.
+pub fn set_shell_integration(conn: &Connection, id: i64, pref: Option<&str>) -> AppResult<()> {
+    // Anything unrecognised is stored as NULL rather than rejected: the column
+    // is read through `ShellIntegrationPref::from_stored`, which treats NULL and
+    // nonsense alike as `Auto`, and a bad value should not be able to sit in the
+    // database looking meaningful.
+    let pref = pref.filter(|p| matches!(*p, "auto" | "always" | "never"));
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE hosts SET shell_integration = ?1, updated_at = ?2 WHERE id = ?3",
+        params![pref, now, id],
+    )?;
+    Ok(())
+}
+
 
 pub fn create(conn: &Connection, input: HostInput) -> AppResult<Host> {
     validate(&input)?;
