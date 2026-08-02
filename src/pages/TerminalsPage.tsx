@@ -55,6 +55,7 @@ import { useGridResize } from "@/pages/terminals/useGridResize";
 import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { TerminalRail } from "@/pages/terminals/TerminalRail";
+import { useGridFocus } from "@/pages/terminals/useGridFocus";
 import type { SearchOptions } from "@/lib/search";
 import { getAppSettings } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
@@ -595,10 +596,39 @@ export function TerminalsPage({
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const tabElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
+  // The scrolling grid container + a live map of each tile's element, so
+  // selecting a tab/session while in Grid can bring its tile fully into view
+  // when it's scrolled off (only >2 tiles ever scroll; otherwise this no-ops).
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+  const paneElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Per-pane imperative handles (find, and focusing the terminal itself).
+  // Declared up here with the refs it sits beside, because the scroll effects
+  // below read `gridFocus` in their dependency arrays, which is evaluated
+  // during render rather than inside the closure.
+  const searchHandles = useRef<Map<string, TerminalSearchHandle>>(new Map());
+
+  // Focus follows the mouse across grid tiles, so the ring that marks the
+  // active tile is also where a paste, a keystroke and Find will land.
+  const gridFocus = useGridFocus({
+    gridMode,
+    activeId,
+    resizing,
+    onActivate,
+    focusTerminal: useCallback(
+      (id: string) => searchHandles.current.get(id)?.focusTerminal(),
+      [],
+    ),
+    chromeRef,
+    chromeKeyboard,
+  });
+
   // When the active session changes, center its tab in the strip, but only if
   // it isn't already fully visible, so activating an on-screen tab never jumps.
   useEffect(() => {
     if (activeId === null) return;
+    // Right for a click, wrong for a hover: the strip would slide about as the
+    // mouse sweeps across the grid.
+    if (gridFocus.activatedByPointer.current) return;
     const container = tabScrollRef.current;
     const target = tabElRefs.current.get(activeId);
     if (!container || !target) return;
@@ -607,18 +637,16 @@ export function TerminalsPage({
     if (t.left >= c.left && t.right <= c.right) return; // already visible
     const delta = t.left + t.width / 2 - (c.left + c.width / 2);
     container.scrollTo({ left: container.scrollLeft + delta, behavior: "smooth" });
-  }, [activeId, sessions]);
-
-  // The scrolling grid container + a live map of each tile's element, so
-  // selecting a tab/session while in Grid can bring its tile fully into view
-  // when it's scrolled off (only >2 tiles ever scroll; otherwise this no-ops).
-  const gridScrollRef = useRef<HTMLDivElement>(null);
-  const paneElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  }, [activeId, sessions, gridFocus.activatedByPointer]);
 
   // In Grid, when the active session changes, scroll its tile just enough to be
   // fully visible in the pane area, but leave it alone if it already is.
   useEffect(() => {
     if (!gridMode || activeId === null) return;
+    // Never scroll the grid because the pointer arrived somewhere: the tile is
+    // under the cursor, so it is by definition already on screen, and moving it
+    // would drag the whole wall out from under the mouse.
+    if (gridFocus.activatedByPointer.current) return;
     const container = gridScrollRef.current;
     const target = paneElRefs.current.get(activeId);
     if (!container || !target) return;
@@ -629,7 +657,7 @@ export function TerminalsPage({
     const delta =
       t.top < c.top ? t.top - c.top : t.bottom - c.bottom;
     container.scrollTo({ top: container.scrollTop + delta, behavior: "smooth" });
-  }, [activeId, sessions, gridMode]);
+  }, [activeId, sessions, gridMode, gridFocus.activatedByPointer]);
 
   const [gates, setGates] = useState<Map<string, ConnectionGate>>(new Map());
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
@@ -683,7 +711,6 @@ export function TerminalsPage({
     index: number;
     count: number;
   } | null>(null);
-  const searchHandles = useRef<Map<string, TerminalSearchHandle>>(new Map());
 
   const activeHandle = useCallback(
     () => (activeId !== null ? searchHandles.current.get(activeId) : undefined),
@@ -807,9 +834,12 @@ export function TerminalsPage({
       if (idx < 0) return;
       const n = sessions.length;
       const nextIdx = dir === "next" ? (idx + 1) % n : (idx - 1 + n) % n;
+      // Keyboard navigation outranks a resting cursor: without this, Alt+Left
+      // lands on the right tab and the next nudge of the mouse takes it back.
+      gridFocus.noteDeliberateActivation();
       onActivate(sessions[nextIdx]!.id);
     },
-    [sessions, activeId, onActivate],
+    [sessions, activeId, onActivate, gridFocus],
   );
 
   // Alt+Left/Right while the Terminals page is visible but a terminal pane is
@@ -923,7 +953,11 @@ export function TerminalsPage({
         onManageShortcuts={onManageShortcuts}
         sessions={sessions}
         tabSuffix={tabSuffix}
-        onActivate={onActivate}
+        onActivate={(id) => {
+          // Picking from the Sessions menu is as deliberate as clicking a tab.
+          gridFocus.noteDeliberateActivation();
+          onActivate(id);
+        }}
         onCloseAll={() => setCloseAllOpen(true)}
       />
 
@@ -1010,7 +1044,13 @@ export function TerminalsPage({
               dragId === s.id && "opacity-40",
               dragOverId === s.id && "border-l-2 border-l-primary",
             )}
-            onClick={() => onActivate(s.id)}
+            onClick={() => {
+              // A tab click is a deliberate choice, and the mouse is over the
+              // strip rather than the grid. It holds until the pointer moves
+              // off whichever tile it happens to be resting on.
+              gridFocus.noteDeliberateActivation();
+              onActivate(s.id);
+            }}
             role="tab"
             aria-selected={s.id === activeId}
             title={tabsCompact ? `${sessionLabel(s)}${tabSuffix.get(s.id)}` : undefined}
@@ -1504,6 +1544,7 @@ export function TerminalsPage({
                   : cn("h-full w-full", isActive ? "block" : "hidden"),
               )}
               onClick={gridMode ? () => onActivate(s.id) : undefined}
+              {...(gridMode ? gridFocus.tileProps(s.id) : {})}
             >
               {/* Grid-only pane header: identifies the tile and carries the
                   same maximize/close affordances the tab has. Rendered (hidden)
