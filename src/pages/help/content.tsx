@@ -381,7 +381,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-hosts",
     title: "Hosts",
     keywords:
-      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean",
+      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu",
     body: (
       <>
         <Lead>
@@ -418,10 +418,29 @@ export const SECTIONS: HelpSection[] = [
               lists every chip, banner and error the app can show you and what
               each one actually means.
             </li>
+            <li>
+              <b>Shell integration</b>, in the host's own form beside the sudo
+              settings, is the answer to that chip. When a terminal opens,
+              Broadside normally sends one setup line that installs the markers
+              command block tracking reads, clears the login banner and reprints
+              it, so the tab looks like a fresh login. Whether that line is safe
+              depends on what is on the other end, and the form shows what the
+              last connection found. <Nav>Auto</Nav> believes it, and is the
+              default. <Nav>Always</Nav> says the host really is bash or zsh
+              whatever it reports, which is what to use for a machine that will
+              not answer the question (a forced command, a restricted account)
+              and is losing command block tracking because of it.{" "}
+              <Nav>Never</Nav> sends the host nothing at all and leaves its
+              login screen exactly as it draws it. Appliances that greet you
+              with a console menu rather than a shell are detected and left
+              alone on their own, without needing this set.
+            </li>
           </Bullets>
           <H3>Importing many hosts</H3>
           <p>
-            Use <Nav>Import</Nav> to load a list of hosts from a{" "}
+            <Nav>Import hosts…</Nav> and <Nav>Export hosts…</Nav> are both in
+            the <Nav>Import / Export</Nav> menu at the top of the page.{" "}
+            <Nav>Import</Nav> loads a list of hosts from a{" "}
             <Term term="csv" /> file. The importer only reads connection details,
             never passwords. If a label is already in use for a different machine,
             the import keeps both by adding a numbered suffix (for example web
@@ -496,7 +515,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits",
     body: (
       <>
         <Lead>
@@ -672,8 +691,8 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               Maximize a single terminal to fill the window (also <Nav>F11</Nav>),
-              and close a single tab or use <Nav>Close all</Nav> to clear them
-              with a confirmation.
+              and close a single tab or use <Nav>Close all</Nav>, in the{" "}
+              <Nav>Sessions</Nav> menu, to clear them with a confirmation.
             </li>
             <li>
               Switch the pane area between <Nav>Tabs</Nav> and <Nav>Grid</Nav>{" "}
@@ -681,16 +700,34 @@ export const SECTIONS: HelpSection[] = [
               terminal at a time; <Nav>Grid</Nav> tiles every open terminal at
               once so you can watch several together. One terminal fills the
               area, two split it, and three or more tile two-across and scroll.
-              Each grid tile has its own maximize and close buttons, its header
-              shows the same colour as the tab, and clicking one makes it the
-              active tab that find and shortcut commands act on. The active tile
-              is also outlined in that host's own colour. Your choice is
+              Each grid tile has its own maximize and close buttons, and its
+              header shows the same colour as the tab. Your choice is
               remembered between visits and restarts; maximizing a terminal
               always shows it on its own.
             </li>
             <li>
-              The <Nav>Grid Titles</Nav> button (the eye, next to the{" "}
-              <Nav>Grid</Nav> toggle) hides every tile's title bar for a denser,
+              <b>In Grid, focus follows the mouse.</b> Whichever tile the
+              pointer is over is the active one, outlined in that host's own
+              colour, and it is where everything goes: what you type, what you
+              paste, what <Nav>find</Nav> searches and what a shortcut command
+              runs. Move the mouse to another tile and the outline moves with
+              it. Nothing needs clicking first, and there is no setting for
+              this: one tile is highlighted and it is the one that is listening.
+            </li>
+            <li>
+              Choosing a tab, pressing <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav>{" "}
+              or picking from <Nav>Sessions</Nav> overrides the mouse, and keeps
+              the tile it chose until you move the pointer off whatever tile it
+              was resting on. So a terminal you selected deliberately does not
+              get taken away by a stray nudge of the mouse. The pointer is also
+              ignored while you are typing anywhere that is not a terminal (the
+              shortcut box, a search field, a dialog), while a tile is being
+              drag-resized, and while you are dragging out a selection across a
+              tile edge.
+            </li>
+            <li>
+              The <Nav>Grid Titles</Nav> button (the eye, next to{" "}
+              <Nav>Broadcast</Nav>) hides every tile's title bar for a denser,
               chrome-free wall of terminals; a crossed-out eye marks the hidden
               state and clicking again brings the bars back. It appears only in
               Grid and the choice is remembered across restarts.
@@ -851,7 +888,11 @@ export const SECTIONS: HelpSection[] = [
               <Nav>right-click</Nav> in the terminal, or with{" "}
               <Nav>Ctrl+Shift+V</Nav>. Plain <Nav>Ctrl+C</Nav> and{" "}
               <Nav>Ctrl+V</Nav> are left alone so the shell still receives them
-              (for example Ctrl+C to interrupt a running command).
+              (for example Ctrl+C to interrupt a running command). In Grid, a
+              paste lands in the tile the pointer is over, which is the tile
+              outlined in the host's colour, because that is also the tile that
+              is listening for the keyboard. Copy from one, move to another,
+              paste, press <Nav>Enter</Nav>: it runs where you are looking.
             </li>
             <li>
               <strong className="font-semibold">Text too small</strong> is fixed
@@ -888,10 +929,23 @@ export const SECTIONS: HelpSection[] = [
               .
             </li>
             <li>
-              With many tabs open, use the <Nav>Go to session…</Nav> picker at
-              the top right to jump to any terminal. If its tab is scrolled out
-              of view, the tab strip scrolls to bring it to the center so you do
-              not have to hunt for it.
+              With many tabs open, use the <Nav>Sessions</Nav> menu at the top
+              right to jump to any terminal; it also holds{" "}
+              <Nav>Close all</Nav>. If the tab you pick is scrolled out of view,
+              the tab strip scrolls to bring it to the center so you do not have
+              to hunt for it.
+            </li>
+            <li>
+              The controls above the tab strip are grouped so they fit whatever
+              window you run Broadside in. <Nav>Tabs</Nav> / <Nav>Grid</Nav>,{" "}
+              <Nav>Broadcast</Nav> and, in Grid, the two icon buttons for
+              fullscreen and tile title bars stay out in the open because they
+              are the ones you reach for. Everything else that shapes the view
+              lives under <Nav>View</Nav>: compact tab labels, flipping two
+              terminals between side-by-side and top/bottom,{" "}
+              <Nav>Reset grid</Nav> and <Nav>Reset display</Nav>. Entries appear
+              there only when they apply, so the menu never offers something
+              that would do nothing.
             </li>
           </Bullets>
           <H3>Full-screen prompts, and a stuck one</H3>
@@ -1483,9 +1537,15 @@ export const SECTIONS: HelpSection[] = [
           <H3>What a skill needs from the host</H3>
           <p>
             Skills need a <Nav>bash</Nav>, <Nav>zsh</Nav> or <Nav>sh</Nav> login
-            shell. A host on fish or csh is refused up front and named on the{" "}
-            <SectionLink id="help-sec-hosts">Hosts</SectionLink> tab with an amber
-            chip.
+            shell. A host on anything else is refused, by name, and carries an
+            amber chip both on the{" "}
+            <SectionLink id="help-sec-hosts">Hosts</SectionLink> tab and in the
+            host list here. Such hosts are never hidden from the list: they stay
+            selectable, and the refusal arrives as that host's own result when
+            the run starts, so a skill aimed at forty machines still runs on the
+            thirty-nine that can take it. Where the shell was already known at
+            connect time the refusal is immediate rather than waiting out a
+            probe.
           </p>
         </Detail>
       </>
@@ -1960,7 +2020,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-warnings",
     title: "Warnings and messages",
     keywords:
-      "warning warnings message messages error errors matrix table what does mean unreachable os error 10054 forcibly closed connection reset maxstartups timed out timeout authentication failed no credentials stored host key changed refused unknown key tofu shell chip fish csh unsupported login shell amber chip disconnected banner reconnect every terminal hidden from the grid latency explain meaning troubleshooting",
+      "warning warnings message messages error errors matrix table what does mean unreachable os error 10054 forcibly closed connection reset maxstartups timed out timeout authentication failed no credentials stored host key changed refused unknown key tofu shell chip fish csh unsupported login shell amber chip disconnected banner reconnect every terminal hidden from the grid latency explain meaning troubleshooting no shell chip shell unread no integration console menu printed twice menu reprints pfsense rc.initial checked hosts report no blocks multiterminal silent no output",
     body: (
       <>
         <Lead>
