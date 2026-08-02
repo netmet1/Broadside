@@ -419,8 +419,8 @@ export const SECTIONS: HelpSection[] = [
               each one actually means.
             </li>
             <li>
-              <b>Shell integration</b>, in the host's own form beside the sudo
-              settings, is the answer to that chip. When a terminal opens,
+              <b>Shell integration</b>, its own card at the foot of the host's
+              form, is the answer to that chip. When a terminal opens,
               Broadside normally sends one setup line that installs the markers
               command block tracking reads, clears the login banner and reprints
               it, so the tab looks like a fresh login. Whether that line is safe

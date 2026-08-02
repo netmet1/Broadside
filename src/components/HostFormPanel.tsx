@@ -940,12 +940,64 @@ export function HostFormPanel({
               Sudo password will be removed on save
             </p>
           )}
-          {/* This card is where sudo auto-fill is explained, so it is where the
-              login-shell caveat belongs (X4, D-067). The verdict is read-only —
-              it is what the last connect saw — but the answer to it is not. */}
-          {host && (
-            <div className="mb-3 grid gap-2 rounded-md border border-border/50 p-3">
-              <p className="text-xs font-medium">Shell integration</p>
+          {!adminLocked && sudoEditing && (
+            <div className="grid max-w-md gap-2">
+              <div className="relative">
+                <Input
+                  id="sudoPassword"
+                  type={showSudoPassword ? "text" : "password"}
+                  {...register("sudoPassword")}
+                  disabled={sudoSameAsLogin && passwordAuthEffective}
+                  className="pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSudoPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                  aria-label={
+                    showSudoPassword
+                      ? "Hide sudo password"
+                      : "Show sudo password"
+                  }
+                >
+                  {showSudoPassword ? (
+                    <EyeOffIcon className="h-4 w-4" />
+                  ) : (
+                    <EyeIcon className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+              {passwordAuthEffective && (
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    {...register("sudoSameAsLogin")}
+                  />
+                  Same as SSH password
+                </label>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Its own card, below sudo rather than inside it (D-067). It was first
+            put in the sudo card because that is where auto-fill is explained,
+            but it is a setting about what is typed at the shell on connect, not
+            about sudo, and sitting between the sudo status line and the sudo
+            password field it read as part of them. The verdict is read-only —
+            it is what the last connect saw — but the answer to it is not. */}
+        {host && (
+          <div className="mt-6 max-w-4xl rounded-xl border border-border/50 bg-muted/20 p-5">
+            <Label className="mb-3 block text-sm font-semibold">
+              Shell integration{" "}
+              <span className="text-xs font-normal text-muted-foreground">
+                (what Broadside types at this host's shell when a terminal
+                opens)
+              </span>
+            </Label>
+            <div className="grid gap-2">
               {host.shell_capability ? (
                 <p
                   className={cn(
@@ -1020,48 +1072,8 @@ export function HostFormPanel({
                 Applies to terminals on next new terminal session.
               </p>
             </div>
-          )}
-          {!adminLocked && sudoEditing && (
-            <div className="grid max-w-md gap-2">
-              <div className="relative">
-                <Input
-                  id="sudoPassword"
-                  type={showSudoPassword ? "text" : "password"}
-                  {...register("sudoPassword")}
-                  disabled={sudoSameAsLogin && passwordAuthEffective}
-                  className="pr-9"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSudoPassword((v) => !v)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  tabIndex={-1}
-                  aria-label={
-                    showSudoPassword
-                      ? "Hide sudo password"
-                      : "Show sudo password"
-                  }
-                >
-                  {showSudoPassword ? (
-                    <EyeOffIcon className="h-4 w-4" />
-                  ) : (
-                    <EyeIcon className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-              {passwordAuthEffective && (
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    className="accent-primary"
-                    {...register("sudoSameAsLogin")}
-                  />
-                  Same as SSH password
-                </label>
-              )}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </form>
 
       <footer className="flex justify-end gap-2 px-8 py-4">
