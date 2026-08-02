@@ -99,6 +99,48 @@ export function capabilityChipLabel(
   return cap === "unreadable" ? "shell unread" : "no shell";
 }
 
+/**
+ * What to say about a flagged host, in one place, from the pair that decides
+ * it: the probe's verdict and the operator's override. `null` means there is
+ * nothing to say.
+ *
+ * The chip on a Hosts row and the strip at the foot of a terminal pane are the
+ * same statement in two sizes, so they resolve the override the same way. The
+ * strip used to work from the probe's verdict alone, which meant the setting
+ * could be changed from Auto to Never and back with the pane saying nothing
+ * either time: on a bash host there was no warning to change, and on a fish
+ * host the verdict it had been dismissed for never moved.
+ *
+ * `key` is what a dismissal is remembered against. It is the verdict as the
+ * reader met it, so `never` is its own key rather than the `unsupported` it
+ * resolves to: those two are different sentences, and dismissing one must not
+ * silence the other.
+ */
+export function shellNotice(
+  capability: ShellCapability | null | undefined,
+  pref: ShellIntegrationPref | null | undefined,
+  loginShell: string | null | undefined,
+): { key: string; label: string; message: string } | null {
+  const effective = effectiveCapability(capability, pref);
+  if (!capabilityIsWarning(effective)) return null;
+  // `effective` is a warning, so it is not null — narrowed for the helpers.
+  const cap = effective as ShellCapability;
+  if (pref === "never") {
+    return {
+      key: "never",
+      label: "no integration",
+      message:
+        "Shell integration is set to Never here, so nothing is sent to its shell. No command blocks and no skills. Change it in Hosts.",
+    };
+  }
+  // A name is only worth showing when it is the host's own answer.
+  return {
+    key: cap,
+    label: capabilityChipLabel(cap, loginShell),
+    message: shellCapabilityMessage(cap, loginShell),
+  };
+}
+
 /* Which hosts have had the terminal-pane warning dismissed, and for *which
  * verdict*. A UI pref, stored the same way as the hidden host columns (see
  * `hostColumns.ts`), so opening a fifth tab on a known fish host doesn't nag a
@@ -126,16 +168,14 @@ function loadDismissed(): Record<string, string> {
   return {};
 }
 
-/** Whether this host's warning has already been dismissed *for this verdict*. */
-export function shellWarningDismissed(
-  hostId: number,
-  cap: ShellCapability,
-): boolean {
-  return loadDismissed()[String(hostId)] === cap;
+/** Whether this host's warning has already been dismissed *for this verdict*.
+ * `key` comes from [`shellNotice`]. */
+export function shellWarningDismissed(hostId: number, key: string): boolean {
+  return loadDismissed()[String(hostId)] === key;
 }
 
-export function dismissShellWarning(hostId: number, cap: ShellCapability): void {
+export function dismissShellWarning(hostId: number, key: string): void {
   const next = loadDismissed();
-  next[String(hostId)] = cap;
+  next[String(hostId)] = key;
   localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
 }

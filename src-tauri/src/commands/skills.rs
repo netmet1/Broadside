@@ -479,6 +479,12 @@ pub async fn run_skill(
                         Ok(crate::ssh::pty::PtyOpenResult::Opened {
                             login_shell,
                             capability,
+                            // Deliberately the probe's own answer, not the
+                            // override: the override decides what is written to
+                            // a login shell, and a skill drives the shell
+                            // itself. A console menu cannot run one however
+                            // firmly it is told it is bash.
+                            integration: _,
                         }) => {
                             // Hand the connect-time shell name to the engine so a
                             // refusal can name it (X4): the in-shell `$0` probe

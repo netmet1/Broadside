@@ -176,7 +176,8 @@ pub fn shell_capability(shell: Option<&str>) -> ShellCapability {
 ///
 /// Stored per host so a box that will never answer `echo $SHELL` can still be
 /// told what it is, once, instead of losing command-block tracking forever.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ShellIntegrationPref {
     /// Believe the probe. The default, and what every existing host has.
     #[default]

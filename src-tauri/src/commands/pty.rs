@@ -102,6 +102,9 @@ pub async fn pty_open(
         PtyOpenResult::Opened {
             login_shell,
             capability,
+            // Not stored: the override is already this host's own column, and
+            // it is the probe's answer that this connect is news about.
+            integration: _,
         } => {
             // Remember what we saw so the Hosts table can flag an unsupported
             // shell without anyone having to open a terminal first (X4). Purely

@@ -1,10 +1,7 @@
 import { TriangleAlertIcon } from "lucide-react";
 
 import {
-  capabilityChipLabel,
-  capabilityIsWarning,
-  effectiveCapability,
-  shellCapabilityMessage,
+  shellNotice,
   type ShellCapability,
   type ShellIntegrationPref,
 } from "@/lib/shells";
@@ -47,18 +44,12 @@ export function ShellChip({
   className?: string;
 }) {
   const hint = useHint();
-  const effective = effectiveCapability(capability, pref);
-  if (!capabilityIsWarning(effective)) return null;
-  // `effective` is a warning, so it is not null — narrowed for the helpers.
-  const cap = effective as ShellCapability;
-  // A name is only worth showing when it is the host's own answer. Under an
-  // explicit "never" the name is not the reason, the setting is.
-  const named = pref === "never" ? null : loginShell;
-  const label = pref === "never" ? "no integration" : capabilityChipLabel(cap, named);
-  const message =
-    pref === "never"
-      ? "Shell integration is set to Never here, so nothing is sent to its shell. No command blocks and no skills. Change it in Hosts."
-      : shellCapabilityMessage(cap, named);
+  // The wording (including the fact that under an explicit "never" the shell's
+  // name is not the reason, the setting is) is shared with the terminal pane's
+  // strip, so the two cannot drift.
+  const notice = shellNotice(capability, pref, loginShell);
+  if (!notice) return null;
+  const { label, message } = notice;
   return (
     <span
       className={cn(

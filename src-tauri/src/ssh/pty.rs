@@ -130,14 +130,25 @@ pub enum PtyOpenResult {
         /// tab warn that command-block tracking is unavailable on a shell that
         /// cannot take the OSC 133 integration.
         login_shell: Option<String>,
-        /// What was actually decided for this session, after the per-host
-        /// override was applied. Sent separately from `login_shell` because the
-        /// two answer different questions: the name is what the host said, this
-        /// is what Broadside did about it. It is also the only way the frontend
-        /// can tell an `unreadable` host (fixable, point at the override) from
-        /// an `unsupported` one (a fact, nothing to fix) — the name is `None`
-        /// in the first case and unstorable in the second.
+        /// What the probe concluded, *before* the per-host override. Sent
+        /// separately from `login_shell` because the two answer different
+        /// questions: the name is what the host said, this is what Broadside
+        /// made of it. It is also the only way the frontend can tell an
+        /// `unreadable` host (fixable, point at the override) from an
+        /// `unsupported` one (a fact, nothing to fix) — the name is `None` in
+        /// the first case and unstorable in the second.
+        ///
+        /// This is the value that gets stored, so it stays the host's own
+        /// answer: overwriting it with the override would mean turning the
+        /// override off could never reveal what the host actually said.
         capability: ShellCapability,
+        /// The override that was in force for this open. The probed capability
+        /// alone does not say what happened: a bash host set to `Never` was
+        /// sent nothing, and a host that answered nothing but is set to
+        /// `Always` was sent everything. The pane's warning strip is about what
+        /// happened, so it needs both — and it is the same pair the Hosts and
+        /// rail chips already resolve, so the two cannot disagree.
+        integration: ShellIntegrationPref,
     },
     UnknownKey {
         key: PresentedKey,
@@ -488,5 +499,6 @@ pub async fn open<E: PtyEvents>(
     Ok(PtyOpenResult::Opened {
         login_shell,
         capability: probed,
+        integration: shell_pref,
     })
 }

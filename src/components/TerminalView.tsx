@@ -26,11 +26,9 @@ import {
 import { ptyOpenLocal } from "@/lib/tauri/local";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
-  capabilityIsWarning,
   dismissShellWarning,
-  shellCapabilityMessage,
+  shellNotice,
   shellWarningDismissed,
-  type ShellCapability,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
@@ -191,7 +189,9 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // from `phase` because it survives across the phase transitions of a
   // reconnect and is cleared only by the operator dismissing it.
   const [shellWarning, setShellWarning] = useState<{
-    capability: ShellCapability;
+    /** The verdict this strip is for, and what a dismissal is remembered
+     * against, from `shellNotice`. */
+    key: string;
     message: string;
   } | null>(null);
   const setPhase = useCallback(
@@ -586,20 +586,19 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         });
         if (cancelled) return;
         switch (result.status) {
-          case "opened":
+          case "opened": {
             // Flag a login shell we can't fully drive, unless this host's
-            // warning was already dismissed (X4).
-            if (
-              capabilityIsWarning(result.capability) &&
-              !shellWarningDismissed(source.hostId, result.capability)
-            ) {
-              setShellWarning({
-                capability: result.capability,
-                message: shellCapabilityMessage(
-                  result.capability,
-                  result.login_shell,
-                ),
-              });
+            // warning was already dismissed for the same verdict (X4). The
+            // verdict is the probe's answer *as the override left it*, so
+            // setting a host to Never is itself news worth a strip, and one
+            // dismissed while the host was on Auto does not silence it.
+            const notice = shellNotice(
+              result.capability,
+              result.integration,
+              result.login_shell,
+            );
+            if (notice && !shellWarningDismissed(source.hostId, notice.key)) {
+              setShellWarning({ key: notice.key, message: notice.message });
             }
             // A pty:closed for this session may have raced ahead of the
             // open result — don't resurrect a dead session.
@@ -608,6 +607,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
               term.focus();
             }
             break;
+          }
           case "unknown_key":
           case "key_mismatch":
             setPhase({ kind: "gate", gate: result });
@@ -780,7 +780,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
             className="shrink-0"
             onClick={() => {
               if (source.type === "ssh") {
-                dismissShellWarning(source.hostId, shellWarning.capability);
+                dismissShellWarning(source.hostId, shellWarning.key);
               }
               setShellWarning(null);
             }}

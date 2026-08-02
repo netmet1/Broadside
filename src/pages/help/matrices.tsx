@@ -416,6 +416,14 @@ const WARNINGS: WarningGroup[] = [
           "The shell has exited or the connection dropped. The scrollback is kept and stays readable; Reconnect starts a fresh shell on the same host, Close tab throws it away.",
       },
       {
+        message: (
+          <Msg>An amber line across the bottom of the pane, with “Got it”</Msg>
+        ),
+        where: "Terminal pane",
+        means:
+          "The same thing the amber chip on the host row says, said once where you are working: this host's login shell is not one Broadside can fully drive, or you have set Shell integration to Never on it. Nothing is broken and the tab is usable. “Got it” dismisses it for that host, and it stays dismissed for as long as the verdict holds. Change the setting, or connect to find the host now answers differently, and it says its piece once more, because the new answer is not the one you dismissed.",
+      },
+      {
         message: <Msg>Every terminal is hidden from the grid.</Msg>,
         where: "Grid",
         means:
