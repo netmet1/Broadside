@@ -42,6 +42,26 @@ export function usePageStatus(status: ReactNode, active = true) {
   }, [status, active, setPageStatus]);
 }
 
+/**
+ * How wide a hint may be, in pixels, at 12px in the app's own font.
+ *
+ * The status bar gives the hint one line and truncates it, so anything past
+ * this is read by the operator as a sentence that stops mid-word. The number is
+ * the width actually available at the smallest window the app can be dragged
+ * to: 1024px, less the bar's own 24px of padding, less the 16px gap, less about
+ * 262px for the longest page status on the right (Hosts, filtered, three-digit
+ * counts). That leaves 722px; 700 is that with a little room for a longer
+ * status than has been seen.
+ *
+ * A hint that will not fit belongs in the Help tab. Say what the control does
+ * and stop -- and do not spend the line telling the reader to go and look
+ * there, which costs the words that would have explained it.
+ *
+ * `StatusProvider` warns in the console, in development only, about any hint
+ * that goes over.
+ */
+export const HINT_BUDGET_PX = 700;
+
 /** Returns a props factory: spread `hint("…")` onto any actionable element to
  * surface a help hint in the status bar on hover/focus. */
 export function useHint() {

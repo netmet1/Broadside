@@ -185,12 +185,12 @@ const ROW_FILL_CHOICES: { value: RowFill; label: string; hint: string }[] = [
   {
     value: "stretch",
     label: "Stretch the row",
-    hint: "The tiles on the short row widen to fill the whole width. Three tiles in two columns gives two on top and one full-width underneath.",
+    hint: "The tiles on the short row widen to fill the whole width. Three in two columns gives two on top, one wide underneath.",
   },
   {
     value: "tall",
     label: "Tall tile in the last column",
-    hint: "When one space is left, the tile above it grows down into the gap. Three tiles in two columns gives one top left, one full height on the right, one bottom left.",
+    hint: "When one space is left, the tile above grows down into it. Three in two columns gives a full-height tile on the right.",
   },
   {
     value: "gaps",

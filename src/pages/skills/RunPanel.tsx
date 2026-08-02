@@ -131,7 +131,7 @@ export function RunPanel({
               size="sm"
               onClick={onRerun}
               {...hint(
-                `Run ${skillName} again. Closes this run first, then takes you back to the confirmation so you can check the hosts and inputs.`,
+                `Run ${skillName} again. Closes this run first, then returns to the confirmation to check the hosts and inputs.`,
               )}
             >
               <RotateCwIcon className="mr-1 h-3 w-3" />
@@ -333,7 +333,7 @@ function HostPane({
             logOpen ? "text-foreground" : "text-muted-foreground"
           }`}
           {...hint(
-            "Show every step this host has been through, with timeouts and where each branch went. The terminal shows what the host printed; this shows what the skill decided.",
+            "Show every step this host has been through, with timeouts and where each branch went.",
           )}
         >
           <ListIcon className="h-3 w-3" />
@@ -345,7 +345,7 @@ function HostPane({
           className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
           aria-label="Reset display"
           {...hint(
-            "Reset this pane's display if a full-screen program (like an upgrade's restart prompt) left it garbled or stuck. Clears the pane only; the run keeps going.",
+            "Reset this pane's display if a program left it garbled. Clears the pane only; the run keeps going.",
           )}
         >
           <RotateCcwIcon className="h-3 w-3" />
@@ -377,7 +377,7 @@ function HostPane({
               control(() => skillResume(runId, pane.hostId), "Resume failed")
             }
             {...hint(
-              "Check the screen again and keep waiting for this step, with a fresh timeout. Does not re-run the command. If you typed here, what you typed is ignored for matching; use Skip step if you already handled it.",
+              "Check the screen again and keep waiting for this step, with a fresh timeout. Does not re-run the command.",
             )}
           >
             <PlayIcon className="mr-1 h-3 w-3" />

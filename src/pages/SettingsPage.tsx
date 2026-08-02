@@ -1163,7 +1163,7 @@ export function SettingsPage({
                 className="flex cursor-pointer items-center gap-1.5 text-sm"
                 {...hint(
                   termFontStrict
-                    ? "Strict: only this field changes the size. Ctrl and the mouse wheel are left to the terminal, so a program with mouse reporting on receives them again and the scrollback fast-scrolls as it used to."
+                    ? "Strict: only this field changes the size. Ctrl and the wheel are left to the terminal, so mouse reporting works as before."
                     : "Not strict: Ctrl and the mouse wheel over a terminal resize the text, and the new size is saved here as you go.",
                 )}
               >

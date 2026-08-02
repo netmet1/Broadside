@@ -77,15 +77,15 @@ export function shellCapabilityMessage(
     case "full":
       return `This host's login shell is ${named ?? "bash or zsh"}. Everything works: command block tracking, skills, broadcast and file transfer.`;
     case "parse_safe":
-      return `This host's login shell is ${named ?? "a POSIX shell"}. Command block tracking is limited, because only bash and zsh install the markers Broadside reads. Skills, broadcast, file transfer and sudo auto-fill all work.`;
+      return `This host's login shell is ${named ?? "a POSIX shell"}. Command blocks are not tracked: only bash and zsh install the markers. All else works.`;
     case "tail_only":
-      return `This host's login shell is ${named ?? "not a Bourne shell"}. Command block tracking is unavailable and skills cannot run here, because that shell cannot read what Broadside sends. Sudo password auto-fill still works, and everything else (terminals, broadcast, file transfer) is unaffected.`;
+      return `This host's login shell is ${named ?? "not a Bourne shell"}. No command blocks and no skills. Terminals, broadcast and transfers all work.`;
     case "unsupported":
       return named
-        ? `This host's login shell is ${named}, which is not a shell Broadside can drive, so nothing is sent to it and the login screen is left exactly as the host drew it. Command block tracking and skills are unavailable. Terminals, broadcast, file transfer and sudo auto-fill all work.`
-        : `This host's login shell is not one Broadside can drive, so nothing is sent to it and the login screen is left exactly as the host drew it. Command block tracking and skills are unavailable. Terminals, broadcast, file transfer and sudo auto-fill all work.`;
+        ? `This host's login shell is ${named}, which Broadside cannot drive, so it sends nothing at all. No command blocks and no skills.`
+        : `This host's login shell is not one Broadside can drive, so it sends nothing at all. No command blocks and no skills.`;
     case "unreadable":
-      return `Broadside could not read this host's login shell, so it sent nothing rather than guess. Command block tracking and skills are unavailable. If you know this host runs bash or zsh, set Shell integration to Always in the host's settings and both come back.`;
+      return `Broadside could not read this host's login shell, so it sent nothing. Set Shell integration to Always if it runs bash or zsh.`;
   }
 }
 

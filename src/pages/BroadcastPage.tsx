@@ -886,7 +886,7 @@ export function BroadcastPage({
               {...hint(
                 running
                   ? "Time left before this run times out."
-                  : "Per-command timeout in seconds (1-3600). Overrides this run only; resets to the Settings → Performance default afterward. Partial output is kept if it elapses.",
+                  : "Per-command timeout in seconds (1-3600). This run only; partial output is kept if it elapses.",
               )}
             />
             <span className="text-xs text-muted-foreground">s</span>

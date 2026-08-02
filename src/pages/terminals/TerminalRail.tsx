@@ -343,7 +343,7 @@ export function TerminalRail({
             <DropdownMenuItem
               onSelect={() => resetDisplay(activeId)}
               {...hint(
-                "Redraw this terminal from scratch if a full-screen program left it garbled or stuck. Clears this pane's screen and scrollback, then asks the shell to redraw its prompt (Ctrl-L). Nothing is run and nothing is interrupted: anything working in this session keeps going.",
+                "Redraw this pane from scratch if a program left it garbled. Clears its screen and scrollback; nothing running is interrupted.",
               )}
             >
               <RotateCcwIcon />

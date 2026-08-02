@@ -57,7 +57,7 @@ export function ShellChip({
   const label = pref === "never" ? "no integration" : capabilityChipLabel(cap, named);
   const message =
     pref === "never"
-      ? "Shell integration is set to Never on this host, so nothing is sent to its shell. Command block tracking and skills are unavailable. Change it in the host's settings."
+      ? "Shell integration is set to Never here, so nothing is sent to its shell. No command blocks and no skills. Change it in Hosts."
       : shellCapabilityMessage(cap, named);
   return (
     <span

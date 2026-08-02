@@ -430,7 +430,7 @@ export function HostsPage({
               <DropdownMenuItem
                 onSelect={() => void runExport()}
                 disabled={loading || hosts.length === 0}
-                {...hint("Export all hosts to a CSV or Excel (.xlsx) file (re-importable). No credentials are included; it's safe to hand to a restricted operator to import under their own login.")}
+                {...hint("Export all hosts to a CSV or Excel (.xlsx) file, re-importable. No credentials are included.")}
               >
                 <DownloadIcon />
                 Export hosts…

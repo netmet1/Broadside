@@ -747,7 +747,7 @@ export function MultiTerminalPage({
             <label
               className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
               {...hint(
-                "When on, commands you type by hand inside a terminal tab also appear here, for the hosts you have checked on the left. Off = only commands sent from MultiTerminal.",
+                "When on, commands typed by hand in a terminal tab also appear here, for the hosts checked on the left.",
               )}
             >
               <input
@@ -780,10 +780,12 @@ export function MultiTerminalPage({
                 className="flex min-w-0 shrink items-center gap-1 truncate text-xs text-amber-700 dark:text-amber-300"
                 {...hint(
                   [
+                    // Kept short because the host labels are inside them: the
+                    // bar truncates, and the names are the part worth reading.
                     untrackedHosts.cannot.length > 0 &&
-                      `No command blocks from ${untrackedHosts.cannot.join(", ")}: only bash and zsh install the markers this page reads. Commands still run there, and the output is in the terminal tab.`,
+                      `No blocks from ${untrackedHosts.cannot.join(", ")}: only bash and zsh install the markers. Output is in the terminal tab.`,
                     untrackedHosts.unread.length > 0 &&
-                      `No command blocks from ${untrackedHosts.unread.join(", ")}: their login shell could not be read, so nothing was sent to set the markers up. If you know they run bash or zsh, set Shell integration to Always on the host.`,
+                      `No blocks from ${untrackedHosts.unread.join(", ")}: shell unread, so no markers were sent. Set Shell integration to Always.`,
                   ]
                     .filter(Boolean)
                     .join(" "),
