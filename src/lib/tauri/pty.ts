@@ -1,12 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import type { ShellCapability } from "@/lib/shells";
 import type { PresentedKey } from "@/lib/tauri/ssh";
 
 export type PtyOpenResult =
   // `login_shell` is what the connect-time probe read, or null when it could
-  // not tell. Null is "unknown", never "unsupported".
-  | { status: "opened"; login_shell: string | null }
+  // not tell. Null is "unknown", never "unsupported" — `capability` is what
+  // says which, and it is the probe's own verdict, before the per-host override
+  // is applied.
+  | {
+      status: "opened";
+      login_shell: string | null;
+      capability: ShellCapability;
+    }
   | { status: "unknown_key"; key: PresentedKey }
   | {
       status: "key_mismatch";

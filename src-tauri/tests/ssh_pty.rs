@@ -13,7 +13,7 @@ use common::{Fixture, PASSWORD, USER};
 use broadside_lib::ssh::pty::{
     open, PtyBlock, PtyClosed, PtyData, PtyEvents, PtyState, SudoInjected,
 };
-use broadside_lib::ssh::{probe, AuthMethod, ProbeResult};
+use broadside_lib::ssh::{probe, AuthMethod, ProbeResult, ShellIntegrationPref};
 use tokio::sync::mpsc;
 
 enum Event {
@@ -120,6 +120,7 @@ async fn pty_shell_round_trip_and_close() {
         vec![fp],
         AuthMethod::Password(PASSWORD.to_string()),
         None,
+        ShellIntegrationPref::Auto,
         80,
         24,
     )
@@ -185,6 +186,7 @@ async fn pty_reopen_same_id_replaces_session() {
             vec![fp.clone()],
             AuthMethod::Password(PASSWORD.to_string()),
             None,
+            ShellIntegrationPref::Auto,
             80,
             24,
         )
@@ -224,6 +226,7 @@ async fn pty_remote_exit_emits_closed() {
         vec![fp],
         AuthMethod::Password(PASSWORD.to_string()),
         None,
+        ShellIntegrationPref::Auto,
         80,
         24,
     )
@@ -274,6 +277,7 @@ async fn pty_omni_blocks_from_bash() {
         vec![fp],
         AuthMethod::Password(PASSWORD.to_string()),
         None,
+        ShellIntegrationPref::Auto,
         80,
         24,
     )

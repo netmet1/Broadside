@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { ShellCapability } from "@/lib/shells";
+
 export type PresentedKey = {
   key_type: string;
   public_key: string;
@@ -7,7 +9,15 @@ export type PresentedKey = {
 };
 
 export type ProbeResult =
-  | { status: "ok"; latency_ms: number; login_shell: string | null }
+  // `capability` is decided from the raw probe answer, before `login_shell` is
+  // filtered to the shell alphabet — so a console menu reads as "unsupported"
+  // here even though its name is dropped from the field beside it.
+  | {
+      status: "ok";
+      latency_ms: number;
+      login_shell: string | null;
+      capability: ShellCapability;
+    }
   | { status: "unknown_key"; key: PresentedKey }
   | {
       status: "key_mismatch";

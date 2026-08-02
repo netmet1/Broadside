@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { ShellCapability, ShellIntegrationPref } from "@/lib/shells";
+
 export type Host = {
   id: number;
   label: string;
@@ -20,6 +22,14 @@ export type Host = {
    * "fish". Backend-written, so it is absent from {@link HostInput}. Null means
    * not probed yet, never "unsupported". */
   login_shell: string | null;
+  /** What the probe concluded Broadside could send this host. Backend-written.
+   * Null means never probed. Carried separately from `login_shell` because that
+   * column is held to the shell alphabet, so a console menu stores as null and
+   * would otherwise be indistinguishable from a probe that got no answer. */
+  shell_capability: ShellCapability | null;
+  /** The operator's standing override. Null means "auto", i.e. believe the
+   * probe. The one shell field the host form writes. */
+  shell_integration: ShellIntegrationPref | null;
 };
 
 export type HostInput = {
@@ -70,6 +80,16 @@ export function updateHost(id: number, input: HostInput): Promise<Host> {
 
 export function deleteHost(id: number): Promise<void> {
   return invoke<void>("delete_host", { id });
+}
+
+/** The host's standing answer for shell integration (D-067). Its own call
+ * rather than a field on {@link HostInput}, because the connect path owns the
+ * other shell columns and an ordinary form save must not disturb them. */
+export function setHostShellIntegration(
+  id: number,
+  pref: ShellIntegrationPref,
+): Promise<Host> {
+  return invoke<Host>("set_host_shell_integration", { id, pref });
 }
 
 /** Writes all hosts to a CSV or .xlsx file (chosen by the path extension,

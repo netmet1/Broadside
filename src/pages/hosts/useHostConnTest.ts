@@ -1,7 +1,11 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
-import { isShellSupported, unsupportedShellMessage } from "@/lib/shells";
+import {
+  capabilityIsWarning,
+  shellCapabilityMessage,
+  type ShellCapability,
+} from "@/lib/shells";
 import { type Host, errorMessage } from "@/lib/tauri/hosts";
 import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
 
@@ -15,7 +19,11 @@ import { type PresentedKey, testConnection } from "@/lib/tauri/ssh";
  * page loaded, and nothing told that list the answer had changed. The page had
  * to be left and come back for it to catch up. */
 export function useHostConnTest(
-  onShellRead?: (hostId: number, loginShell: string | null) => void,
+  onShellRead?: (
+    hostId: number,
+    loginShell: string | null,
+    capability: ShellCapability | null,
+  ) => void,
 ) {
   const [testingId, setTestingId] = useState<number | null>(null);
   // Hosts whose most recent test ended in a definitive failure (auth /
@@ -55,17 +63,22 @@ export function useHostConnTest(
         switch (result.status) {
           case "ok":
             toast.success(`${host.label}: connected (${result.latency_ms}ms)`);
-            // Surface an unsupported login shell here too, so Test connection
+            // Surface a shell we can't fully drive here too, so Test connection
             // is one of the ways an operator finds out (X4). Separate toast:
             // the connection genuinely succeeded, this is a caveat about it.
-            if (result.login_shell && !isShellSupported(result.login_shell)) {
-              toast.warning(unsupportedShellMessage(result.login_shell));
+            // Driven off the capability rather than the name, because the two
+            // cases worth reporting most (a console menu, an unanswered probe)
+            // have no name to test.
+            if (capabilityIsWarning(result.capability)) {
+              toast.warning(
+                shellCapabilityMessage(result.capability, result.login_shell),
+              );
             }
             // The row is now out of date in both directions: a shell that has
             // become unsupported has no chip yet, and one that has been put
             // back to bash still has the old one. This is the only outcome
-            // that writes the column, so it is the only one that reports.
-            onShellRead?.(host.id, result.login_shell);
+            // that writes the columns, so it is the only one that reports.
+            onShellRead?.(host.id, result.login_shell, result.capability);
             markFailed(host.id, false);
             break;
           case "unknown_key":

@@ -26,10 +26,10 @@ import {
 import { ptyOpenLocal } from "@/lib/tauri/local";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
+  capabilityIsWarning,
   dismissShellWarning,
-  isShellSupported,
   loadDismissedShellWarnings,
-  unsupportedShellMessage,
+  shellCapabilityMessage,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
@@ -586,11 +586,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
             // Flag a login shell we can't fully drive, unless this host's
             // warning was already dismissed (X4).
             if (
-              result.login_shell &&
-              !isShellSupported(result.login_shell) &&
+              capabilityIsWarning(result.capability) &&
               !loadDismissedShellWarnings().has(source.hostId)
             ) {
-              setShellWarning(unsupportedShellMessage(result.login_shell));
+              setShellWarning(
+                shellCapabilityMessage(result.capability, result.login_shell),
+              );
             }
             // A pty:closed for this session may have raced ahead of the
             // open result — don't resurrect a dead session.
