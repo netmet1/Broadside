@@ -39,6 +39,24 @@ pub fn update_host(id: i64, input: HostInput, state: State<'_, DbState>) -> AppR
     host_repo::update(&conn, id, input)
 }
 
+/// The host's standing answer for shell integration (D-067): `auto`, `always`
+/// or `never`.
+///
+/// Its own command rather than a field on [`HostInput`] for the same reason
+/// `login_shell` is: those columns are written by the connect path, and folding
+/// them into the form's save would let an ordinary edit overwrite what the last
+/// connection learned.
+#[tauri::command]
+pub fn set_host_shell_integration(
+    id: i64,
+    pref: Option<String>,
+    state: State<'_, DbState>,
+) -> AppResult<Host> {
+    let conn = lock(&state)?;
+    host_repo::set_shell_integration(&conn, id, pref.as_deref())?;
+    host_repo::get(&conn, id)
+}
+
 /// Writes all hosts to a CSV or `.xlsx` file (chosen by the path's extension)
 /// that round-trips through "Import hosts…". Returns the number written.
 #[tauri::command]

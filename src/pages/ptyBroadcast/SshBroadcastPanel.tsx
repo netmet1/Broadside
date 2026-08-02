@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
+import { ShellChip } from "@/components/ShellChip";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
@@ -354,6 +355,14 @@ export function SshBroadcastPanel({
                   <span className="min-w-0 truncate" title={railTooltip(s.host)}>
                     {s.host.label}
                   </span>
+                  {/* Marked, never filtered (D-067): the session takes the
+                      keystrokes fine, but the command may not be valid in that
+                      shell, and this is a panel that sends one to all of them. */}
+                  <ShellChip
+                    capability={s.host.shell_capability}
+                    loginShell={s.host.login_shell}
+                    pref={s.host.shell_integration}
+                  />
                   <span
                     className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
                     connectedSessions.has(s.id)

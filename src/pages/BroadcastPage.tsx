@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Composer } from "@/components/Composer";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
+import { ShellChip } from "@/components/ShellChip";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import {
   BatchTofuDialog,
@@ -645,6 +646,14 @@ export function BroadcastPage({
                 <span className="min-w-0 truncate" title={railTooltip(h)}>
                   {h.label}
                 </span>
+                {/* Marked, never filtered (D-067): broadcast runs over an exec
+                    channel and works perfectly well on fish, so the host stays
+                    selectable and simply says what it is. */}
+                <ShellChip
+                  capability={h.shell_capability}
+                  loginShell={h.login_shell}
+                  pref={h.shell_integration}
+                />
                 {showRailTag && (
                   <span
                     className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"

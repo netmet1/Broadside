@@ -212,6 +212,25 @@ const MIGRATIONS: &[&str] = &[
     "UPDATE hosts SET login_shell = NULL
       WHERE login_shell IS NOT NULL
         AND (login_shell = '' OR login_shell GLOB '*[^a-z0-9_-]*');",
+    // 19: what Broadside decided about the host's shell, and what the operator
+    // decided about that (D-067).
+    //
+    // `shell_capability` exists because `login_shell` cannot answer this.
+    // Migrations 17 and 18 hold that column to the shell alphabet, so pfSense's
+    // rc.initial is stored as NULL — correct for a chip, useless as memory: the
+    // fact that the host cannot be driven was being relearned on every connect
+    // and forgotten in between. It is also the only place the two silent cases
+    // are distinguishable, since 'unsupported' (a name we read and rejected)
+    // and 'unreadable' (no answer at all) both leave `login_shell` NULL.
+    // One of 'full' | 'parse_safe' | 'unsupported' | 'unreadable'; NULL means
+    // never probed.
+    //
+    // `shell_integration` is the operator's standing override, one of
+    // 'auto' | 'always' | 'never', NULL meaning auto. Written only by the host
+    // form and, like login_shell, deliberately left out of hosts::update() so
+    // saving the form cannot clobber a probed value.
+    "ALTER TABLE hosts ADD COLUMN shell_capability TEXT;
+     ALTER TABLE hosts ADD COLUMN shell_integration TEXT;",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -254,6 +273,7 @@ fn add_column_if_missing(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ssh::ShellCapability;
 
     /// Brings a fresh connection up to `version` the way a shipped database
     /// would have got there, so an upgrade can be exercised from that point.
@@ -327,21 +347,72 @@ mod tests {
         // Not probed yet: absent, which must not read as "unsupported".
         assert_eq!(host.login_shell, None);
 
-        hosts::set_login_shell(&conn, host.id, Some("fish")).unwrap();
+        hosts::set_login_shell(&conn, host.id, Some("fish"), ShellCapability::Unsupported).unwrap();
         let host = hosts::get(&conn, host.id).unwrap();
         assert_eq!(host.login_shell.as_deref(), Some("fish"));
 
         // And a probe that reads nothing takes it back off, rather than leaving
         // a shell nobody can confirm on the row.
-        hosts::set_login_shell(&conn, host.id, None).unwrap();
+        hosts::set_login_shell(&conn, host.id, None, ShellCapability::Unreadable).unwrap();
         assert_eq!(hosts::get(&conn, host.id).unwrap().login_shell, None);
 
         // The setter holds the column to the shell alphabet itself: pfSense's
         // rc.initial is a real $SHELL but not a shell, and storing it is how
         // the chip migrations 17 and 18 clear kept coming back.
-        hosts::set_login_shell(&conn, host.id, Some("fish")).unwrap();
-        hosts::set_login_shell(&conn, host.id, Some("rc.initial")).unwrap();
+        hosts::set_login_shell(&conn, host.id, Some("fish"), ShellCapability::Unsupported).unwrap();
+        hosts::set_login_shell(&conn, host.id, Some("rc.initial"), ShellCapability::Unsupported)
+            .unwrap();
         assert_eq!(hosts::get(&conn, host.id).unwrap().login_shell, None);
+    }
+
+    #[test]
+    fn an_existing_database_gains_the_shell_capability_columns() {
+        // Migration 19 (D-067), on a database that already has host rows.
+        let conn = database_at_version(18);
+        conn.execute(
+            "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at)
+             VALUES ('web01', 'example.test', 22, 'joe', '#aabbcc', 'then', 'then')",
+            [],
+        )
+        .unwrap();
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        let host = &hosts::list_all(&conn).unwrap()[0];
+        assert_eq!(host.label, "web01");
+        // Never probed, and no override: both absent, and neither reads as a
+        // verdict about the host.
+        assert_eq!(host.shell_capability, None);
+        assert_eq!(host.shell_integration, None);
+
+        // The two silent cases stay distinguishable through a round trip, which
+        // is the whole reason this column exists: `login_shell` is NULL for both
+        // because rc.initial cannot pass the alphabet filter.
+        hosts::set_login_shell(&conn, host.id, Some("rc.initial"), ShellCapability::Unsupported)
+            .unwrap();
+        let menu = hosts::get(&conn, host.id).unwrap();
+        assert_eq!(menu.login_shell, None);
+        assert_eq!(menu.shell_capability.as_deref(), Some("unsupported"));
+
+        hosts::set_login_shell(&conn, host.id, None, ShellCapability::Unreadable).unwrap();
+        let silent = hosts::get(&conn, host.id).unwrap();
+        assert_eq!(silent.login_shell, None);
+        assert_eq!(silent.shell_capability.as_deref(), Some("unreadable"));
+
+        // The override is stored separately and survives a re-probe, so turning
+        // it off reveals what the host actually said rather than a value the
+        // override overwrote.
+        hosts::set_shell_integration(&conn, host.id, Some("always")).unwrap();
+        hosts::set_login_shell(&conn, host.id, Some("bash"), ShellCapability::Full).unwrap();
+        let overridden = hosts::get(&conn, host.id).unwrap();
+        assert_eq!(overridden.shell_integration.as_deref(), Some("always"));
+        assert_eq!(overridden.shell_capability.as_deref(), Some("full"));
+
+        // And a value that is not one of the three is stored as NULL rather
+        // than sitting in the column looking meaningful.
+        hosts::set_shell_integration(&conn, host.id, Some("sometimes")).unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().shell_integration, None);
     }
 
     #[test]

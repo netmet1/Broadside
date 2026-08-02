@@ -73,27 +73,139 @@ fn handshake_backoff(attempt: usize) -> Duration {
 /// server that will not answer it must not hold up opening the terminal.
 const SHELL_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Shells that can *parse* [`crate::omni::SHELL_INTEGRATION`] without erroring,
-/// whether or not they take one of its branches. This is the gate on sending
-/// the line at all.
+/// How much of the connect-time setup a host's login shell can be given.
 ///
-/// The `if [ ... ]; then ... elif ... fi` form is POSIX, so every Bourne-family
-/// shell reads it fine and simply falls through both branches. fish, csh and
-/// tcsh are *not* Bourne-family: they fail at parse time and abort the whole
-/// line, which used to leave a fish tab showing a parse error and missing the
-/// clear, MOTD and last-login that ride on the same line.
-pub fn shell_can_parse_integration(shell: &str) -> bool {
-    matches!(
-        shell_name(shell).as_str(),
-        "bash" | "zsh" | "sh" | "dash" | "ash" | "ksh" | "ksh93" | "mksh" | "pdksh"
-    )
+/// One value decides everything the terminal path does on connect, so the four
+/// cases can't drift apart the way two independent predicates could.
+///
+/// The two silent variants behave *identically* — nothing at all is written to
+/// the channel — but they are separate values because they are separate
+/// situations and must not say the same thing to the operator. `Unsupported` is
+/// a fact and there is nothing to fix; `Unreadable` is a guess, and the host may
+/// well be a bash box behind a `ForceCommand` that would work fine if told to.
+/// Collapsing them would leave the second case invisible: MultiTerminal would
+/// simply show no blocks and nothing would point at the per-host override.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellCapability {
+    /// bash and zsh: parses the integration *and* installs the OSC 133 hooks,
+    /// so MultiTerminal can track command blocks with exit codes.
+    Full,
+    /// The rest of the Bourne family. The `if [ ... ]; then ... elif ... fi`
+    /// form is POSIX, so these read the whole line fine and fall through both
+    /// branches, installing nothing. They still get the clear, MOTD reprint and
+    /// last-login re-echo that ride on the same line.
+    ParseSafe,
+    /// A real shell, but not a Bourne-family one: fish, csh, tcsh. These fail
+    /// the integration at *parse* time and abort the whole line with it, so they
+    /// get only the clear / MOTD / last-login tail, which they do understand.
+    ///
+    /// Kept as its own tier rather than folded in with the silent ones on
+    /// purpose. Sending fish the tail is why a fish tab looks like a fresh login
+    /// instead of showing a parse error (X4), and that was deliberate work.
+    /// What makes it safe here and not on `rc.initial` is that these are known
+    /// *shells*: a line of shell syntax is a line of shell syntax to them, not a
+    /// selection from a menu.
+    TailOnly,
+    /// A name we read that is no shell we know. pfSense's `rc.initial` is the
+    /// case that matters: a console menu, genuinely the admin account's
+    /// `$SHELL`, which answers anything sent to it by reprinting itself. Send
+    /// nothing and leave the login screen exactly as the host drew it.
+    ///
+    /// An unrecognised name is treated the same way rather than optimistically
+    /// given the tail, because the next appliance to do what pfSense does will
+    /// also arrive here under a name nobody has seen before.
+    Unsupported,
+    /// The probe answered nothing at all — a `ForceCommand`, a restricted
+    /// account, a server too slow to reply inside [`SHELL_PROBE_TIMEOUT`].
+    /// Also send nothing: guessing wrong is how a console menu ends up being
+    /// typed into.
+    Unreadable,
 }
 
-/// Shells that actually install the OSC 133 hooks, so MultiTerminal can track
-/// command blocks with exit codes. A subset of
-/// [`shell_can_parse_integration`]: the others parse the line and no-op.
-pub fn shell_supports_integration(shell: &str) -> bool {
-    matches!(shell_name(shell).as_str(), "bash" | "zsh")
+impl ShellCapability {
+    /// Whether the OSC 133 integration line is worth prepending. Only `Full`
+    /// installs hooks, but `ParseSafe` is included because the line is harmless
+    /// there and the [`crate::omni::OmniParser::flush`] fallback still gets a
+    /// block out of it.
+    pub fn with_integration(self) -> bool {
+        matches!(self, Self::Full | Self::ParseSafe)
+    }
+
+    /// Whether anything at all may be written to this shell on connect.
+    pub fn sends_setup(self) -> bool {
+        matches!(self, Self::Full | Self::ParseSafe | Self::TailOnly)
+    }
+
+    /// The stored form, and what the frontend matches on.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::ParseSafe => "parse_safe",
+            Self::TailOnly => "tail_only",
+            Self::Unsupported => "unsupported",
+            Self::Unreadable => "unreadable",
+        }
+    }
+}
+
+/// What the connect-time probe read, turned into the one thing that decides
+/// what gets sent. `None` means the probe could not answer.
+///
+/// Note what changed here: an unreadable probe used to fall through to "inject
+/// anyway", on the reasoning that the integration is harmless in every
+/// Bourne-family shell and refusing it would silently drop command-block
+/// tracking. That reasoning only held while the *only* thing at stake was the
+/// OSC 133 line. It is not: the same write carries `clear; cat /etc/motd`, and
+/// on a pfSense console menu that is a menu selection, which is why the menu
+/// printed twice. Unknown is now silent, and the per-host override is how a
+/// host that simply won't answer the probe gets its tracking back.
+pub fn shell_capability(shell: Option<&str>) -> ShellCapability {
+    let Some(shell) = shell else {
+        return ShellCapability::Unreadable;
+    };
+    match shell_name(shell).as_str() {
+        "bash" | "zsh" => ShellCapability::Full,
+        "sh" | "dash" | "ash" | "ksh" | "ksh93" | "mksh" | "pdksh" => ShellCapability::ParseSafe,
+        "fish" | "csh" | "tcsh" => ShellCapability::TailOnly,
+        _ => ShellCapability::Unsupported,
+    }
+}
+
+/// The operator's standing answer for a host, overriding what the probe reads.
+///
+/// Stored per host so a box that will never answer `echo $SHELL` can still be
+/// told what it is, once, instead of losing command-block tracking forever.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ShellIntegrationPref {
+    /// Believe the probe. The default, and what every existing host has.
+    #[default]
+    Auto,
+    /// "It is bash or zsh, I promise." Sends the full setup regardless.
+    Always,
+    /// "Never write to this host." Sends nothing regardless.
+    Never,
+}
+
+impl ShellIntegrationPref {
+    /// Parses the stored column. Anything unrecognised (including NULL) is
+    /// `Auto`, so a database written by a newer build downgrades safely.
+    pub fn from_stored(value: Option<&str>) -> Self {
+        match value {
+            Some("always") => Self::Always,
+            Some("never") => Self::Never,
+            _ => Self::Auto,
+        }
+    }
+
+    /// Resolves the preference against what the probe read.
+    pub fn resolve(self, probed: ShellCapability) -> ShellCapability {
+        match self {
+            Self::Auto => probed,
+            Self::Always => ShellCapability::Full,
+            Self::Never => ShellCapability::Unsupported,
+        }
+    }
 }
 
 /// Whether a line of the shell probe's output could be the value of `$SHELL`:
@@ -225,6 +337,14 @@ pub enum ProbeResult {
         /// The host's login shell, if the probe could read it. `None` means we
         /// could not tell, not that the shell is unusable.
         login_shell: Option<String>,
+        /// What that name means for what can be sent, decided from the
+        /// *unfiltered* probe answer.
+        ///
+        /// It has to be carried separately because `login_shell` above is held
+        /// to the shell alphabet: pfSense's `rc.initial` arrives here as `None`,
+        /// which is indistinguishable from a probe that answered nothing, and
+        /// those are the two cases the operator most needs told apart.
+        capability: ShellCapability,
     },
     /// No stored key for this endpoint — TOFU prompt needed.
     UnknownKey { key: PresentedKey },
@@ -433,20 +553,25 @@ pub async fn probe(
             // Latency is measured before the shell probe, so Test connection
             // still reports the connect+auth time it always did.
             let latency_ms = started.elapsed().as_millis() as u64;
-            // Held to the shell alphabet here because this result is both
-            // shown (the warning toast, the Hosts chip) and stored. pfSense's
+            let probed = detect_login_shell(&handle).await;
+            // The capability is decided from the raw answer, before the
+            // alphabet filter below throws the interesting part away: it is the
+            // difference between "read /etc/rc.initial, that is a console menu"
+            // and "got no answer at all".
+            let capability = shell_capability(probed.as_deref());
+            // The *name* is held to the shell alphabet, because it is both shown
+            // (the warning toast, the Hosts chip) and stored. pfSense's
             // /etc/rc.initial is a real `$SHELL` but not a shell, and a chip
-            // naming it is the bug migration 17 cleared. Reporting exactly
-            // what will be stored keeps the row and the database in agreement.
-            let login_shell = detect_login_shell(&handle)
-                .await
-                .filter(|name| is_shell_name(name));
+            // naming it is the bug migration 17 cleared. Reporting exactly what
+            // will be stored keeps the row and the database in agreement.
+            let login_shell = probed.filter(|name| is_shell_name(name));
             let _ = handle
                 .disconnect(russh::Disconnect::ByApplication, "", "en")
                 .await;
             Ok(ProbeResult::Ok {
                 latency_ms,
                 login_shell,
+                capability,
             })
         }
         Err(failure) => Ok(failure.into()),
@@ -514,29 +639,90 @@ mod shell_tests {
     #[test]
     fn bourne_family_can_parse_the_integration() {
         for s in ["/bin/bash", "/bin/zsh", "/bin/sh", "/bin/dash", "/bin/ksh"] {
-            assert!(shell_can_parse_integration(s), "{s} should parse");
+            let cap = shell_capability(Some(s));
+            assert!(cap.with_integration(), "{s} should parse");
+            assert!(cap.sends_setup(), "{s} should be written to");
         }
     }
 
     #[test]
     fn fish_and_csh_cannot_parse_the_integration() {
         // The whole point of X4: these abort the line at parse time, taking the
-        // clear/MOTD/last-login tail down with it.
+        // clear/MOTD/last-login tail down with it. So they still get the tail,
+        // which they understand, and never the integration.
         for s in ["/usr/bin/fish", "/bin/csh", "/bin/tcsh"] {
-            assert!(!shell_can_parse_integration(s), "{s} should not parse");
+            let cap = shell_capability(Some(s));
+            assert_eq!(cap, ShellCapability::TailOnly, "{s}");
+            assert!(!cap.with_integration(), "{s} must not be sent the OSC 133");
+            assert!(cap.sends_setup(), "{s} still gets its fresh-login tail");
         }
-        // An unrecognised shell is treated as unable to parse rather than
-        // assumed safe: a broken tab is worse than a tab without OSC 133.
-        assert!(!shell_can_parse_integration("/opt/weird/shell"));
+        // A name that is no shell we know gets nothing at all, rather than
+        // optimistically being handed the tail: the next appliance to behave
+        // like pfSense's console menu arrives here under a name nobody has seen.
+        assert_eq!(
+            shell_capability(Some("/opt/weird/shell")),
+            ShellCapability::Unsupported
+        );
     }
 
     #[test]
     fn only_bash_and_zsh_install_the_hooks() {
-        assert!(shell_supports_integration("/bin/bash"));
-        assert!(shell_supports_integration("/bin/zsh"));
+        assert_eq!(shell_capability(Some("/bin/bash")), ShellCapability::Full);
+        assert_eq!(shell_capability(Some("/bin/zsh")), ShellCapability::Full);
         // sh parses the line but takes neither branch, so no block tracking.
-        assert!(!shell_supports_integration("/bin/sh"));
-        assert!(!shell_supports_integration("/usr/bin/fish"));
+        assert_eq!(shell_capability(Some("/bin/sh")), ShellCapability::ParseSafe);
+        assert_eq!(
+            shell_capability(Some("/usr/bin/fish")),
+            ShellCapability::TailOnly
+        );
+    }
+
+    #[test]
+    fn a_console_menu_and_an_unanswered_probe_are_both_silent_but_distinct() {
+        // The pfSense double-menu, at the level that decides it. rc.initial is
+        // a name we read and know is not a shell; a probe that answered nothing
+        // is a different situation with the same handling, and the operator has
+        // to be able to tell them apart because only one of them is fixable.
+        let menu = shell_capability(Some("/etc/rc.initial"));
+        let silent = shell_capability(None);
+        assert_eq!(menu, ShellCapability::Unsupported);
+        assert_eq!(silent, ShellCapability::Unreadable);
+        assert_ne!(menu, silent);
+        for cap in [menu, silent] {
+            assert!(!cap.sends_setup(), "{cap:?} must write nothing at all");
+            assert!(!cap.with_integration());
+        }
+    }
+
+    #[test]
+    fn the_override_beats_the_probe_both_ways() {
+        // A ForceCommand box that is really bash, told so once.
+        assert_eq!(
+            ShellIntegrationPref::Always.resolve(ShellCapability::Unreadable),
+            ShellCapability::Full
+        );
+        // And a host that must never be written to, whatever it claims.
+        assert_eq!(
+            ShellIntegrationPref::Never.resolve(ShellCapability::Full),
+            ShellCapability::Unsupported
+        );
+        // Auto, and anything unrecognised in the column, believes the probe.
+        assert_eq!(
+            ShellIntegrationPref::Auto.resolve(ShellCapability::ParseSafe),
+            ShellCapability::ParseSafe
+        );
+        assert_eq!(
+            ShellIntegrationPref::from_stored(None),
+            ShellIntegrationPref::Auto
+        );
+        assert_eq!(
+            ShellIntegrationPref::from_stored(Some("nonsense")),
+            ShellIntegrationPref::Auto
+        );
+        assert_eq!(
+            ShellIntegrationPref::from_stored(Some("never")),
+            ShellIntegrationPref::Never
+        );
     }
 
     #[test]

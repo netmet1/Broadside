@@ -149,6 +149,7 @@ pub fn run() {
             commands::hosts::get_host,
             commands::hosts::create_host,
             commands::hosts::update_host,
+            commands::hosts::set_host_shell_integration,
             commands::hosts::delete_host,
             commands::hosts::export_hosts,
             commands::hosts::path_is_file,

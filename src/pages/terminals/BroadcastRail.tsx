@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
+import { ShellChip } from "@/components/ShellChip";
 import { checkDestructive, type GuardHit } from "@/lib/tauri/broadcast";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { useHint } from "@/lib/status";
@@ -277,6 +278,17 @@ export function BroadcastRail({
                 >
                   {sessionLabel(s)}
                 </span>
+                {/* Marked, never filtered (D-067). Broadcasting to this session
+                    works fine — it is keystrokes into a PTY — but the command
+                    you are about to send may not be valid in that shell, which
+                    is worth seeing before you send it to eight hosts at once. */}
+                {s.type === "ssh" && (
+                  <ShellChip
+                    capability={s.host.shell_capability}
+                    loginShell={s.host.login_shell}
+                    pref={s.host.shell_integration}
+                  />
+                )}
               </label>
             );
           })

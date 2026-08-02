@@ -10,6 +10,7 @@ import {
   PanelLeftOpenIcon,
   SendIcon,
   TerminalIcon,
+  TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -28,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
+import { capabilityTracksBlocks, effectiveCapability } from "@/lib/shells";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
@@ -161,6 +163,29 @@ export function MultiTerminalPage({
         .length,
     [sessions, selected, connectedSessions],
   );
+
+  // Which checked hosts will produce no command blocks here (D-067).
+  //
+  // This page reads OSC 133 markers, and only bash and zsh install them, so a
+  // host on any other shell is checked, sends its command, and simply never
+  // reports back. That silence looked like a bug for as long as nothing named
+  // it. Split by cause, because only one of the two has a fix: a shell that
+  // cannot take the markers is a fact, a shell we could not read is a setting.
+  const untrackedHosts = useMemo(() => {
+    const cannot: string[] = [];
+    const unread: string[] = [];
+    for (const s of sessions) {
+      if (!selected.has(s.id)) continue;
+      const host = hostsById.get(s.host.id) ?? s.host;
+      const cap = effectiveCapability(
+        host.shell_capability,
+        host.shell_integration,
+      );
+      if (capabilityTracksBlocks(cap)) continue;
+      (cap === "unreadable" ? unread : cannot).push(host.label);
+    }
+    return { cannot, unread };
+  }, [sessions, selected, hostsById]);
 
   usePageStatus(
     ready
@@ -728,6 +753,37 @@ export function MultiTerminalPage({
               />
               Headers
             </label>
+            {/* Names the silence. Without this a fish or pfSense host sits
+                checked, takes every command, and never reports a block, which
+                reads as MultiTerminal being broken rather than as the shell
+                not being one it can follow (D-067). */}
+            {(untrackedHosts.cannot.length > 0 ||
+              untrackedHosts.unread.length > 0) && (
+              <span
+                className="flex min-w-0 shrink items-center gap-1 truncate text-xs text-amber-700 dark:text-amber-300"
+                {...hint(
+                  [
+                    untrackedHosts.cannot.length > 0 &&
+                      `No command blocks from ${untrackedHosts.cannot.join(", ")}: only bash and zsh install the markers this page reads. Commands still run there, and the output is in the terminal tab.`,
+                    untrackedHosts.unread.length > 0 &&
+                      `No command blocks from ${untrackedHosts.unread.join(", ")}: their login shell could not be read, so nothing was sent to set the markers up. If you know they run bash or zsh, set Shell integration to Always on the host.`,
+                  ]
+                    .filter(Boolean)
+                    .join(" "),
+                )}
+              >
+                <TriangleAlertIcon className="h-3 w-3 shrink-0" />
+                <span className="truncate">
+                  {untrackedHosts.cannot.length + untrackedHosts.unread.length}{" "}
+                  checked{" "}
+                  {untrackedHosts.cannot.length + untrackedHosts.unread.length ===
+                  1
+                    ? "host reports"
+                    : "hosts report"}{" "}
+                  no blocks
+                </span>
+              </span>
+            )}
             <div className="ml-auto flex items-center gap-1.5">
               <ShortcutBar
                 shortcuts={shortcuts}

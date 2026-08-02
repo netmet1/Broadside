@@ -453,17 +453,31 @@ pub async fn run_skill(
                         job.fingerprints,
                         auth,
                         job.sudo_password,
+                        crate::ssh::ShellIntegrationPref::from_stored(
+                            job.host.shell_integration.as_deref(),
+                        ),
                         cols.clamp(2, 1000),
                         rows.clamp(2, 1000),
                     )
                     .await;
                     match opened {
-                        Ok(crate::ssh::pty::PtyOpenResult::Opened { login_shell }) => {
+                        Ok(crate::ssh::pty::PtyOpenResult::Opened {
+                            login_shell,
+                            capability,
+                        }) => {
                             // Hand the connect-time shell name to the engine so a
                             // refusal can name it (X4): the in-shell `$0` probe
                             // can't answer on fish, so it would say "unknown".
+                            //
+                            // The capability goes with it so a shell we already
+                            // know cannot run a skill is refused now, rather than
+                            // after the in-shell `$0` probe times out. That probe
+                            // is how fish gets caught, and catching it costs
+                            // SHELL_DETECT_SECS of a pane sitting on "starting…"
+                            // for an answer that was on the host row all along.
                             let engine = Engine::new(link, ctl_rx, events.clone(), meta.clone())
-                                .with_known_shell(login_shell);
+                                .with_known_shell(login_shell)
+                                .with_known_capability(capability);
                             let outcome = skill_run::run_host(engine, &cfg).await;
                             guard.disposition = outcome.disposition;
                             guard.is_root = outcome.is_root;

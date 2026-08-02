@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import { RailFilterControls } from "@/components/RailFilterControls";
+import { ShellChip } from "@/components/ShellChip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -402,6 +403,14 @@ export function SkillsPage({
                 <span className="min-w-0 truncate" title={railTooltip(h)}>
                   {h.label}
                 </span>
+                {/* Marked, never filtered (D-067). A host that cannot run a
+                    skill still says so here rather than vanishing from the
+                    list, and the run refuses it by name when it starts. */}
+                <ShellChip
+                  capability={h.shell_capability}
+                  loginShell={h.login_shell}
+                  pref={h.shell_integration}
+                />
               </label>
             ))
           )}

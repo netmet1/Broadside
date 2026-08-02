@@ -10,7 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { allTags } from "@/lib/hostTags";
-import { isShellSupported, unsupportedShellMessage } from "@/lib/shells";
+import {
+  capabilityIsWarning,
+  shellCapabilityMessage,
+  type ShellIntegrationPref,
+} from "@/lib/shells";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -39,6 +43,7 @@ import {
   errorMessage,
   pathIsFile,
   setHostCredentials,
+  setHostShellIntegration,
   setSudoPassword,
   setSudoSameAsLogin,
   updateHost,
@@ -220,6 +225,12 @@ export function HostFormPanel({
   const [sudoAction, setSudoAction] = useState<"keep" | "replace" | "remove">(
     "keep",
   );
+  /** The host's standing answer for shell integration (D-067). Kept outside the
+   * form's own schema because it is saved through its own command, and stored
+   * as a plain value rather than null so the radio group always has a choice. */
+  const [shellPref, setShellPref] = useState<ShellIntegrationPref>(
+    host?.shell_integration ?? "auto",
+  );
 
   const {
     register,
@@ -305,6 +316,7 @@ export function HostFormPanel({
     setShowKeyPassphrase(false);
     setShowSudoPassword(false);
     setSudoAction("keep");
+    setShellPref(host?.shell_integration ?? "auto");
     reset(valuesFromHost(host, defaultColor));
   }, [host, defaultColor, reset]);
 
@@ -412,9 +424,16 @@ export function HostFormPanel({
     };
 
     try {
-      const saved = host
+      let saved = host
         ? await updateHost(host.id, input)
         : await createHost(input);
+
+      // Its own call, because the shell columns belong to the connect path and
+      // are deliberately not part of HostInput (D-067). Only when it actually
+      // changed, so an unrelated edit never touches the column.
+      if (shellPref !== (host?.shell_integration ?? "auto")) {
+        saved = await setHostShellIntegration(saved.id, shellPref);
+      }
 
       // Credential writes are skipped entirely while admin-locked (the fields
       // are ghosted, so there's nothing to write) — host metadata still saves.
@@ -922,12 +941,75 @@ export function HostFormPanel({
             </p>
           )}
           {/* This card is where sudo auto-fill is explained, so it is where the
-              login-shell caveat belongs (X4). Read-only: the shell is what the
-              last connect saw, not something you set here. */}
-          {host?.login_shell && !isShellSupported(host.login_shell) && (
-            <p className="mb-3 text-xs text-amber-400">
-              {unsupportedShellMessage(host.login_shell)}
-            </p>
+              login-shell caveat belongs (X4, D-067). The verdict is read-only —
+              it is what the last connect saw — but the answer to it is not. */}
+          {host && (
+            <div className="mb-3 grid gap-2 rounded-md border border-border/50 p-3">
+              <p className="text-xs font-medium">Shell integration</p>
+              {host.shell_capability ? (
+                <p
+                  className={cn(
+                    "text-xs",
+                    capabilityIsWarning(host.shell_capability)
+                      ? "text-amber-400"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {shellCapabilityMessage(
+                    host.shell_capability,
+                    host.login_shell,
+                  )}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  This host has not been connected to yet, so its login shell is
+                  unknown. Test the connection or open a terminal and the answer
+                  appears here.
+                </p>
+              )}
+              <RadioGroup
+                value={shellPref}
+                onValueChange={(v) =>
+                  setShellPref(v as ShellIntegrationPref)
+                }
+                className="gap-1.5"
+              >
+                <label className="flex cursor-pointer items-start gap-2 text-xs">
+                  <RadioGroupItem value="auto" className="mt-0.5" />
+                  <span>
+                    <span className="font-medium">Auto</span>
+                    <span className="text-muted-foreground">
+                      {" "}
+                      — believe what the connection reads. The default.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 text-xs">
+                  <RadioGroupItem value="always" className="mt-0.5" />
+                  <span>
+                    <span className="font-medium">Always</span>
+                    <span className="text-muted-foreground">
+                      {" "}
+                      — this host runs bash or zsh, whatever it reports. Use it
+                      when the shell cannot be read (a forced command, a
+                      restricted account) and command block tracking is worth
+                      having back.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 text-xs">
+                  <RadioGroupItem value="never" className="mt-0.5" />
+                  <span>
+                    <span className="font-medium">Never</span>
+                    <span className="text-muted-foreground">
+                      {" "}
+                      — send this host nothing on connect and leave its login
+                      screen exactly as it draws it.
+                    </span>
+                  </span>
+                </label>
+              </RadioGroup>
+            </div>
           )}
           {!adminLocked && sudoEditing && (
             <div className="grid max-w-md gap-2">

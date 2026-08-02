@@ -18,8 +18,8 @@ use tokio::sync::mpsc;
 
 use super::sudo_inject::SudoInjector;
 use super::{
-    connect_and_auth, detect_login_shell, shell_can_parse_integration, AuthMethod, ConnectFailure,
-    PresentedKey,
+    connect_and_auth, detect_login_shell, shell_capability, AuthMethod, ConnectFailure,
+    PresentedKey, ShellCapability, ShellIntegrationPref,
 };
 use crate::error::{AppError, AppResult};
 
@@ -130,6 +130,14 @@ pub enum PtyOpenResult {
         /// tab warn that command-block tracking is unavailable on a shell that
         /// cannot take the OSC 133 integration.
         login_shell: Option<String>,
+        /// What was actually decided for this session, after the per-host
+        /// override was applied. Sent separately from `login_shell` because the
+        /// two answer different questions: the name is what the host said, this
+        /// is what Broadside did about it. It is also the only way the frontend
+        /// can tell an `unreadable` host (fixable, point at the override) from
+        /// an `unsupported` one (a fact, nothing to fix) — the name is `None`
+        /// in the first case and unstorable in the second.
+        capability: ShellCapability,
     },
     UnknownKey {
         key: PresentedKey,
@@ -274,6 +282,9 @@ pub async fn open<E: PtyEvents>(
     // The host's stored sudo password (D-065), or None to disable auto-fill
     // (root host, or no password stored). Never leaves this task.
     sudo_password: Option<String>,
+    // The host's standing answer for shell integration (D-067). `Auto` is the
+    // default and believes the probe.
+    shell_pref: ShellIntegrationPref,
     cols: u32,
     rows: u32,
 ) -> AppResult<PtyOpenResult> {
@@ -288,13 +299,15 @@ pub async fn open<E: PtyEvents>(
     // hand by the time the setup line has to be built. One extra round trip on
     // a host that answers; bounded and ignored on one that doesn't (X4).
     let login_shell = detect_login_shell(&handle).await;
-    // Unknown keeps today's behaviour and injects: the integration is harmless
-    // in every Bourne-family shell, and refusing to send it on a host we simply
-    // couldn't probe would silently drop command-block tracking.
-    let with_integration = login_shell
-        .as_deref()
-        .map(shell_can_parse_integration)
-        .unwrap_or(true);
+    // What the probe read, then what the operator said about it. An unreadable
+    // probe is now silent rather than injecting on the assumption that the
+    // integration is harmless: it is only harmless in a *shell*, and the same
+    // write carries `clear; cat /etc/motd`, which a pfSense console menu reads
+    // as a menu selection and answers by reprinting itself. `Always` on the
+    // host is how a box that will not answer `echo $SHELL` gets its
+    // command-block tracking back.
+    let probed = shell_capability(login_shell.as_deref());
+    let effective = shell_pref.resolve(probed);
 
     // Bound the whole channel/PTY/shell handshake: on a host that authenticates
     // but never grants a shell, these awaits would otherwise hang forever and
@@ -374,11 +387,15 @@ pub async fn open<E: PtyEvents>(
                             // Inject once we've captured the last-login line, or
                             // bail out if the banner is unexpectedly large.
                             if last_login.is_some() || banner.len() > 8192 {
-                                let setup = crate::omni::shell_setup_command(
+                                if let Some(setup) = crate::omni::shell_setup_command(
                                     last_login.as_deref(),
-                                    with_integration,
-                                );
-                                let _ = channel.data(setup.as_bytes()).await;
+                                    effective,
+                                ) {
+                                    let _ = channel.data(setup.as_bytes()).await;
+                                }
+                                // Marked sent either way: a shell we don't write
+                                // to must not keep re-entering this branch and
+                                // growing `banner` for the life of the session.
                                 setup_sent = true;
                                 banner = String::new();
                             }
@@ -415,8 +432,11 @@ pub async fn open<E: PtyEvents>(
                 },
                 _ = &mut setup_timeout, if !setup_sent => {
                     // No last-login arrived in time — set up without re-echoing it.
-                    let setup = crate::omni::shell_setup_command(None, with_integration);
-                    let _ = channel.data(setup.as_bytes()).await;
+                    // A silent host reaches this arm too (it prints a menu, not a
+                    // last-login line) and must still write nothing.
+                    if let Some(setup) = crate::omni::shell_setup_command(None, effective) {
+                        let _ = channel.data(setup.as_bytes()).await;
+                    }
                     setup_sent = true;
                 },
                 cmd = rx.recv() => match cmd {
@@ -461,5 +481,12 @@ pub async fn open<E: PtyEvents>(
         }
     });
 
-    Ok(PtyOpenResult::Opened { login_shell })
+    // The *probed* capability is reported and stored, not the resolved one: the
+    // override lives in its own column, and overwriting the truth with it would
+    // mean turning the override off could never reveal what the host actually
+    // said.
+    Ok(PtyOpenResult::Opened {
+        login_shell,
+        capability: probed,
+    })
 }

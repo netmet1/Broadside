@@ -26,6 +26,8 @@ use std::time::Instant;
 use serde::Serialize;
 use vte::{Params, Parser, Perform};
 
+use crate::ssh::ShellCapability;
+
 /// Min cursor-repositioning events before the redraw heuristic can fire — keeps
 /// ordinary commands (which emit a few) from being misflagged.
 const REDRAW_MIN: u32 = 8;
@@ -299,16 +301,28 @@ pub fn shell_integration_command() -> String {
 /// without the visible setup command. It's a single line, so the integration's
 /// preexec guard suppresses any MultiTerminal block for the clear/MOTD/echo.
 ///
-/// `with_integration` false drops the OSC 133 line and sends only the
-/// clear/MOTD/last-login tail, which is valid in fish and csh too. That keeps
-/// the fresh-login presentation on a shell that cannot parse the integration,
-/// instead of the parse error that used to eat the whole line (X4).
-pub fn shell_setup_command(last_login: Option<&str>, with_integration: bool) -> String {
+/// [`ShellCapability::ParseSafe`] drops the OSC 133 line and sends only the
+/// clear/MOTD/last-login tail, which every Bourne shell reads even though it
+/// installs no hooks.
+///
+/// **`None` means write nothing at all**, and that is the whole point of the
+/// silent variants. Dropping only the OSC 133 half is not enough to leave a
+/// host alone: the tail is still `clear; cat …` followed by a newline, and on
+/// pfSense's `rc.initial` console menu that newline is a menu selection, which
+/// is exactly why the menu printed itself twice. A shell we cannot drive gets
+/// no bytes, and its login screen is left as the host drew it.
+pub fn shell_setup_command(
+    last_login: Option<&str>,
+    capability: ShellCapability,
+) -> Option<String> {
+    if !capability.sends_setup() {
+        return None;
+    }
     // Leading space so shells with `ignorespace`/`ignoreboth` in HISTCONTROL
     // (the Debian/Ubuntu default) don't record this long line in shell history
     // — otherwise an Up-arrow in the terminal recalls the whole setup line.
     let mut cmd = String::from(" ");
-    if with_integration {
+    if capability.with_integration() {
         cmd.push_str(SHELL_INTEGRATION);
         cmd.push_str("; ");
     }
@@ -322,7 +336,7 @@ pub fn shell_setup_command(last_login: Option<&str>, with_integration: bool) -> 
         cmd.push('\'');
     }
     cmd.push('\n');
-    cmd
+    Some(cmd)
 }
 
 /// Extracts the real, terminated `Last login:` line from the initial login
@@ -587,7 +601,11 @@ mod tests {
 
     #[test]
     fn setup_command_clears_reprints_motd_and_last_login() {
-        let c = shell_setup_command(Some("Last login: Mon Jun 15 from 1.2.3.4"), true);
+        let c = shell_setup_command(
+            Some("Last login: Mon Jun 15 from 1.2.3.4"),
+            ShellCapability::Full,
+        )
+        .expect("bash is written to");
         assert!(c.starts_with(' ')); // leading space keeps it out of shell history
         assert!(c.contains("133;A")); // integration is in there
         assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
@@ -599,16 +617,30 @@ mod tests {
 
     #[test]
     fn setup_command_without_last_login_omits_printf() {
-        let c = shell_setup_command(None, true);
+        let c = shell_setup_command(None, ShellCapability::Full).expect("bash is written to");
         assert!(c.contains("clear; cat /run/motd.dynamic"));
         assert!(!c.contains("printf '%s"));
     }
 
     #[test]
-    fn setup_command_without_integration_keeps_the_fish_safe_tail() {
-        // X4: a shell that can't parse the integration still gets the clear,
-        // the MOTD and its last-login line, because that tail is valid there.
-        let c = shell_setup_command(Some("Last login: Mon Jun 15"), false);
+    fn parse_safe_shells_still_get_the_whole_line() {
+        // sh/dash/ksh read the `if/elif/fi` fine and simply take neither
+        // branch, so the line is sent in full and the OmniParser::flush
+        // fallback is what gets a block out of them.
+        let c = shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::ParseSafe)
+            .expect("sh is written to");
+        assert!(c.contains("133;A"));
+        assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
+    }
+
+    #[test]
+    fn fish_keeps_its_fresh_login_without_the_integration() {
+        // X4, and the reason TailOnly is its own tier: fish aborts the whole
+        // line at parse time, so it gets the clear, the MOTD and its last-login
+        // and never the OSC 133 half. Folding it in with the silent tiers would
+        // have quietly taken the fresh-login presentation back off it.
+        let c = shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::TailOnly)
+            .expect("fish is written to");
         assert!(!c.contains("133;A"));
         assert!(!c.contains("BASH_VERSION"));
         assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
@@ -618,8 +650,20 @@ mod tests {
     }
 
     #[test]
+    fn a_shell_we_cannot_drive_is_sent_nothing_at_all() {
+        // The pfSense fix. Not "the integration is dropped" — *nothing* is
+        // built, because the clear/MOTD tail alone is what the console menu was
+        // reading as a menu selection.
+        for cap in [ShellCapability::Unsupported, ShellCapability::Unreadable] {
+            assert_eq!(shell_setup_command(Some("Last login: Mon"), cap), None);
+            assert_eq!(shell_setup_command(None, cap), None);
+        }
+    }
+
+    #[test]
     fn setup_command_escapes_single_quotes() {
-        let c = shell_setup_command(Some("it's here"), true);
+        let c = shell_setup_command(Some("it's here"), ShellCapability::Full)
+            .expect("bash is written to");
         assert!(c.contains(r"'it'\''s here'"));
     }
 
