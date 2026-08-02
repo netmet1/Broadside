@@ -596,6 +596,62 @@ impl From<ConnectFailure> for ProbeResult {
     }
 }
 
+/// What reading a private key file off disk turned up. The interesting split is
+/// [`Self::Encrypted`] against [`Self::WrongPassphrase`]: the first is a key
+/// that needs a passphrase we do not have, the second a passphrase that is
+/// wrong. They lead to different sentences, and to different fields.
+#[derive(Serialize, Debug, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum KeyCheck {
+    /// Loaded, and usable for authentication as it stands.
+    Ok,
+    /// Encrypted, and no passphrase was offered.
+    Encrypted,
+    /// Encrypted, and the passphrase offered does not decrypt it.
+    WrongPassphrase,
+    /// Missing, not a private key, or of a type russh cannot parse.
+    Unreadable { message: String },
+}
+
+/// Reads a private key exactly the way [`authenticate`] will, and reports what
+/// happened instead of connecting.
+///
+/// The passphrase is a *local* secret: it decrypts a file on this machine
+/// before the SSH handshake starts, so no server is ever in a position to
+/// challenge for it and there is no point in the session where a terminal could
+/// prompt. Broadside is the only thing that can ask, which is why the host form
+/// asks while the key is being chosen rather than leaving the failure to the
+/// first connect.
+///
+/// Blocking: reads a file and runs the key's KDF. Call it off the IPC thread.
+pub fn check_key(path: &str, passphrase: Option<&str>) -> KeyCheck {
+    // An empty passphrase means "none given", not "the empty string": russh
+    // would hand `""` to the cipher and report the resulting garbage as a
+    // cryptographic error, which reads as a broken key rather than a missing
+    // passphrase. The credential store already stores empty as absent, so this
+    // matches what a saved host would do.
+    let passphrase = passphrase.filter(|p| !p.is_empty());
+    match load_secret_key(path, passphrase) {
+        Ok(_) => KeyCheck::Ok,
+        Err(russh::keys::Error::KeyIsEncrypted) => KeyCheck::Encrypted,
+        // Every cipher rejects a bad passphrase differently and russh passes
+        // the underlying error through, so the reliable signal is that a
+        // passphrase was offered at all: the no-passphrase case has its own
+        // variant above, and a file that is not a key fails identically with
+        // or without one. Re-read without the passphrase first so a genuinely
+        // broken file is not blamed on it.
+        Err(e) if passphrase.is_some() => match load_secret_key(path, None) {
+            Err(russh::keys::Error::KeyIsEncrypted) => KeyCheck::WrongPassphrase,
+            _ => KeyCheck::Unreadable {
+                message: e.to_string(),
+            },
+        },
+        Err(e) => KeyCheck::Unreadable {
+            message: e.to_string(),
+        },
+    }
+}
+
 async fn authenticate(
     handle: &mut Handle<TofuHandler>,
     username: &str,
@@ -607,8 +663,17 @@ async fn authenticate(
             .await
             .map_err(|e| AppError::Ssh(format!("password auth: {e}"))),
         AuthMethod::Key { path, passphrase } => {
-            let key = load_secret_key(&path, passphrase.as_deref())
-                .map_err(|e| AppError::Ssh(format!("load key {path}: {e}")))?;
+            // Spelled out rather than passed through, because "The key is
+            // encrypted" on its own names a fact and no remedy. The form
+            // catches this while the key is being chosen; reaching it here
+            // means the file changed under a host that was already saved.
+            let key = load_secret_key(&path, passphrase.as_deref()).map_err(|e| match e {
+                russh::keys::Error::KeyIsEncrypted => AppError::Ssh(format!(
+                    "the private key {path} is encrypted and no passphrase is stored for it. \
+                     Edit this host and enter the key's passphrase."
+                )),
+                e => AppError::Ssh(format!("load key {path}: {e}")),
+            })?;
             let hash_alg = handle
                 .best_supported_rsa_hash()
                 .await
@@ -622,6 +687,86 @@ async fn authenticate(
                 .await
                 .map_err(|e| AppError::Ssh(format!("publickey auth: {e}")))
         }
+    }
+}
+
+#[cfg(test)]
+mod key_check_tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Throwaway ed25519 keys, generated for these tests and never used to
+    /// authenticate anything. The encrypted one's passphrase is `hunter2`.
+    const PLAIN: &str = "-----BEGIN OPENSSH PRIVATE KEY-----\n\
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\n\
+QyNTUxOQAAACBS5vsRkuq025nAg6MndtNMeK+pmR1XMAofBm3SZkjezwAAAJjnWoOx51qD\n\
+sQAAAAtzc2gtZWQyNTUxOQAAACBS5vsRkuq025nAg6MndtNMeK+pmR1XMAofBm3SZkjezw\n\
+AAAEBNGL5sl67z2jPEMuMHDDjt7khDGc2kH66Bo2oc5Jme4FLm+xGS6rTbmcCDoyd200x4\n\
+r6mZHVcwCh8GbdJmSN7PAAAAFGJyb2Fkc2lkZS10ZXN0LXBsYWluAQ==\n\
+-----END OPENSSH PRIVATE KEY-----\n";
+
+    const ENCRYPTED: &str = "-----BEGIN OPENSSH PRIVATE KEY-----\n\
+b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABCCmxgvye\n\
+X82IW+wSmuTnNhAAAAGAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIJpyUyqjFcYHz5fi\n\
+fJs8bPTxVOdhBLrwFPgaFfrnBziTAAAAoBlJlF4gGx/u9JorA2w7pBsVsho5bHWb4fOd2T\n\
+5dZs7e69v1vfHlB6XB7CY0Z0bZ/1c6CHmd1hc+caFTGUfvJOG5v7E5UJPOejezxcsJxfAU\n\
+zyB509OJzfzxMEzkV8r04wVU8BbHOTprUoUTZM7EnkCope9Fi5J0ioaaky25tCsvIeJFEp\n\
+Q/1ZvCAWpSpnxH4HYbDr5NIc4nIUv5wA+E9/g=\n\
+-----END OPENSSH PRIVATE KEY-----\n";
+
+    fn write(dir: &tempfile::TempDir, name: &str, body: &str) -> String {
+        let path = dir.path().join(name);
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(body.as_bytes()).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_plain_key_loads_with_or_without_a_passphrase() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(&dir, "plain", PLAIN);
+        assert_eq!(check_key(&path, None), KeyCheck::Ok);
+        // An unencrypted key ignores one rather than refusing it, so typing a
+        // passphrase into the form for a key that does not need one is not an
+        // error we should invent.
+        assert_eq!(check_key(&path, Some("anything")), KeyCheck::Ok);
+    }
+
+    #[test]
+    fn an_encrypted_key_with_no_passphrase_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(&dir, "enc", ENCRYPTED);
+        assert_eq!(check_key(&path, None), KeyCheck::Encrypted);
+        assert_eq!(check_key(&path, Some("")), KeyCheck::Encrypted);
+    }
+
+    #[test]
+    fn the_right_passphrase_opens_it_and_a_wrong_one_is_named_as_wrong() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(&dir, "enc", ENCRYPTED);
+        assert_eq!(check_key(&path, Some("hunter2")), KeyCheck::Ok);
+        assert_eq!(check_key(&path, Some("hunter3")), KeyCheck::WrongPassphrase);
+    }
+
+    #[test]
+    fn anything_that_is_not_a_key_is_unreadable_passphrase_or_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(&dir, "notes.txt", "this is not a private key\n");
+        // Not blamed on the passphrase in either direction: a file that cannot
+        // be parsed is not a passphrase problem, and saying it is would send
+        // the operator hunting for a passphrase that does not exist.
+        assert!(matches!(
+            check_key(&path, None),
+            KeyCheck::Unreadable { .. }
+        ));
+        assert!(matches!(
+            check_key(&path, Some("hunter2")),
+            KeyCheck::Unreadable { .. }
+        ));
+        assert!(matches!(
+            check_key(&dir.path().join("nope").to_string_lossy(), None),
+            KeyCheck::Unreadable { .. }
+        ));
     }
 }
 

@@ -369,7 +369,29 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>Authentication failed: …</Msg>,
         where: "Terminal pane",
         means:
-          "The host answered and refused the credentials. Wrong password, wrong key, wrong username, or the key needs a passphrase Broadside was not given.",
+          "The host answered and refused the credentials. Wrong password, wrong username, or a key the host does not have the matching public half of. Not a passphrase problem: an encrypted key that cannot be opened never gets as far as the host, and says so in its own words (below).",
+      },
+      {
+        message: (
+          <Msg>
+            The private key … is encrypted and no passphrase is stored for it
+          </Msg>
+        ),
+        where: "Terminal pane, Files, Test connection",
+        means:
+          "The key file needs a passphrase to be read at all, and there is none saved with it. Nothing was sent to the host: the file is decrypted on this machine before the connection starts, which is why the host cannot be the one to ask. Edit the host, choose Replace credentials, and enter the passphrase. Saving a key now checks this, so seeing it means the file itself changed after the host was saved.",
+      },
+      {
+        message: <Msg>This key is encrypted. Enter its passphrase to save it</Msg>,
+        where: "Host form, under Key passphrase",
+        means:
+          "Broadside opened the key file you chose and found it encrypted, so the passphrase is required rather than optional for this one. The label above the field says so too.",
+      },
+      {
+        message: <Msg>That passphrase does not open this key</Msg>,
+        where: "Host form, under Key passphrase",
+        means:
+          "The file is a key and it is encrypted, but the passphrase entered does not decrypt it. Caught on save rather than at the first connect.",
       },
       {
         message: <Msg>No credentials stored. Edit the host on the Hosts page.</Msg>,

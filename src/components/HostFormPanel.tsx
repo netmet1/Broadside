@@ -38,6 +38,7 @@ import {
   type AuthInput,
   type Host,
   type HostInput,
+  checkPrivateKey,
   clearHostCredentials,
   createHost,
   errorMessage,
@@ -225,6 +226,13 @@ export function HostFormPanel({
   const [sudoAction, setSudoAction] = useState<"keep" | "replace" | "remove">(
     "keep",
   );
+  /** Whether the chosen key file is encrypted, once we have looked. `null`
+   * means we have not (no path yet, or the path is not a readable key), and the
+   * passphrase field keeps its neutral "(optional)" label. A key passphrase is
+   * a local secret that decrypts the file before the handshake starts, so no
+   * server is ever in a position to ask for it: if the form does not, the
+   * failure lands at the first connect instead. */
+  const [keyEncrypted, setKeyEncrypted] = useState<boolean | null>(null);
   /** The host's standing answer for shell integration (D-067). Kept outside the
    * form's own schema because it is saved through its own command, and stored
    * as a plain value rather than null so the radio group always has a choice. */
@@ -316,6 +324,7 @@ export function HostFormPanel({
     setShowKeyPassphrase(false);
     setShowSudoPassword(false);
     setSudoAction("keep");
+    setKeyEncrypted(null);
     setShellPref(host?.shell_integration ?? "auto");
     reset(valuesFromHost(host, defaultColor));
   }, [host, defaultColor, reset]);
@@ -352,6 +361,10 @@ export function HostFormPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [isSubmitting, onCancel, dupConfirm]);
 
+  // Registered here so the field can keep react-hook-form's own onBlur and add
+  // the key probe after it, rather than replacing it.
+  const keyPathReg = register("keyPath");
+
   const selectedColor = watch("color");
   const authMethod = watch("authMethod");
   const sudoSameAsLogin = watch("sudoSameAsLogin");
@@ -381,6 +394,33 @@ export function HostFormPanel({
         if (!(await pathIsFile(keyPath))) {
           setError("keyPath", {
             message: "File not found. Check the path or use Browse",
+          });
+          return;
+        }
+        // And then that the key can actually be opened with what has been
+        // entered. This is the one moment a passphrase can be asked for: it
+        // decrypts the file locally before the handshake, so the host has no
+        // say in it and a terminal can never prompt for it.
+        const check = await checkPrivateKey(
+          keyPath,
+          data.keyPassphrase.length === 0 ? null : data.keyPassphrase,
+        );
+        setKeyEncrypted(check.status === "encrypted" || check.status === "wrong_passphrase");
+        if (check.status === "encrypted") {
+          setError("keyPassphrase", {
+            message: "This key is encrypted. Enter its passphrase to save it",
+          });
+          return;
+        }
+        if (check.status === "wrong_passphrase") {
+          setError("keyPassphrase", {
+            message: "That passphrase does not open this key",
+          });
+          return;
+        }
+        if (check.status === "unreadable") {
+          setError("keyPath", {
+            message: `Not a private key Broadside can read (${check.message})`,
           });
           return;
         }
@@ -475,6 +515,24 @@ export function HostFormPanel({
     }
   };
 
+  /** Looks at the key file as soon as one is settled on, so the passphrase
+   * field can say up front that this key needs one. Silent on anything it
+   * cannot answer: save is where a bad path or an unreadable file is reported,
+   * and nagging about a half-typed path would be noise. */
+  const probeKeyFile = async (path: string) => {
+    const trimmed = path.trim();
+    if (trimmed.length === 0) {
+      setKeyEncrypted(null);
+      return;
+    }
+    try {
+      const check = await checkPrivateKey(trimmed, null);
+      setKeyEncrypted(check.status === "encrypted" ? true : check.status === "ok" ? false : null);
+    } catch {
+      setKeyEncrypted(null);
+    }
+  };
+
   const handleBrowseKey = async () => {
     try {
       const result = await openDialog({
@@ -484,6 +542,7 @@ export function HostFormPanel({
       });
       if (typeof result === "string") {
         setValue("keyPath", result, { shouldValidate: true, shouldDirty: true });
+        void probeKeyFile(result);
       }
     } catch (e) {
       toast.error(errorMessage(e));
@@ -710,7 +769,14 @@ export function HostFormPanel({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setEditingCredentials(true)}
+                onClick={() => {
+                  setEditingCredentials(true);
+                  // The stored path is already in the field, so look at it now
+                  // rather than waiting for a blur the user has no reason to
+                  // give it: for a key host this is the moment the passphrase
+                  // field appears.
+                  if (host?.key_path) void probeKeyFile(host.key_path);
+                }}
               >
                 Replace credentials...
               </Button>
@@ -813,7 +879,11 @@ export function HostFormPanel({
                     <div className="flex gap-2">
                       <Input
                         id="keyPath"
-                        {...register("keyPath")}
+                        {...keyPathReg}
+                        onBlur={(e) => {
+                          void keyPathReg.onBlur(e);
+                          void probeKeyFile(e.target.value);
+                        }}
                         placeholder="C:\Users\you\.ssh\id_ed25519"
                         className={`font-mono text-xs ${errors.keyPath ? "border-destructive" : ""}`}
                       />
@@ -834,8 +904,21 @@ export function HostFormPanel({
                   <div className="grid gap-1">
                     <Label htmlFor="keyPassphrase">
                       Key passphrase{" "}
-                      <span className="text-xs text-muted-foreground">
-                        (optional)
+                      {/* Most keys are not encrypted, so this stays optional
+                          until we have looked at the file and found that this
+                          one is. Saying "optional" over an encrypted key is
+                          what sent the failure to connect time. */}
+                      <span
+                        className={cn(
+                          "text-xs",
+                          keyEncrypted
+                            ? "text-amber-400"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {keyEncrypted
+                          ? "(required, this key is encrypted)"
+                          : "(optional, only if the key is encrypted)"}
                       </span>
                     </Label>
                     <div className="relative">
@@ -843,7 +926,7 @@ export function HostFormPanel({
                         id="keyPassphrase"
                         type={showKeyPassphrase ? "text" : "password"}
                         {...register("keyPassphrase")}
-                        className="pr-9"
+                        className={`pr-9 ${errors.keyPassphrase ? "border-destructive" : ""}`}
                       />
                       <button
                         type="button"
@@ -863,10 +946,12 @@ export function HostFormPanel({
                         )}
                       </button>
                     </div>
-                    {/* Empty error placeholder so this cell matches the Key
-                        file cell's height — otherwise the 2-col grid stretches
-                        this cell and the input drifts down (H13). */}
-                    <p className="min-h-4 text-xs" aria-hidden="true">&nbsp;</p>
+                    {/* Always rendered so this cell matches the Key file
+                        cell's height — otherwise the 2-col grid stretches this
+                        cell and the input drifts down (H13). */}
+                    <p className="min-h-4 text-xs text-destructive">
+                      {errors.keyPassphrase?.message ?? " "}
+                    </p>
                   </div>
                 </div>
               )}

@@ -108,6 +108,27 @@ export function pathIsFile(path: string): Promise<boolean> {
   return invoke<boolean>("path_is_file", { path });
 }
 
+/** What reading a private key file turned up. `encrypted` means it needs a
+ * passphrase and none was given; `wrong_passphrase` means the one given does
+ * not open it. */
+export type KeyCheck =
+  | { status: "ok" }
+  | { status: "encrypted" }
+  | { status: "wrong_passphrase" }
+  | { status: "unreadable"; message: string };
+
+/** Reads a private key exactly the way a connect will, and reports what
+ * happened instead of connecting. The passphrase decrypts a local file before
+ * the SSH handshake begins, so no server can ever challenge for it: the form is
+ * the only place it can be asked for, which is why it checks here rather than
+ * leaving an encrypted key to fail on first use. */
+export function checkPrivateKey(
+  path: string,
+  passphrase: string | null,
+): Promise<KeyCheck> {
+  return invoke<KeyCheck>("check_private_key", { path, passphrase });
+}
+
 export function setHostCredentials(
   host_id: number,
   auth: AuthInput,

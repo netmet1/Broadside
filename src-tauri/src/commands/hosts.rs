@@ -7,6 +7,7 @@ use crate::credentials::CredentialState;
 use crate::db::hosts::{self as host_repo, Host, HostInput};
 use crate::db::DbState;
 use crate::error::{AppError, AppResult};
+use crate::ssh::KeyCheck;
 
 fn lock<'a>(state: &'a State<'_, DbState>) -> AppResult<MutexGuard<'a, Connection>> {
     state
@@ -83,6 +84,22 @@ pub fn export_hosts(path: String, state: State<'_, DbState>) -> AppResult<usize>
 #[tauri::command]
 pub fn path_is_file(path: String) -> bool {
     std::path::Path::new(&path).is_file()
+}
+
+/// Whether a private key file can actually be used, and if not, why — so the
+/// host form can say "this key is encrypted, it needs its passphrase" while the
+/// key is being chosen, rather than letting the first connect fail with it.
+///
+/// Async and off the IPC thread on purpose: decrypting a key runs its KDF,
+/// which is designed to be slow, and a sync command doing that would hold up
+/// every other call in flight.
+#[tauri::command]
+pub async fn check_private_key(path: String, passphrase: Option<String>) -> KeyCheck {
+    tauri::async_runtime::spawn_blocking(move || crate::ssh::check_key(&path, passphrase.as_deref()))
+        .await
+        .unwrap_or(KeyCheck::Unreadable {
+            message: "the key check did not finish".into(),
+        })
 }
 
 #[tauri::command]

@@ -240,9 +240,12 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     label: "Key passphrase",
     def: (
       <>
-        An optional secret that unlocks an SSH private key file, so that simply
-        copying the file is not enough to use it. Broadside can store the
-        passphrase for you in the same protected place as your other secrets.
+        A secret that unlocks an SSH private key file, so that simply copying
+        the file is not enough to use it. Optional when the key is created, but
+        required to use a key that has one. It never reaches the host: it
+        decrypts the file on your own machine before the connection is made.
+        Broadside stores it for you in the same protected place as your other
+        secrets, and checks it when you pick the key.
       </>
     ),
   },
@@ -401,6 +404,15 @@ export const SECTIONS: HelpSection[] = [
               or an <Term term="key-vs-password">SSH key</Term> (with an optional{" "}
               <Term term="passphrase" />). You can also store a{" "}
               <Term term="sudo" /> password for administrator commands.
+            </li>
+            <li>
+              Pick a key file and Broadside opens it there and then, so it can
+              tell you whether it is encrypted before you save. If it is, the
+              passphrase field changes from optional to required and saving
+              without one is refused, as is a passphrase that does not open the
+              key. This is the only place a key passphrase can be asked for: it
+              decrypts a file on your own machine before the connection is made,
+              so the host never sees it and a terminal can never prompt for it.
             </li>
             <li>
               For your safety, saved passwords and passphrases are never shown
