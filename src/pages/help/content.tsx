@@ -699,7 +699,11 @@ export const SECTIONS: HelpSection[] = [
               with the toggle above the tab strip. <Nav>Tabs</Nav> shows one
               terminal at a time; <Nav>Grid</Nav> tiles every open terminal at
               once so you can watch several together. One terminal fills the
-              area, two split it, and three or more tile two-across and scroll.
+              area, two split it, and three or more tile two-across, sharing the
+              height between them until there are too many to fit, at which
+              point they keep a readable size and the grid scrolls. Resize the
+              window and they follow it, larger or smaller, unless you have
+              pinned a tile size in <Nav>Settings</Nav> or dragged one out.
               Each grid tile has its own maximize and close buttons, and its
               header shows the same colour as the tab. Your choice is
               remembered between visits and restarts; maximizing a terminal
@@ -938,14 +942,23 @@ export const SECTIONS: HelpSection[] = [
             <li>
               The controls above the tab strip are grouped so they fit whatever
               window you run Broadside in. <Nav>Tabs</Nav> / <Nav>Grid</Nav>,{" "}
-              <Nav>Broadcast</Nav> and, in Grid, the two icon buttons for
-              fullscreen and tile title bars stay out in the open because they
-              are the ones you reach for. Everything else that shapes the view
-              lives under <Nav>View</Nav>: compact tab labels, flipping two
-              terminals between side-by-side and top/bottom,{" "}
-              <Nav>Reset grid</Nav> and <Nav>Reset display</Nav>. Entries appear
-              there only when they apply, so the menu never offers something
-              that would do nothing.
+              <Nav>Broadcast</Nav>, the fullscreen icon and, in Grid, the icon
+              for tile title bars stay out in the open because they are the ones
+              you reach for. Everything else that shapes the view lives under{" "}
+              <Nav>View</Nav>: fullscreen again (with the key beside it),
+              compact tab labels, flipping two terminals between side-by-side
+              and top/bottom, <Nav>Reset grid</Nav> and{" "}
+              <Nav>Reset display</Nav>. Entries appear there only when they
+              apply, so the menu never offers something that would do nothing.
+            </li>
+            <li>
+              <b>Fullscreen means the layout you are in.</b> In Tabs it fills
+              the window with the terminal you are looking at, which is what{" "}
+              <Nav>F11</Nav> has always done; in Grid it fills the screen with
+              the whole wall (<Nav>Ctrl+Shift+G</Nav>) and collapses the chrome
+              to a strip you hover to reveal. The icon and the <Nav>View</Nav>{" "}
+              entry both do whichever one applies, and <Nav>Esc</Nav> comes back
+              from either.
             </li>
           </Bullets>
           <H3>Full-screen prompts, and a stuck one</H3>

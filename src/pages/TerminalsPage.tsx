@@ -939,6 +939,9 @@ export function TerminalsPage({
         resetTileSize={resetTileSize}
         gridFullscreen={gridFullscreen}
         onGridFullscreen={onGridFullscreen}
+        maximizeActive={() => {
+          if (activeId !== null) onMaximize(activeId);
+        }}
         hideGridHeaders={hideGridHeaders}
         toggleGridHeaders={toggleGridHeaders}
         customGrid={customGrid}
@@ -1437,7 +1440,9 @@ export function TerminalsPage({
           // Default fit-to-viewport grid, sized to the number of open terminals:
           //  1 tile  → fills the whole area,
           //  2 tiles → split full-height (two columns wide, stacked when narrow),
-          //  3+ tiles → tile two-across and scroll, each a comfortable minimum.
+          //  3+ tiles → tile two-across, rows sharing the height until they
+          //             reach a comfortable minimum, then scrolling. The row
+          //             track comes from gridStyle, not from a class here.
           !customGrid &&
             gridMode &&
             gridCount === 1 &&
@@ -1457,7 +1462,7 @@ export function TerminalsPage({
           !customGrid &&
             gridMode &&
             gridCount > 2 &&
-            "grid grid-cols-1 content-start gap-2 overflow-auto lg:grid-cols-2",
+            "grid grid-cols-1 gap-2 overflow-auto lg:grid-cols-2",
         )}
         style={gridStyle}
       >

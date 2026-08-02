@@ -347,7 +347,18 @@ export function useGridLayout({
   }, [gridMode, pinnedCols, customGrid, gridPrefs.itemCols, wide]);
 
   const gridStyle = useMemo<React.CSSProperties | undefined>(() => {
-    if (!customGrid) return undefined;
+    // The default (auto/auto/auto) grid at three or more tiles. Its columns are
+    // a Tailwind class, but its rows used to be left implicit, which meant
+    // `auto`: every row sized to the tile's own 16rem floor and stayed there.
+    // Growing the window then bought nothing but dead space below the last row,
+    // because nothing ever asked the rows to take it. Same track as the custom
+    // grid's auto height below, and for the same reason: rows share the pane
+    // when they fit, and hold the legible floor and scroll when they don't.
+    if (!customGrid) {
+      return gridMode && gridCount > 2
+        ? { gridAutoRows: `minmax(${GRID_ROW_FLOOR_PX}px, 1fr)` }
+        : undefined;
+    }
     const style: React.CSSProperties = {};
     const widthPx =
       gridPrefs.itemCols != null
@@ -373,7 +384,7 @@ export function useGridLayout({
       style.gridAutoRows = `minmax(${GRID_ROW_FLOOR_PX}px, 1fr)`;
     }
     return style;
-  }, [customGrid, gridPrefs, pinnedCols, cell]);
+  }, [customGrid, gridMode, gridCount, gridPrefs, pinnedCols, cell]);
 
   // Where each tile sits in the laid-out order. `displayIndex` is a position in
   // the tab strip and skips nothing, but a tile hidden from the grid is

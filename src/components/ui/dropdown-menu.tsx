@@ -111,6 +111,29 @@ function DropdownMenuLabel({
   )
 }
 
+/**
+ * The keyboard shortcut for an item, pushed to the right-hand edge.
+ *
+ * An entry that also answers to a key has to say so where it is read, or the
+ * key is discoverable only from Help. `ml-auto` rather than a fixed column: the
+ * menus here are narrow and only a few items carry one.
+ */
+function DropdownMenuShortcut({
+  className,
+  ...props
+}: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="dropdown-menu-shortcut"
+      className={cn(
+        "ml-auto pl-4 text-xs tracking-wide text-muted-foreground",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
 function DropdownMenuSeparator({
   className,
   ...props
@@ -133,4 +156,5 @@ export {
   DropdownMenuCheckboxItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
 }

@@ -16,10 +16,17 @@
  * What stays out of the menu is decided by how often it is used, not by what it
  * does. Fullscreen and Grid Titles are the two most-toggled controls in grid
  * mode, so they stay in the rail as icon-only buttons (~32px each against ~120px
- * with a label) rather than costing two clicks and a hunt. Fullscreen at least
- * has Ctrl+Shift+G; Grid Titles has no shortcut at all, which is exactly why
- * burying it would hurt. `useHint()` narrates both in the status bar on hover,
- * so dropping the text costs discoverability nothing.
+ * with a label) rather than costing two clicks and a hunt. Grid Titles has no
+ * shortcut at all, which is exactly why burying it would hurt. `useHint()`
+ * narrates both in the status bar on hover, so dropping the text costs
+ * discoverability nothing.
+ *
+ * Fullscreen means two different things in the two layouts, and both are
+ * offered in both places (the icon and the View menu). In Grid it is the whole
+ * wall filling the screen, Ctrl+Shift+G. In Tabs there is no wall, so it is the
+ * one terminal you are looking at filling the window, F11 — which existed all
+ * along as a key and a per-tab button but was nowhere in the rail, so a Tabs
+ * user had no way to find it.
  */
 
 import {
@@ -47,6 +54,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ShortcutBar } from "@/components/ShortcutBar";
@@ -69,6 +77,7 @@ export function TerminalRail({
   resetTileSize,
   gridFullscreen,
   onGridFullscreen,
+  maximizeActive,
   hideGridHeaders,
   toggleGridHeaders,
   customGrid,
@@ -97,6 +106,9 @@ export function TerminalRail({
   resetTileSize: () => void;
   gridFullscreen: boolean;
   onGridFullscreen: (on: boolean) => void;
+  /** Fill the window with the active terminal (what F11 does). No-op with no
+   * active session, which is why the control is hidden in that case. */
+  maximizeActive: () => void;
   hideGridHeaders: boolean;
   toggleGridHeaders: () => void;
   customGrid: boolean;
@@ -119,6 +131,21 @@ export function TerminalRail({
   // or more tile and scroll. Two always take this layout whether or not a Grid
   // size is pinned, so customGrid is false here by construction.
   const showTwoUpFlip = gridMode && !customGrid && gridCount === 2;
+
+  // Fullscreen, in whichever sense this layout has one. Tabs has nothing to
+  // fill the window with until a terminal is open, so the control goes rather
+  // than sitting there dead.
+  const canFullscreen = gridMode || activeId !== null;
+  const fullscreenKey = gridMode ? "Ctrl+Shift+G" : "F11";
+  const toggleFullscreen = () => {
+    if (gridMode) onGridFullscreen(!gridFullscreen);
+    else maximizeActive();
+  };
+  const fullscreenHint = !gridMode
+    ? "Fill the window with the active terminal (F11). Esc or F11 brings the app back."
+    : gridFullscreen
+      ? "The grid fills the screen. Click (or press Ctrl+Shift+G, or Esc) to come back."
+      : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a strip you hover to reveal.";
 
   return (
     <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
@@ -180,22 +207,21 @@ export function TerminalRail({
         Broadcast
       </Button>
 
-      {/* Take the grid fullscreen: every tile fills the screen and all the
-          chrome (this bar, the tab strip, the sidebar and status bar)
-          collapses to a hover strip at the top. Grid-only, and icon-only:
-          frequent enough to be worth its width, not worth a label. */}
-      {gridMode && (
+      {/* Fullscreen. In Grid every tile fills the screen and all the chrome
+          (this bar, the tab strip, the sidebar and status bar) collapses to a
+          hover strip at the top; in Tabs the active terminal fills the window,
+          the same thing F11 has always done. Icon-only: frequent enough to be
+          worth its width, not worth a label. Never shows the collapse icon in
+          Tabs, because a maximized terminal hides this bar along with the rest
+          of the chrome, so it is only ever pressed on the way in. */}
+      {canFullscreen && (
         <Button
           size="icon-sm"
           variant={gridFullscreen ? "secondary" : "outline"}
-          onClick={() => onGridFullscreen(!gridFullscreen)}
-          aria-pressed={gridFullscreen}
-          aria-label="Grid fullscreen"
-          {...hint(
-            gridFullscreen
-              ? "The grid fills the screen. Click (or press Ctrl+Shift+G, or Esc) to come back."
-              : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a strip you hover to reveal, or reach with Ctrl+Shift+T.",
-          )}
+          onClick={toggleFullscreen}
+          aria-pressed={gridMode ? gridFullscreen : undefined}
+          aria-label="Fullscreen"
+          {...hint(fullscreenHint)}
         >
           {gridFullscreen ? (
             <Minimize2Icon className="h-3.5 w-3.5" />
@@ -236,7 +262,9 @@ export function TerminalRail({
           <Button
             size="sm"
             variant="outline"
-            {...hint("Tab labels, tile arrangement, and the two reset actions.")}
+            {...hint(
+              "Fullscreen, tab labels, tile arrangement and the two reset actions.",
+            )}
           >
             <SlidersHorizontalIcon className="h-3.5 w-3.5" />
             View
@@ -244,6 +272,20 @@ export function TerminalRail({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
+          {/* Deliberately redundant with the icon beside it. The icon is for
+              the operator who already knows what it is; the menu entry is how
+              anyone else finds out that it exists and which key does it. */}
+          {canFullscreen && (
+            <>
+              <DropdownMenuItem onSelect={toggleFullscreen} {...hint(fullscreenHint)}>
+                {gridFullscreen ? <Minimize2Icon /> : <Maximize2Icon />}
+                {gridFullscreen ? "Leave fullscreen" : "Fullscreen"}
+                <DropdownMenuShortcut>{fullscreenKey}</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+
           <DropdownMenuCheckboxItem
             checked={tabsCompact}
             onCheckedChange={toggleTabsCompact}
