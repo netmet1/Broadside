@@ -1,23 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
-  Columns2Icon,
-  EyeIcon,
-  EyeOffIcon,
   Grid2x2Icon,
   Grid2x2XIcon,
-  LayoutGridIcon,
   Maximize2Icon,
-  Minimize2Icon,
-  PanelTopIcon,
   PencilIcon,
   PlusIcon,
-  RadioTowerIcon,
   RotateCcwIcon,
-  Rows2Icon,
-  TextIcon,
   Trash2Icon,
-  UndoIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -41,15 +31,6 @@ import {
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { SearchBar } from "@/components/SearchBar";
-import { ShortcutBar } from "@/components/ShortcutBar";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
@@ -73,6 +54,7 @@ import { useGridLayout } from "@/pages/terminals/useGridLayout";
 import { useGridResize } from "@/pages/terminals/useGridResize";
 import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
+import { TerminalRail } from "@/pages/terminals/TerminalRail";
 import type { SearchOptions } from "@/lib/search";
 import { getAppSettings } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
@@ -915,249 +897,35 @@ export function TerminalsPage({
               "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 focus-within:translate-y-0 hover:translate-y-0",
           )}
         >
-      {/* Controls line: tab-label toggle (left) + shortcut bar + a session
-          picker for jumping between many open tabs (right). */}
-      <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
-        <Button
-          size="sm"
-          variant={tabsCompact ? "secondary" : "outline"}
-          onClick={toggleTabsCompact}
-          aria-pressed={tabsCompact}
-          {...hint(
-            tabsCompact
-              ? "Tabs show the color dot + initials. Click for full labels."
-              : "Tabs show the color dot + full label. Click for dot + initials.",
-          )}
-        >
-          <TextIcon />
-          {tabsCompact ? "Initials" : "Full labels"}
-        </Button>
-
-        {/* Pane layout toggle: one tab at a time, or every open pane tiled at
-            once like a skill run. A segmented switch rather than a single
-            button so the current mode reads at a glance. */}
-        <div
-          role="group"
-          aria-label="Terminal layout"
-          className="flex items-center gap-0.5 rounded-md border border-input p-0.5"
-        >
-          <button
-            type="button"
-            onClick={() => chooseLayout("tabs")}
-            aria-pressed={layout === "tabs"}
-            className={cn(
-              "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
-              layout === "tabs"
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            {...hint("One terminal at a time, picked with the tabs below.")}
-          >
-            <PanelTopIcon className="h-3.5 w-3.5" />
-            Tabs
-          </button>
-          <button
-            type="button"
-            onClick={() => chooseLayout("grid")}
-            aria-pressed={layout === "grid"}
-            className={cn(
-              "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
-              layout === "grid"
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            {...hint("Every open terminal tiled at once, like a skill run.")}
-          >
-            <LayoutGridIcon className="h-3.5 w-3.5" />
-            Grid
-          </button>
-        </div>
-
-        {/* Broadcast a command to several open sessions without leaving the
-            page, so the panes you are watching are the ones that answer.
-            Available in both layouts; Grid is what it is really for. */}
-        <Button
-          size="sm"
-          variant={broadcastRail ? "secondary" : "outline"}
-          onClick={toggleBroadcastRail}
-          aria-pressed={broadcastRail}
-          {...hint(
-            broadcastRail
-              ? "Hide the broadcast rail."
-              : "Show the broadcast rail: pick sessions and type one command for all of them, watching the panes as they answer.",
-          )}
-        >
-          <RadioTowerIcon className="h-3.5 w-3.5" />
-          Broadcast
-        </Button>
-
-        {/* Undo a drag-resize (or a pinned size set in Settings) and go back to
-            fit-to-window. Only offered when a size is actually pinned, so it
-            isn't a permanently dead button. */}
-        {gridMode && sizeIsPinned && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={resetTileSize}
-            {...hint(
-              "Clear the tile size (dragged or set in Settings) and go back to original configured grid settings.",
-            )}
-          >
-            <UndoIcon className="h-3.5 w-3.5" />
-            Reset grid
-          </Button>
-        )}
-
-        {/* Take the grid fullscreen: every tile fills the screen and all the
-            chrome (this bar, the tab strip, the sidebar and status bar)
-            collapses to a hover strip at the top. Grid-only. */}
-        {gridMode && (
-          <Button
-            size="sm"
-            variant={gridFullscreen ? "secondary" : "outline"}
-            onClick={() => onGridFullscreen(!gridFullscreen)}
-            aria-pressed={gridFullscreen}
-            {...hint(
-              gridFullscreen
-                ? "The grid fills the screen. Click (or press Ctrl+Shift+G, or Esc) to come back."
-                : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a strip you hover to reveal, or reach with Ctrl+Shift+T.",
-            )}
-          >
-            {gridFullscreen ? (
-              <Minimize2Icon className="h-3.5 w-3.5" />
-            ) : (
-              <Maximize2Icon className="h-3.5 w-3.5" />
-            )}
-            Fullscreen
-          </Button>
-        )}
-
-        {/* Hide/show every grid tile's title bar. Grid-only; the choice persists
-            across restarts. Sits between the layout selector and the two-up flip. */}
-        {gridMode && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={toggleGridHeaders}
-            {...hint(
-              hideGridHeaders
-                ? "Tile grid title bars are hidden. Click to show them."
-                : "Tile grid title bars are shown. Click to hide them for a denser grid.",
-            )}
-          >
-            {hideGridHeaders ? (
-              <EyeOffIcon className="h-3.5 w-3.5" />
-            ) : (
-              <EyeIcon className="h-3.5 w-3.5" />
-            )}
-            Grid Titles
-          </Button>
-        )}
-
-        {/* Flip the two-terminal grid between side-by-side and top/bottom.
-            Only meaningful for exactly two tiles (one fills, three+ tile and
-            scroll). Two tiles always take this layout, pinned Grid settings or
-            not, so the flip is always offered here (customGrid is false at a
-            count of two by construction). */}
-        {gridMode && !customGrid && gridCount === 2 && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              toggleTwoUpSplit()
-            }
-            {...hint(
-              twoUpSplit === "cols"
-                ? "Terminals are side by side. Click to stack them top and bottom."
-                : "Terminals are stacked top and bottom. Click to place them side by side.",
-            )}
-          >
-            {twoUpSplit === "cols" ? (
-              <Columns2Icon className="h-3.5 w-3.5" />
-            ) : (
-              <Rows2Icon className="h-3.5 w-3.5" />
-            )}
-            {twoUpSplit === "cols" ? "Side by side" : "Top / bottom"}
-          </Button>
-        )}
-
-        {/* Recovery for a pane a full-screen program left in a mess: an
-            upgrade's restart dialog, a monitor that took the alternate screen,
-            or a prompt nothing was reading, which echoes the arrow keys you
-            pressed at it as ^[[A across the box it drew. Clears this pane's
-            view only; the session and everything running in it carry on. */}
-        {activeId !== null && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => resetDisplay(activeId)}
-            {...hint(
-              "Redraw this terminal from scratch if a full-screen program left it garbled or stuck. Clears this pane's screen and scrollback, then asks the shell to redraw its prompt (Ctrl-L). Nothing is run and nothing is interrupted: anything working in this session keeps going.",
-            )}
-          >
-            <RotateCcwIcon className="h-3.5 w-3.5" />
-            Reset display
-          </Button>
-        )}
-
-        <div className="ml-auto flex items-center gap-1.5">
-          <ShortcutBar
-            shortcuts={shortcuts}
-            activeScope={activeScope}
-            disabled={activeId === null}
-            onRun={runShortcut}
-            onManage={onManageShortcuts}
-          />
-          {sessions.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setCloseAllOpen(true)}
-              {...hint(
-                "Close every open terminal session at once (asks first)",
-              )}
-            >
-              <XIcon />
-              Close all
-            </Button>
-          )}
-          {sessions.length > 0 && (
-            <Select value={activeId ?? ""} onValueChange={(v) => onActivate(v)}>
-              <SelectTrigger
-                size="sm"
-                className="w-48"
-                aria-label="Jump to session"
-                {...hint("Jump to an open terminal session")}
-              >
-                <SelectValue placeholder="Go to session…" />
-              </SelectTrigger>
-              <SelectContent>
-                {sessions.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    <span className="flex items-center gap-2">
-                      {s.type === "ssh" ? (
-                        <span
-                          className="h-2 w-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: s.host.color }}
-                        />
-                      ) : (
-                        <LocalShellIcon
-                          kind={s.shell.kind}
-                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                        />
-                      )}
-                      <span className="truncate">
-                        {sessionLabel(s)}
-                        {tabSuffix.get(s.id)}
-                      </span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-      </div>
+      <TerminalRail
+        tabsCompact={tabsCompact}
+        toggleTabsCompact={toggleTabsCompact}
+        layout={layout}
+        chooseLayout={chooseLayout}
+        broadcastRail={broadcastRail}
+        toggleBroadcastRail={toggleBroadcastRail}
+        gridMode={gridMode}
+        sizeIsPinned={sizeIsPinned}
+        resetTileSize={resetTileSize}
+        gridFullscreen={gridFullscreen}
+        onGridFullscreen={onGridFullscreen}
+        hideGridHeaders={hideGridHeaders}
+        toggleGridHeaders={toggleGridHeaders}
+        customGrid={customGrid}
+        gridCount={gridCount}
+        twoUpSplit={twoUpSplit}
+        toggleTwoUpSplit={toggleTwoUpSplit}
+        activeId={activeId}
+        resetDisplay={resetDisplay}
+        shortcuts={shortcuts}
+        activeScope={activeScope}
+        runShortcut={runShortcut}
+        onManageShortcuts={onManageShortcuts}
+        sessions={sessions}
+        tabSuffix={tabSuffix}
+        onActivate={onActivate}
+        onCloseAll={() => setCloseAllOpen(true)}
+      />
 
       {/* Tab strip on its own line below the controls. The row itself does NOT
           scroll/clip — only the inner tab list does — so the "+" launcher's

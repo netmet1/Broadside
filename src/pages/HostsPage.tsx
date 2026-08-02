@@ -6,6 +6,8 @@ import {
   useState,
 } from "react";
 import {
+  ArrowUpDownIcon,
+  ChevronDownIcon,
   DownloadIcon,
   ListFilterIcon,
   Loader2Icon,
@@ -24,6 +26,12 @@ import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -394,23 +402,40 @@ export function HostsPage({
             <TerminalIcon />
             Multi-terminal{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
           </Button>
-          <Button
-            variant="outline"
-            onClick={runExport}
-            disabled={loading || hosts.length === 0}
-            {...hint("Export all hosts to a CSV or Excel (.xlsx) file (re-importable). No credentials are included; it's safe to hand to a restricted operator to import under their own login.")}
-          >
-            <DownloadIcon />
-            Export hosts…
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setImportOpen(true)}
-            {...hint("Bulk-add hosts from a CSV or Excel file")}
-          >
-            <UploadIcon />
-            Import hosts…
-          </Button>
+          {/* Import and export are one menu, not two buttons. At the app's own
+              1024px minimum window this rail had nothing left to give: Button
+              is shrink-0 whitespace-nowrap, so the row simply ran off the edge
+              into the page's horizontal scrollbar. These two are also the least
+              used things here, which makes them the right pair to fold. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                {...hint("Move hosts in or out of Broadside as a CSV or Excel file")}
+              >
+                <ArrowUpDownIcon />
+                Import / Export
+                <ChevronDownIcon className="-mr-1 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onSelect={() => void runExport()}
+                disabled={loading || hosts.length === 0}
+                {...hint("Export all hosts to a CSV or Excel (.xlsx) file (re-importable). No credentials are included; it's safe to hand to a restricted operator to import under their own login.")}
+              >
+                <DownloadIcon />
+                Export hosts…
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => setImportOpen(true)}
+                {...hint("Bulk-add hosts from a CSV or Excel file")}
+              >
+                <UploadIcon />
+                Import hosts…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button onClick={openAdd} {...hint("Add a single host through the form")}>
             <PlusIcon />
             Add host
