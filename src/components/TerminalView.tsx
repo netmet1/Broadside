@@ -28,8 +28,9 @@ import { errorMessage } from "@/lib/tauri/hosts";
 import {
   capabilityIsWarning,
   dismissShellWarning,
-  loadDismissedShellWarnings,
   shellCapabilityMessage,
+  shellWarningDismissed,
+  type ShellCapability,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
@@ -189,7 +190,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // An unsupported login shell reported by the open (X4), or null. Held apart
   // from `phase` because it survives across the phase transitions of a
   // reconnect and is cleared only by the operator dismissing it.
-  const [shellWarning, setShellWarning] = useState<string | null>(null);
+  const [shellWarning, setShellWarning] = useState<{
+    capability: ShellCapability;
+    message: string;
+  } | null>(null);
   const setPhase = useCallback(
     (p: Phase) => {
       phaseRef.current = p;
@@ -587,11 +591,15 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
             // warning was already dismissed (X4).
             if (
               capabilityIsWarning(result.capability) &&
-              !loadDismissedShellWarnings().has(source.hostId)
+              !shellWarningDismissed(source.hostId, result.capability)
             ) {
-              setShellWarning(
-                shellCapabilityMessage(result.capability, result.login_shell),
-              );
+              setShellWarning({
+                capability: result.capability,
+                message: shellCapabilityMessage(
+                  result.capability,
+                  result.login_shell,
+                ),
+              });
             }
             // A pty:closed for this session may have raced ahead of the
             // open result — don't resurrect a dead session.
@@ -764,14 +772,16 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       {shellWarning && phase.kind === "open" && (
         <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 border-t border-amber-500/30 bg-background/95 px-3 py-2">
           <span className="min-w-0 text-xs text-amber-700 dark:text-amber-300">
-            {shellWarning}
+            {shellWarning.message}
           </span>
           <Button
             variant="outline"
             size="sm"
             className="shrink-0"
             onClick={() => {
-              if (source.type === "ssh") dismissShellWarning(source.hostId);
+              if (source.type === "ssh") {
+                dismissShellWarning(source.hostId, shellWarning.capability);
+              }
               setShellWarning(null);
             }}
           >

@@ -1419,6 +1419,7 @@ export function TerminalsPage({
           <BroadcastRail
             sessions={sessions}
             connectedSessions={connectedSessions}
+            visible={visible}
           />
         </div>
       )}

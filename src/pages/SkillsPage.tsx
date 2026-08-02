@@ -407,6 +407,7 @@ export function SkillsPage({
                     skill still says so here rather than vanishing from the
                     list, and the run refuses it by name when it starts. */}
                 <ShellChip
+                  compact
                   capability={h.shell_capability}
                   loginShell={h.login_shell}
                   pref={h.shell_integration}

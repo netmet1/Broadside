@@ -1009,6 +1009,16 @@ export function HostFormPanel({
                   </span>
                 </label>
               </RadioGroup>
+              {/* The setup line is typed at the shell the moment a terminal
+                  opens, so this setting is read then and cannot be applied to
+                  a session that is already running. Saying so is the whole
+                  fix: without it, changing the setting and watching an open
+                  tab not change looks like the setting being ignored. */}
+              <p className="text-xs text-muted-foreground">
+                Applies to terminals opened from now on. Sessions already open
+                keep whatever they started with; close and reopen the tab to see
+                the change.
+              </p>
             </div>
           )}
           {!adminLocked && sudoEditing && (

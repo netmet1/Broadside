@@ -99,25 +99,43 @@ export function capabilityChipLabel(
   return cap === "unreadable" ? "shell unread" : "no shell";
 }
 
-/* Which hosts have had the terminal-pane warning dismissed. A UI pref, stored
- * the same way as the hidden host columns (see `hostColumns.ts`), so opening a
- * fifth tab on a known fish host doesn't nag a fifth time. Cleared by the
- * Settings reset along with the rest of the UI prefs. */
+/* Which hosts have had the terminal-pane warning dismissed, and for *which
+ * verdict*. A UI pref, stored the same way as the hidden host columns (see
+ * `hostColumns.ts`), so opening a fifth tab on a known fish host doesn't nag a
+ * fifth time. Cleared by the Settings reset along with the rest of the UI prefs.
+ *
+ * Keyed by capability as well as host because the verdict can change and the
+ * new one is news: a host that was bash and is now behind a console menu, or
+ * one just set to Never, has something to say that was never dismissed. Storing
+ * the host alone made "dismissed" permanent and unreachable — there was no way
+ * back short of resetting every preference in the app. The key is versioned
+ * rather than migrated: the old shape said nothing about which verdict was
+ * dismissed, so there is nothing in it to carry forward. */
 
-const DISMISSED_KEY = "shell-warning-dismissed";
+const DISMISSED_KEY = "shell-warning-dismissed-v2";
 
-export function loadDismissedShellWarnings(): Set<number> {
+function loadDismissed(): Record<string, string> {
   try {
-    const raw = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]");
-    if (Array.isArray(raw)) return new Set(raw.filter((x) => typeof x === "number"));
+    const raw: unknown = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "{}");
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      return raw as Record<string, string>;
+    }
   } catch {
-    // Fall through to an empty set: worst case the operator sees it once more.
+    // Fall through to empty: worst case the operator sees it once more.
   }
-  return new Set();
+  return {};
 }
 
-export function dismissShellWarning(hostId: number): void {
-  const next = loadDismissedShellWarnings();
-  next.add(hostId);
-  localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]));
+/** Whether this host's warning has already been dismissed *for this verdict*. */
+export function shellWarningDismissed(
+  hostId: number,
+  cap: ShellCapability,
+): boolean {
+  return loadDismissed()[String(hostId)] === cap;
+}
+
+export function dismissShellWarning(hostId: number, cap: ShellCapability): void {
+  const next = loadDismissed();
+  next[String(hostId)] = cap;
+  localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
 }

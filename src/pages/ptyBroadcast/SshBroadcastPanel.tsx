@@ -357,11 +357,20 @@ export function SshBroadcastPanel({
                   </span>
                   {/* Marked, never filtered (D-067): the session takes the
                       keystrokes fine, but the command may not be valid in that
-                      shell, and this is a panel that sends one to all of them. */}
+                      shell, and this is a panel that sends one to all of them.
+                      Read off the live host row, not `s.host`: that is a
+                      snapshot taken when the session opened, so a shell
+                      integration setting changed since would show its old
+                      value here until the app was restarted. */}
                   <ShellChip
-                    capability={s.host.shell_capability}
-                    loginShell={s.host.login_shell}
-                    pref={s.host.shell_integration}
+                    compact
+                    capability={
+                      (hostsById.get(s.host.id) ?? s.host).shell_capability
+                    }
+                    loginShell={(hostsById.get(s.host.id) ?? s.host).login_shell}
+                    pref={
+                      (hostsById.get(s.host.id) ?? s.host).shell_integration
+                    }
                   />
                   <span
                     className={`ml-auto h-2 w-2 shrink-0 rounded-full ${

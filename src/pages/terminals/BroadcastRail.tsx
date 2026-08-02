@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangleIcon, EraserIcon, SendIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ShellChip } from "@/components/ShellChip";
 import { checkDestructive, type GuardHit } from "@/lib/tauri/broadcast";
-import { errorMessage } from "@/lib/tauri/hosts";
+import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { useHint } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
@@ -66,11 +66,29 @@ function familyOf(s: TermSession): Family | null {
 export function BroadcastRail({
   sessions,
   connectedSessions,
+  visible,
 }: {
   sessions: TermSession[];
   connectedSessions: Set<string>;
+  /** The Terminals page is the one on screen. The rail stays mounted while it
+   * is not, so this is what says when to re-read the hosts. */
+  visible: boolean;
 }) {
   const hint = useHint();
+
+  // The host rows as the database has them now. A session carries a *snapshot*
+  // of its host, taken when it opened, so a column the operator can change
+  // afterwards -- shell integration above all -- reads as whatever it was an
+  // hour ago for as long as the tab is open. Re-read whenever the page is
+  // shown, which is the first moment a change made on the Hosts tab could
+  // matter here.
+  const [hostsById, setHostsById] = useState<Map<number, Host>>(new Map());
+  useEffect(() => {
+    if (!visible) return;
+    listHosts()
+      .then((hs) => setHostsById(new Map(hs.map((h) => [h.id, h] as const))))
+      .catch(() => {});
+  }, [visible]);
 
   // One family at a time, like the PTY Broadcast tabs. Mixing them is a real
   // foot-gun: the command wouldn't be valid everywhere, and the line ending
@@ -282,13 +300,18 @@ export function BroadcastRail({
                     works fine — it is keystrokes into a PTY — but the command
                     you are about to send may not be valid in that shell, which
                     is worth seeing before you send it to eight hosts at once. */}
-                {s.type === "ssh" && (
-                  <ShellChip
-                    capability={s.host.shell_capability}
-                    loginShell={s.host.login_shell}
-                    pref={s.host.shell_integration}
-                  />
-                )}
+                {s.type === "ssh" &&
+                  (() => {
+                    const h = hostsById.get(s.host.id) ?? s.host;
+                    return (
+                      <ShellChip
+                        compact
+                        capability={h.shell_capability}
+                        loginShell={h.login_shell}
+                        pref={h.shell_integration}
+                      />
+                    );
+                  })()}
               </label>
             );
           })

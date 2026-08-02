@@ -291,25 +291,25 @@ const WARNINGS: WarningGroup[] = [
     rows: [
       {
         message: <Msg>An amber chip naming a shell (fish, csh, tcsh, …)</Msg>,
-        where: "Hosts, and the broadcast and skills pickers",
+        where: "Hosts in full; a triangle alone in the picker rails",
         means:
-          "This host's login shell is not one of the Bourne-family shells Broadside can drive. Terminals, broadcast and file transfer all work as normal, and so does sudo password auto-fill; command block tracking is unavailable and skills cannot run here. The tab still opens looking like a fresh login, because the part of the setup that a shell like fish can read is still sent. The chip names whatever the host reported, and Broadside only reads a name it can recognise as a shell path — a chip naming something from your own startup script was a bug, fixed in 1.3.0. The chip is what the last completed connection read. It appears in the Broadcast, PTY Broadcast and Skills lists too, where the host stays selectable: nothing there is broken by it, but a command written for bash may not mean the same thing to that shell.",
+          "This host's login shell is not one of the Bourne-family shells Broadside can drive. Terminals, broadcast and file transfer all work as normal, and so does sudo password auto-fill; command block tracking is unavailable and skills cannot run here. The tab still opens looking like a fresh login, because the part of the setup that a shell like fish can read is still sent. The chip names whatever the host reported, and Broadside only reads a name it can recognise as a shell path — a chip naming something from your own startup script was a bug, fixed in 1.3.0. The chip is what the last completed connection read. It appears in the Broadcast, PTY Broadcast, MultiTerminal and Skills lists too, where the host stays selectable: nothing there is broken by it, but a command written for bash may not mean the same thing to that shell. Those lists are narrow, so there it is the amber triangle on its own and hovering it gives the words.",
       },
       {
         message: <Msg>An amber “no shell” chip</Msg>,
-        where: "Hosts, and the broadcast and skills pickers",
+        where: "Hosts in full; a triangle alone in the picker rails",
         means:
           "What this host runs at login is not a shell at all. The usual case is an appliance that answers with a console menu — a pfSense admin account, for instance, whose login shell really is the menu program. Broadside sends such a host nothing whatsoever on connect and leaves the screen exactly as the host drew it. This is what stops the menu being printed twice: anything sent to it, even a harmless screen clear, is read as a menu selection and answered by redrawing. Command block tracking and skills are unavailable; terminals, broadcast and file transfer are not affected.",
       },
       {
         message: <Msg>An amber “shell unread” chip</Msg>,
-        where: "Hosts, and the broadcast and skills pickers",
+        where: "Hosts in full; a triangle alone in the picker rails",
         means:
           "The connection succeeded but the host would not say what its login shell is — a forced command, a restricted account, or a server too slow to answer in time. Broadside sends nothing rather than guess, because guessing wrong on an appliance is what makes a console menu print itself twice. The cost is command block tracking and skills. If you know the host runs bash or zsh, open it in Hosts and set Shell integration to Always: both come back, and the chip goes.",
       },
       {
         message: <Msg>An amber “no integration” chip</Msg>,
-        where: "Hosts, and the broadcast and skills pickers",
+        where: "Hosts in full; a triangle alone in the picker rails",
         means:
           "Not a problem with the host: Shell integration is set to Never on it, so Broadside sends it nothing on connect by your own instruction. Command block tracking and skills are unavailable while it is set. Change it in the host's form.",
       },

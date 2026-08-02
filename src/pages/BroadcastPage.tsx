@@ -650,6 +650,7 @@ export function BroadcastPage({
                     channel and works perfectly well on fish, so the host stays
                     selectable and simply says what it is. */}
                 <ShellChip
+                  compact
                   capability={h.shell_capability}
                   loginShell={h.login_shell}
                   pref={h.shell_integration}

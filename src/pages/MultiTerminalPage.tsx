@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
+import { ShellChip } from "@/components/ShellChip";
 import { capabilityTracksBlocks, effectiveCapability } from "@/lib/shells";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
@@ -620,6 +621,22 @@ export function MultiTerminalPage({
                   >
                     {label}
                   </span>
+                  {/* The same mark the other rails carry. This page has the
+                      most to lose from a shell it cannot follow -- a checked
+                      host takes every command and never reports a block -- and
+                      the toolbar line below counts them, but until now nothing
+                      said *which* row it meant. Icon only: the label is what
+                      you are reading, and the words are on hover. */}
+                  <ShellChip
+                    compact
+                    capability={
+                      (hostsById.get(s.host.id) ?? s.host).shell_capability
+                    }
+                    loginShell={(hostsById.get(s.host.id) ?? s.host).login_shell}
+                    pref={
+                      (hostsById.get(s.host.id) ?? s.host).shell_integration
+                    }
+                  />
                   <span
                     className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
                       isConnected ? "bg-emerald-500" : "bg-red-500/70"

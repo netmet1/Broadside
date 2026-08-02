@@ -433,7 +433,20 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Never</Nav> sends the host nothing at all and leaves its
               login screen exactly as it draws it. Appliances that greet you
               with a console menu rather than a shell are detected and left
-              alone on their own, without needing this set.
+              alone on their own, without needing this set. The setting is read
+              when a terminal opens, so it applies to the next tab you open on
+              that host rather than to one already running.
+            </li>
+            <li>
+              The same mark appears wherever a host is picked — the{" "}
+              <Nav>Broadcast</Nav>, <Nav>PTY Broadcast</Nav>,{" "}
+              <Nav>MultiTerminal</Nav> and <Nav>Skills</Nav> lists — as the
+              amber triangle on its own, with the words on hover. Those lists
+              are narrow and the label is what you are reading there. Nothing is
+              ever hidden from a list for this: broadcasting to a shell
+              Broadside cannot drive works perfectly well, and a host that
+              quietly vanished would be far harder to explain than one that is
+              marked.
             </li>
           </Bullets>
           <H3>Importing many hosts</H3>
