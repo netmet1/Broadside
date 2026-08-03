@@ -76,6 +76,11 @@ const SHORTCUTS: ShortcutGroup[] = [
         what: "Maximize the selected terminal to fill the window, hiding every other part of the app. Press it again to restore. It works from inside a maximized terminal wherever you are.",
       },
       {
+        keys: <Kbd>Esc</Kbd>,
+        where: "Maximized terminal",
+        what: "Restore the app around the terminal. It only comes back out, never in, so Esc belongs to whatever is running in the terminal the rest of the time. In vim, use F11 instead: the first Esc un-maximizes rather than leaving insert mode.",
+      },
+      {
         keys: <Kbd>Ctrl+F</Kbd>,
         where: "Terminals, Broadcast, Logs",
         what: "Open the find bar for whatever output you are looking at, instead of sending Ctrl+F to the shell.",

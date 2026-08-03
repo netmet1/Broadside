@@ -36,6 +36,24 @@
  * one terminal you are looking at filling the window, F11, which existed all
  * along as a key and a per-tab button but was nowhere in the rail, so a Tabs
  * user had no way to find it.
+ *
+ * **A control that cannot act right now is greyed, not removed.** Fullscreen
+ * with nothing to fill the screen with, Reset grid with nothing pinned, Reset
+ * display with no active terminal: all three used to disappear, and a control
+ * that is not on screen cannot be learned. Greyed says the two things the
+ * operator needs at once, that the action exists and that it is waiting on
+ * something, and it keeps the menu the same shape from one moment to the next
+ * so a reader stops having to re-find every entry. The exception is the two-up
+ * flip, which is not an unavailable action but a statement about an arrangement
+ * that only exists at exactly two tiles; the entry itself is meaningless
+ * elsewhere, so it goes.
+ *
+ * Each of the three says what it is waiting for, in the status bar, while it is
+ * greyed, which takes a little work: the browser will not dispatch a mouse
+ * event to a disabled button and the menu's own disabled style drops pointer
+ * events, so the naive version silences exactly the hint that matters most.
+ * The button hangs its hint on a wrapper span; the menu entries take their
+ * pointer events back. See both below.
  */
 
 import { useRef } from "react";
@@ -53,7 +71,6 @@ import {
   RotateCcwIcon,
   Rows2Icon,
   SlidersHorizontalIcon,
-  TextIcon,
   UndoIcon,
   XIcon,
 } from "lucide-react";
@@ -145,20 +162,32 @@ export function TerminalRail({
   // size is pinned, so customGrid is false here by construction.
   const showTwoUpFlip = gridMode && !customGrid && gridCount === 2;
 
-  // Fullscreen, in whichever sense this layout has one. Tabs has nothing to
-  // fill the window with until a terminal is open, so the control goes rather
-  // than sitting there dead.
-  const canFullscreen = gridMode || activeId !== null;
+  // Fullscreen, in whichever sense this layout has one, and the same question
+  // asked of both: is there anything to fill the screen with? Tabs needs an
+  // open terminal; Grid needs at least one tile in it, which is not the same as
+  // a session existing, because a tab can be taken out of the grid and leave it
+  // empty. It used to be `gridMode || activeId !== null`, which asked neither:
+  // Grid answered yes with nothing in it and went fullscreen on an empty wall.
+  //
+  // Unavailable now greys the control out where it used to remove it. A control
+  // that vanishes cannot be found again, and a reader who never sees it does
+  // not learn it is there for when they do have a terminal open. Greyed says
+  // both things at once: it exists, and not yet.
+  const canFullscreen = gridMode ? gridCount > 0 : activeId !== null;
   const fullscreenKey = gridMode ? "Ctrl+Shift+G" : "F11";
   const toggleFullscreen = () => {
     if (gridMode) onGridFullscreen(!gridFullscreen);
     else maximizeActive();
   };
-  const fullscreenHint = !gridMode
-    ? "Fill the window with the active terminal (F11). Esc or F11 brings the app back."
-    : gridFullscreen
-      ? "The grid fills the screen. Click (or press Ctrl+Shift+G, or Esc) to come back."
-      : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a strip you hover to reveal.";
+  const fullscreenHint = !canFullscreen
+    ? gridMode
+      ? "Nothing is in the grid to fill the screen with. Put a tab back in the grid first."
+      : "No terminal is open to fill the window with. Open one first."
+    : !gridMode
+      ? "Fill the window with the active terminal (F11). Esc or F11 brings the app back."
+      : gridFullscreen
+        ? "The grid fills the screen. Click (or press Ctrl+Shift+G, or Esc) to come back."
+        : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a strip you hover to reveal.";
 
   // Out of room: the words go and the icons stay. The key is everything other
   // than the pane's width that changes how wide this row wants to be, so a
@@ -249,15 +278,24 @@ export function TerminalRail({
           the same thing F11 has always done. Icon-only: frequent enough to be
           worth its width, not worth a label. Never shows the collapse icon in
           Tabs, because a maximized terminal hides this bar along with the rest
-          of the chrome, so it is only ever pressed on the way in. */}
-      {canFullscreen && (
+          of the chrome, so it is only ever pressed on the way in. Always here,
+          greyed when there is nothing to fill the screen with.
+
+          The hint hangs on the wrapper, not on the button. A disabled button
+          gets `pointer-events: none` from ui/button.tsx and the browser will
+          not dispatch mouse events to a disabled control anyway, so a hint on
+          the button itself would be exactly the one that never showed: the one
+          saying why it is greyed. On the span it lands, because the span is not
+          the disabled thing. This is the only icon-only control that can go
+          dead, and an icon with no words and no explanation is a puzzle. */}
+      <span className="flex shrink-0" {...hint(fullscreenHint)}>
         <Button
           size="icon-sm"
           variant={gridFullscreen ? "secondary" : "outline"}
+          disabled={!canFullscreen}
           onClick={toggleFullscreen}
           aria-pressed={gridMode ? gridFullscreen : undefined}
           aria-label="Fullscreen"
-          {...hint(fullscreenHint)}
         >
           {gridFullscreen ? (
             <Minimize2Icon className="h-3.5 w-3.5" />
@@ -265,7 +303,7 @@ export function TerminalRail({
             <Maximize2Icon className="h-3.5 w-3.5" />
           )}
         </Button>
-      )}
+      </span>
 
       {/* Hide/show every grid tile's title bar. Grid-only; the choice persists
           across restarts. Icon-only for the same reason as Fullscreen, and it
@@ -315,20 +353,33 @@ export function TerminalRail({
         <DropdownMenuContent>
           {/* Deliberately redundant with the icon beside it. The icon is for
               the operator who already knows what it is; the menu entry is how
-              anyone else finds out that it exists and which key does it. */}
-          {canFullscreen && (
-            <>
-              <DropdownMenuItem onSelect={toggleFullscreen} {...hint(fullscreenHint)}>
-                {gridFullscreen ? <Minimize2Icon /> : <Maximize2Icon />}
-                {gridFullscreen ? "Leave fullscreen" : "Fullscreen"}
-                <DropdownMenuShortcut>{fullscreenKey}</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-            </>
-          )}
+              anyone else finds out that it exists and which key does it, which
+              is the whole reason it is greyed rather than dropped when there is
+              nothing to fill the screen with: an entry that is not there
+              teaches nobody the key. */}
+          <DropdownMenuItem
+            disabled={!canFullscreen}
+            // A greyed entry is the one most worth explaining, and the default
+            // disabled style takes its pointer events away so it cannot raise
+            // its hint. Radix already ignores pointer moves on a disabled item
+            // (it clears the highlight rather than following the mouse), so
+            // handing them back costs nothing and buys the status-bar line.
+            className="data-disabled:pointer-events-auto"
+            onSelect={toggleFullscreen}
+            {...hint(fullscreenHint)}
+          >
+            {gridFullscreen ? <Minimize2Icon /> : <Maximize2Icon />}
+            {gridFullscreen ? "Leave fullscreen" : "Fullscreen"}
+            <DropdownMenuShortcut>{fullscreenKey}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
 
+          {/* Stated the positive way round, and on by default, because that is
+              the state it is in until someone changes it: a box you have to
+              untick to get what you already have reads backwards. The stored
+              preference is still "compact", so nothing on disk moved. */}
           <DropdownMenuCheckboxItem
-            checked={tabsCompact}
+            checked={!tabsCompact}
             onCheckedChange={toggleTabsCompact}
             {...hint(
               tabsCompact
@@ -336,10 +387,16 @@ export function TerminalRail({
                 : "Tabs show the color dot + full label. Click for dot + initials.",
             )}
           >
-            <TextIcon />
-            Compact tab labels
+            Full tab labels
           </DropdownMenuCheckboxItem>
 
+          {/* The one entry that still comes and goes, and the exception proves
+              the rule: everything else here is an action that exists and is
+              momentarily unavailable, which is worth greying. This is not. At
+              one tile or three there is no pair to arrange, and its label is a
+              statement about the current arrangement ("Stack top / bottom"), so
+              a greyed copy would be a sentence about a layout that is not on
+              screen. */}
           {showTwoUpFlip && (
             <DropdownMenuItem
               onSelect={toggleTwoUpSplit}
@@ -356,18 +413,27 @@ export function TerminalRail({
             </DropdownMenuItem>
           )}
 
-          {(gridMode && sizeIsPinned) || activeId !== null ? (
-            <DropdownMenuSeparator />
-          ) : null}
+          <DropdownMenuSeparator />
 
-          {/* Undo a drag-resize (or a pinned size set in Settings) and go back
-              to fit-to-window. Only offered when a size is actually pinned, so
-              it isn't a permanently dead entry. */}
-          {gridMode && sizeIsPinned && (
+          {/* The two recovery actions. Both are greyed rather than dropped when
+              they have nothing to act on, for the same reason as Fullscreen
+              above: this is where an operator comes to find out what the app
+              can undo, and it can only tell them that if the entries are here
+              when there is nothing wrong yet.
+
+              Reset grid undoes a drag-resize (or a pinned size set in
+              Settings) and goes back to fit-to-window. It is Grid's, so it is
+              here only in Grid: in Tabs there is no grid on screen to reset and
+              a greyed entry would be answering a question nobody asked. */}
+          {gridMode && (
             <DropdownMenuItem
+              disabled={!sizeIsPinned}
+              className="data-disabled:pointer-events-auto"
               onSelect={resetTileSize}
               {...hint(
-                "Clear the tile size (dragged or set in Settings) and go back to original configured grid settings.",
+                sizeIsPinned
+                  ? "Clear the tile size (dragged or set in Settings) and go back to original configured grid settings."
+                  : "Nothing to reset: the tiles already fit the window. Drag a tile edge, or pin a size in Settings, and this clears it.",
               )}
             >
               <UndoIcon />
@@ -380,17 +446,21 @@ export function TerminalRail({
               screen, or a prompt nothing was reading, which echoes the arrow
               keys you pressed at it as ^[[A across the box it drew. Clears this
               pane's view only; the session and everything in it carry on. */}
-          {activeId !== null && (
-            <DropdownMenuItem
-              onSelect={() => resetDisplay(activeId)}
-              {...hint(
-                "Redraw this pane from scratch if a program left it garbled. Clears its screen and scrollback; nothing running is interrupted.",
-              )}
-            >
-              <RotateCcwIcon />
-              Reset display
-            </DropdownMenuItem>
-          )}
+          <DropdownMenuItem
+            disabled={activeId === null}
+            className="data-disabled:pointer-events-auto"
+            onSelect={() => {
+              if (activeId !== null) resetDisplay(activeId);
+            }}
+            {...hint(
+              activeId === null
+                ? "No terminal is active to redraw. Open one first."
+                : "Redraw this pane from scratch if a program left it garbled. Clears its screen and scrollback; nothing running is interrupted.",
+            )}
+          >
+            <RotateCcwIcon />
+            Reset display
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 

@@ -329,7 +329,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-overview",
     title: "Overview and getting started",
     keywords:
-      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them",
+      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout fifteen seconds mouse resting on button walked away esc escape key return from fullscreen restore vim insert mode",
     body: (
       <>
         <Lead>
@@ -371,7 +371,9 @@ export const SECTIONS: HelpSection[] = [
               you make it, which is the point of them: drag an edge, or hold{" "}
               <Nav>Ctrl</Nav> and turn the wheel over a terminal, and watch the
               number rather than guessing. Hover any control and they step aside
-              for its hint, then come back when you move off it. Turning hints
+              for its hint, then come back when you move off it, or after
+              fifteen seconds with nobody at the machine: a pointer left resting
+              on a button does not hold the line all afternoon. Turning hints
               off in <Nav>Settings</Nav> leaves them showing all the time.
             </li>
             <li>
@@ -385,7 +387,11 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Press <Nav>F11</Nav> (or the maximize button on a terminal tab) to
               fill the whole window with a single terminal, and <Nav>F11</Nav>{" "}
-              again to return.
+              or <Nav>Esc</Nav> to return. <Nav>Esc</Nav> only comes back out,
+              never in, so the key belongs to whatever is running in the
+              terminal every other moment. If you live in <code>vim</code>, use{" "}
+              <Nav>F11</Nav>: the first <Nav>Esc</Nav> you press in a maximized
+              terminal un-maximizes it rather than leaving insert mode.
             </li>
           </Bullets>
         </Detail>
@@ -555,7 +561,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does not exit maximized terminal fullscreen empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen",
     body: (
       <>
         <Lead>
@@ -1007,11 +1013,22 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Broadcast</Nav>, the fullscreen icon and, in Grid, the icon
               for tile title bars stay out in the open because they are the ones
               you reach for. Everything else that shapes the view lives under{" "}
-              <Nav>View</Nav>: fullscreen again (with the key beside it),
-              compact tab labels, flipping two terminals between side-by-side
-              and top/bottom, <Nav>Reset grid</Nav> and{" "}
-              <Nav>Reset display</Nav>. Entries appear there only when they
-              apply, so the menu never offers something that would do nothing.
+              <Nav>View</Nav>: fullscreen again (with the key beside it),{" "}
+              <Nav>Full tab labels</Nav>, flipping two terminals between
+              side-by-side and top/bottom, <Nav>Reset grid</Nav> and{" "}
+              <Nav>Reset display</Nav>.
+            </li>
+            <li>
+              <b>Greyed does not mean gone.</b> An entry that has nothing to act
+              on right now stays where it is and goes pale: fullscreen with no
+              terminal open, <Nav>Reset grid</Nav> with nothing pinned,{" "}
+              <Nav>Reset display</Nav> with no active tab. The point is that you
+              can find out an action exists before the moment you need it, and
+              that the menu keeps the same shape from one visit to the next.
+              Hover a pale entry and the status bar says what it is waiting for.
+              The one thing that still comes and goes is the two-terminal flip,
+              which describes an arrangement rather than offering an action, and
+              only exists when exactly two tiles are on screen.
             </li>
             <li>
               If the row still runs out of room, the buttons keep their icons
