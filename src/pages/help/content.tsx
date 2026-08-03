@@ -555,7 +555,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch",
     body: (
       <>
         <Lead>
@@ -741,13 +741,35 @@ export const SECTIONS: HelpSection[] = [
               once so you can watch several together. One terminal fills the
               area, two split it, and three or more tile two-across, sharing the
               height between them until there are too many to fit, at which
-              point they keep a readable size and the grid scrolls. Resize the
+              point they keep a readable size and the grid scrolls. Two-across
+              needs the room for two readable columns, and the sidebar and the
+              broadcast rail come out of the same space, so on a narrow window
+              with either of those open the tiles stack in one column instead of
+              being squeezed to a width nothing will fit in. Resize the
               window and they follow it, larger or smaller, unless you have
               pinned a tile size in <Nav>Settings</Nav> or dragged one out.
               Each grid tile has its own maximize and close buttons, and its
               header shows the same colour as the tab. Your choice is
               remembered between visits and restarts; maximizing a terminal
               always shows it on its own.
+            </li>
+            <li>
+              <b>Grid wants room, and there is a point past which no window is
+              big enough.</b>{" "}
+              A tile is the pane divided by the number of terminals in it, so
+              five tiles on a small window are the same size as twenty on a
+              large one. Broadside will not shrink a tile past what you can read
+              in: it holds the size and scrolls instead. When you find yourself
+              scrolling, these are the four things that buy space back, roughly
+              in order of how much. <Nav>Ctrl+Shift+G</Nav> gives the grid the
+              whole screen and folds every bar away into a strip you hover.{" "}
+              <Nav>Grid Titles</Nav> (the eye) takes a title bar off every tile.
+              The grid button on a tab drops that terminal out of the grid
+              without closing it, so a session you only need occasionally stops
+              claiming a tile. And <Nav>F11</Nav> gives one terminal the whole
+              window when you want to stop watching and start working. The
+              status bar shows the window size at the bottom left while you
+              resize, if you want to see what you are working with.
             </li>
             <li>
               <b>In Grid, focus follows the mouse.</b> Whichever tile the
@@ -990,6 +1012,17 @@ export const SECTIONS: HelpSection[] = [
               and top/bottom, <Nav>Reset grid</Nav> and{" "}
               <Nav>Reset display</Nav>. Entries appear there only when they
               apply, so the menu never offers something that would do nothing.
+            </li>
+            <li>
+              If the row still runs out of room, the buttons keep their icons
+              and drop their words rather than letting one fall off the edge.
+              Nothing moves and nothing is removed; each button is in the same
+              place doing the same thing, and hovering one still names it in the
+              status bar. This happens on a narrow window, and sooner if you
+              have raised the app font size in <Nav>Settings</Nav>, since the
+              controls are sized in that font. Widen the window (or collapse the
+              sidebar) and the words come back. The same is true of the row of
+              buttons at the top of <Nav>Hosts</Nav>.
             </li>
             <li>
               <b>Fullscreen means the layout you are in.</b> In Tabs it fills
