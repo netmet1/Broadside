@@ -6,7 +6,7 @@ import type { HostXfer } from "@/pages/sftp/useSftpBroadcast";
 import { formatSize } from "@/pages/sftp/model";
 
 /** One per-host transfer line: status icon, host-colour dot, label, a live
- *  progress bar, and a byte/status summary — the SFTP analogue of the PTY
+ *  progress bar, and a byte/status summary: the SFTP analogue of the PTY
  *  Broadcast result row. */
 export function BroadcastOutputLine({
   host,
@@ -48,7 +48,7 @@ export function BroadcastOutputLine({
         {host.label}
       </span>
 
-      {/* Progress bar — fills as bytes stream; indeterminate look while pending. */}
+      {/* Progress bar, fills as bytes stream; indeterminate look while pending. */}
       <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
         <div
           className={cn("h-full rounded-full transition-[width] duration-150", barColor)}

@@ -1,5 +1,5 @@
 //! Shell-aware tokenizer for the destructive-command guard (D-014) and sudo
-//! detection (D-026). This is intentionally NOT a full shell parser — it
+//! detection (D-026). This is intentionally NOT a full shell parser; it
 //! handles the quoting and connector shapes operators actually broadcast,
 //! and the guard's job is best-effort warning, not sandboxing.
 
@@ -187,7 +187,7 @@ fn tokenize_into(input: &str, base: usize, out: &mut Vec<Pipeline>) {
                     });
                     i = op_end;
                 } else {
-                    // && or background & — both end the pipeline.
+                    // && or background &, both end the pipeline.
                     end_pipeline!(i);
                     i += if i + 1 < bytes.len() && bytes[i + 1] == b'&' { 2 } else { 1 };
                 }
@@ -222,7 +222,7 @@ fn tokenize_into(input: &str, base: usize, out: &mut Vec<Pipeline>) {
                 i = op_end;
             }
             b'(' | b')' | b'{' | b'}' => {
-                // Grouping — treat as a word boundary, content parses normally.
+                // Grouping: treat as a word boundary, content parses normally.
                 flush_tok!(i);
                 i += 1;
             }
@@ -298,7 +298,7 @@ const PREFIX_COMMANDS: &[&str] = &[
 ];
 
 /// Returns word tokens with leading wrappers (sudo, env VAR=x, …), wrapper
-/// flags, and standalone VAR=val assignments stripped — the first returned
+/// flags, and standalone VAR=val assignments stripped, the first returned
 /// token is the effective command.
 pub fn effective_command<'a>(segment: &'a Segment) -> Vec<&'a Token> {
     let words: Vec<&Token> = segment.words().collect();

@@ -33,7 +33,7 @@ const DEFAULT_ITEM_ROWS = 24;
  * and each tile's size in characters (columns x rows). Each field is either
  * "auto" (keep the shipped fit-to-viewport behavior) or a number. This is a
  * localStorage UI pref, applied when the Terminals page is next shown (it re-reads
- * on visible), so there is no Save button — changes persist immediately.
+ * on visible), so there is no Save button: changes persist immediately.
  */
 export function GridSection({ id }: { id: string }) {
   const initial = loadGridPrefs();
@@ -47,7 +47,7 @@ export function GridSection({ id }: { id: string }) {
   // With strict off, a drag in the Terminals grid writes the tile size here, so
   // these fields have to follow a change this component did not make. Both
   // screens stay mounted, so nothing would otherwise re-read them and the page
-  // would go on showing the old numbers — which is exactly the complaint.
+  // would go on showing the old numbers, which is exactly the complaint.
   const reload = useCallback(() => {
     const p = loadGridPrefs();
     setCols(fieldState(p.cols));
@@ -167,7 +167,7 @@ export function GridSection({ id }: { id: string }) {
           </div>
           <p className="text-xs text-muted-foreground">
             What fills the gap when the terminals don't divide evenly into
-            columns — three tiles in two columns, for instance. A pinned Item
+            columns: three tiles in two columns, for instance. A pinned Item
             width or Item height wins: a stretched tile is wider than one and a
             tall tile is taller than the other, so where you have set that
             dimension by hand the gap stays.
@@ -207,7 +207,7 @@ function fieldState(v: number | null): FieldState {
 }
 
 /** Parse a field's text; returns the number when it is a valid integer within
- * range, else null (invalid — shown with a red border, not persisted). */
+ * range, else null (invalid: shown with a red border, not persisted). */
 function parseField(text: string, min: number, max: number): number | null {
   const n = Number.parseInt(text, 10);
   if (!Number.isFinite(n) || String(n) !== text.trim()) return null;

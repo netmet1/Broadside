@@ -22,7 +22,7 @@ const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 ///
 /// Opening a wall of terminals fires every connect at the same instant, and an
 /// OpenSSH server counts connections that have not finished authenticating
-/// against `MaxStartups` — `10:30:100` by default, meaning it starts randomly
+/// against `MaxStartups`, `10:30:100` by default, meaning it starts randomly
 /// dropping past ten and refuses everything past a hundred. A dropped one
 /// arrives here as a TCP reset ("An existing connection was forcibly closed by
 /// the remote host. (os error 10054)"), which is what an operator opening a
@@ -78,8 +78,8 @@ const SHELL_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 /// One value decides everything the terminal path does on connect, so the four
 /// cases can't drift apart the way two independent predicates could.
 ///
-/// The two silent variants behave *identically* — nothing at all is written to
-/// the channel — but they are separate values because they are separate
+/// The two silent variants behave *identically* (nothing at all is written
+/// to the channel), but they are separate values because they are separate
 /// situations and must not say the same thing to the operator. `Unsupported` is
 /// a fact and there is nothing to fix; `Unreadable` is a guess, and the host may
 /// well be a bash box behind a `ForceCommand` that would work fine if told to.
@@ -116,7 +116,7 @@ pub enum ShellCapability {
     /// given the tail, because the next appliance to do what pfSense does will
     /// also arrive here under a name nobody has seen before.
     Unsupported,
-    /// The probe answered nothing at all — a `ForceCommand`, a restricted
+    /// The probe answered nothing at all: a `ForceCommand`, a restricted
     /// account, a server too slow to reply inside [`SHELL_PROBE_TIMEOUT`].
     /// Also send nothing: guessing wrong is how a console menu ends up being
     /// typed into.
@@ -212,9 +212,9 @@ impl ShellIntegrationPref {
 /// Whether a line of the shell probe's output could be the value of `$SHELL`:
 /// a single absolute path, no whitespace in it, not a bare directory.
 ///
-/// Deliberately strict. Everything a chatty rc file prints — banners, `Last
+/// Deliberately strict. Everything a chatty rc file prints (banners, `Last
 /// login:` lines, MOTD fragments, the literal `$SHELL` from a shell that does
-/// not expand it — fails at least one of these, and a line we cannot vouch for
+/// not expand it) fails at least one of these, and a line we cannot vouch for
 /// is better dropped than believed: the only thing the answer drives is a
 /// warning chip, and a wrong chip is worse than no chip.
 fn looks_like_shell_path(line: &str) -> bool {
@@ -228,11 +228,11 @@ fn looks_like_shell_path(line: &str) -> bool {
 }
 
 /// Whether a bare basename could be the *name of a shell*: letters, digits,
-/// `_` and `-`, nothing else — bash, zsh, ksh93, busybox-ash all fit.
+/// `_` and `-`, nothing else: bash, zsh, ksh93, busybox-ash all fit.
 ///
 /// [`looks_like_shell_path`] is about the line; this is about the name.
-/// `/etc/rc.initial` — pfSense's console menu, and genuinely the admin
-/// account's `$SHELL` — is a perfectly good absolute path, so the path check
+/// `/etc/rc.initial`, pfSense's console menu, and genuinely the admin
+/// account's `$SHELL`, is a perfectly good absolute path, so the path check
 /// believes it; but `rc.initial` is a script that happens to live in passwd,
 /// not a shell, and a Hosts chip naming it is noise. This alphabet (the same
 /// one migrations 17 and 18 enforce with a GLOB) gates what is stored and
@@ -289,7 +289,7 @@ pub(crate) async fn detect_login_shell(handle: &Handle<TofuHandler>) -> Option<S
         // Take the last line that could actually *be* `$SHELL`, not simply the
         // last non-empty one. An rc file that prints on a non-interactive login
         // puts its output on both sides of the echo, and taking whatever came
-        // last read one operator's rc banner as their login shell — the host
+        // last read one operator's rc banner as their login shell, the host
         // then wore an "unsupported shell" chip naming a line of their own
         // startup script. Finding nothing that looks like a shell is not an
         // error: `None` means "we could not tell", which warns about nothing.
@@ -347,9 +347,9 @@ pub enum ProbeResult {
         /// those are the two cases the operator most needs told apart.
         capability: ShellCapability,
     },
-    /// No stored key for this endpoint — TOFU prompt needed.
+    /// No stored key for this endpoint, TOFU prompt needed.
     UnknownKey { key: PresentedKey },
-    /// Stored key differs from the presented one — hard warning.
+    /// Stored key differs from the presented one, hard warning.
     KeyMismatch {
         stored_fingerprint: String,
         presented: PresentedKey,
@@ -495,7 +495,7 @@ async fn connect_and_auth_once(
                     stored_fingerprint: trusted_fingerprints.join(", "),
                     presented: p,
                 },
-                // Rejected before the handler saw a key — shouldn't happen.
+                // Rejected before the handler saw a key, shouldn't happen.
                 None => ConnectFailure::Unreachable {
                     message: "server key rejected before capture".into(),
                 },
@@ -896,8 +896,8 @@ mod shell_tests {
     fn a_real_shell_is_not_always_a_shell_name() {
         // The pfSense case: the admin account's passwd shell really is
         // /etc/rc.initial, the console menu. It sails through the path check
-        // because it is exactly what `$SHELL` said — the terminal path needs
-        // that truth to keep the integration line out of the menu — but the
+        // because it is exactly what `$SHELL` said, the terminal path needs
+        // that truth to keep the integration line out of the menu, but the
         // name is no shell, and storing it re-created the chip migration 17
         // clears. The probe result and the column both gate on this.
         assert!(looks_like_shell_path("/etc/rc.initial"));

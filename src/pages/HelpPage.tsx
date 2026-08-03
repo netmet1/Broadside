@@ -56,7 +56,7 @@ function Section({
 }
 
 /** What each section can be found by: its title, its keywords, and every word
- * it actually says. Built once — the sections are fixed at module load, and
+ * it actually says. Built once: the sections are fixed at module load, and
  * walking fourteen of them on every keystroke would be work for nothing. */
 const SECTION_TEXT = new Map<string, string>(
   SECTIONS.map((s) => [
@@ -240,8 +240,8 @@ export function HelpPage() {
           )}
           <nav className="space-y-0.5">
             {/* While filtering, each section says how many marks are in it, so
-                a section kept for a keyword — a word deliberately not written on
-                the page — reads as "keyword" instead of looking like a match the
+                a section kept for a keyword, a word deliberately not written on
+                the page, reads as "keyword" instead of looking like a match the
                 reader has failed to spot. */}
             {visibleSections.map((s) => {
               const marks = searching

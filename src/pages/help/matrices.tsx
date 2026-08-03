@@ -2,7 +2,7 @@
  * The two reference tables in Help: every keyboard shortcut, and every warning
  * the app can put in front of you.
  *
- * Kept out of `HelpPage.tsx` because they are data, not prose — a table row is
+ * Kept out of `HelpPage.tsx` because they are data, not prose: a table row is
  * added here when a key or a message is added to the app, and the page that
  * renders them does not need to grow to hold them.
  *
@@ -98,7 +98,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Ctrl+Shift+G</Kbd>,
         where: "Grid",
-        what: "Fill the screen with the grid: the sidebar, status bar, toolbar and tab strip all go, and the tiles take the whole window. Press it again to bring them back. Deliberately not a function key — F10 belongs to mc and nano.",
+        what: "Fill the screen with the grid: the sidebar, status bar, toolbar and tab strip all go, and the tiles take the whole window. Press it again to bring them back. Deliberately not a function key: F10 belongs to mc and nano.",
       },
       {
         keys: <Kbd>Esc</Kbd>,
@@ -126,7 +126,7 @@ const SHORTCUTS: ShortcutGroup[] = [
           </>
         ),
         where: "Terminals",
-        what: "Previous / next terminal tab, wrapping at the ends. Works with the focus inside a terminal — the shell never sees the key.",
+        what: "Previous / next terminal tab, wrapping at the ends. Works with the focus inside a terminal; the shell never sees the key.",
       },
     ],
   },
@@ -293,19 +293,19 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>An amber chip naming a shell (fish, csh, tcsh, …)</Msg>,
         where: "Hosts in full; a triangle alone in the picker rails",
         means:
-          "This host's login shell is not one of the Bourne-family shells Broadside can drive. Terminals, broadcast and file transfer all work as normal, and so does sudo password auto-fill; command block tracking is unavailable and skills cannot run here. The tab still opens looking like a fresh login, because the part of the setup that a shell like fish can read is still sent. The chip names whatever the host reported, and Broadside only reads a name it can recognise as a shell path — a chip naming something from your own startup script was a bug, fixed in 1.3.0. The chip is what the last completed connection read. It appears in the Broadcast, PTY Broadcast, MultiTerminal and Skills lists too, where the host stays selectable: nothing there is broken by it, but a command written for bash may not mean the same thing to that shell. Those lists are narrow, so there it is the amber triangle on its own and hovering it gives the words. Setting Shell integration to Always does not take this chip away: that setting answers a question the connection could not, and this host answered it. The chip then says the setup line is being sent anyway, which such a shell may object to.",
+          "This host's login shell is not one of the Bourne-family shells Broadside can drive. Terminals, broadcast and file transfer all work as normal, and so does sudo password auto-fill; command block tracking is unavailable and skills cannot run here. The tab still opens looking like a fresh login, because the part of the setup that a shell like fish can read is still sent. The chip names whatever the host reported, and Broadside only reads a name it can recognise as a shell path; a chip naming something from your own startup script was a bug, fixed in 1.3.0. The chip is what the last completed connection read. It appears in the Broadcast, PTY Broadcast, MultiTerminal and Skills lists too, where the host stays selectable: nothing there is broken by it, but a command written for bash may not mean the same thing to that shell. Those lists are narrow, so there it is the amber triangle on its own and hovering it gives the words. Setting Shell integration to Always does not take this chip away: that setting answers a question the connection could not, and this host answered it. The chip then says the setup line is being sent anyway, which such a shell may object to.",
       },
       {
         message: <Msg>An amber “no shell” chip</Msg>,
         where: "Hosts in full; a triangle alone in the picker rails",
         means:
-          "What this host runs at login is not a shell at all. The usual case is an appliance that answers with a console menu — a pfSense admin account, for instance, whose login shell really is the menu program. Broadside sends such a host nothing whatsoever on connect and leaves the screen exactly as the host drew it. This is what stops the menu being printed twice: anything sent to it, even a harmless screen clear, is read as a menu selection and answered by redrawing. Command block tracking and skills are unavailable; terminals, broadcast and file transfer are not affected.",
+          "What this host runs at login is not a shell at all. The usual case is an appliance that answers with a console menu: a pfSense admin account, for instance, whose login shell really is the menu program. Broadside sends such a host nothing whatsoever on connect and leaves the screen exactly as the host drew it. This is what stops the menu being printed twice: anything sent to it, even a harmless screen clear, is read as a menu selection and answered by redrawing. Command block tracking and skills are unavailable; terminals, broadcast and file transfer are not affected.",
       },
       {
         message: <Msg>An amber “shell unread” chip</Msg>,
         where: "Hosts in full; a triangle alone in the picker rails",
         means:
-          "The connection succeeded but the host would not say what its login shell is — a forced command, a restricted account, or a server too slow to answer in time. Broadside sends nothing rather than guess, because guessing wrong on an appliance is what makes a console menu print itself twice. The cost is command block tracking and skills. If you know the host runs bash or zsh, open it in Hosts and set Shell integration to Always: both come back, and the chip goes.",
+          "The connection succeeded but the host would not say what its login shell is: a forced command, a restricted account, or a server too slow to answer in time. Broadside sends nothing rather than guess, because guessing wrong on an appliance is what makes a console menu print itself twice. The cost is command block tracking and skills. If you know the host runs bash or zsh, open it in Hosts and set Shell integration to Always: both come back, and the chip goes.",
       },
       {
         message: <Msg>An amber “no integration” chip</Msg>,
@@ -317,13 +317,13 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>“N checked hosts report no blocks”</Msg>,
         where: "MultiTerminal",
         means:
-          "Those hosts will take every command you send and show nothing here, because this page reads markers that only bash and zsh install. It is not a hang and nothing is lost: the output is in each host's own terminal tab. Hover the message to see which hosts, and which of the two reasons applies — a shell that cannot take the markers, or one that could not be read and can be overridden in Hosts.",
+          "Those hosts will take every command you send and show nothing here, because this page reads markers that only bash and zsh install. It is not a hang and nothing is lost: the output is in each host's own terminal tab. Hover the message to see which hosts, and which of the two reasons applies: a shell that cannot take the markers, or one that could not be read and can be overridden in Hosts.",
       },
       {
         message: <Msg>A red Test connection icon</Msg>,
         where: "Hosts",
         means:
-          "The last attempt to reach this host failed — a test, a terminal, a broadcast, an SFTP session or a skill run, whichever happened most recently. It is stored with the host rather than remembered for the session, so it is still there after a restart, which is the point: a machine that is down is usually still down tomorrow. It clears itself the first time anything connects to that host successfully, so there is nothing to dismiss. Hover the button for the wording, and see Logs for what actually went wrong.",
+          "The last attempt to reach this host failed: a test, a terminal, a broadcast, an SFTP session or a skill run, whichever happened most recently. It is stored with the host rather than remembered for the session, so it is still there after a restart, which is the point: a machine that is down is usually still down tomorrow. It clears itself the first time anything connects to that host successfully, so there is nothing to dismiss. Hover the button for the wording, and see Logs for what actually went wrong.",
       },
       {
         message: <Msg>No credentials set</Msg>,
@@ -357,13 +357,13 @@ const WARNINGS: WarningGroup[] = [
         ),
         where: "Terminal pane",
         means:
-          "The server accepted the connection and then hung up during the handshake. Most often that is OpenSSH's MaxStartups: it counts connections that have not finished authenticating, and past ten (the default) it starts dropping them — which is what opening a wall of terminals at once looks like from the server's side. Broadside now keeps at most eight handshakes in flight and retries a dropped one twice, so this should be rare; if it persists, raise MaxStartups on the host or open fewer at a time.",
+          "The server accepted the connection and then hung up during the handshake. Most often that is OpenSSH's MaxStartups: it counts connections that have not finished authenticating, and past ten (the default) it starts dropping them, which is what opening a wall of terminals at once looks like from the server's side. Broadside now keeps at most eight handshakes in flight and retries a dropped one twice, so this should be rare; if it persists, raise MaxStartups on the host or open fewer at a time.",
       },
       {
         message: <Msg>Unreachable: connection timed out after 10s</Msg>,
         where: "Terminal pane",
         means:
-          "Nothing answered on that address and port. The host is off, the port is wrong, or a firewall is dropping it. Not retried automatically — a host that is not there does not become there.",
+          "Nothing answered on that address and port. The host is off, the port is wrong, or a firewall is dropping it. Not retried automatically: a host that is not there does not become there.",
       },
       {
         message: <Msg>Authentication failed: …</Msg>,
@@ -416,13 +416,13 @@ const WARNINGS: WarningGroup[] = [
           "First connection to this address and port. Broadside has no key on record, so it is showing you the fingerprint the server presented and asking whether to trust it. Check it against the host itself before accepting.",
       },
       {
-        message: <Msg>The host key has changed — the connection was refused</Msg>,
+        message: <Msg>The host key has changed: the connection was refused</Msg>,
         where: "Host-key dialog",
         means:
           "The server presented a different key from the one on record. That is either a rebuilt or re-keyed server, or the connection being intercepted. Nothing was sent and no password was offered. Do not accept it until you know which.",
       },
       {
-        message: <Msg>host key changed — refused</Msg>,
+        message: <Msg>host key changed: refused</Msg>,
         where: "SFTP Broadcast",
         means: "The same thing, on one host of a batch. The others carried on.",
       },

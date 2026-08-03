@@ -103,7 +103,7 @@ const COLLAPSE_BREAKPOINT = 1280;
 const SIDEBAR_PREF_KEY = "sidebar-collapsed";
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 
-/** The full-label width (was the fixed `w-56`) — the maximum; can't grow past
+/** The full-label width (was the fixed `w-56`), the maximum; can't grow past
  * it. The icon-only strip is `w-14`. Dragging narrower than the snap width
  * collapses to icons. */
 const SIDEBAR_MAX_WIDTH = 224;
@@ -182,7 +182,7 @@ export function AppShell({
   }, []);
 
   // A hint can be left dangling when the hovered control disappears on click
-  // (e.g. navigation swaps the page) — clear it on page change.
+  // (e.g. navigation swaps the page), clear it on page change.
   useEffect(() => {
     clearHint();
   }, [active, clearHint]);
@@ -227,7 +227,7 @@ export function AppShell({
   }, [dragging, collapsed]);
 
   // Maximized terminal: keep the SAME tree (so the terminal's TerminalView is
-  // never remounted — that would kill and reopen the PTY) but hide the sidebar,
+  // never remounted, that would kill and reopen the PTY) but hide the sidebar,
   // separator and status bar via CSS and show a slim banner above the terminal.
   // Both fullscreen modes hide the same chrome; only the banner differs.
   const chromeHidden = maximized || gridFullscreen;

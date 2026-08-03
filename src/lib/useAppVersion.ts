@@ -5,12 +5,12 @@ import { withBuildTag } from "@/lib/buildTag";
 
 /**
  * The app version, read once from `tauri.conf.json` (the value the installer
- * stamps and `@tauri-apps/api/app`'s `getVersion` returns) — e.g. "1.0.0", with
+ * stamps and `@tauri-apps/api/app`'s `getVersion` returns): e.g. "1.0.0", with
  * the build tag appended on a test build (see `buildTag.ts`).
  *
  * Single source of truth for every version label in the UI, so a release only
  * needs the manifest bumps (package.json / Cargo.toml / tauri.conf.json) and
- * the displayed version follows automatically — never hand-edited.
+ * the displayed version follows automatically: never hand-edited.
  *
  * `fallback` is shown until the async read resolves (default: empty, so a
  * transient "v" alone isn't painted).

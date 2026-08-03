@@ -297,7 +297,7 @@ export function BroadcastRail({
                   {sessionLabel(s)}
                 </span>
                 {/* Marked, never filtered (D-067). Broadcasting to this session
-                    works fine — it is keystrokes into a PTY — but the command
+                    works fine (it is keystrokes into a PTY), but the command
                     you are about to send may not be valid in that shell, which
                     is worth seeing before you send it to eight hosts at once. */}
                 {s.type === "ssh" &&

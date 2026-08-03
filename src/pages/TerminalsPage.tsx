@@ -67,8 +67,8 @@ const TABS_COMPACT_KEY = "terminal-tabs-compact";
  * survives a restart, like the layout and grid-title prefs. */
 const BROADCAST_RAIL_KEY = "terminal-broadcast-rail";
 
-/** Opening more than this many local shells at once first asks for confirmation
- * — a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
+/** Opening more than this many local shells at once first asks for confirmation:
+ * a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
  * the common "a handful at once" case (up to 7) stays friction-free. */
 const BULK_SHELL_WARN = 7;
 /** A profile with a startup command gets a far stricter threshold: every copy
@@ -84,7 +84,7 @@ const DEFAULT_MAX_SHELLS = 32;
  * walks them. Ctrl+Shift+T focuses the first, and Tab wraps at the last: with
  * no wrap it walks off the end into the grid, where the next stops are per-tab
  * buttons that only appear on hover and then a terminal, and focusing a
- * terminal scrolls the grid under it. Hidden controls are skipped — the "+"
+ * terminal scrolls the grid under it. Hidden controls are skipped: the "+"
  * launcher's menu items are not in the DOM until it opens, but a disabled or
  * display:none control would otherwise be a stop with nothing to see. */
 function focusablesIn(root: HTMLElement | null): HTMLElement[] {
@@ -113,7 +113,7 @@ type Props = {
   sessions: TermSession[];
   activeId: string | null;
   visible: boolean;
-  /** Session ids with a live connection — a disconnected SSH tab shows a red label. */
+  /** Session ids with a live connection, a disconnected SSH tab shows a red label. */
   connectedSessions: Set<string>;
   onConnectionChange: (sessionId: string, connected: boolean) => void;
   onManageShortcuts: () => void;
@@ -207,7 +207,7 @@ export function TerminalsPage({
     () => localShells.filter((s) => !disabledShells.has(s.id)),
     [localShells, disabledShells],
   );
-  // The local-shell launcher menu (a self-contained dropdown — robust in the
+  // The local-shell launcher menu (a self-contained dropdown, robust in the
   // webview, unlike a Select used as an action menu).
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const launcherRef = useRef<HTMLDivElement>(null);
@@ -380,7 +380,7 @@ export function TerminalsPage({
   }, [sessions]);
 
   // Grid layout: which tiles, in what order, laid out how. See ./terminals/
-  // useGridLayout — pure layout, nothing in it touches a PTY.
+  // useGridLayout, pure layout, nothing in it touches a PTY.
   const {
     layout,
     chooseLayout,
@@ -700,7 +700,7 @@ export function TerminalsPage({
     [sessions],
   );
 
-  // PTY Find (D-015 — Find only; filtering live interactive output is
+  // PTY Find (D-015, Find only; filtering live interactive output is
   // incoherent).
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState<{
@@ -792,7 +792,7 @@ export function TerminalsPage({
     );
   };
 
-  // Clearing the gate on dialog close (cancel OR accept — the dialogs close
+  // Clearing the gate on dialog close (cancel OR accept, the dialogs close
   // themselves before onTrusted fires) leaves the session in its waiting
   // overlay; the overlay's own Close-tab button is the cancel path.
   const clearGate = (sessionId: string) => {
@@ -864,7 +864,7 @@ export function TerminalsPage({
     return () => window.removeEventListener("keydown", onKey);
   }, [visible, navTab]);
 
-  // Show the gate dialog for the active session only — switching tabs while
+  // Show the gate dialog for the active session only, switching tabs while
   // a gate is pending leaves that session in its waiting state.
   const activeGateSession =
     activeId !== null && gates.has(activeId)
@@ -878,7 +878,7 @@ export function TerminalsPage({
   const activeScope = activeSession ? sessionScope(activeSession) : null;
 
   /** Shortcut Go: type the command into the active terminal and press Enter.
-   * PTY tabs bypass the guard by design (D-014) — the operator is
+   * PTY tabs bypass the guard by design (D-014): the operator is
    * interactive here, same as if they typed it themselves. */
   const runShortcut = (cmd: string) => {
     if (activeId === null) return;
@@ -892,8 +892,8 @@ export function TerminalsPage({
 
   return (
     <div className="relative flex h-full flex-col">
-      {/* Chrome (controls + tab strip) is hidden while a terminal is maximized
-          — only the terminal pane and the AppShell banner remain.
+      {/* Chrome (controls + tab strip) is hidden while a terminal is maximized:
+          only the terminal pane and the AppShell banner remain.
 
           In grid fullscreen the same chrome stays, but slides up out of the way
           so only a thin strip shows, and slides back down on hover or when
@@ -965,7 +965,7 @@ export function TerminalsPage({
       />
 
       {/* Tab strip on its own line below the controls. The row itself does NOT
-          scroll/clip — only the inner tab list does — so the "+" launcher's
+          scroll/clip, only the inner tab list does, so the "+" launcher's
           dropdown (which opens downward, below the strip) isn't clipped by an
           overflow container. (overflow-x:auto forces overflow-y to compute to
           auto too, which silently cropped the menu and made "+" look dead.) */}
@@ -1408,7 +1408,7 @@ export function TerminalsPage({
           In grid mode every pane tiles at once, mirroring the skill run panel.
           The pane wrappers keep the same key and structure in both modes (the
           header is present-but-hidden in tabs), so switching layout only
-          restyles them — it never remounts a TerminalView, which would tear
+          restyles them, it never remounts a TerminalView, which would tear
           down its live PTY. */}
       {/* The rail sits beside the panes rather than above them, so turning it on
           costs width (of which there is plenty) and not the vertical space the
@@ -1434,7 +1434,7 @@ export function TerminalsPage({
           // controls row + tab strip off screen.
           !gridMode && "relative overflow-hidden",
           // Settings-driven grid (Settings -> Grid): a uniform layout with pinned
-          // columns and/or character-based tile size. Overflow scrolls — the
+          // columns and/or character-based tile size. Overflow scrolls, the
           // fixed widths can exceed the viewport, and that scroll is intended.
           customGrid && "grid content-start gap-2 overflow-auto",
           customColsAuto && "grid-cols-1 lg:grid-cols-2",
@@ -1449,7 +1449,7 @@ export function TerminalsPage({
             gridCount === 1 &&
             "grid grid-cols-1 grid-rows-1 gap-2",
           // Two tiles: side-by-side full-height (stacking only when narrow), or
-          // flipped to a fixed top/bottom split — the twoUpSplit toggle.
+          // flipped to a fixed top/bottom split, the twoUpSplit toggle.
           !customGrid &&
             gridMode &&
             gridCount === 2 &&
@@ -1648,7 +1648,7 @@ export function TerminalsPage({
                         }
                   }
                   // A pane taken out of the grid is display:none, so it has no
-                  // box to fit to — tell it so, exactly as a background tab in
+                  // box to fit to, tell it so, exactly as a background tab in
                   // tabs mode is told, or it would fit against a zero size.
                   visible={visible && (gridMode ? !excluded : isActive)}
                   retryNonce={retryNonces.get(s.id) ?? 0}

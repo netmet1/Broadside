@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  * One component rather than the four hand-rolled copies this replaces, because
  * the chip now has to say which of three things went wrong and the wording is
  * the whole point. It appears on the Hosts row, and in the Broadcast, PTY
- * Broadcast, MultiTerminal and Skills rails — those lists *mark* an unsupported
+ * Broadcast, MultiTerminal and Skills rails: those lists *mark* an unsupported
  * host rather than hiding it, since plain broadcast works perfectly well on
  * fish and a host that silently vanishes from a list is the hardest kind of bug
  * to report.

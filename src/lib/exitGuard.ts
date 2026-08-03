@@ -5,7 +5,7 @@
 export const EXIT_GUARD_KEY = "exit-guard-connected";
 
 /** Whether the "warn before quitting with connected terminals" guard is on.
- * Default true — only an explicit "0" disables it. Reads localStorage live so
+ * Default true: only an explicit "0" disables it. Reads localStorage live so
  * the close handler always sees the current choice. */
 export function isExitGuardEnabled(): boolean {
   return localStorage.getItem(EXIT_GUARD_KEY) !== "0";

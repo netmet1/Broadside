@@ -47,7 +47,7 @@ pub fn load(path: &Path, passphrase: Option<&str>) -> AppResult<Vec<OtlogLine>> 
     let raw = fs::read(path)?;
     let body = if crypto::is_age_encrypted(&raw) {
         let passphrase = passphrase.filter(|p| !p.is_empty()).ok_or_else(|| {
-            AppError::Crypto("this session file is encrypted — passphrase required".into())
+            AppError::Crypto("this session file is encrypted, passphrase required".into())
         })?;
         crypto::decrypt(&raw, passphrase)?
     } else {

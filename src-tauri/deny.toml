@@ -6,7 +6,7 @@ all-features = false
 
 [advisories]
 # v2 schema. Vulnerabilities and yanked crates still fail.
-# `unmaintained = "workspace"` is a scope filter — only flag unmaintained
+# `unmaintained = "workspace"` is a scope filter: only flag unmaintained
 # crates in our direct workspace deps, not the transitive tree. Tauri 2
 # pulls in noisy unmaintained transitives (GTK3 bindings, unic-* helpers)
 # that are real ecosystem problems but not actionable here.
@@ -18,7 +18,7 @@ ignore = [
     # Marvin Attack timing side channel in the `rsa` crate (no fixed release
     # exists). Pulled in by russh's `rsa` feature for RSA public-key auth.
     # Exploitation requires an attacker to time many RSA private-key
-    # operations — a server-under-load scenario, not a desktop SSH client
+    # operations, a server-under-load scenario, not a desktop SSH client
     # making occasional auth signatures. Mirror of src-tauri/.cargo/audit.toml;
     # revisit at beta hardening or when rsa ships a constant-time fix (D-037).
     "RUSTSEC-2023-0071",

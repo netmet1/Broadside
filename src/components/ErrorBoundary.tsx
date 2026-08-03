@@ -14,7 +14,7 @@ type State = { error: Error | null };
 
 /** Catches render-time exceptions in its subtree so one component's crash
  * shows a recoverable panel instead of unmounting the whole React root (which
- * presented as a blank white window requiring an app restart — smoke test
+ * presented as a blank white window requiring an app restart, smoke test
  * 7.2). Reset re-mounts the subtree without restarting the app. */
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };

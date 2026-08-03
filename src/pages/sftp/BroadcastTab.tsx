@@ -178,7 +178,7 @@ export function BroadcastTab({
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* Host selection rail (collapsible — mirrors the other broadcast pages). */}
+        {/* Host selection rail (collapsible, mirrors the other broadcast pages). */}
         <div
           className={cn(
             "flex shrink-0 flex-col border-r border-border/50",
@@ -334,13 +334,13 @@ export function BroadcastTab({
             />
             Create path if it doesn't exist
             <span className="text-xs text-muted-foreground">
-              (put only — resets on restart)
+              (put only, resets on restart)
             </span>
           </label>
 
           {/* Direction selector: the Local graphic sits over the Local box and
               the Remote graphic over the Remote box, while the PUT/GET toggle
-              floats over the draggable divider — so it tracks the split live as
+              floats over the draggable divider, so it tracks the split live as
               the user drags it. */}
           <div className="relative flex items-stretch rounded-lg border border-border/50 bg-muted/20 py-3">
             <div style={{ width: `${splitPct}%` }} className="flex justify-center">
@@ -546,7 +546,7 @@ function DirectionEnd({
 }) {
   return (
     // Fixed width so the source/destination caption swap doesn't reflow the row
-    // and shove the PUT/GET toggle sideways — only the words change in place.
+    // and shove the PUT/GET toggle sideways, only the words change in place.
     <div className="flex w-28 flex-col items-center gap-1 text-center">
       <div className="text-muted-foreground">{icon}</div>
       <span className="text-sm font-medium">{title}</span>
@@ -572,7 +572,7 @@ function ConfirmBody({
   const [typed, setTyped] = useState("");
   const armed = typed === "CONFIRM";
   // The dialog stays mounted while closed, so clear the typed word each time it
-  // closes — a destructive broadcast must be re-confirmed from scratch every run.
+  // closes, a destructive broadcast must be re-confirmed from scratch every run.
   useEffect(() => {
     if (!open) setTyped("");
   }, [open]);

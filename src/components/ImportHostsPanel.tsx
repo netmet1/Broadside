@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 /**
  * Bulk host import wizard (D-025/D-047): pick a .csv/.xlsx file, review the
  * per-row validation report, import the ready rows. Inline page-swap panel
- * like the host form (D-027). Credentials are never importable — they're
+ * like the host form (D-027). Credentials are never importable: they're
  * set per host afterwards.
  */
 export function ImportHostsPanel({
@@ -92,7 +92,7 @@ export function ImportHostsPanel({
   };
 
   /** Resolve `#auto` colors: next unused palette hue, falling back to a
-   * random unused color once the palette is exhausted — auto assignments
+   * random unused color once the palette is exhausted: auto assignments
    * never duplicate an in-use color (D-051). Explicit colors pass through. */
   const resolveColors = (ready: RowPreview[]): RowPreview[] => {
     const used = existingColors.slice();

@@ -72,7 +72,7 @@ impl CredentialState {
     pub fn apply_auth(&self, host_id: i64, auth: &AuthInput) -> AppResult<()> {
         let mut backend = self.inner.lock().unwrap();
         ensure_unlocked(&backend)?;
-        // Clear only the auth secrets — the sudo password (D-026) survives
+        // Clear only the auth secrets; the sudo password (D-026) survives
         // auth-method changes and is managed via set_sudo_password.
         clear_auth_locked(&mut backend, host_id)?;
         match auth {

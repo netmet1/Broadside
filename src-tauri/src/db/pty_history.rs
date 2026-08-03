@@ -1,6 +1,6 @@
 //! Persistent PTY-broadcast dispatch history (D-059). Mirrors
 //! `broadcast_history` but records dispatch outcomes (sent / failed) rather
-//! than command output — PTY output lives in the terminal tabs.
+//! than command output; PTY output lives in the terminal tabs.
 //!
 //! One row per session-target; rows of a run share run_id/ts/command.
 

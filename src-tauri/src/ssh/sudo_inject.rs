@@ -1,18 +1,18 @@
-//! Sudo password auto-fill for interactive PTY sessions (D-065 — reverses the
+//! Sudo password auto-fill for interactive PTY sessions (D-065, reverses the
 //! PTY exemption stated in D-026).
 //!
 //! The [`SudoInjector`] is a pure state machine that watches the bytes the
 //! operator (or PTY Broadcast) types and the bytes the remote shell emits, and
 //! answers a sudo password prompt with the host's stored sudo password. It
 //! injects **once per prompt** and stops after a rejection (`Sorry, try
-//! again.`), handing control back to the operator — this is the "inject once,
+//! again.`), handing control back to the operator; this is the "inject once,
 //! then hand off" rule (avoids burning sudo's retry limit / PAM faillock).
 //!
 //! Detection is hybrid:
-//!   * **Tier A** — the sudo-specific `[sudo] password for <user>:` prompt
+//!   * **Tier A**: the sudo-specific `[sudo] password for <user>:` prompt
 //!     injects regardless of what was typed (catches history-recalled sudo,
 //!     where the keystrokes are just arrow keys).
-//!   * **Tier B** — a generic `…password:` prompt injects only when a
+//!   * **Tier B**: a generic `…password:` prompt injects only when a
 //!     `sudo`/`doas` command was just submitted (armed), and never when the
 //!     candidate line is the command echo (so a command like
 //!     `sudo x # password:` can't trick us into typing the password as a
@@ -30,18 +30,18 @@ const TAIL_CAP: usize = 512;
 /// (e.g. a full-screen app swallowing keystrokes) can't grow unbounded.
 const INPUT_CAP: usize = 4096;
 /// A real password prompt line is short. Anything longer is treated as command
-/// output, not a prompt — a guard for the generic (Tier B) match.
+/// output, not a prompt: a guard for the generic (Tier B) match.
 const MAX_PROMPT_LEN: usize = 64;
 
 /// Watches one PTY session's input/output and answers sudo password prompts.
 /// Inert when constructed with `None` (root host, or no stored sudo password).
 pub struct SudoInjector {
     password: Option<String>,
-    /// A sudo/doas command was just submitted — Tier B may answer the prompt.
+    /// A sudo/doas command was just submitted, Tier B may answer the prompt.
     armed: bool,
     /// A rejection was seen; stop injecting until the next sudo command.
     suppressed: bool,
-    /// We injected during the current sudo cycle — so a following rejection is
+    /// We injected during the current sudo cycle, so a following rejection is
     /// *our* password being wrong (not the operator's own typing).
     did_inject: bool,
     /// Latched when an injected password was rejected; drained by
@@ -68,8 +68,8 @@ impl SudoInjector {
         }
     }
 
-    /// Returns (and clears) whether an *injected* password was just rejected —
-    /// the caller uses this to warn the operator "possible wrong sudo password"
+    /// Returns (and clears) whether an *injected* password was just rejected.
+    /// The caller uses this to warn the operator "possible wrong sudo password"
     /// once per rejection. Never set for the operator's own mistyped password.
     pub fn take_rejected(&mut self) -> bool {
         std::mem::take(&mut self.rejected)
@@ -145,7 +145,7 @@ impl SudoInjector {
         let last_line = trimmed.rsplit(['\n', '\r']).next().unwrap_or(trimmed).trim();
         let last_lower = last_line.to_ascii_lowercase();
 
-        // Tier A: the unambiguous sudo prompt — inject regardless of arming.
+        // Tier A: the unambiguous sudo prompt, inject regardless of arming.
         let tier_a = last_line.contains("[sudo] password for ");
         // Tier B: a generic password prompt, but only when armed, short enough
         // to be a prompt (not output), and not the echo of the command itself.

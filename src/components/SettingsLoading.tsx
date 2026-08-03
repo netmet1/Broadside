@@ -16,7 +16,7 @@ const MESSAGES = [
  * Full-bleed loading panel the shell overlays on the Settings tab while the
  * (large) page mounts for the first time. The spinner is a CSS transform
  * animation, so it keeps turning on the compositor even if the first render
- * briefly blocks the main thread — the user never faces a blank/frozen tab.
+ * briefly blocks the main thread: the user never faces a blank/frozen tab.
  */
 export function SettingsLoading() {
   const [step, setStep] = useState(0);

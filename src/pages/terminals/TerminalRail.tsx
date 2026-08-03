@@ -24,7 +24,7 @@
  * Fullscreen means two different things in the two layouts, and both are
  * offered in both places (the icon and the View menu). In Grid it is the whole
  * wall filling the screen, Ctrl+Shift+G. In Tabs there is no wall, so it is the
- * one terminal you are looking at filling the window, F11 — which existed all
+ * one terminal you are looking at filling the window, F11, which existed all
  * along as a key and a per-tab button but was nowhere in the rail, so a Tabs
  * user had no way to find it.
  */

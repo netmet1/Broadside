@@ -50,7 +50,7 @@ export type ConnectionGate = Extract<
   { status: "unknown_key" } | { status: "key_mismatch" }
 >;
 
-/** Imperative search surface for the Terminals page's Find bar (D-015 —
+/** Imperative search surface for the Terminals page's Find bar (D-015:
  * PTY tabs are Find-only). */
 export type TerminalSearchHandle = {
   findNext: (pattern: string, options: SearchOptions, incremental: boolean) => void;
@@ -92,7 +92,7 @@ type Props = {
   source: TerminalSource;
   /** Whether this terminal's tab AND the Terminals page are visible. */
   visible: boolean;
-  /** Bumps when the user resolves a TOFU gate — triggers a reconnect. */
+  /** Bumps when the user resolves a TOFU gate, triggers a reconnect. */
   retryNonce: number;
   /** Bumped to re-initialize the xterm view, for recovering a display a
    * full-screen program left garbled (alternate screen, a stray scroll region,
@@ -107,7 +107,7 @@ type Props = {
   onReconnect: (sessionId: string) => void;
   /** Ctrl+F pressed while the terminal has focus. */
   onSearchRequest: () => void;
-  /** Alt+Left/Right pressed while the terminal has focus — switch tabs. */
+  /** Alt+Left/Right pressed while the terminal has focus, switch tabs. */
   onTabNav: (dir: "prev" | "next") => void;
   /** Live match feedback from the search addon. */
   onSearchResults: (resultIndex: number, resultCount: number) => void;
@@ -229,7 +229,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // Returning false only tells xterm to keep its hands off the key; it does
     // NOT stop the webview acting on it. Every branch here therefore calls
     // preventDefault as well, or the browser's own handling runs on top of
-    // ours — which is exactly what made Ctrl+Shift+V paste twice: we wrote the
+    // ours, which is exactly what made Ctrl+Shift+V paste twice: we wrote the
     // clipboard to the PTY, then Chromium's paste-and-match-style fired a
     // `paste` event at xterm's hidden textarea and xterm wrote it again.
     term.attachCustomKeyEventHandler((e) => {
@@ -244,7 +244,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       }
       // Ctrl+Shift+C copies the current selection; Ctrl+Shift+V pastes. These
       // are the explicit keyboard counterparts to copy-on-select (mouseup) and
-      // right-click-paste — Ctrl+C/Ctrl+V alone stay reserved for the shell
+      // right-click-paste, Ctrl+C/Ctrl+V alone stay reserved for the shell
       // (SIGINT / literal paste-through the shell may want).
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
         e.preventDefault();
@@ -274,7 +274,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       ) {
         e.preventDefault();
         // Stop the event bubbling to the window-level Alt+arrow handler in
-        // TerminalsPage — otherwise both handlers fire for one keypress and the
+        // TerminalsPage, otherwise both handlers fire for one keypress and the
         // tab index advances twice (skips every other tab).
         e.stopPropagation();
         onTabNavRef.current(e.key === "ArrowRight" ? "next" : "prev");
@@ -324,7 +324,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           if (text) ptyWrite(sessionId, text).catch(() => {});
         })
         .catch(() => {
-          // Clipboard unreadable (empty or permission denied) — ignore.
+          // Clipboard unreadable (empty or permission denied), ignore.
         });
     };
     const contextMenuEl = containerRef.current;
@@ -349,7 +349,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // chunk that *starts* with the echo, and only in the moment after the
       // button was pressed, so a command that prints a caret and an L of its
       // own keeps them. Seeing it also tells us the form feed is queued rather
-      // than acted on, which is the more important half — see below.
+      // than acted on, which is the more important half, see below.
       if (swallowEchoUntilRef.current) {
         if (performance.now() > swallowEchoUntilRef.current) {
           swallowEchoUntilRef.current = 0;
@@ -378,7 +378,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     dataReadyRef.current = unlistenData;
     const unlistenClosed = onPtyClosed((closed) => {
       if (closed.session_id !== sessionId) return;
-      // Accept the close during "connecting" too — a shell can die in the
+      // Accept the close during "connecting" too, a shell can die in the
       // gap before the open invoke resolves, and swallowing the event here
       // would leave a live-looking but dead terminal.
       if (
@@ -471,7 +471,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       try {
         // No `decorations` here on purpose: passing them makes the addon
         // register overview-ruler match decorations, which throw unless the
-        // terminal has a non-zero overview-ruler width — that throw (swallowed
+        // terminal has a non-zero overview-ruler width, that throw (swallowed
         // by this catch since PR #20) is why every search said "No matches"
         // (T2). Without decorations, findNext still scrolls to + selects the
         // active match and reports the count via onDidChangeResults.
@@ -502,7 +502,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       try {
         searchRef.current?.clearDecorations();
         // findNext highlights the active match via the terminal SELECTION (no
-        // decorations — they threw), so clearing decorations alone leaves that
+        // decorations, they threw), so clearing decorations alone leaves that
         // selection lit until the user clicks away. Drop it now too.
         termRef.current?.clearSelection();
       } catch (err) {
@@ -531,7 +531,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // Adopted session: a skill run already opened this PTY and handed it over.
       // Opening it again would spin up a second shell and orphan the first, so
       // just bind to the live session (the data/resize/close listeners key on
-      // the id) and mark it open. Only on the first mount — a later Reconnect
+      // the id) and mark it open. Only on the first mount, a later Reconnect
       // (retryNonce > 0) means the original shell is gone, so fall through to a
       // real open.
       if (adoptExisting && retryNonce === 0 && source.type === "ssh") {
@@ -550,7 +550,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         return;
       }
       try {
-        // Local shells have no host-key trust or auth gate — just spawn and open.
+        // Local shells have no host-key trust or auth gate, just spawn and open.
         if (source.type === "local") {
           await ptyOpenLocal({
             sessionId,
@@ -601,7 +601,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
               setShellWarning({ key: notice.key, message: notice.message });
             }
             // A pty:closed for this session may have raced ahead of the
-            // open result — don't resurrect a dead session.
+            // open result, don't resurrect a dead session.
             if (phaseRef.current.kind !== "closed") {
               setPhase({ kind: "open" });
               term.focus();
@@ -690,7 +690,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // A font change applied while this pane was hidden needs one more fit a
       // frame later: xterm pauses its renderer for off-screen terminals and
       // only unpauses via its own IntersectionObserver, which fires AFTER this
-      // frame's rAF callbacks — so the fit above can run against a still-paused
+      // frame's rAF callbacks, so the fit above can run against a still-paused
       // renderer whose deferred resize never lands (the "whole panel scrolls /
       // blank terminal after a Settings font change" bug). By the second frame
       // the renderer is live, so this fit applies synchronously and sticks.
@@ -743,7 +743,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
                     common one), and the alternative was closing the tab, going
                     back to Hosts and opening it again for something a second
                     attempt fixes. Same path as the disconnected banner's
-                    Reconnect — it bumps the retry nonce and re-runs connect. */}
+                    Reconnect; it bumps the retry nonce and re-runs connect. */}
                 <div className="flex items-center justify-center gap-2">
                   <Button
                     variant="outline"

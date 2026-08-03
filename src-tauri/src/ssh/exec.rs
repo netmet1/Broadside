@@ -13,7 +13,7 @@ use crate::error::{AppError, AppResult};
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum ExecResult {
-    /// The command ran (possibly cut off by the timeout — see `timed_out`).
+    /// The command ran (possibly cut off by the timeout, see `timed_out`).
     Completed {
         /// None when the channel closed without reporting an exit status
         /// (e.g. after a timeout).
@@ -61,7 +61,7 @@ impl From<ConnectFailure> for ExecResult {
 /// Connects, authenticates (TOFU-verified), runs `command` on an exec
 /// channel, and drains output until close or `timeout`.
 ///
-/// `stdin_payload` is written to the channel before stdin is closed — used
+/// `stdin_payload` is written to the channel before stdin is closed, used
 /// to pipe a sudo password to `sudo -S` (D-026). It never appears in the
 /// remote argv.
 #[allow(clippy::too_many_arguments)]

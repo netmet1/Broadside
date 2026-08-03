@@ -56,7 +56,7 @@ pub async fn pty_open(
     let fingerprints = keys.iter().map(|k| k.fingerprint_sha256.clone()).collect();
     // Sudo password auto-fill (D-065): armed only for a non-root host that has
     // one stored AND when the global toggle is on (off = operator opted out, e.g.
-    // a shared/restricted machine). A locked credential store yields None — never
+    // a shared/restricted machine). A locked credential store yields None, never
     // block opening the terminal over it.
     let sudo_password = if should_autofill_sudo(
         sudo_autofill_enabled,
@@ -133,7 +133,7 @@ pub async fn pty_open(
                 "pty_open",
                 Some(host.id),
                 Some(&host.label),
-                &format!("authentication failed — {message}"),
+                &format!("authentication failed: {message}"),
             );
             note_connect(&state, host.id, true);
         }
@@ -142,7 +142,7 @@ pub async fn pty_open(
                 "pty_open",
                 Some(host.id),
                 Some(&host.label),
-                &format!("unreachable — {message}"),
+                &format!("unreachable: {message}"),
             );
             note_connect(&state, host.id, true);
         }
@@ -150,7 +150,7 @@ pub async fn pty_open(
             "pty_open",
             Some(host.id),
             Some(&host.label),
-            "host key mismatch — connection refused",
+            "host key mismatch: connection refused",
         ),
         _ => {}
     }
@@ -179,7 +179,7 @@ pub fn pty_resize(
 /// Lists the local shells available on this machine (PowerShell / pwsh / Command
 /// Prompt / installed WSL distros) for the "New local shell" launcher. Async and
 /// cached: detection spawns wsl.exe (seconds when the WSL service is cold), and
-/// running that inside a sync command blocked the main thread — freezing every
+/// running that inside a sync command blocked the main thread, freezing every
 /// other IPC call (the Settings-spinner stall) and the event loop itself.
 #[tauri::command]
 pub async fn list_local_shells() -> Vec<crate::local::LocalShell> {
@@ -202,7 +202,7 @@ pub fn pty_open_local(
 ) -> AppResult<()> {
     // A `custom:<id>` shell names a row in custom_terminals, never a path. The
     // program and its arguments are read here, from the database, so the only
-    // thing the frontend can influence is WHICH stored terminal to launch — an
+    // thing the frontend can influence is WHICH stored terminal to launch, an
     // arbitrary executable path can't cross the IPC boundary. An id that no
     // longer exists fails with "no such custom terminal" rather than launching
     // anything.

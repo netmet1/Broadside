@@ -452,7 +452,7 @@ export function HostsPage({
       </div>
 
       {/* Neutralize the shadcn Table's own overflow wrapper so THIS div is the
-          single scroll container for both axes — gives a viewport-pinned
+          single scroll container for both axes, gives a viewport-pinned
           horizontal scrollbar and lets the header stick on vertical scroll. */}
       <div
         ref={tableScrollRef}
@@ -557,7 +557,7 @@ export function HostsPage({
                       }`}
                       {...hint(
                         tagFilterActive
-                          ? "Tag filter active — click to change (this session only)"
+                          ? "Tag filter active, click to change (this session only)"
                           : "Filter which hosts show by tag (this session only)",
                       )}
                     >
@@ -799,7 +799,7 @@ export function HostsPage({
                       <TerminalIcon />
                     </Button>
                     {/* Wrapped in a span so the help tip (and native title)
-                        still fire on hover when the button is disabled —
+                        still fire on hover when the button is disabled:
                         disabled buttons don't emit mouse events. */}
                     <span
                       className="inline-flex"
@@ -968,7 +968,7 @@ export function HostsPage({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* H8: Multi-terminal — pick which already-open hosts to duplicate. */}
+      {/* H8: Multi-terminal, pick which already-open hosts to duplicate. */}
       <AlertDialog
         open={multiDup !== null}
         onOpenChange={(o) => !o && setMultiDup(null)}

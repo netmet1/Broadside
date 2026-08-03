@@ -7,7 +7,7 @@ use age::secrecy::SecretString;
 
 use crate::error::{AppError, AppResult};
 
-/// age binary header — used to sniff whether a file needs a passphrase.
+/// age binary header, used to sniff whether a file needs a passphrase.
 pub const AGE_MAGIC: &[u8] = b"age-encryption.org/v1";
 
 pub fn is_age_encrypted(bytes: &[u8]) -> bool {
@@ -30,7 +30,7 @@ pub fn encrypt(plaintext: &[u8], passphrase: &str) -> AppResult<Vec<u8>> {
     Ok(output)
 }
 
-/// Wrong passphrases surface as `AppError::Crypto` — callers that need a
+/// Wrong passphrases surface as `AppError::Crypto`; callers that need a
 /// boolean "wrong password" treat that variant as such.
 pub fn decrypt(encrypted: &[u8], passphrase: &str) -> AppResult<Vec<u8>> {
     let decryptor = age::Decryptor::new(encrypted)

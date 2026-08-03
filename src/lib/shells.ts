@@ -133,7 +133,7 @@ export function shellNotice(
 ): { key: string; label: string; message: string } | null {
   const effective = effectiveCapability(capability, pref);
   if (!capabilityIsWarning(effective)) return null;
-  // `effective` is a warning, so it is not null — narrowed for the helpers.
+  // `effective` is a warning, so it is not null, narrowed for the helpers.
   const cap = effective as ShellCapability;
   if (pref === "never") {
     return {
@@ -165,7 +165,7 @@ export function shellNotice(
  * Keyed by capability as well as host because the verdict can change and the
  * new one is news: a host that was bash and is now behind a console menu, or
  * one just set to Never, has something to say that was never dismissed. Storing
- * the host alone made "dismissed" permanent and unreachable — there was no way
+ * the host alone made "dismissed" permanent and unreachable: there was no way
  * back short of resetting every preference in the app. The key is versioned
  * rather than migrated: the old shape said nothing about which verdict was
  * dismissed, so there is nothing in it to carry forward. */

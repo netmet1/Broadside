@@ -312,7 +312,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
   const refreshAudit = useCallback(async () => {
     try {
       setInfo(await auditInfo());
-      // Newest first (LG6) — the tail is chronological (oldest first).
+      // Newest first (LG6), the tail is chronological (oldest first).
       setAuditLines((await auditTail(1000)).reverse());
     } catch (e) {
       toast.error(errorMessage(e));
@@ -341,7 +341,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
 
   const refreshErrors = useCallback(async () => {
     try {
-      // Newest first (LG6) — the tail is chronological (oldest first).
+      // Newest first (LG6), the tail is chronological (oldest first).
       setErrorEntries((await errorLogTail(1000)).reverse());
       // Hosts for live-by-id tinting of the host label (LG2).
       setHostsById(

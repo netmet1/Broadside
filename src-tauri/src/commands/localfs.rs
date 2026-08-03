@@ -55,7 +55,7 @@ pub fn local_list_dir(path: String) -> AppResult<Vec<LocalEntry>> {
         };
         let meta = match dent.metadata() {
             Ok(m) => m,
-            Err(_) => continue, // permission-denied / broken link — skip the row
+            Err(_) => continue, // permission-denied / broken link, skip the row
         };
         let is_dir = meta.is_dir();
         let mtime = meta
@@ -95,7 +95,7 @@ pub fn local_scan_dir(path: String) -> AppResult<TransferStats> {
     while let Some(dir) = stack.pop() {
         let read_dir = match fs::read_dir(&dir) {
             Ok(r) => r,
-            Err(_) => continue, // unreadable subtree — skip
+            Err(_) => continue, // unreadable subtree, skip
         };
         for e in read_dir.filter_map(Result::ok) {
             let ft = match e.file_type() {
@@ -125,7 +125,7 @@ pub fn local_delete(path: String) -> AppResult<()> {
     Ok(())
 }
 
-/// Existing drive roots (`C:\`, `D:\`, …) — shown when navigating up past a
+/// Existing drive roots (`C:\`, `D:\`, …), shown when navigating up past a
 /// drive root on Windows.
 #[tauri::command]
 pub fn local_list_drives() -> AppResult<Vec<String>> {

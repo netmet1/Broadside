@@ -80,7 +80,7 @@ export function useHostConnTest(
             markFailed(host.id, false);
             break;
           case "unknown_key":
-            // Pending a trust decision — not a failure; leave the mark as-is.
+            // Pending a trust decision, not a failure; leave the mark as-is.
             setTofu({ host, key: result.key });
             break;
           case "key_mismatch":

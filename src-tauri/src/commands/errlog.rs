@@ -27,7 +27,7 @@ pub fn export_error_log(dest: String, errlog: State<'_, ErrLogState>) -> AppResu
 }
 
 /// Reads an arbitrary log file's lines (for loading an exported error log into
-/// the session viewer — LG5). Frontend parses the JSONL.
+/// the session viewer, LG5). Frontend parses the JSONL.
 #[tauri::command]
 pub fn read_log_lines(path: String) -> AppResult<Vec<String>> {
     let content = std::fs::read_to_string(&path)?;

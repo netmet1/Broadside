@@ -46,7 +46,7 @@ function cutoff(scope: RecallScope): number {
 }
 
 /** The commands this screen should recall: everything sent since it was last
- * cleared, whoever sent it. An entry with an unreadable timestamp is kept —
+ * cleared, whoever sent it. An entry with an unreadable timestamp is kept:
  * better a stale line in the recall than a silently missing one. */
 export function recallFor(
   entries: { command: string; ts: string }[],

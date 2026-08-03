@@ -44,8 +44,8 @@ export type RunGroup = {
   results: DispatchResult[];
 };
 
-/** The subset of a dispatch result the panel supplies per target (the rest —
- * ok/message — is filled in by the send loop). */
+/** The subset of a dispatch result the panel supplies per target (the rest,
+ * ok/message, is filled in by the send loop). */
 type TargetIdentity = Omit<DispatchResult, "ok" | "message">;
 
 /**
@@ -53,19 +53,19 @@ type TargetIdentity = Omit<DispatchResult, "ok" | "message">;
  * runs, command-recall history, and the send loop. Both the host-oriented SSH
  * panel and the shell-oriented local panels consume it; the differences are
  * passed in:
- *  - `lineEnding` — SSH keeps the shipped `\n`; local shells need `\r` or
+ *  - `lineEnding`: SSH keeps the shipped `\n`; local shells need `\r` or
  *    PowerShell/cmd park at a `>>` continuation prompt without executing.
- *  - `persist` — SSH reloads/saves runs + command recall via `ptyHistory*`;
+ *  - `persist`: SSH reloads/saves runs + command recall via `ptyHistory*`;
  *    local runs stay in memory (local shells don't survive a restart, so no
  *    backend schema change is needed).
- *  - `sharedRecall` — whether Up/Down reads the one stored recall list that
+ *  - `sharedRecall`: whether Up/Down reads the one stored recall list that
  *    every broadcasting screen writes to. Defaults to `persist`, because a
  *    panel that saves its runs was already sharing it; the Terminals rail turns
  *    it on without `persist` (shared recall, no second copy of the runs).
- *  - `recallScope` — which screen this is, for the per-screen clear. Sharing is
+ *  - `recallScope`: which screen this is, for the per-screen clear. Sharing is
  *    for reading only: clearing empties this composer and leaves the others
  *    holding what they had.
- *  - `describe` — maps a session to its report identity (host snapshot vs
+ *  - `describe`: maps a session to its report identity (host snapshot vs
  *    shell icon/label).
  */
 export function useSessionBroadcast<T extends { id: string }>({
@@ -92,7 +92,7 @@ export function useSessionBroadcast<T extends { id: string }>({
   const [runs, setRuns] = useState<RunGroup[]>([]);
   const [history, setHistory] = useState<string[]>([]);
 
-  // Nothing is pre-selected — the user opts into each broadcast. Keep their
+  // Nothing is pre-selected, the user opts into each broadcast. Keep their
   // choices; drop any selected id whose session has closed or dropped its
   // connection. A checked box on a session that cannot receive anything is a
   // command silently going nowhere, so the box is unchecked and (in the panels)

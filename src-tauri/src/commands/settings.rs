@@ -76,7 +76,7 @@ pub struct ShortcutCommand {
     pub scope: ShortcutScope,
     /// Optional friendly name for the dropdown/list. `serde(default)` keeps
     /// shortcuts saved before labels existed (missing field) deserializing as
-    /// `None` — they just show their command.
+    /// `None`; they just show their command.
     #[serde(default)]
     pub label: Option<String>,
 }
@@ -262,7 +262,7 @@ pub fn set_app_settings(
 /// Resets app *preferences* to their built-in defaults (the "reset everything"
 /// action). Deletes the config keys so the getters fall back to defaults:
 /// max sessions, default timeout, help hints, and the font settings. It does
-/// NOT touch user content — hosts, credentials, guard rules, shortcuts, command
+/// NOT touch user content: hosts, credentials, guard rules, shortcuts, command
 /// history and the audit log are all left intact. The frontend clears its own
 /// UI prefs (theme, layout, sort) from localStorage alongside this.
 #[tauri::command]
@@ -286,7 +286,7 @@ pub fn reset_app_settings(
     })
 }
 
-/// Destroys ALL hosts and their stored credentials — the Settings "Danger Zone"
+/// Destroys ALL hosts and their stored credentials, the Settings "Danger Zone"
 /// wipe. Admin-lock gated like the other destructive settings actions. Removes
 /// each host's credential entries (password / passphrase / sudo) *before*
 /// deleting the rows, because the keyring keys are derived from the host id;
@@ -303,7 +303,7 @@ pub fn destroy_all_hosts(
     lock_state: State<'_, crate::admin_lock::AdminLockState>,
 ) -> AppResult<usize> {
     // Collect ids under the db lock (also enforces the admin gate), then release
-    // it before touching the keyring — a separate mutex — to keep lock scopes
+    // it before touching the keyring, a separate mutex, to keep lock scopes
     // small.
     let ids: Vec<i64> = with_db(&state, |conn| {
         crate::admin_lock::ensure_unlocked(conn, &lock_state)?;
@@ -332,7 +332,7 @@ pub fn set_help_hints_enabled(enabled: bool, state: State<'_, DbState>) -> AppRe
 /// Global sudo password auto-fill toggle (D-065). Off = stored sudo passwords
 /// are never injected into interactive terminals. Saved immediately. The PTY
 /// open path reads the same key, so disabling it takes effect on the next
-/// terminal opened. Intentionally NOT cleared by `reset_app_settings` — a
+/// terminal opened. Intentionally NOT cleared by `reset_app_settings`, a
 /// preferences reset must never silently re-enable sudo auto-fill.
 #[tauri::command]
 pub fn set_sudo_autofill_enabled(
@@ -347,7 +347,7 @@ pub fn set_sudo_autofill_enabled(
 }
 
 /// Wholesale replace of the user rule list (frontend owns add/toggle/delete).
-/// Core rules are not stored — they live in code and cannot be removed
+/// Core rules are not stored; they live in code and cannot be removed
 /// (D-014 v0.1a).
 #[tauri::command]
 pub fn save_guard_rules(rules: Vec<UserRule>, state: State<'_, DbState>) -> AppResult<()> {

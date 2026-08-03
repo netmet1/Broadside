@@ -169,7 +169,7 @@ function normalizeFlavor(f: string | null): string {
 
 /** Initial form values for a host (or a blank form when null). Used as the
  * form's defaultValues so controlled fields (the flavor Select) populate
- * correctly on mount — the panel is remounted per host via a React key. */
+ * correctly on mount: the panel is remounted per host via a React key. */
 function valuesFromHost(host: Host | null, defaultColor: string): FormValues {
   if (!host) return emptyValues(defaultColor);
   return {
@@ -193,7 +193,7 @@ function valuesFromHost(host: Host | null, defaultColor: string): FormValues {
 type Props = {
   host: Host | null;
   defaultColor: string;
-  /** All existing hosts — used to warn when a hostname/IP is already in use. */
+  /** All existing hosts, used to warn when a hostname/IP is already in use. */
   existingHosts: Host[];
   onCancel: () => void;
   onSaved: () => void;
@@ -217,7 +217,7 @@ export function HostFormPanel({
   const [showKeyPassphrase, setShowKeyPassphrase] = useState(false);
   const [showSudoPassword, setShowSudoPassword] = useState(false);
   // Set when the entered hostname is already used by another host; the confirm
-  // dialog lets the user proceed anyway (allowed by design — D-033) or go back.
+  // dialog lets the user proceed anyway (allowed by design, D-033) or go back.
   const [dupConfirm, setDupConfirm] = useState<{
     data: FormValues;
     conflictLabel: string;
@@ -264,7 +264,7 @@ export function HostFormPanel({
   // Per-segment tag autocomplete. The field holds a comma-separated list; the
   // dropdown suggests existing tags that match the segment *currently being
   // typed* (after the last comma), excluding ones already in the field. A native
-  // <datalist> can't do this — it only matches the whole value — so this is a
+  // <datalist> can't do this (it only matches the whole value), so this is a
   // small custom popover over the same suggestion list.
   const tagValue = watch("tag") ?? "";
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
@@ -349,7 +349,7 @@ export function HostFormPanel({
   }, []);
 
   // Escape cancels the form (unless we're mid-submit or the duplicate-hostname
-  // confirm dialog is open — there Escape should just close the dialog).
+  // confirm dialog is open, there Escape should just close the dialog).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !isSubmitting && !dupConfirm) {
@@ -476,7 +476,7 @@ export function HostFormPanel({
       }
 
       // Credential writes are skipped entirely while admin-locked (the fields
-      // are ghosted, so there's nothing to write) — host metadata still saves.
+      // are ghosted, so there's nothing to write), host metadata still saves.
       if (!adminLocked) {
         if (editingCredentials) {
           if (data.authMethod === "none") {
@@ -947,7 +947,7 @@ export function HostFormPanel({
                       </button>
                     </div>
                     {/* Always rendered so this cell matches the Key file
-                        cell's height — otherwise the 2-col grid stretches this
+                        cell's height, otherwise the 2-col grid stretches this
                         cell and the input drifts down (H13). */}
                     <p className="min-h-4 text-xs text-destructive">
                       {errors.keyPassphrase?.message ?? " "}
@@ -1071,8 +1071,8 @@ export function HostFormPanel({
             put in the sudo card because that is where auto-fill is explained,
             but it is a setting about what is typed at the shell on connect, not
             about sudo, and sitting between the sudo status line and the sudo
-            password field it read as part of them. The verdict is read-only —
-            it is what the last connect saw — but the answer to it is not. */}
+            password field it read as part of them. The verdict is read-only
+            (it is what the last connect saw), but the answer to it is not. */}
         {host && (
           <div className="mt-6 max-w-4xl rounded-xl border border-border/50 bg-muted/20 p-5">
             <Label className="mb-3 block text-sm font-semibold">
@@ -1116,8 +1116,7 @@ export function HostFormPanel({
                   <span>
                     <span className="font-medium">Auto</span>
                     <span className="text-muted-foreground">
-                      {" "}
-                      — believe what the connection reads. The default.
+                      : believe what the connection reads. The default.
                     </span>
                   </span>
                 </label>
@@ -1126,8 +1125,7 @@ export function HostFormPanel({
                   <span>
                     <span className="font-medium">Always</span>
                     <span className="text-muted-foreground">
-                      {" "}
-                      — this host runs bash or zsh, whatever it reports. Use it
+                      : this host runs bash or zsh, whatever it reports. Use it
                       when the shell cannot be read (a forced command, a
                       restricted account) and command block tracking is worth
                       having back. It does not clear a mark from a host that
@@ -1141,8 +1139,7 @@ export function HostFormPanel({
                   <span>
                     <span className="font-medium">Never</span>
                     <span className="text-muted-foreground">
-                      {" "}
-                      — send this host nothing on connect and leave its login
+                      : send this host nothing on connect and leave its login
                       screen exactly as it draws it.
                     </span>
                   </span>

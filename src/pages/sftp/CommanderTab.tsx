@@ -90,7 +90,7 @@ const SPLIT_KEY = "sftp-split-pct";
  * connected remote host on the right. Navigate each side by clicking folders;
  * transfer a file by **dragging it to the other pane** (local→remote = put,
  * remote→local = get) or by **double-clicking** it. Both panes support New
- * folder and (double-click) Delete — local deletes go to the Recycle Bin, remote
+ * folder and (double-click) Delete: local deletes go to the Recycle Bin, remote
  * deletes are permanent. Files only for transfers this pass.
  */
 export function CommanderTab({
@@ -118,7 +118,7 @@ export function CommanderTab({
     files: number;
     bytes: number;
   } | null>(null);
-  // Which pane Backspace acts on — set to whichever pane was last clicked.
+  // Which pane Backspace acts on, set to whichever pane was last clicked.
   const [activePane, setActivePane] = useState<PaneSide>("local");
 
   // Resizable split (percent width of the left pane), persisted.
@@ -275,7 +275,7 @@ export function CommanderTab({
     async (side: PaneSide, payload: DragPayload) => {
       if (payload.side === side) return;
       const direction = side === "remote" ? "put" : "get";
-      // Transfer the dropped items one at a time — a single SFTP session can't
+      // Transfer the dropped items one at a time, a single SFTP session can't
       // safely run several uploads/downloads concurrently.
       for (const item of payload.items) {
         if (item.kind === "dir") {
@@ -355,7 +355,7 @@ export function CommanderTab({
         </div>
 
         {/* RIGHT: remote host. Plain block (not flex) so the FilePane fills the
-            full width like the left pane — a flex wrapper would size the pane to
+            full width like the left pane, a flex wrapper would size the pane to
             its content and leave a gap on the right. */}
         <div className="min-w-0 flex-1">
           {remote.session ? (
@@ -728,7 +728,7 @@ function FilePane({
           <RefreshCwIcon />
         </Button>
       </div>
-      {/* Listing — the whole body is the drop target for the other pane. */}
+      {/* Listing, the whole body is the drop target for the other pane. */}
       <div
         className={cn(
           "min-h-0 flex-1 overflow-y-auto transition-colors",
@@ -803,8 +803,8 @@ function FilePane({
                   isDrive
                     ? entry.name
                     : isDir
-                      ? `${entry.name} — open it, or drag to the other pane to transfer the folder`
-                      : `${entry.name} — click to select, Ctrl/Shift-click for many, drag to transfer`
+                      ? `${entry.name}: open it, or drag to the other pane to transfer the folder`
+                      : `${entry.name}: click to select, Ctrl/Shift-click for many, drag to transfer`
                 }
               >
                 <div

@@ -3,9 +3,9 @@
  * hostColumns / localShellPrefs. Each value is either `null` (== "auto", keep
  * today's fit-to-viewport behavior) or a clamped integer.
  *
- *  - `cols`     — how many tiles sit across (auto = responsive 1 / lg:2).
- *  - `itemCols` — tile WIDTH in characters (columns).
- *  - `itemRows` — tile HEIGHT in characters (rows / lines).
+ *  - `cols`:     how many tiles sit across (auto = responsive 1 / lg:2).
+ *  - `itemCols`: tile WIDTH in characters (columns).
+ *  - `itemRows`: tile HEIGHT in characters (rows / lines).
  *
  * "Character" units are converted to pixels at render time from the current
  * terminal cell metrics (see terminalCell.ts). When every value is auto the grid
@@ -23,7 +23,7 @@ const ROW_FILL_KEY = "terminal-grid-row-fill";
  * The browser's own `storage` event only reaches *other* documents, so a write
  * made here is invisible to the rest of this one. Settings and Terminals both
  * hold their own copy of these values, and with strict mode off a drag in the
- * grid changes what Settings should be showing — this is how the other copy
+ * grid changes what Settings should be showing: this is how the other copy
  * finds out, rather than each screen re-reading on a timer or on focus. */
 export const GRID_PREFS_EVENT = "broadside:grid-prefs";
 
@@ -54,7 +54,7 @@ export const AUTO_GRID_PREFS: GridPrefs = {
   itemRows: null,
 };
 
-/** True when nothing is pinned — the grid should use the shipped fit-to-viewport
+/** True when nothing is pinned; the grid should use the shipped fit-to-viewport
  * behavior (1 fills, 2-up split + flip, 3+ tile two-across and scroll). */
 export function isAutoGrid(p: GridPrefs): boolean {
   return p.cols === null && p.itemCols === null && p.itemRows === null;
@@ -120,13 +120,13 @@ function writeField(
  * neither of these two is a layout dimension.
  * ------------------------------------------------------------------ */
 
-/** What to do with a last row that isn't full — three tiles in two columns
+/** What to do with a last row that isn't full: three tiles in two columns
  * leaves a tile-shaped hole, and this decides what fills it.
  *
- *  - `stretch` — the tiles on the short row widen to take the whole width.
- *  - `tall`    — when exactly one space is left, the tile above it grows down
- *                into the gap, giving a full-height tile in the last column.
- *  - `gaps`    — leave the hole. Every tile keeps the same shape.
+ *  - `stretch`: the tiles on the short row widen to take the whole width.
+ *  - `tall`:    when exactly one space is left, the tile above it grows down
+ *               into the gap, giving a full-height tile in the last column.
+ *  - `gaps`:    leave the hole. Every tile keeps the same shape.
  */
 export type RowFill = "stretch" | "tall" | "gaps";
 
@@ -149,7 +149,7 @@ export function saveRowFill(v: RowFill): void {
  *
  * Strict: a tile size dragged out in the Terminals grid is an adjustment to the
  * wall you are looking at right now. It lasts while Broadside runs and is then
- * forgotten, and the numbers in Settings never move — so what you set here is
+ * forgotten, and the numbers in Settings never move, so what you set here is
  * what you get back on every restart.
  *
  * Not strict: a drag is a decision. It writes the tile width and height straight
@@ -158,7 +158,7 @@ export function saveRowFill(v: RowFill): void {
  * column count, the layout, the tile headers and the two-up flip are unchanged.
  */
 export function loadGridStrict(): boolean {
-  // Absent means never set, and the default is on — so only an explicit "0"
+  // Absent means never set, and the default is on, so only an explicit "0"
   // turns it off. Written this way round so a fresh install is strict.
   return localStorage.getItem(STRICT_KEY) !== "0";
 }

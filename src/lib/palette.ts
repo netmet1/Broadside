@@ -27,8 +27,8 @@ function randomVibrantColor(): string {
 }
 
 /**
- * Color for an auto-assignment: first unused palette hue, or — once every
- * palette hue is in use — a random vibrant color not already taken. Auto
+ * Color for an auto-assignment: first unused palette hue or, once every
+ * palette hue is in use, a random vibrant color not already taken. Auto
  * never duplicates an in-use color; explicit user picks may (D-051).
  */
 export function nextColor(usedColors: string[]): string {

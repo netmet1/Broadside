@@ -53,7 +53,7 @@ export function saveProfiles(profiles: ShellProfile[]): void {
 }
 
 /** Insert (new id) or replace (matching id) a profile, returning the new list.
- * Pure — the caller persists and sets state with the result. */
+ * Pure: the caller persists and sets state with the result. */
 export function upsertProfile(
   profiles: ShellProfile[],
   profile: ShellProfile,

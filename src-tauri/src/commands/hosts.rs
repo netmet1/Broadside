@@ -79,14 +79,14 @@ pub fn export_hosts(path: String, state: State<'_, DbState>) -> AppResult<usize>
     Ok(hosts.len())
 }
 
-/// Whether a local path points at an existing file — used by the host form
+/// Whether a local path points at an existing file, used by the host form
 /// to validate a hand-typed private-key path before saving.
 #[tauri::command]
 pub fn path_is_file(path: String) -> bool {
     std::path::Path::new(&path).is_file()
 }
 
-/// Whether a private key file can actually be used, and if not, why — so the
+/// Whether a private key file can actually be used, and if not, why, so the
 /// host form can say "this key is encrypted, it needs its passphrase" while the
 /// key is being chosen, rather than letting the first connect fail with it.
 ///

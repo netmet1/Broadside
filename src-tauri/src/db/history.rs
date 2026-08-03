@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
 
-/// Keep the table bounded — operators don't need infinite history and the
+/// Keep the table bounded: operators don't need infinite history and the
 /// viewer tails anyway.
 const MAX_ROWS: i64 = 5000;
 

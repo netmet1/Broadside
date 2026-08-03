@@ -31,11 +31,11 @@ const LAYOUT_KEY = "terminal-layout";
 const GRID_HIDE_HEADERS_KEY = "terminal-grid-hide-headers";
 
 /** Minimum tile width, in characters, when a fixed column count is set but the
- * item width is auto — keeps a big column count from shaving tiles to slivers.
+ * item width is auto. Keeps a big column count from shaving tiles to slivers.
  * Past this the grid overflows and scrolls horizontally instead. */
 const GRID_FLOOR_COLS = 24;
 /** Per-tile chrome added to the character-derived pixel size: the 1px border on
- * each side (X), and the border plus the grid pane header (Y). Approximate — fit
+ * each side (X), and the border plus the grid pane header (Y). Approximate: fit
  * rounds a container to whole cells, so the result lands within ~1 col/row. */
 export const TILE_BORDER_X = 2;
 export const TILE_BORDER_Y = 2;
@@ -59,7 +59,7 @@ export type GridLayout = {
   /** Grid is actually showing: the layout is grid AND nothing is maximized. */
   gridMode: boolean;
 
-  /** Panes in stable creation order — the DOM order they are rendered in. */
+  /** Panes in stable creation order, the DOM order they are rendered in. */
   paneOrder: TermSession[];
   /** Tiles the grid actually lays out (creation order, exclusions removed). */
   gridTiles: TermSession[];
@@ -98,7 +98,7 @@ export type GridLayout = {
    * same as `displayIndex`: tiles hidden from the grid are skipped, so these
    * are the contiguous slots the CSS grid actually fills. */
   gridSlot: Map<string, number>;
-  /** How many columns the grid really has right now — the pinned count trimmed
+  /** How many columns the grid really has right now, the pinned count trimmed
    * to the number of tiles (D3), or the responsive default. `null` when it
    * cannot be known (tiles of a fixed width auto-filling the container). */
   effectiveCols: number | null;
@@ -109,7 +109,7 @@ export type GridLayout = {
   /** A settings-driven uniform grid is in force (see the note on the exception
    * at two tiles). */
   customGrid: boolean;
-  /** Custom, but columns are still auto — a Tailwind class handles those. */
+  /** Custom, but columns are still auto, a Tailwind class handles those. */
   customColsAuto: boolean;
   gridStyle: React.CSSProperties | undefined;
 };
@@ -150,7 +150,7 @@ export function useGridLayout({
 
   // How the special two-terminal grid is split: side-by-side columns (default)
   // or stacked top/bottom rows. Deliberately plain component state, NOT
-  // persisted — the page stays mounted for the whole session so the choice
+  // persisted, the page stays mounted for the whole session so the choice
   // sticks across tab switches, but it resets to side-by-side on a restart.
   const [twoUpSplit, setTwoUpSplit] = useState<"cols" | "rows">("cols");
   const toggleTwoUpSplit = useCallback(
@@ -208,7 +208,7 @@ export function useGridLayout({
     () => paneOrder.filter((s) => !excludedFromGrid.has(s.id)),
     [paneOrder, excludedFromGrid],
   );
-  // How many tiles the grid shows — drives the fill/split/scroll layout (B3).
+  // How many tiles the grid shows, drives the fill/split/scroll layout (B3).
   // Excluded panes don't count, so hiding one of three tiles gives the real
   // two-up split rather than a two-up-shaped hole.
   const gridCount = gridTiles.length;
@@ -263,7 +263,7 @@ export function useGridLayout({
   // Unless strict mode is off, in which case the paragraph above is exactly
   // what the operator has said they do not want: the drag is written straight
   // into Settings, so the numbers there follow the wall and the size comes back
-  // after a restart. Only the tile size, and only from the drag handles —
+  // after a restart. Only the tile size, and only from the drag handles;
   // nothing else in the toolbar writes a setting either way.
   const setDragCols = useCallback(
     (cols: number) => {
@@ -330,14 +330,14 @@ export function useGridLayout({
   // number of tiles: six columns with three terminals open used half the window
   // and left the rest empty, and there is nothing for the other three columns to
   // do. It only ever shrinks the count, so it cannot fight a deliberately wide
-  // setting, and it changes no tile's *size* — a pinned item width or height is
+  // setting, and it changes no tile's *size*, a pinned item width or height is
   // still exactly what it says (D4).
   const pinnedCols =
     gridPrefs.cols != null ? Math.min(gridPrefs.cols, Math.max(gridCount, 1)) : null;
 
   // The real column count, for the short-row fill. Known when it is pinned, or
   // when the responsive default is in force (one column, two once the window is
-  // past `lg`). Unknowable for tiles of a fixed width auto-filling the row —
+  // past `lg`). Unknowable for tiles of a fixed width auto-filling the row:
   // that count comes from the container's measured width, not from a setting.
   const effectiveCols = useMemo<number | null>(() => {
     if (!gridMode) return null;
@@ -372,7 +372,7 @@ export function useGridLayout({
     } else if (widthPx != null) {
       style.gridTemplateColumns = `repeat(auto-fill, ${widthPx}px)`;
     }
-    // else: columns stay auto (only rows pinned) — a Tailwind class handles it.
+    // else: columns stay auto (only rows pinned), a Tailwind class handles it.
     if (gridPrefs.itemRows != null) {
       style.gridAutoRows = `${
         Math.round(gridPrefs.itemRows * cell.cellH) + GRID_HEADER_H + TILE_BORDER_Y
@@ -401,13 +401,13 @@ export function useGridLayout({
   // Filling a last row that isn't full. Three tiles in two columns leaves a
   // tile-shaped hole at the bottom right, and this is what goes in it.
   //
-  //  stretch — the tiles on the short row widen to share the whole width. The
+  //  stretch:  the tiles on the short row widen to share the whole width. The
   //            leftmost takes the odd column when it doesn't divide evenly.
-  //  tall    — the tile *above* the gap grows down into it, giving a
+  //  tall:     the tile *above* the gap grows down into it, giving a
   //            full-height tile in the last column. Only when exactly one space
   //            is left: with a wider gap there is no single tile above it, so
   //            it falls back to stretching.
-  //  gaps    — nothing. Every tile keeps its own cell.
+  //  gaps:     nothing. Every tile keeps its own cell.
   //
   // Placement is left to CSS grid's own auto-flow, which follows the `order`
   // the tiles carry. A tall tile occupies its second row before the short row
@@ -416,7 +416,7 @@ export function useGridLayout({
   // Both fills make a tile a different size from its neighbours, so neither is
   // allowed to argue with a size you pinned (D4): a stretched tile is wider
   // than the item width, a tall one is taller than the item height. Where the
-  // dimension is set by hand, the gap stays — what you asked for wins.
+  // dimension is set by hand, the gap stays; what you asked for wins.
   const spanCols = gridPrefs.itemCols == null;
   const spanRows = gridPrefs.itemRows == null;
   const tileSpan = useCallback(

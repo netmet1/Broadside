@@ -22,7 +22,7 @@ export function clashText(mode: TransferMode): string {
     case "newer_only":
       return "Existing files are overwritten only when the source is newer.";
     case "skip_existing":
-      return "Existing files are kept — only missing files are copied.";
+      return "Existing files are kept; only missing files are copied.";
     default:
       return "Existing files with the same names are overwritten.";
   }

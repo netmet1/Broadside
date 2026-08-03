@@ -116,7 +116,7 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
 
   // Direction + inputs. Default: local is source (put), toggle to the left.
   const [direction, setDirection] = useState<Direction>("put");
-  // "Create path if it doesn't exist" — session-only (in-memory), off by default.
+  // "Create path if it doesn't exist", session-only (in-memory), off by default.
   const [createPath, setCreatePath] = useState(false);
   // Local side: a file or folder chosen via the native picker.
   const [localPath, setLocalPath] = useState("");
@@ -139,13 +139,13 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
   const sessionsRef = useRef<Map<number, string>>(new Map());
   const xferIdToHost = useRef<Map<string, number>>(new Map());
 
-  // Volatile run config read inside the (stable) worker callbacks — avoids stale
+  // Volatile run config read inside the (stable) worker callbacks, avoids stale
   // closures without threading every input through the callback deps.
   const cfgRef = useRef({ direction, createPath, localPath, localIsDir, remotePath, mode });
   cfgRef.current = { direction, createPath, localPath, localIsDir, remotePath, mode };
 
   // Load the host list when the page becomes visible. Nothing is selected by
-  // default — broadcasting writes to every selected host, so the user opts in
+  // default, broadcasting writes to every selected host, so the user opts in
   // deliberately. Refresh on return so label/colour edits show up; drop any
   // selected ids that no longer exist.
   useEffect(() => {
@@ -231,7 +231,7 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
   }, []);
 
   // On GET the local side is a per-host destination *folder*, so a file picked
-  // earlier under PUT can't be a valid target — drop it when the direction flips
+  // earlier under PUT can't be a valid target, drop it when the direction flips
   // (the "Browse file…" button is hidden on GET for the same reason).
   useEffect(() => {
     if (direction === "get" && localPath && !localIsDir) {
@@ -455,10 +455,10 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
               port: host.port,
               key: res.key,
             });
-            patch(host.id, { status: "fail", message: "host key not trusted — accept in the dialog" });
+            patch(host.id, { status: "fail", message: "host key not trusted, accept in the dialog" });
             return;
           case "key_mismatch":
-            patch(host.id, { status: "fail", message: "host key changed — refused" });
+            patch(host.id, { status: "fail", message: "host key changed: refused" });
             return;
           case "auth_failed":
             patch(host.id, { status: "fail", message: `auth failed: ${res.message}` });

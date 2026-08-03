@@ -1,5 +1,5 @@
 //! Integration tests for broadcast exec (D-002/D-004) against a real
-//! OpenSSH server in docker. Ignored by default — local pre-merge gate
+//! OpenSSH server in docker. Ignored by default, local pre-merge gate
 //! (D-035). Run with:
 //!
 //!     cargo test --test ssh_exec -- --ignored --test-threads=1
@@ -99,7 +99,7 @@ async fn exec_timeout_preserves_partial_output() {
 #[tokio::test]
 #[ignore]
 async fn exec_stdin_payload_reaches_command() {
-    // `cat` echoes stdin — proves the sudo -S password piping transport
+    // `cat` echoes stdin, proves the sudo -S password piping transport
     // (D-026) delivers the payload and EOF cleanly.
     let fx = Fixture::start();
     let fp = trust(&fx).await;
@@ -173,7 +173,7 @@ async fn exec_command_reading_stdin_gets_eof() {
             timed_out,
             ..
         } => {
-            assert!(!timed_out, "wc -l hung on stdin — EOF not delivered");
+            assert!(!timed_out, "wc -l hung on stdin: EOF not delivered");
             assert_eq!(exit_code, Some(0));
         }
         other => panic!("expected Completed, got {other:?}"),

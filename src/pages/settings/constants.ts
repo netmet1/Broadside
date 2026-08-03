@@ -12,7 +12,7 @@ export function sectionDomId(title: string): string {
   return "settings-sec-" + title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
-/** Section render order — also the jump-to dropdown list. */
+/** Section render order, also the jump-to dropdown list. */
 export const SECTION_TITLES = [
   "Performance",
   "Network probe",
@@ -62,7 +62,7 @@ export const SECTION_KEYWORDS: Record<string, string> = {
 };
 
 // The search filter and scroll position persist across tab switches (Settings
-// unmounts on navigation) but NOT across restarts — sessionStorage clears when
+// unmounts on navigation) but NOT across restarts, sessionStorage clears when
 // the app window closes. Matches the existing rail/sort persistence pattern.
 export const SEARCH_STORAGE_KEY = "settings-search";
 export const SECTION_SCROLL_KEY = "settings-scroll-section";

@@ -1,5 +1,5 @@
 //! Admin-lock commands (opt-in passcode that gates the sensitive controls).
-//! The lock is authorization-only — see `crate::admin_lock`.
+//! The lock is authorization-only, see `crate::admin_lock`.
 
 use serde::Serialize;
 use tauri::State;

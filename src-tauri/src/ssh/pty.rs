@@ -1,5 +1,5 @@
 //! Interactive PTY sessions for per-host terminal tabs (D-002 hybrid model).
-//! PTY mode is deliberately exempt from the destructive guard (D-014) — the
+//! PTY mode is deliberately exempt from the destructive guard (D-014), the
 //! operator is interactive. Sudo password auto-fill, however, IS wired in here
 //! (D-065, reversing D-026's PTY exemption): the session task feeds the
 //! keystroke and output streams through a [`SudoInjector`](super::sudo_inject)
@@ -58,7 +58,7 @@ pub struct PtyClosed {
 }
 
 /// The stored sudo password was auto-filled for one session (D-065). Carries
-/// no secret — only enough to audit-log and toast.
+/// no secret, only enough to audit-log and toast.
 #[derive(Debug, Clone, Serialize)]
 pub struct SudoInjected {
     pub session_id: String,
@@ -82,7 +82,7 @@ pub struct PtyBlock {
 pub trait PtyEvents: Send + Sync + 'static {
     fn data(&self, payload: PtyData);
     fn closed(&self, payload: PtyClosed);
-    /// A command finished — its completion-delimited block (D-061).
+    /// A command finished, its completion-delimited block (D-061).
     fn block(&self, payload: PtyBlock);
     /// The sudo password was auto-filled at a prompt (D-065).
     fn sudo_injected(&self, payload: SudoInjected);
@@ -101,7 +101,7 @@ impl PtyEvents for tauri::AppHandle {
         let _ = self.emit(BLOCK_EVENT, &payload);
     }
     fn sudo_injected(&self, payload: SudoInjected) {
-        // Always-on audit (D-011) — never includes the password (D-026 rule).
+        // Always-on audit (D-011), never includes the password (D-026 rule).
         let _ = self
             .state::<crate::audit::AuditState>()
             .append(&crate::audit::AuditEvent::SudoInjected {
@@ -114,13 +114,13 @@ impl PtyEvents for tauri::AppHandle {
         let _ = self.emit(SUDO_EVENT, &payload);
     }
     fn sudo_rejected(&self, payload: SudoInjected) {
-        // Transparency: the auto-filled password didn't work — tell the operator
+        // Transparency: the auto-filled password didn't work; tell the operator
         // so they can fix the stored sudo password. No secret in the payload.
         let _ = self.emit(SUDO_REJECTED_EVENT, &payload);
     }
 }
 
-/// Typed result of a PTY open attempt — mirrors ProbeResult/ExecResult so the
+/// Typed result of a PTY open attempt, mirrors ProbeResult/ExecResult so the
 /// frontend reuses the same TOFU dialogs.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -135,7 +135,7 @@ pub enum PtyOpenResult {
         /// questions: the name is what the host said, this is what Broadside
         /// made of it. It is also the only way the frontend can tell an
         /// `unreadable` host (fixable, point at the override) from an
-        /// `unsupported` one (a fact, nothing to fix) — the name is `None` in
+        /// `unsupported` one (a fact, nothing to fix), the name is `None` in
         /// the first case and unstorable in the second.
         ///
         /// This is the value that gets stored, so it stays the host's own
@@ -146,7 +146,7 @@ pub enum PtyOpenResult {
         /// alone does not say what happened: a bash host set to `Never` was
         /// sent nothing, and a host that answered nothing but is set to
         /// `Always` was sent everything. The pane's warning strip is about what
-        /// happened, so it needs both — and it is the same pair the Hosts and
+        /// happened, so it needs both, and it is the same pair the Hosts and
         /// rail chips already resolve, so the two cannot disagree.
         integration: ShellIntegrationPref,
     },
@@ -184,7 +184,7 @@ impl From<ConnectFailure> for PtyOpenResult {
 }
 
 /// Commands sent into a live session task. Shared by the SSH path (below) and
-/// the local-shell path (`crate::local`) — both consume the same channel so the
+/// the local-shell path (`crate::local`), both consume the same channel so the
 /// `pty_write`/`pty_resize`/`pty_close` commands work identically for either.
 pub(crate) enum SessionCmd {
     Write(Vec<u8>),
@@ -194,7 +194,7 @@ pub(crate) enum SessionCmd {
 
 /// One registered session: the command channel into its task, plus the epoch
 /// stamped at registration so a task can tell whether the map entry is still
-/// its own (a later open with the same id replaces the entry — see
+/// its own (a later open with the same id replaces the entry, see
 /// `remove_if_current`).
 struct SessionEntry {
     epoch: u64,
@@ -237,7 +237,7 @@ impl PtyState {
     }
 
     /// Deregisters the session only if the entry still belongs to the task
-    /// stamped with `epoch`. Returns whether it did — false means the entry
+    /// stamped with `epoch`. Returns whether it did, false means the entry
     /// was already removed (deliberate close) or replaced by a newer open
     /// with the same id, and the caller must not tear down or report on the
     /// replacement's behalf.
@@ -354,7 +354,7 @@ pub async fn open<E: PtyEvents>(
 
     // OSC 133 shell integration is injected from inside the session task once
     // the login banner has streamed (so we can capture the real "Last login:"
-    // line before clearing) — see the task below (D-061 / D-063 / T1).
+    // line before clearing), see the task below (D-061 / D-063 / T1).
     let (tx, mut rx) = mpsc::channel::<SessionCmd>(64);
     let epoch = state.insert(session_id.clone(), tx);
     let state = state.clone();
@@ -372,7 +372,7 @@ pub async fn open<E: PtyEvents>(
         let mut exit_code: Option<u32> = None;
         let mut message: Option<String> = None;
         // Per-session VT interpreter feeding the MultiTerminal block stream
-        // (D-061). The raw `pty:data` stream below is unchanged — the live
+        // (D-061). The raw `pty:data` stream below is unchanged; the live
         // terminal pane still renders every byte; this is a parallel feed.
         let mut omni = crate::omni::OmniParser::new();
 
@@ -429,7 +429,7 @@ pub async fn open<E: PtyEvents>(
                                 events.sudo_injected(sudo_meta.clone());
                             }
                         }
-                        // An injected password that sudo rejected — warn once so
+                        // An injected password that sudo rejected, warn once so
                         // the operator knows to fix the stored password (11.3).
                         if sudo.take_rejected() {
                             events.sudo_rejected(sudo_meta.clone());
@@ -442,7 +442,7 @@ pub async fn open<E: PtyEvents>(
                     Some(_) => {}
                 },
                 _ = &mut setup_timeout, if !setup_sent => {
-                    // No last-login arrived in time — set up without re-echoing it.
+                    // No last-login arrived in time, set up without re-echoing it.
                     // A silent host reaches this arm too (it prints a menu, not a
                     // last-login line) and must still write nothing.
                     if let Some(setup) = crate::omni::shell_setup_command(None, effective) {
@@ -470,7 +470,7 @@ pub async fn open<E: PtyEvents>(
             .disconnect(russh::Disconnect::ByApplication, "", "en")
             .await;
         // Drop our map entry so later writes fail fast instead of queueing
-        // into a dead task — but only if the entry is still OURS. A second
+        // into a dead task, but only if the entry is still OURS. A second
         // open with the same session id replaces the entry; the replaced
         // task must not deregister its successor or report a close the UI
         // would misattribute to the live session.

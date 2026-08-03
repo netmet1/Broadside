@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 export type SearchMode = "find" | "filter";
 
 type Props = {
-  /** Modes this surface supports — PTY tabs pass ["find"] only (D-015). */
+  /** Modes this surface supports, PTY tabs pass ["find"] only (D-015). */
   modes: SearchMode[];
   mode: SearchMode;
   onModeChange: (mode: SearchMode) => void;

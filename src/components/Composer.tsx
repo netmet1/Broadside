@@ -25,7 +25,7 @@ type Props = {
  * long input and auto-grows its height (up to `maxRows`) instead of scrolling
  * the text out of view. Enter submits; Shift+Enter inserts a newline.
  *
- * Keeps the smooth animated caret (D-009 — composer only): the native caret is
+ * Keeps the smooth animated caret (D-009: composer only): the native caret is
  * hidden and a mirror element measures the caret's x/y (including wrapped
  * lines) so an animated bar eases to that position.
  */
@@ -114,7 +114,7 @@ export function Composer({
         style={{
           // The marker lives inside the mirror, which carries the same px-3/py-2
           // padding as the textarea, so its offsetLeft/offsetTop already include
-          // that padding — no extra offset here, or the caret drifts by the
+          // that padding, no extra offset here, or the caret drifts by the
           // padding amount.
           left: `${caret.left}px`,
           top: `${caret.top}px`,
@@ -122,7 +122,7 @@ export function Composer({
           display: focused && !disabled ? undefined : "none",
         }}
       />
-      {/* Mirror for caret measurement — must match the textarea's box model
+      {/* Mirror for caret measurement, must match the textarea's box model
           (font, padding, width, wrapping, line-height) so wrapped lines line
           up. The marker is a full line-height, top-aligned, zero-width box: a
           zero-height marker baseline-aligns and reports an offsetTop near the
@@ -205,7 +205,7 @@ export function Composer({
         className={cn(
           // min-h-10 keeps the empty box a comfortable single line tall so the
           // smooth caret never pokes out below it before the first command
-          // (B1/P1 — auto-resize can briefly under-measure on mount/font-load).
+          // (B1/P1, auto-resize can briefly under-measure on mount/font-load).
           "block min-h-10 max-h-[12rem] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 font-mono text-sm leading-5 shadow-xs outline-none transition-colors",
           "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
           "disabled:cursor-not-allowed disabled:opacity-50",

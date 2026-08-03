@@ -159,7 +159,7 @@ fn wipefs_on_device() {
 #[test]
 fn fdisk_list_only_is_clean() {
     // -l is read-only, but it still names a /dev path; the guard is
-    // deliberately conservative here — reading a partition table via
+    // deliberately conservative here, reading a partition table via
     // broadcast is unusual enough that a CONFIRM is acceptable.
     assert_hits("fdisk -l /dev/sda", &["partition-tools"]);
 }

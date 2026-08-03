@@ -21,7 +21,7 @@ export type CoreRuleInfo = {
   help_tip: string;
 };
 
-/** A user-added guard rule (D-014 structured form — no raw regex). */
+/** A user-added guard rule (D-014 structured form, no raw regex). */
 export type UserRule = {
   id: string;
   description: string;

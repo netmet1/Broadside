@@ -21,13 +21,13 @@ const TAB_KEY = "sftp-tab";
 
 /**
  * SFTP feature page. Two tabs (per the design):
- *  - **Commander** — dual-pane file manager (local left, remote right) with
+ *  - **Commander**: dual-pane file manager (local left, remote right) with
  *    drag-and-drop transfers.
- *  - **Broadcast** — multi-host put/get across the selected hosts, with a
+ *  - **Broadcast**: multi-host put/get across the selected hosts, with a
  *    typed-word guard and per-host progress.
  *
  * The "When a file already exists" clash mode lives on the tab row (right side)
- * so it applies to — and is visible in — both tabs. Bodies stay mounted (App
+ * so it applies to, and is visible in, both tabs. Bodies stay mounted (App
  * renders the page CSS-hidden) so an open session survives tab switches.
  */
 export function SftpPage({ visible }: { visible: boolean }) {

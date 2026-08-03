@@ -37,7 +37,7 @@ pub fn open_in_memory() -> AppResult<Connection> {
 
 /// Sequential migrations driven by PRAGMA user_version. Each entry runs at
 /// most once per database; user_version records how many have been applied.
-/// Append only — never reorder or edit a shipped entry.
+/// Append only, never reorder or edit a shipped entry.
 const MIGRATIONS: &[&str] = &[
     // 1: initial hosts table
     "CREATE TABLE IF NOT EXISTS hosts (
@@ -117,7 +117,7 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE command_history ADD COLUMN hosts_json TEXT;
      ALTER TABLE command_history ADD COLUMN source TEXT;",
     // 10: PTY-broadcast dispatch host_id (D-061 sub-4) so its results tint by
-    // the host's *live* colour, like broadcast_results already does. Nullable —
+    // the host's *live* colour, like broadcast_results already does. Nullable:
     // rows predating this fall back to the stored colour snapshot.
     "ALTER TABLE pty_dispatch_results ADD COLUMN host_id INTEGER;",
     // 11: persistent MultiTerminal block log (D-061 follow-up) so the aggregate
@@ -135,7 +135,7 @@ const MIGRATIONS: &[&str] = &[
         duration_ms   INTEGER,
         interactivity TEXT NOT NULL
     );",
-    // 12: host grouping tag (user request) — optional free-text label for
+    // 12: host grouping tag (user request), optional free-text label for
     // grouping/sorting hosts in the table; autocompleted in the form from tags
     // already in use. Surfaces before linux_flavor in the UI.
     "ALTER TABLE hosts ADD COLUMN tag TEXT;",
@@ -205,8 +205,8 @@ const MIGRATIONS: &[&str] = &[
         AND (login_shell = '' OR login_shell GLOB '*[^a-z0-9_-]*');",
     // 18: the same heal as 17, run once more. 17 assumed only the old probe
     // could have written such a name, but the fixed probe still believed any
-    // absolute path — and on a pfSense host `$SHELL` genuinely is
-    // /etc/rc.initial, the console menu — so every connect or test since the
+    // absolute path, and on a pfSense host `$SHELL` genuinely is
+    // /etc/rc.initial, the console menu, so every connect or test since the
     // upgrade wrote the name straight back. set_login_shell itself now holds
     // the column to this alphabet; this clears what was stored in between.
     "UPDATE hosts SET login_shell = NULL
@@ -217,7 +217,7 @@ const MIGRATIONS: &[&str] = &[
     //
     // `shell_capability` exists because `login_shell` cannot answer this.
     // Migrations 17 and 18 hold that column to the shell alphabet, so pfSense's
-    // rc.initial is stored as NULL — correct for a chip, useless as memory: the
+    // rc.initial is stored as NULL, correct for a chip, useless as memory: the
     // fact that the host cannot be driven was being relearned on every connect
     // and forgotten in between. It is also the only place the two silent cases
     // are distinguishable, since 'unsupported' (a name we read and rejected)
@@ -521,7 +521,7 @@ mod tests {
     #[test]
     fn the_heal_runs_again_for_what_the_probe_wrote_after_it() {
         // Migration 18. Between 17 and the probe learning the same alphabet,
-        // a connect to a pfSense host stored `rc.initial` again — its passwd
+        // a connect to a pfSense host stored `rc.initial` again, its passwd
         // shell really is /etc/rc.initial, so the path check believed it.
         let conn = database_at_version(17);
         for (label, shell) in [("firewall", "rc.initial"), ("plain", "bash")] {

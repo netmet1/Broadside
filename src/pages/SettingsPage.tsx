@@ -95,7 +95,7 @@ export function SettingsPage({
    * "Manage shortcuts…" entry on Broadcast/Terminals). */
   focusSection?: string | null;
   onFocusConsumed?: () => void;
-  /** Called once the initial settings load has settled — clears the branded
+  /** Called once the initial settings load has settled, clears the branded
    * loader the shell shows while this (large) page warms up. */
   onReady?: () => void;
 }) {
@@ -171,7 +171,7 @@ export function SettingsPage({
       return;
     }
     // localStorage/sessionStorage hold only UI prefs in this app (theme, tab
-    // order, sort, column widths, rail/header toggles) — clearing them resets
+    // order, sort, column widths, rail/header toggles), clearing them resets
     // every persisted preference. Reload so all providers re-init from defaults.
     try {
       localStorage.clear();
@@ -206,7 +206,7 @@ export function SettingsPage({
     }
   };
 
-  // Section search — filters which settings sections are shown. Restored from
+  // Section search, filters which settings sections are shown. Restored from
   // sessionStorage so it survives leaving and returning to the Settings tab.
   const [query, setQuery] = useState(
     () => sessionStorage.getItem(SEARCH_STORAGE_KEY) ?? "",
@@ -299,7 +299,7 @@ export function SettingsPage({
     };
   }, []);
 
-  // Restore the last-viewed section when returning to the tab — once per mount,
+  // Restore the last-viewed section when returning to the tab, once per mount,
   // and never when a deep-link (focusSection) is steering the scroll instead.
   const didRestoreScroll = useRef(false);
   useEffect(() => {
@@ -311,7 +311,7 @@ export function SettingsPage({
       return;
     }
     if (didRestoreScroll.current) return;
-    // A deep-link (focusSection) owns the scroll — let it win, don't restore.
+    // A deep-link (focusSection) owns the scroll, let it win, don't restore.
     if (focusSection) {
       didRestoreScroll.current = true;
       saveEnabled.current = true;
@@ -346,7 +346,7 @@ export function SettingsPage({
   }, [visible, settings, focusSection]);
 
   // Jump-to-section dropdown: picking a section clears any search filter (so
-  // the target is mounted) and smooth-scrolls to it — no button needed.
+  // the target is mounted) and smooth-scrolls to it, no button needed.
   const [pendingScroll, setPendingScroll] = useState<string | null>(null);
   const goToSection = useCallback((title: string) => {
     setQuery("");
@@ -460,7 +460,7 @@ export function SettingsPage({
     } catch {
       // Audit info is non-critical for this page.
     }
-    // Data has settled (or failed non-fatally) — the page is now usable, so let
+    // Data has settled (or failed non-fatally), the page is now usable, so let
     // the shell drop the branded loader.
     onReady?.();
   }, [syncPerfFromSettings, syncAppearanceFromSettings, onReady]);
@@ -1269,13 +1269,13 @@ export function SettingsPage({
       </section>
       )}
 
-      {/* Custom terminals — user-defined terminal apps (DB-backed). */}
+      {/* Custom terminals: user-defined terminal apps (DB-backed). */}
       {sectionVisible("Custom terminals") &&
         sectionReady("Custom terminals") && (
           <CustomTerminalsSection id={sectionDomId("Custom terminals")} />
         )}
 
-      {/* Grid — Terminals grid layout (localStorage, applies on next visit). */}
+      {/* Grid: Terminals grid layout (localStorage, applies on next visit). */}
       {sectionVisible("Grid") && sectionReady("Grid") && (
         <GridSection id={sectionDomId("Grid")} />
       )}
@@ -1340,8 +1340,8 @@ export function SettingsPage({
           <AlertDialogHeader>
             <AlertDialogTitle>Restore from this backup?</AlertDialogTitle>
             <AlertDialogDescription>
-              This replaces <strong>all current data</strong> — hosts, settings,
-              trusted host keys and command history — with the contents of{" "}
+              This replaces <strong>all current data</strong> (hosts, settings,
+              trusted host keys and command history) with the contents of{" "}
               <span className="font-mono">{restoreFileName}</span>. Your current
               data will be lost. Saved passwords aren't included in a backup, so
               restored hosts may need their password re-entered. Broadside will
@@ -1459,7 +1459,7 @@ export function SettingsPage({
           does not delete stored passwords.
         </p>
 
-        {/* Admin lock (opt-in) — gates the toggle above, credential editing and
+        {/* Admin lock (opt-in), gates the toggle above, credential editing and
             Reset. Authorization only: it stores no key, so a lost passcode never
             loses data (use the recovery code, or remove the lock). */}
         <div className="max-w-xl space-y-3 rounded-md border border-border/40 p-4">
@@ -1579,7 +1579,7 @@ export function SettingsPage({
       </section>
       )}
 
-      {/* Reset everything to defaults (S) — guard-railed. */}
+      {/* Reset everything to defaults (S), guard-railed. */}
       {sectionVisible("Reset") && sectionReady("Reset") && (
       <section id={sectionDomId("Reset")} className="space-y-3">
         <SectionHeading
@@ -1616,7 +1616,7 @@ export function SettingsPage({
       </section>
       )}
 
-      {/* Danger Zone — wipe every host + its stored credentials. */}
+      {/* Danger Zone: wipe every host + its stored credentials. */}
       {sectionVisible("Danger Zone") && sectionReady("Danger Zone") && (
       <section id={sectionDomId("Danger Zone")} className="space-y-3">
         <SectionHeading
@@ -1760,7 +1760,7 @@ export function SettingsPage({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Rule help-tip modal — the Dialog overlay blurs the window behind it. */}
+      {/* Rule help-tip modal, the Dialog overlay blurs the window behind it. */}
       <Dialog
         open={helpRule !== null}
         onOpenChange={(open) => !open && setHelpRule(null)}

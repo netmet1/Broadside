@@ -1,6 +1,6 @@
 //! Resource probe (locked design): local probe suggests a max concurrent
 //! session count, cached and re-runnable; network probe is on-demand.
-//! Suggestions are advisory — the user override wins (never a hard limit).
+//! Suggestions are advisory; the user override wins (never a hard limit).
 
 use std::time::{Duration, Instant};
 

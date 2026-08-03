@@ -23,7 +23,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 );
 
 // The window is created hidden (tauri.conf.json `visible: false`). Rust restores
-// its saved size/position during window creation — before any of this JS runs —
+// its saved size/position during window creation, before any of this JS runs,
 // so by the time we reveal it the window is already at its last geometry. We
 // wait two frames so the first paint has landed, then ask Rust to reveal it:
 // `reveal_main_window` shows the window and, only then (while it is visible),

@@ -422,7 +422,7 @@ export const SECTIONS: HelpSection[] = [
               for where these are kept.
             </li>
             <li>
-              A host row can carry a small amber chip — most often the name of a
+              A host row can carry a small amber chip, most often the name of a
               login shell Broadside cannot fully drive.{" "}
               <SectionLink id="help-sec-warnings">
                 Warnings and messages
@@ -453,9 +453,9 @@ export const SECTIONS: HelpSection[] = [
               that host rather than to one already running.
             </li>
             <li>
-              The same mark appears wherever a host is picked — the{" "}
+              The same mark appears wherever a host is picked: the{" "}
               <Nav>Broadcast</Nav>, <Nav>PTY Broadcast</Nav>,{" "}
-              <Nav>MultiTerminal</Nav> and <Nav>Skills</Nav> lists — as the
+              <Nav>MultiTerminal</Nav> and <Nav>Skills</Nav> lists, as the
               amber triangle on its own, with the words on hover. Those lists
               are narrow and the label is what you are reading there. Nothing is
               ever hidden from a list for this: broadcasting to a shell
@@ -849,7 +849,7 @@ export const SECTIONS: HelpSection[] = [
               off if you would rather a drag counted: the tile width and height
               you drag out are written into the settings as you go, Settings
               shows the new numbers straight away, and the size is still there
-              after a restart. Nothing else follows the drag either way — the
+              after a restart. Nothing else follows the drag either way, the
               column count, the layout, the tile headers and the side-by-side
               flip are yours to set and are never written by dragging.
             </li>
@@ -881,7 +881,7 @@ export const SECTIONS: HelpSection[] = [
               terminals actually open, so six columns with three terminals up
               lays out three across the window rather than using half of it and
               leaving the rest empty. It follows as you open and close them, and
-              it only ever narrows the count — a tile's pinned width or height
+              it only ever narrows the count, a tile's pinned width or height
               is untouched and stays exactly what you set.
             </li>
             <li>
@@ -2045,7 +2045,7 @@ export const SECTIONS: HelpSection[] = [
       <>
         <Lead>
           Every key Broadside takes for itself, and what it does. Anything not
-          on this list belongs to whatever has the focus — in a terminal that
+          on this list belongs to whatever has the focus, in a terminal that
           means the shell, which is why the shortcuts here are nearly all{" "}
           <Nav>Ctrl+Shift</Nav> chords: a terminal cannot see the Shift, so{" "}
           <Nav>Ctrl+Shift+G</Nav> costs a program running in a tile nothing at

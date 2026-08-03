@@ -182,7 +182,7 @@ pub fn set_has_sudo_password(conn: &Connection, id: i64, value: bool) -> AppResu
 /// `None` clears the column, and callers pass it: the field means "what the
 /// last completed connect could read", so a connect that could not read it has
 /// to erase the old answer rather than let it stand. Without that a wrong value
-/// written once is worn forever — which is what happened to the host that went
+/// written once is worn forever, which is what happened to the host that went
 /// on naming a line of its own rc file long after the probe that misread it was
 /// fixed.
 ///
@@ -320,7 +320,7 @@ pub fn delete(conn: &Connection, id: i64) -> AppResult<()> {
 /// Deletes every host row and returns the number removed. Backs the Settings
 /// "Danger Zone" destroy action; stored credentials are cleared separately
 /// (and first) by the command layer because keyring keys are derived from the
-/// host id. Unlike `delete`, an empty table is not an error — wiping zero hosts
+/// host id. Unlike `delete`, an empty table is not an error; wiping zero hosts
 /// is a valid outcome.
 pub fn delete_all(conn: &Connection) -> AppResult<usize> {
     Ok(conn.execute("DELETE FROM hosts", [])?)

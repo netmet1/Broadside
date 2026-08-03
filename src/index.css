@@ -84,7 +84,7 @@
     --sidebar-ring: oklch(0.708 0 0);
     /* Status bar sits a shade off the main background so it reads as chrome. */
     --statusbar: oklch(0.97 0 0);
-    /* Terminal pane colours (xterm + the pane container) — light theme. */
+    /* Terminal pane colours (xterm + the pane container), light theme. */
     --terminal-bg: #ffffff;
     --terminal-fg: #1f2328;
     --terminal-cursor: #1f2328;
@@ -128,7 +128,7 @@
     --sidebar-ring: oklch(0.556 0 0);
     /* A tiny bit lighter than the 0.145 background (user-requested). */
     --statusbar: oklch(0.185 0 0);
-    /* Terminal pane colours — dark theme (the original look). */
+    /* Terminal pane colours, dark theme (the original look). */
     --terminal-bg: #0a0a0a;
     --terminal-fg: #e5e5e5;
     --terminal-cursor: #e5e5e5;
@@ -153,7 +153,7 @@
  *
  * Ctrl+Shift+T is the only route into this strip from a terminal (Tab there
  * belongs to the shell), and in grid fullscreen the strip is hidden until
- * something in it takes focus — so if you cannot see what took focus, the
+ * something in it takes focus, so if you cannot see what took focus, the
  * shortcut has told you nothing and Tab from there is walking blind. The
  * default ring is `--ring` at half opacity, a neutral grey, sitting on a
  * neutral grey strip. This is the same idea, said out loud: a solid ring in
@@ -165,7 +165,7 @@
  * same button looks exactly as it always did.
  *
  * The second selector is the same ring on plain `:focus`, and only while the
- * strip carries `data-chrome-keyboard` — set by Ctrl+Shift+T, cleared by a
+ * strip carries `data-chrome-keyboard`: set by Ctrl+Shift+T, cleared by a
  * click in the strip or by focus leaving it. :focus-visible alone was not
  * enough: it is the browser's guess at whether the keyboard is driving, and a
  * programmatic focus() out of a terminal does not always satisfy it, so the

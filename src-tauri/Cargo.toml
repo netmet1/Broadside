@@ -40,7 +40,7 @@ keyring = { version = "3", features = ["windows-native"] }
 age = "0.11"
 # default-features off to swap aws-lc-rs (needs CMake/NASM on Windows) for ring
 russh = { version = "0.61", default-features = false, features = ["flate2", "ring", "rsa"] }
-# SFTP subsystem client (russh itself has no file transfer). Stream-agnostic —
+# SFTP subsystem client (russh itself has no file transfer). Stream-agnostic:
 # wraps russh's ChannelStream; independent of russh's version.
 russh-sftp = "2"
 tokio = { version = "1", features = ["time", "sync", "net", "io-util", "fs"] }

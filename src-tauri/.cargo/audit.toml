@@ -1,5 +1,5 @@
 # cargo-audit configuration. Mirror of the advisories ignore list in
-# ../deny.toml — keep the two in sync (D-037).
+# ../deny.toml: keep the two in sync (D-037).
 
 [advisories]
 ignore = [

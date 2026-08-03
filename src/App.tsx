@@ -71,14 +71,14 @@ function App() {
   const [connectedSessions, setConnectedSessions] = useState<Set<string>>(
     new Set(),
   );
-  // Set when "Manage shortcuts…" is picked — Settings scrolls there on open.
+  // Set when "Manage shortcuts…" is picked, Settings scrolls there on open.
   const [settingsFocus, setSettingsFocus] = useState<string | null>(null);
   // Latch: once Settings has been opened it stays mounted (hidden) like the
   // other heavy pages, so re-visiting it doesn't pay the ~5s cost of remounting
   // its large Radix tree every time. The lazy chunk still loads only on first
   // open (kept out of the startup payload); after that the page persists.
   const [settingsMounted, setSettingsMounted] = useState(false);
-  // True once Settings has mounted AND loaded its data — drives whether we show
+  // True once Settings has mounted AND loaded its data, drives whether we show
   // the branded loader over the tab. Pre-warming (below) usually flips this
   // before the user ever clicks Settings, so the loader is rarely seen.
   const [settingsReady, setSettingsReady] = useState(false);
@@ -132,7 +132,7 @@ function App() {
     };
   }, []);
 
-  // The auto-filled password bounced (sudo said "Sorry, try again.") — warn so
+  // The auto-filled password bounced (sudo said "Sorry, try again."), warn so
   // the operator fixes the stored sudo password (D-065, 11.3). Auto-fill has
   // already stopped itself; the prompt is now the operator's to answer.
   useEffect(() => {
@@ -278,7 +278,7 @@ function App() {
 
   /** Terminate every live terminal session for a host (from the Hosts tab).
    * Removing the sessions unmounts their TerminalViews, whose cleanup calls
-   * ptyClose — the same teardown path as closing a tab. */
+   * ptyClose: the same teardown path as closing a tab. */
   const terminateHost = useCallback((hostId: number) => {
     setSessions((prev) => {
       const next = prev.filter(
@@ -330,7 +330,7 @@ function App() {
   // Mount Settings the first time it's opened, then leave it mounted (below) so
   // re-visits are instant. We deliberately do NOT pre-warm at startup: mounting
   // this large tree is genuinely expensive, and doing it during launch (which
-  // already mounts every other page) made the whole app hitch — worse on slow
+  // already mounts every other page) made the whole app hitch, worse on slow
   // machines. Instead we defer the mount two frames so the branded loader paints
   // first; its spinner is GPU-composited, so it keeps animating smoothly even
   // while the heavy first render blocks the main thread. One-time, per launch.
@@ -351,7 +351,7 @@ function App() {
   }, []);
   const restoreTerminal = useCallback(() => setMaxSessionId(null), []);
 
-  // F11 toggles the maximized terminal — the standard fullscreen key, and
+  // F11 toggles the maximized terminal, the standard fullscreen key, and
   // (unlike Esc) one the shell and TUI apps like vim/less never use, so it's
   // safe to capture. Capture phase fires before xterm consumes the key.
   useEffect(() => {
@@ -424,7 +424,7 @@ function App() {
     return ids;
   }, [sessions, connectedSessions]);
 
-  // Hosts with at least one open terminal tab (connected or not) — drives the
+  // Hosts with at least one open terminal tab (connected or not), drives the
   // "already open" guard rails on the Hosts page (H7/H8). Local shells excluded.
   const openHostIds = useMemo(() => {
     const ids = new Set<number>();
@@ -434,7 +434,7 @@ function App() {
 
   // SSH-only sessions for MultiTerminal, whose aggregate block view needs the
   // OSC 133 markers only the SSH path emits. PTY Broadcast now takes the full
-  // session list — its local-shell tabs fan out to open PowerShell/cmd/WSL too.
+  // session list, its local-shell tabs fan out to open PowerShell/cmd/WSL too.
   const sshSessions = useMemo(
     () => sessions.filter((s): s is SshTermSession => s.type === "ssh"),
     [sessions],
@@ -523,7 +523,7 @@ function App() {
           onJumpToHostTerminal={jumpToHostTerminal}
         />
       </div>
-      {/* Skills stays mounted so a running skill — and its live per-host panes —
+      {/* Skills stays mounted so a running skill (and its live per-host panes)
           survive tab switches. A run can last as long as an apt upgrade, and
           unmounting would tear down the xterm panes mid-run. */}
       <div className={page === "skills" ? "block h-full" : "hidden"}>

@@ -347,7 +347,7 @@ fn duplicate_endpoint_tuple_against_db_and_within_file() {
 #[test]
 fn distinct_endpoint_sharing_a_label_is_auto_suffixed() {
     // Smoke-test 4.3: three rows all labelled "web", same host, but the 2nd
-    // differs by port and the 3rd by username — all three are distinct
+    // differs by port and the 3rd by username, all three are distinct
     // endpoints and must import. Labels are unique, so 2nd/3rd get suffixed.
     let existing_labels = HashSet::new();
     let existing_endpoints = HashSet::new();
@@ -396,7 +396,7 @@ fn auto_suffix_skips_labels_already_in_db() {
 #[test]
 fn label_only_validate_ignores_duplicate_hostnames() {
     // The label-only entry point (used by export round-trip etc.) must NOT
-    // dedup hostnames — manual entries may legitimately share an IP (D-033).
+    // dedup hostnames, manual entries may legitimately share an IP (D-033).
     let out = validate_rows(
         &no_existing(),
         vec![

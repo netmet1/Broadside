@@ -1,5 +1,5 @@
 /** Hosts store their tags as a single comma-separated string (e.g.
- * "prod, web, eu") in the `tag` column — no schema change from the single-tag
+ * "prod, web, eu") in the `tag` column: no schema change from the single-tag
  * model. These helpers parse that field into a normalized list and back, so the
  * table, sort, and filter all agree on what "the tags" are. */
 
@@ -20,7 +20,7 @@ export function parseTags(tag: string | null | undefined): string[] {
   return out;
 }
 
-/** The first tag, lowercased, for sort ordering — or "" when untagged. */
+/** The first tag, lowercased, for sort ordering, or "" when untagged. */
 export function firstTag(tag: string | null | undefined): string {
   return parseTags(tag)[0]?.toLowerCase() ?? "";
 }

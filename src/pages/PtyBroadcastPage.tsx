@@ -24,7 +24,7 @@ function readTab(): PtyTab {
 
 /**
  * PTY Broadcast page. A command typed here is sent, as if keyed in, into every
- * checked open terminal — SSH sessions or local shells. The four fixed tabs keep
+ * checked open terminal: SSH sessions or local shells. The four fixed tabs keep
  * each broadcast within one shell language (SSH hosts, PowerShell, Command
  * Prompt, WSL) so a single command is always valid for its targets.
  *
@@ -39,7 +39,7 @@ export function PtyBroadcastPage({
 }: {
   visible: boolean;
   sessions: TermSession[];
-  /** Session ids with a live connection — only these can receive input. */
+  /** Session ids with a live connection, only these can receive input. */
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
 }) {
@@ -85,7 +85,7 @@ export function PtyBroadcastPage({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Tab switcher — fixed set, always shown. */}
+      {/* Tab switcher, fixed set, always shown. */}
       <div className="flex shrink-0 items-center gap-1 border-b border-border/50 px-2 py-1.5">
         <TabButton
           active={tab === "ssh"}

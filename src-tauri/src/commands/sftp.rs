@@ -103,7 +103,7 @@ pub async fn sftp_connect(
                 "sftp_connect",
                 Some(host.id),
                 Some(&host.label),
-                &format!("authentication failed — {message}"),
+                &format!("authentication failed: {message}"),
             );
             note_connect(&state, host.id, true);
         }
@@ -112,7 +112,7 @@ pub async fn sftp_connect(
                 "sftp_connect",
                 Some(host.id),
                 Some(&host.label),
-                &format!("unreachable — {message}"),
+                &format!("unreachable: {message}"),
             );
             note_connect(&state, host.id, true);
         }
@@ -120,7 +120,7 @@ pub async fn sftp_connect(
             "sftp_connect",
             Some(host.id),
             Some(&host.label),
-            "host key mismatch — connection refused",
+            "host key mismatch: connection refused",
         ),
         _ => {}
     }

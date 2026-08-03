@@ -84,10 +84,10 @@ type DisplayBlock = {
 };
 
 /**
- * MultiTerminal (D-061) — the namesake aggregate view. A command typed here runs
+ * MultiTerminal (D-061): the namesake aggregate view. A command typed here runs
  * through the selected terminals' live shells; each host's whole output drops in
  * as one colour-tinted block in completion order. Full-screen/redrawing apps
- * show an "interactive — not mirrored" notice. The block log persists across
+ * show an "interactive, not mirrored" notice. The block log persists across
  * restarts. Inert until 2+ terminals are open.
  */
 export function MultiTerminalPage({
@@ -134,7 +134,7 @@ export function MultiTerminalPage({
     return m;
   }, [sessions]);
 
-  // Host ids with an open terminal session — drives whether a block shows the
+  // Host ids with an open terminal session, drives whether a block shows the
   // "jump to this host's terminal" icon (hidden for deleted/closed hosts).
   const openHostIds = useMemo(
     () => new Set(sessions.map((s) => s.host.id)),
@@ -195,7 +195,7 @@ export function MultiTerminalPage({
     visible,
   );
 
-  // Nothing is pre-selected — the user opts in. Selection only ever contains
+  // Nothing is pre-selected, the user opts in. Selection only ever contains
   // CONNECTED, open sessions: a disconnect or close removes a session from the
   // selection (disconnected ones are ghosted in the rail and can't be a dispatch
   // target). The user's checks are otherwise preserved.
@@ -229,9 +229,9 @@ export function MultiTerminalPage({
   useEffect(() => {
     const un = onPtyBlock((blk) => {
       const sess = sessionsByIdRef.current.get(blk.session_id);
-      if (!sess) return; // a session we no longer track (closed) — ignore.
+      if (!sess) return; // a session we no longer track (closed), ignore.
       // A block from a session we dispatched to is "dispatched" (always shown).
-      // Pop FIFO rather than matching exact command text — some shells capture
+      // Pop FIFO rather than matching exact command text, some shells capture
       // the command slightly differently, which previously dropped the block
       // when the mirror toggle was off (O5).
       const queue = pendingDispatched.current.get(blk.session_id);
@@ -249,7 +249,7 @@ export function MultiTerminalPage({
       // blocks are unaffected, since we only ever dispatch to checked hosts.
       if (!dispatched && (!mirrorRef.current || !selectedRef.current.has(blk.session_id)))
         return;
-      // For blocks WE dispatched, trust the command we sent — the parsed echo
+      // For blocks WE dispatched, trust the command we sent, the parsed echo
       // (blk.command) can be corrupted by recalled/edited input still sitting at
       // the prompt (e.g. an Up-arrow recall of the setup line before dispatch).
       // Hand-typed (mirrored) blocks keep the parsed echo; it's all we have.
@@ -411,7 +411,7 @@ export function MultiTerminalPage({
         (s) => selected.has(s.id) && connectedSessions.has(s.id),
       );
       // Log to the shared command history as `MultiTerminal <hosts> <command>`,
-      // tinted live by host (D-061 sub-4). Best-effort — never blocks dispatch.
+      // tinted live by host (D-061 sub-4). Best-effort, never blocks dispatch.
       omniLogCommand(
         cmd,
         targets.map((s) => ({ id: s.host.id, label: s.host.label })),
@@ -425,7 +425,7 @@ export function MultiTerminalPage({
         try {
           await ptyWrite(s.id, cmd + "\n");
         } catch (e) {
-          queue.pop(); // never landed — don't wait for a block that won't come
+          queue.pop(); // never landed, don't wait for a block that won't come
           toast.error(`${s.host.label}: ${errorMessage(e)}`);
         }
       }
@@ -484,7 +484,7 @@ export function MultiTerminalPage({
     toast.success("Command history cleared here");
   }, []);
 
-  // "Close all terminals" rail action — OK/Cancel guard (no typed confirmation).
+  // "Close all terminals" rail action, OK/Cancel guard (no typed confirmation).
   const [closeAllOpen, setCloseAllOpen] = useState(false);
   const confirmCloseAll = useCallback(() => {
     onCloseAllTerminals();
@@ -515,7 +515,7 @@ export function MultiTerminalPage({
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        {/* Session selection rail (collapsible — O1). */}
+        {/* Session selection rail (collapsible, O1). */}
         <div
           className={`flex shrink-0 flex-col border-r border-border/50 ${
             railCollapsed ? "w-14" : "w-60"
@@ -661,7 +661,7 @@ export function MultiTerminalPage({
                 </p>
               )}
           </div>
-          {/* Bottom-pinned actions — stay visible while the host list above
+          {/* Bottom-pinned actions, stay visible while the host list above
               scrolls. When the rail is collapsed they shrink to icon-only
               buttons (E1.6); hover each for its label. */}
           {railCollapsed && (
@@ -983,7 +983,7 @@ function OmniBlock({
         borderLeftWidth: 3,
         // Off-screen blocks skip layout/paint so revealing the tab (or scrolling
         // a long log) only lays out the blocks actually in view. Without this,
-        // showing the tab re-lays-out the whole persisted log every time — the
+        // showing the tab re-lays-out the whole persisted log every time, the
         // multi-second MultiTerminal switch lag. `auto <len>` gives an estimated
         // height so the scrollbar stays stable; the browser remembers the real
         // size once a block has been rendered.

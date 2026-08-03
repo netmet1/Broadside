@@ -109,7 +109,7 @@ export function SkillTerminalPane({
 
     // Keep the remote PTY the same size as this xterm, so the shell doesn't
     // stay at the size the run opened it with while the pane fits a different
-    // one. fit() below fires this with the real dimensions — but that first
+    // one. fit() below fires this with the real dimensions, but that first
     // fit races the SSH connect: the backend only registers the session once
     // the connection is up (seconds), so a resize sent before then is lost,
     // and with the pane's size never changing again it was never re-sent. The
@@ -243,7 +243,7 @@ export function SkillTerminalPane({
         fitRef.current?.fit();
       // A font change applied while hidden needs one more fit a frame later:
       // xterm's renderer is paused off-screen and only unpauses via its own
-      // IntersectionObserver, which fires after this frame's rAF callbacks —
+      // IntersectionObserver, which fires after this frame's rAF callbacks;
       // the fit above can therefore run against a still-paused renderer whose
       // deferred resize never lands (see TerminalView's matching effect).
       raf2 = requestAnimationFrame(() => {

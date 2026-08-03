@@ -1,5 +1,5 @@
 //! Destructive-command guard (D-014). Broadcast-only: detection runs before
-//! dispatch and again inside the broadcast command (defense in depth — the
+//! dispatch and again inside the broadcast command (defense in depth, the
 //! frontend modal alone is bypassable over IPC).
 //!
 //! Rules are structured data, not regex (D-014). The 12 core rules are
@@ -18,7 +18,7 @@ pub struct GuardHit {
     pub description: String,
 }
 
-/// A user-added rule (D-014 structured form — no raw regex). Matches with
+/// A user-added rule (D-014 structured form, no raw regex). Matches with
 /// the same Spec semantics as core rules: command name(s) + optional flag
 /// groups (`short|--long` alternatives, all groups required) + optional
 /// path-prefix patterns + optional exact-arg requirements.
@@ -90,8 +90,8 @@ struct Rule {
 enum Matcher {
     /// Effective command matches (exact, or prefix when the entry ends with
     /// `*`), every flag group entry is satisfied (entries are
-    /// `short|--long|…` alternatives), and — when `path_patterns` is
-    /// non-empty — at least one non-flag arg path-matches a pattern.
+    /// `short|--long|…` alternatives), and, when `path_patterns` is
+    /// non-empty, at least one non-flag arg path-matches a pattern.
     /// `arg_all_of` entries must each appear as an exact arg token.
     Spec {
         commands: &'static [&'static str],
@@ -106,7 +106,7 @@ enum Matcher {
         sources: &'static [&'static str],
         shells: &'static [&'static str],
     },
-    /// Raw substring match (whitespace-normalized) — for the fork bomb.
+    /// Raw substring match (whitespace-normalized), for the fork bomb.
     RawContains { needles: &'static [&'static str] },
 }
 
@@ -116,7 +116,7 @@ fn core_rules() -> Vec<Rule> {
             id: "rm-rf",
             description: "Recursive forced delete (rm -rf)",
             help_tip: "rm -rf permanently deletes the target and everything \
-                under it — no prompt, no trash, no undo. On the wrong path \
+                under it, no prompt, no trash, no undo. On the wrong path \
                 (or with a stray space) it can erase an entire server in \
                 seconds, multiplied by every host in the broadcast.",
             kinds: vec![Matcher::Spec {
@@ -130,7 +130,7 @@ fn core_rules() -> Vec<Rule> {
             id: "dd-device",
             description: "Raw write to a block device (dd of=/dev/…)",
             help_tip: "dd writing to a /dev block device overwrites raw disk \
-                sectors directly — partition tables, filesystems and data are \
+                sectors directly: partition tables, filesystems and data are \
                 destroyed without confirmation. A mistyped of= target can \
                 wipe the system disk while it is running.",
             kinds: vec![Matcher::Spec {
@@ -158,7 +158,7 @@ fn core_rules() -> Vec<Rule> {
             description: "Partition table modification (fdisk/parted/sfdisk/wipefs on a device)",
             help_tip: "fdisk, parted, sfdisk and wipefs rewrite partition \
                 tables and filesystem signatures. One wrong operation can \
-                make every filesystem on the disk unreachable — data is \
+                make every filesystem on the disk unreachable; data is \
                 often recoverable only with forensic tools, if at all.",
             kinds: vec![Matcher::Spec {
                 commands: &["fdisk", "parted", "sfdisk", "wipefs"],
@@ -172,7 +172,7 @@ fn core_rules() -> Vec<Rule> {
             description: "Host shutdown or reboot",
             help_tip: "Matches shutdown, reboot, poweroff, halt, systemctl \
                 poweroff/reboot/halt and init 0/6. Broadcast to many hosts \
-                this takes your whole fleet offline at once — and if a host \
+                this takes your whole fleet offline at once, and if a host \
                 doesn't come back up (disk check, boot failure, no \
                 out-of-band access), you've lost it until someone reaches \
                 the console.",
@@ -220,7 +220,7 @@ fn core_rules() -> Vec<Rule> {
             description: "Truncation of /etc/passwd, /etc/shadow or /etc/sudoers",
             help_tip: "A truncating > redirect into /etc/passwd, /etc/shadow \
                 or /etc/sudoers empties the file before anything is written. \
-                Losing these files breaks every login and sudo on the host — \
+                Losing these files breaks every login and sudo on the host, \
                 often including the session you'd use to fix it.",
             kinds: vec![Matcher::RedirectTruncate {
                 targets: &["/etc/passwd", "/etc/shadow", "/etc/sudoers"],
@@ -232,7 +232,7 @@ fn core_rules() -> Vec<Rule> {
             help_tip: "Recursive permission or ownership changes on system \
                 roots (/, /etc, /usr, …) break the carefully-set permissions \
                 the OS and its services depend on. Recovery usually means \
-                restoring from backup or reinstalling — there is no command \
+                restoring from backup or reinstalling; there is no command \
                 to put the old permissions back.",
             kinds: vec![Matcher::Spec {
                 commands: &["chmod", "chown"],
@@ -250,7 +250,7 @@ fn core_rules() -> Vec<Rule> {
             help_tip: "The :(){ :|:& };: pattern defines a function that \
                 spawns itself twice, forever. Process count grows \
                 exponentially until the host exhausts its process table and \
-                stops responding to anything — usually only a hard reboot \
+                stops responding to anything; usually only a hard reboot \
                 recovers it.",
             kinds: vec![Matcher::RawContains {
                 needles: &[":(){ :|:& };:", ":(){:|:&};:"],
@@ -262,7 +262,7 @@ fn core_rules() -> Vec<Rule> {
             help_tip: "curl or wget piped into sh/bash executes whatever the \
                 server returns, sight unseen. If the URL is mistyped, the \
                 site is compromised, or the network injects content, you \
-                just ran an attacker's script — on every selected host.",
+                just ran an attacker's script, on every selected host.",
             kinds: vec![Matcher::PipeToShell {
                 sources: &["curl", "wget", "fetch"],
                 shells: &["sh", "bash", "zsh", "dash", "ksh"],
@@ -272,7 +272,7 @@ fn core_rules() -> Vec<Rule> {
             id: "crontab-remove",
             description: "Removes the user's entire crontab (crontab -r)",
             help_tip: "crontab -r deletes the user's entire crontab \
-                immediately — not one entry, all of them, with no \
+                immediately: not one entry, all of them, with no \
                 confirmation. Unless you have a backup of the crontab there \
                 is no way to get the schedule back.",
             kinds: vec![Matcher::Spec {
@@ -288,7 +288,7 @@ fn core_rules() -> Vec<Rule> {
             help_tip: "iptables -F / nft flush ruleset removes every \
                 firewall rule on the host. Depending on the default policies \
                 this either exposes every open port to the network or cuts \
-                off all traffic — including the SSH session you're using.",
+                off all traffic, including the SSH session you're using.",
             kinds: vec![
                 Matcher::Spec {
                     commands: &["iptables", "ip6tables"],
@@ -472,7 +472,7 @@ fn redirect_truncate_matches(segment: &Segment, targets: &[&str]) -> bool {
         if t.kind != TokenKind::Redirect {
             continue;
         }
-        // Truncating forms only: >, 1>, &> — not >> (append) and not 2> alone
+        // Truncating forms only: >, 1>, &>; not >> (append) and not 2> alone
         // (stderr-to-file doesn't truncate the auth file… it does, actually:
         // `cmd 2> /etc/passwd` truncates the target too. Count every
         // non-append `>` regardless of fd.)

@@ -19,7 +19,7 @@ pub fn preview_import(path: String, state: State<'_, DbState>) -> AppResult<Vec<
     let (labels, endpoints): (HashSet<String>, HashSet<String>) = with_db(&state, |conn| {
         let all = host_repo::list_all(conn)?;
         let labels = all.iter().map(|h| h.label.clone()).collect();
-        // A duplicate is the same (hostname, port, username) endpoint — the
+        // A duplicate is the same (hostname, port, username) endpoint, the
         // same connection can't be imported twice, but differing port or user
         // is a distinct host (H5).
         let endpoints = all
@@ -45,7 +45,7 @@ pub struct ImportOutcome {
 
 /// Inserts the confirmed rows. `#auto` colors must already be resolved by
 /// the frontend (palette logic lives there). Per-row failures (e.g. a label
-/// created between preview and apply) are reported, not fatal — valid rows
+/// created between preview and apply) are reported, not fatal; valid rows
 /// still import (D-025).
 #[tauri::command]
 pub fn import_hosts(

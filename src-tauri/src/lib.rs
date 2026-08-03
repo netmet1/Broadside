@@ -22,7 +22,7 @@ use tauri::Manager;
 use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 /// Reveal the main window once the webview has painted (the frontend calls this
-/// after first paint). Showing here — rather than in `setup` — means the window
+/// after first paint). Showing here, rather than in `setup`, means the window
 /// only ever appears with content already drawn.
 ///
 /// Maximize is applied *here*, after the window is visible. Maximizing a hidden
@@ -83,7 +83,7 @@ pub fn run() {
                     StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED,
                 )
                 // Save all three flags on exit, but skip the automatic restore at
-                // window creation — it maximizes the still-hidden window, which
+                // window creation, it maximizes the still-hidden window, which
                 // flashes an empty frame. We restore geometry (no flash) in
                 // `setup` and maximize after the window is shown instead.
                 .skip_initial_state("main")
@@ -123,7 +123,7 @@ pub fn run() {
             // Live SFTP browser sessions (kept open between operations).
             app.manage(ssh::sftp::SftpState::default());
 
-            // Admin lock unlock state — fresh (locked) on every launch.
+            // Admin lock unlock state, fresh (locked) on every launch.
             app.manage(admin_lock::AdminLockState::default());
 
             // Detect local shells now, in the background, so the first page
@@ -132,7 +132,7 @@ pub fn run() {
             local::prewarm_shells();
 
             // Restore size + position now (while the window is still hidden, so
-            // there is no flash), but NOT the maximized flag — that is applied
+            // there is no flash), but NOT the maximized flag, that is applied
             // after the window is shown in `reveal_main_window`. If the restored
             // geometry is off every connected monitor (e.g. the monitor it was
             // on was unplugged), recenter on the primary screen.
