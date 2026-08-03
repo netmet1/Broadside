@@ -34,6 +34,18 @@ const GRID_HIDE_HEADERS_KEY = "terminal-grid-hide-headers";
  * item width is auto. Keeps a big column count from shaving tiles to slivers.
  * Past this the grid overflows and scrolls horizontally instead. */
 const GRID_FLOOR_COLS = 24;
+/** Narrowest a tile of the *default* grid may get before the grid gives up a
+ * column and stacks instead, in characters. Deliberately far above
+ * GRID_FLOOR_COLS: that one floors a column count the operator pinned by hand,
+ * and what they asked for should be honoured almost to the point of absurdity;
+ * this one is the grid choosing on their behalf, so it should choose something
+ * you can read. */
+const GRID_MIN_TILE_COLS = 48;
+/** Slack over the two-column threshold before the second column comes back.
+ * Dropping one removes the pane's vertical scrollbar, which widens the content
+ * box by roughly this much, and without the margin that alone could put the
+ * pane back over the line and the layout would sit there flipping. */
+const GRID_COLS_HYSTERESIS_PX = 16;
 /** Per-tile chrome added to the character-derived pixel size: the 1px border on
  * each side (X), and the border plus the grid pane header (Y). Approximate: fit
  * rounds a container to whole cells, so the result lands within ~1 col/row. */
@@ -62,11 +74,6 @@ const GRID_MIN_TILE_ROWS = 13;
 function gridHeaderH(appFontSize: number, hidden: boolean): number {
   return hidden ? 0 : Math.round(1.75 * appFontSize) + 3;
 }
-/** Tailwind's `lg` breakpoint, in pixels. The default grid's column count is a
- * media query (`grid-cols-1 lg:grid-cols-2`), and the short-row fill has to know
- * which side of it we are on to know how many columns there actually are. */
-const LG_BREAKPOINT_PX = 1024;
-
 /** How the open terminals are laid out below the tab strip: one pane at a time
  * (the default) or every pane tiled at once, mirroring the skill run panel. */
 export type TermLayout = "tabs" | "grid";
@@ -133,8 +140,6 @@ export type GridLayout = {
   /** A settings-driven uniform grid is in force (see the note on the exception
    * at two tiles). */
   customGrid: boolean;
-  /** Custom, but columns are still auto, a Tailwind class handles those. */
-  customColsAuto: boolean;
   gridStyle: React.CSSProperties | undefined;
 };
 
@@ -142,10 +147,15 @@ export function useGridLayout({
   sessions,
   visible,
   maximized,
+  paneRef,
 }: {
   sessions: TermSession[];
   visible: boolean;
   maximized: boolean;
+  /** The element the tiles are laid out in. Measured rather than assumed: how
+   * much room the grid has is not the window's width, it is what the sidebar
+   * and the broadcast rail have left of it. */
+  paneRef: React.RefObject<HTMLDivElement | null>;
 }): GridLayout {
   // Pane layout: one tab at a time (default) or every pane tiled like the skill
   // run panel. Persisted in localStorage so it survives tab switches (the page
@@ -259,18 +269,23 @@ export function useGridLayout({
     return () => window.removeEventListener(GRID_PREFS_EVENT, reloadPrefs);
   }, [reloadPrefs]);
 
-  // Which side of the `lg` breakpoint the window is on, tracked because the
-  // default grid states its columns in a Tailwind class rather than a number.
-  const [wide, setWide] = useState(
-    () => window.innerWidth >= LG_BREAKPOINT_PX,
-  );
+  // How wide the pane laying the tiles out actually is. The default grid used
+  // to say `lg:grid-cols-2`, a media query on the *window*, which cannot see
+  // that the sidebar (up to 225px) and the broadcast rail (224px) come out of
+  // this same pane: at the minimum window with both open it still laid two
+  // columns into 575px and handed back 35-character terminals. Rows have had a
+  // legible floor and a scroll to overflow into since the start; this is the
+  // other half of that, on the axis that was missing it.
+  const [paneW, setPaneW] = useState(0);
   useEffect(() => {
-    const mq = window.matchMedia(`(min-width: ${LG_BREAKPOINT_PX}px)`);
-    const onChange = (e: MediaQueryListEvent) => setWide(e.matches);
-    setWide(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+    const el = paneRef.current;
+    if (!el) return;
+    const measure = () => setPaneW(el.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [paneRef]);
 
   // A tile size dragged out with the resize handles, in characters. Plain
   // component state, deliberately NOT persisted and deliberately NOT written
@@ -343,6 +358,9 @@ export function useGridLayout({
   const headerH = gridHeaderH(uiPrefs.appFontSize, hideGridHeaders);
   const tileMinH =
     Math.round(GRID_MIN_TILE_ROWS * cell.cellH) + headerH + TILE_BORDER_Y;
+  /** The pane's `gap-2` in pixels. Another rem, so another thing that is not a
+   * constant once the app font moves off 16px. */
+  const gapPx = Math.round(0.5 * uiPrefs.appFontSize);
 
   // A non-auto grid switches to a uniform, settings-driven layout.
   //
@@ -353,11 +371,6 @@ export function useGridLayout({
   // size can only get in the way: three columns with one terminal open left a
   // third of a screen in use and two thirds empty.
   const customGrid = gridMode && !isAutoGrid(gridPrefs) && gridCount > 2;
-  // When custom but neither cols nor item width is pinned (only rows), columns
-  // fall back to the shipped responsive default via a class, not inline style.
-  const customColsAuto =
-    customGrid && gridPrefs.cols == null && gridPrefs.itemCols == null;
-
   // How many columns to actually lay out (D3). A pinned count is trimmed to the
   // number of tiles: six columns with three terminals open used half the window
   // and left the rest empty, and there is nothing for the other three columns to
@@ -367,29 +380,65 @@ export function useGridLayout({
   const pinnedCols =
     gridPrefs.cols != null ? Math.min(gridPrefs.cols, Math.max(gridCount, 1)) : null;
 
-  // The real column count, for the short-row fill. Known when it is pinned, or
-  // when the responsive default is in force (one column, two once the window is
-  // past `lg`). Unknowable for tiles of a fixed width auto-filling the row:
-  // that count comes from the container's measured width, not from a setting.
+  // Whether the pane can hold two legible columns, hysteresis included. Two
+  // tiles at the floor, the gap between them, and the pane's own `p-2` on both
+  // sides, because `clientWidth` counts padding in.
+  const [twoUpFits, setTwoUpFits] = useState(true);
+  const twoUpThreshold =
+    2 * (Math.round(GRID_MIN_TILE_COLS * cell.cellW) + TILE_BORDER_X) +
+    3 * gapPx;
+  useEffect(() => {
+    if (paneW === 0) return;
+    setTwoUpFits((fits) =>
+      fits
+        ? paneW >= twoUpThreshold
+        : paneW >= twoUpThreshold + GRID_COLS_HYSTERESIS_PX,
+    );
+  }, [paneW, twoUpThreshold]);
+
+  // The real column count, for both the layout and the short-row fill, which
+  // have to agree: the fill decides which tiles widen to close a gap, so a
+  // count that disagreed with the tracks would put the gap in the wrong place.
+  // Unknowable only for tiles of a fixed width auto-filling the row, where the
+  // count comes from the measured container rather than from a setting.
   const effectiveCols = useMemo<number | null>(() => {
     if (!gridMode) return null;
     if (pinnedCols != null) return pinnedCols;
     if (customGrid && gridPrefs.itemCols != null) return null;
-    return wide ? 2 : 1;
-  }, [gridMode, pinnedCols, customGrid, gridPrefs.itemCols, wide]);
+    return twoUpFits ? 2 : 1;
+  }, [gridMode, pinnedCols, customGrid, gridPrefs.itemCols, twoUpFits]);
 
   const gridStyle = useMemo<React.CSSProperties | undefined>(() => {
-    // The default (auto/auto/auto) grid at three or more tiles. Its columns are
-    // a Tailwind class, but its rows used to be left implicit, which meant
+    // The default (auto/auto/auto) grid at three or more tiles. Its rows used
+    // to be left implicit, which meant
     // `auto`: every row sized to the tile's own floor and stayed there.
     // Growing the window then bought nothing but dead space below the last row,
     // because nothing ever asked the rows to take it. Same track as the custom
     // grid's auto height below, and for the same reason: rows share the pane
     // when they fit, and hold the legible floor and scroll when they don't.
+    // The default grid. Its columns used to be a Tailwind class
+    // (`grid-cols-1 lg:grid-cols-2`) and so a media query on the *window*,
+    // which could not see the pane it was actually laying out. They are inline
+    // now, off the same measurement `effectiveCols` reports, so the tracks and
+    // the short-row fill can never be told different things.
     if (!customGrid) {
-      return gridMode && gridCount > 2
-        ? { gridAutoRows: `minmax(${tileMinH}px, 1fr)` }
-        : undefined;
+      if (!gridMode) return undefined;
+      // One terminal fills the pane and two split it, whatever any Grid setting
+      // says: those are the two cases where the point is to see one or two
+      // machines as large as the pane allows. Two stack when the pane cannot
+      // hold them side by side, or when the top/bottom flip asks for it.
+      if (gridCount <= 1) {
+        return { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(0, 1fr)" };
+      }
+      if (gridCount === 2) {
+        return twoUpSplit === "cols" && twoUpFits
+          ? { gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gridTemplateRows: "minmax(0, 1fr)" }
+          : { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "repeat(2, minmax(0, 1fr))" };
+      }
+      return {
+        gridTemplateColumns: `repeat(${effectiveCols ?? 1}, minmax(0, 1fr))`,
+        gridAutoRows: `minmax(${tileMinH}px, 1fr)`,
+      };
     }
     const style: React.CSSProperties = {};
     const widthPx =
@@ -403,8 +452,11 @@ export function useGridLayout({
       style.gridTemplateColumns = `repeat(${pinnedCols}, minmax(${floorPx}px, 1fr))`;
     } else if (widthPx != null) {
       style.gridTemplateColumns = `repeat(auto-fill, ${widthPx}px)`;
+    } else {
+      // Only rows pinned, so the columns are the default grid's: measured, not
+      // a media query, for the same reason as above.
+      style.gridTemplateColumns = `repeat(${effectiveCols ?? 1}, minmax(0, 1fr))`;
     }
-    // else: columns stay auto (only rows pinned), a Tailwind class handles it.
     if (gridPrefs.itemRows != null) {
       style.gridAutoRows = `${
         Math.round(gridPrefs.itemRows * cell.cellH) + headerH + TILE_BORDER_Y
@@ -422,6 +474,9 @@ export function useGridLayout({
     gridCount,
     gridPrefs,
     pinnedCols,
+    effectiveCols,
+    twoUpSplit,
+    twoUpFits,
     cell,
     headerH,
     tileMinH,
@@ -515,7 +570,6 @@ export function useGridLayout({
     effectiveCols,
     tileSpan,
     customGrid,
-    customColsAuto,
     gridStyle,
   };
 }

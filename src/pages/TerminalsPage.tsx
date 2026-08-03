@@ -379,6 +379,11 @@ export function TerminalsPage({
     return map;
   }, [sessions]);
 
+  // The scrolling grid container. Declared up here rather than beside the other
+  // element refs below, because the layout hook measures it: how many columns
+  // the grid can hold is a question about this pane's width, not the window's.
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+
   // Grid layout: which tiles, in what order, laid out how. See ./terminals/
   // useGridLayout, pure layout, nothing in it touches a PTY.
   const {
@@ -404,9 +409,8 @@ export function TerminalsPage({
     gridSlot,
     tileSpan,
     customGrid,
-    customColsAuto,
     gridStyle,
-  } = useGridLayout({ sessions, visible, maximized });
+  } = useGridLayout({ sessions, visible, maximized, paneRef: gridScrollRef });
 
   // Drag a tile's edge to set the tile size for the whole grid, for as long as
   // the program is running. Whether it also writes the Settings -> Grid numbers
@@ -599,10 +603,10 @@ export function TerminalsPage({
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const tabElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // The scrolling grid container + a live map of each tile's element, so
-  // selecting a tab/session while in Grid can bring its tile fully into view
-  // when it's scrolled off (only >2 tiles ever scroll; otherwise this no-ops).
-  const gridScrollRef = useRef<HTMLDivElement>(null);
+  // A live map of each tile's element, so selecting a tab/session while in Grid
+  // can bring its tile fully into view when it's scrolled off (only >2 tiles
+  // ever scroll; otherwise this no-ops). The container itself is gridScrollRef,
+  // declared above the layout hook because that hook measures it.
   const paneElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // Per-pane imperative handles (find, and focusing the terminal itself).
   // Declared up here with the refs it sits beside, because the scroll effects
@@ -1440,33 +1444,17 @@ export function TerminalsPage({
           // columns and/or character-based tile size. Overflow scrolls, the
           // fixed widths can exceed the viewport, and that scroll is intended.
           customGrid && "grid content-start gap-2 overflow-auto",
-          customColsAuto && "grid-cols-1 lg:grid-cols-2",
           // Default fit-to-viewport grid, sized to the number of open terminals:
           //  1 tile  → fills the whole area,
-          //  2 tiles → split full-height (two columns wide, stacked when narrow),
+          //  2 tiles → split full-height (two columns wide, stacked when the
+          //            pane is too narrow for two readable ones),
           //  3+ tiles → tile two-across, rows sharing the height until they
-          //             reach a comfortable minimum, then scrolling. The row
-          //             track comes from gridStyle, not from a class here.
-          !customGrid &&
-            gridMode &&
-            gridCount === 1 &&
-            "grid grid-cols-1 grid-rows-1 gap-2",
-          // Two tiles: side-by-side full-height (stacking only when narrow), or
-          // flipped to a fixed top/bottom split, the twoUpSplit toggle.
-          !customGrid &&
-            gridMode &&
-            gridCount === 2 &&
-            twoUpSplit === "cols" &&
-            "grid grid-cols-1 grid-rows-2 gap-2 lg:grid-cols-2 lg:grid-rows-1",
-          !customGrid &&
-            gridMode &&
-            gridCount === 2 &&
-            twoUpSplit === "rows" &&
-            "grid grid-cols-1 grid-rows-2 gap-2",
-          !customGrid &&
-            gridMode &&
-            gridCount > 2 &&
-            "grid grid-cols-1 gap-2 overflow-auto lg:grid-cols-2",
+          //             reach a comfortable minimum, then scrolling.
+          // Every track comes from gridStyle rather than a class. The classes
+          // said `lg:grid-cols-2`, a media query on the window, which cannot
+          // see that the sidebar and the broadcast rail come out of this pane.
+          !customGrid && gridMode && gridCount <= 2 && "grid gap-2",
+          !customGrid && gridMode && gridCount > 2 && "grid gap-2 overflow-auto",
         )}
         style={gridStyle}
       >
