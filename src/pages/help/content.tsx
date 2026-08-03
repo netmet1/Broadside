@@ -329,7 +329,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-overview",
     title: "Overview and getting started",
     keywords:
-      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version",
+      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them",
     body: (
       <>
         <Lead>
@@ -361,6 +361,18 @@ export const SECTIONS: HelpSection[] = [
               one of them is not: the second number is the tabs, the first is
               the ones with a live connection, and the difference is the tabs
               showing red.
+            </li>
+            <li>
+              When nothing is being hovered, that same left-hand end shows three
+              live numbers instead: the window size, the terminal font size and
+              the app font size. The window size is the drawing area in the
+              units the window is sized in, so dragging the window as small as
+              it goes reads <Nav>1024x700</Nav>. All three follow a change as
+              you make it, which is the point of them: drag an edge, or hold{" "}
+              <Nav>Ctrl</Nav> and turn the wheel over a terminal, and watch the
+              number rather than guessing. Hover any control and they step aside
+              for its hint, then come back when you move off it. Turning hints
+              off in <Nav>Settings</Nav> leaves them showing all the time.
             </li>
             <li>
               The current app version is shown next to the Broadside name at
