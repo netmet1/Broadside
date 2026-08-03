@@ -939,7 +939,22 @@ export function TerminalsPage({
             // at half opacity on a grey strip, and it was not.
             "terminal-chrome",
             gridFullscreen &&
-              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 focus-within:translate-y-0 hover:translate-y-0",
+              // has-[[data-state=open]] is what keeps the strip down while a
+              // menu opened from it is up, and it is not a nicety: without it
+              // the strip slid away the moment a menu opened and took the menu
+              // with it, half off the top of the screen.
+              //
+              // Neither of the other two triggers can hold it. A Radix menu is
+              // modal, so opening one puts pointer-events:none on the body and
+              // :hover goes false even with the mouse sitting still; and its
+              // content is portalled to the body, so focus moving into it is
+              // focus leaving this element and :focus-within goes false too.
+              // The trigger keeps data-state="open" for exactly as long as the
+              // menu is up, which is the one signal that survives both. Written
+              // against the attribute rather than a piece of React state so it
+              // covers every menu and select in the strip, including the "+"
+              // launcher in the tab row below, with nothing to keep in sync.
+              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 focus-within:translate-y-0 hover:translate-y-0 has-[[data-state=open]]:translate-y-0",
           )}
         >
       <TerminalRail
@@ -1224,6 +1239,13 @@ export function TerminalsPage({
             onClick={() => setShellMenuOpen((v) => !v)}
             aria-label="New local shell"
             aria-expanded={shellMenuOpen}
+            // Hand-rolled, so it has to say what Radix's triggers say for
+            // itself: the fullscreen chrome strip stays down for as long as
+            // anything inside it reports data-state="open". Hovering already
+            // held the strip for this one (the menu is a child of the strip
+            // rather than a portal, so the mouse never leaves it), but the
+            // keyboard did not, and one rule for every menu beats two.
+            data-state={shellMenuOpen ? "open" : "closed"}
             {...hint("Open a local shell (PowerShell, Command Prompt, WSL)")}
             className="flex h-7 items-center gap-0.5 rounded-md border border-input px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
