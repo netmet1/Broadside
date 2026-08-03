@@ -20,11 +20,7 @@ import {
   GRID_ITEM_ROWS_MAX,
   GRID_ITEM_ROWS_MIN,
 } from "@/lib/gridPrefs";
-import {
-  GRID_HEADER_H,
-  TILE_BORDER_X,
-  TILE_BORDER_Y,
-} from "@/pages/terminals/useGridLayout";
+import { TILE_BORDER_X, TILE_BORDER_Y } from "@/pages/terminals/useGridLayout";
 
 /** Which edge is being dragged: the right edge sets width, the bottom sets
  * height, and the corner sets both at once. */
@@ -43,10 +39,15 @@ type Drag = {
 
 export function useGridResize({
   cell,
+  headerH,
   onCols,
   onRows,
 }: {
   cell: { cellW: number; cellH: number };
+  /** The tile title bar's height in px, taken off the dragged height before it
+   * is divided into rows. Comes from the layout rather than a constant: it
+   * scales with the app font, and it is zero when the titles are hidden. */
+  headerH: number;
   /** New tile width / height in characters, once a whole cell is crossed. */
   onCols: (cols: number) => void;
   onRows: (rows: number) => void;
@@ -108,7 +109,7 @@ export function useGridResize({
           GRID_ITEM_ROWS_MAX,
           Math.max(
             GRID_ITEM_ROWS_MIN,
-            Math.round((px - GRID_HEADER_H - TILE_BORDER_Y) / cell.cellH),
+            Math.round((px - headerH - TILE_BORDER_Y) / cell.cellH),
           ),
         );
         if (rows !== lastSent.current.rows) {
@@ -133,7 +134,7 @@ export function useGridResize({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [resizing, cell, onCols, onRows]);
+  }, [resizing, cell, headerH, onCols, onRows]);
 
   return { resizing, begin };
 }

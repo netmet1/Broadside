@@ -399,6 +399,8 @@ export function TerminalsPage({
     setDragRows,
     resetTileSize,
     cell,
+    headerH,
+    tileMinH,
     gridSlot,
     tileSpan,
     customGrid,
@@ -411,6 +413,7 @@ export function TerminalsPage({
   // is the strict setting's business, not this page's (see gridPrefs.ts).
   const { resizing, begin: beginResize } = useGridResize({
     cell,
+    headerH,
     onCols: setDragCols,
     onRows: setDragRows,
   });
@@ -1506,6 +1509,14 @@ export function TerminalsPage({
                 // Visual position in the grid = position in the tab strip, so
                 // dragging a tab rearranges the grid. See displayIndex.
                 order: displayIndex.get(s.id) ?? 0,
+                // The legible floor for the default grid at 3+ tiles, the same
+                // number its row track is floored at (see tileMinH). Inline
+                // rather than a `min-h-[16rem]` class on purpose: rem follows
+                // the app font and the track is in px, so as a class the two
+                // drifted apart and the tiles overlapped. A custom grid's
+                // rows are already sized by Settings, and one or two tiles
+                // always fill the pane, so neither takes a floor.
+                ...(!customGrid && gridCount > 2 ? { minHeight: tileMinH } : {}),
                 // Filling a short last row (Settings -> Grid). Nothing for most
                 // tiles; a span for the ones that take up the slack.
                 ...(excluded ? {} : tileSpan(gridSlot.get(s.id) ?? 0)),
@@ -1531,15 +1542,12 @@ export function TerminalsPage({
                     : cn(
                       // relative: anchors the resize handles below.
                       "relative flex min-w-0 flex-col overflow-hidden rounded-md border",
-                      // Row height: a custom grid's row track sets the tile
-                      // height (a pinned item-height, or minmax(floor,1fr) when
-                      // auto), so the tile just fills it (min-h-0). The default
-                      // grid keeps a legible floor for 3+ tiles and scrolls.
-                      customGrid
-                        ? "min-h-0"
-                        : gridCount > 2
-                          ? "min-h-[16rem]"
-                          : "min-h-0",
+                      // Row height comes from the row track (a pinned
+                      // item-height, or minmax(floor, 1fr) when auto), so the
+                      // tile just fills it. The default grid's legible floor
+                      // for 3+ tiles rides in tileStyle instead, in the same
+                      // pixels the track was floored with.
+                      "min-h-0",
                       isActive
                         ? // host-tinted tiles take their border+ring from tileStyle
                           hostTint

@@ -39,11 +39,29 @@ const GRID_FLOOR_COLS = 24;
  * rounds a container to whole cells, so the result lands within ~1 col/row. */
 export const TILE_BORDER_X = 2;
 export const TILE_BORDER_Y = 2;
-export const GRID_HEADER_H = 30;
-/** Legible minimum tile height (16rem = 256px) for a custom grid whose item
- * height is auto. Rows fill the pane when few (so a maximized window has no dead
- * space) but never shrink below this, overflowing to a vertical scroll when many. */
-const GRID_ROW_FLOOR_PX = 256;
+
+/** Legible minimum tile height, in rows **of the terminal font**. Rows fill the
+ * pane when few (so a maximized window has no dead space) but never shrink
+ * below this, overflowing to a vertical scroll when many.
+ *
+ * Deliberately not a rem length. `rem` follows the *app* font size (see
+ * UiPrefsProvider, which writes it onto the root element) and a terminal cell
+ * does not, so a tile floored in rem and a row track floored in px drift apart
+ * the moment the app font leaves 16px: at 20px the tile's min-height was 320px
+ * inside a 256px track, and since the minimum of a `minmax()` is a fixed length
+ * the track never grew to hold it. Every tile spilled 64px into the row below
+ * and the error accumulated down the grid, so the tiles overlapped. One number,
+ * computed from the metrics it is actually about, cannot do that. */
+const GRID_MIN_TILE_ROWS = 13;
+
+/** The real height of a tile's title bar. Also not a constant: the header is
+ * `py-1` plus a `text-sm` line box plus 3px of border, all of which scale with
+ * the app font, so a hard-coded 30 was only ever right at a 16px app font (this
+ * returns 31 there, and 38 at 20px). Zero when the titles are hidden, because
+ * then there is no header to make room for. */
+function gridHeaderH(appFontSize: number, hidden: boolean): number {
+  return hidden ? 0 : Math.round(1.75 * appFontSize) + 3;
+}
 /** Tailwind's `lg` breakpoint, in pixels. The default grid's column count is a
  * media query (`grid-cols-1 lg:grid-cols-2`), and the short-row fill has to know
  * which side of it we are on to know how many columns there actually are. */
@@ -90,6 +108,12 @@ export type GridLayout = {
   resetTileSize: () => void;
   /** Measured cell size for the current terminal font, for char <-> px maths. */
   cell: { cellW: number; cellH: number };
+  /** A tile's title bar in px, for the char <-> px maths that has to allow for
+   * it. Zero when the titles are hidden, and it grows with the app font. */
+  headerH: number;
+  /** A tile's legible minimum height in px. The row track's floor and the tile's
+   * own `min-height` are handed this same number, so they cannot disagree. */
+  tileMinH: number;
 
   /** True while the Grid settings are the last word and a drag is temporary
    * (the default). False lets a drag write the tile size into Settings. */
@@ -312,6 +336,14 @@ export function useGridLayout({
     [uiPrefs.terminalFontFamily, uiPrefs.terminalFontSize],
   );
 
+  // The two pieces of per-tile chrome the layout has to pay for, both derived
+  // rather than written down (see gridHeaderH). Everything that needs a tile's
+  // minimum height takes `tileMinH`, so the row track and the tile itself are
+  // always the same number and a tile can never outgrow the row holding it.
+  const headerH = gridHeaderH(uiPrefs.appFontSize, hideGridHeaders);
+  const tileMinH =
+    Math.round(GRID_MIN_TILE_ROWS * cell.cellH) + headerH + TILE_BORDER_Y;
+
   // A non-auto grid switches to a uniform, settings-driven layout.
   //
   // One and two tiles are the deliberate exceptions: a single terminal fills the
@@ -349,14 +381,14 @@ export function useGridLayout({
   const gridStyle = useMemo<React.CSSProperties | undefined>(() => {
     // The default (auto/auto/auto) grid at three or more tiles. Its columns are
     // a Tailwind class, but its rows used to be left implicit, which meant
-    // `auto`: every row sized to the tile's own 16rem floor and stayed there.
+    // `auto`: every row sized to the tile's own floor and stayed there.
     // Growing the window then bought nothing but dead space below the last row,
     // because nothing ever asked the rows to take it. Same track as the custom
     // grid's auto height below, and for the same reason: rows share the pane
     // when they fit, and hold the legible floor and scroll when they don't.
     if (!customGrid) {
       return gridMode && gridCount > 2
-        ? { gridAutoRows: `minmax(${GRID_ROW_FLOOR_PX}px, 1fr)` }
+        ? { gridAutoRows: `minmax(${tileMinH}px, 1fr)` }
         : undefined;
     }
     const style: React.CSSProperties = {};
@@ -375,16 +407,25 @@ export function useGridLayout({
     // else: columns stay auto (only rows pinned), a Tailwind class handles it.
     if (gridPrefs.itemRows != null) {
       style.gridAutoRows = `${
-        Math.round(gridPrefs.itemRows * cell.cellH) + GRID_HEADER_H + TILE_BORDER_Y
+        Math.round(gridPrefs.itemRows * cell.cellH) + headerH + TILE_BORDER_Y
       }px`;
     } else {
       // Item height auto: rows grow to fill the pane (a few tiles leave no dead
       // space in a tall/maximized window) but hold a legible floor, so more tiles
       // than fit overflow to a vertical scroll instead of shrinking to slivers.
-      style.gridAutoRows = `minmax(${GRID_ROW_FLOOR_PX}px, 1fr)`;
+      style.gridAutoRows = `minmax(${tileMinH}px, 1fr)`;
     }
     return style;
-  }, [customGrid, gridMode, gridCount, gridPrefs, pinnedCols, cell]);
+  }, [
+    customGrid,
+    gridMode,
+    gridCount,
+    gridPrefs,
+    pinnedCols,
+    cell,
+    headerH,
+    tileMinH,
+  ]);
 
   // Where each tile sits in the laid-out order. `displayIndex` is a position in
   // the tab strip and skips nothing, but a tile hidden from the grid is
@@ -467,6 +508,8 @@ export function useGridLayout({
     setDragRows,
     resetTileSize,
     cell,
+    headerH,
+    tileMinH,
     strictGrid,
     gridSlot,
     effectiveCols,
