@@ -73,12 +73,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>F11</Kbd>,
         where: "Terminals",
-        what: "Maximize the selected terminal to fill the window, hiding every other part of the app. Press it again to restore. It works from inside a maximized terminal wherever you are.",
-      },
-      {
-        keys: <Kbd>Esc</Kbd>,
-        where: "Maximized terminal",
-        what: "Restore the app around the terminal. It only comes back out, never in, so Esc belongs to whatever is running in the terminal the rest of the time. In vim, use F11 instead: the first Esc un-maximizes rather than leaving insert mode.",
+        what: "Maximize the selected terminal to fill the window, hiding every other part of the app. Press it again to restore. It works from inside a maximized terminal wherever you are. Esc does not restore: it belongs to whatever is running in the terminal, and vi is built around it.",
       },
       {
         keys: <Kbd>Ctrl+F</Kbd>,
@@ -103,12 +98,12 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Ctrl+Shift+G</Kbd>,
         where: "Grid",
-        what: "Fill the screen with the grid: the sidebar, status bar, toolbar and tab strip all go, and the tiles take the whole window. Press it again to bring them back. Deliberately not a function key: F10 belongs to mc and nano.",
+        what: "Fill the screen with the grid: the sidebar, status bar, toolbar and tab strip all go, and the tiles take the whole window. Press it again to bring them back, or use the button in the hover strip. Deliberately not a function key: F10 belongs to mc and nano, and deliberately not Esc, which belongs to vi.",
       },
       {
         keys: <Kbd>Esc</Kbd>,
-        where: "Grid fullscreen",
-        what: "Leave fullscreen. With the keyboard in the controls strip it hands focus back to the terminal instead, and the next press leaves fullscreen.",
+        where: "Terminal controls",
+        what: "Hand the keyboard back to the terminal after Ctrl+Shift+T put it in the toolbar. This is the only thing Esc does on this page, and it is safe to claim because the keyboard is not in a terminal at the time. It does not leave fullscreen.",
       },
       {
         keys: <Kbd>Ctrl+Shift+T</Kbd>,

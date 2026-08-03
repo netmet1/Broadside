@@ -329,7 +329,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-overview",
     title: "Overview and getting started",
     keywords:
-      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout fifteen seconds mouse resting on button walked away esc escape key return from fullscreen restore vim insert mode",
+      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout fifteen seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key",
     body: (
       <>
         <Lead>
@@ -387,11 +387,13 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Press <Nav>F11</Nav> (or the maximize button on a terminal tab) to
               fill the whole window with a single terminal, and <Nav>F11</Nav>{" "}
-              or <Nav>Esc</Nav> to return. <Nav>Esc</Nav> only comes back out,
-              never in, so the key belongs to whatever is running in the
-              terminal every other moment. If you live in <code>vim</code>, use{" "}
-              <Nav>F11</Nav>: the first <Nav>Esc</Nav> you press in a maximized
-              terminal un-maximizes it rather than leaving insert mode.
+              again to return. <b>Esc does not come back out</b>, in either
+              fullscreen, and that is deliberate: Esc is the key{" "}
+              <code>vi</code> is built around, and the program most likely to be
+              running full-screen in a terminal is an editor. Taking a press of
+              it to resize a window would cost more than it saved, so Esc goes
+              straight through to whatever you are running. Use <Nav>F11</Nav>,
+              or the restore button in the banner along the top.
             </li>
           </Bullets>
         </Detail>
@@ -561,7 +563,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does not exit maximized terminal fullscreen empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen",
     body: (
       <>
         <Lead>
@@ -853,11 +855,13 @@ export const SECTIONS: HelpSection[] = [
               top. Move the mouse to that strip and everything slides back down,
               so you can pick a tab, close one, or use the dropdown without
               leaving fullscreen; move away and it hides again.{" "}
-              <Nav>Ctrl+Shift+G</Nav>, <Nav>Esc</Nav>, or the button brings the
-              chrome back. The shortcut is a Ctrl+Shift one on purpose: a
-              terminal cannot tell Ctrl+Shift+G from Ctrl+G, so nothing is taken
-              away from a program running in a tile, which a function key like
-              F10 would have been.
+              <Nav>Ctrl+Shift+G</Nav> or the button brings the chrome back. The
+              shortcut is a Ctrl+Shift one on purpose: a terminal cannot tell
+              Ctrl+Shift+G from Ctrl+G, so nothing is taken away from a program
+              running in a tile, which a function key like F10 would have been.
+              For the same reason <b>Esc does not leave fullscreen</b>: a wall
+              of terminals is the worst possible place to claim the key{" "}
+              <code>vi</code> is built around.
             </li>
             <li>
               <Nav>Ctrl+Shift+T</Nav> puts the keyboard into the controls, which
@@ -867,10 +871,11 @@ export const SECTIONS: HelpSection[] = [
               tab's buttons show themselves as they take the focus instead of
               waiting for the mouse. Tab wraps round at the last control rather
               than walking off into the grid, and <Nav>Esc</Nav> hands the
-              keyboard back to the terminal you came from (a second{" "}
-              <Nav>Esc</Nav> then leaves fullscreen). Tab on its own cannot get
-              you in here: a terminal has the focus in a grid, and Tab there
-              belongs to the shell.
+              keyboard back to the terminal you came from. That is the one thing
+              Esc does here, and it is safe to claim precisely because the
+              keyboard is in the toolbar rather than in a terminal at the time.
+              Tab on its own cannot get you in here: a terminal has the focus in
+              a grid, and Tab there belongs to the shell.
             </li>
             <li>
               Drag the right or bottom edge of any tile (or its bottom-right
@@ -1047,8 +1052,9 @@ export const SECTIONS: HelpSection[] = [
               <Nav>F11</Nav> has always done; in Grid it fills the screen with
               the whole wall (<Nav>Ctrl+Shift+G</Nav>) and collapses the chrome
               to a strip you hover to reveal. The icon and the <Nav>View</Nav>{" "}
-              entry both do whichever one applies, and <Nav>Esc</Nav> comes back
-              from either.
+              entry both do whichever one applies, and each names its own key.
+              Neither answers to <Nav>Esc</Nav>, which belongs to whatever is
+              running in the terminal.
             </li>
           </Bullets>
           <H3>Full-screen prompts, and a stuck one</H3>

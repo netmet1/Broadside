@@ -56,7 +56,6 @@ import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { TerminalRail } from "@/pages/terminals/TerminalRail";
 import { useGridFocus } from "@/pages/terminals/useGridFocus";
-import { escapeIsSpokenFor } from "@/lib/escapeOwner";
 import type { SearchOptions } from "@/lib/search";
 import { getAppSettings } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
@@ -476,6 +475,18 @@ export function TerminalsPage({
   // (Ctrl+Shift+G and Ctrl+G arrive at the shell as the same byte), so taking
   // it costs a program nothing it could have told apart from plain Ctrl+G.
   //
+  // Ctrl+Shift+G is the whole of it, in and out. Esc used to come back out too
+  // and no longer does, on purpose: a fullscreen grid is a wall of terminals,
+  // the program most likely to be running in one of them is vi, and Esc is the
+  // key vi is built around. Claiming it meant the first Esc of every editing
+  // session left fullscreen instead of leaving insert mode, in the layout where
+  // the most terminals are on screen to be caught by it. The ways out that cost
+  // a program nothing are Ctrl+Shift+G and the strip's own button.
+  //
+  // Esc does still do one thing on this page, further down: with the keyboard
+  // in the controls strip it hands focus back to the terminal. That case is
+  // safe by construction, because the keyboard is not in a terminal at all.
+  //
   // Registered here rather than in App (where F11 lives) so it can be gated on
   // this page being visible AND the grid being the active layout, which is
   // state App doesn't have. Capture phase, like F11, so xterm doesn't swallow
@@ -487,26 +498,11 @@ export function TerminalsPage({
         e.preventDefault();
         e.stopPropagation();
         onGridFullscreen(!gridFullscreen);
-      } else if (
-        e.key === "Escape" &&
-        gridFullscreen &&
-        !chromeHasFocus() &&
-        !escapeIsSpokenFor()
-      ) {
-        // Esc only exits; it must stay available to the shell otherwise.
-        // With the keyboard in the strip it means "give me the terminal back"
-        // instead, handled below, or one press would both drop focus and take
-        // the grid out of fullscreen and you could never walk the strip twice.
-        // And a dialog or an open find bar is asked about first, because this
-        // listener would otherwise stop the key before either of them saw it.
-        e.preventDefault();
-        e.stopPropagation();
-        onGridFullscreen(false);
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [visible, gridMode, gridFullscreen, onGridFullscreen, chromeHasFocus]);
+  }, [visible, gridMode, gridFullscreen, onGridFullscreen]);
 
   // Ctrl+Shift+T puts keyboard focus into the controls. In grid fullscreen they
   // are slid up out of the way and the mouse was the only way back to them:

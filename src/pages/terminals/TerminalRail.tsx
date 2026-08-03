@@ -184,9 +184,9 @@ export function TerminalRail({
       ? "Nothing is in the grid to fill the screen with. Put a tab back in the grid first."
       : "No terminal is open to fill the window with. Open one first."
     : !gridMode
-      ? "Fill the window with the active terminal (F11). Esc or F11 brings the app back."
+      ? "Fill the window with the active terminal (F11). F11 again brings the app back."
       : gridFullscreen
-        ? "The grid fills the screen. Click (or press Ctrl+Shift+G, or Esc) to come back."
+        ? "The grid fills the screen. Click, or press Ctrl+Shift+G, to come back."
         : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a strip you hover to reveal.";
 
   // Out of room: the words go and the icons stay. The key is everything other
