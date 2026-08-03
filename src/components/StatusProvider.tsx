@@ -9,6 +9,17 @@ import {
 import { HINT_BUDGET_PX, StatusContext } from "@/lib/status";
 import { getAppSettings, setHelpHintsEnabled } from "@/lib/tauri/settings";
 
+/** How long a hint may sit on an idle machine before the bar takes its line
+ * back. A hint is cleared by the pointer leaving the control that raised it, so
+ * the only way one lingers is nobody being there: the mouse was parked on a
+ * button and the operator walked away. What the line shows instead (the window
+ * size and the two font sizes) is the more useful thing to come back to. */
+const HINT_IDLE_MS = 15_000;
+
+/** How often the idle check runs. A second is far finer than a fifteen-second
+ * timeout needs, and it only ticks while a hint is actually up. */
+const HINT_IDLE_TICK_MS = 1_000;
+
 export function StatusProvider({ children }: { children: ReactNode }) {
   const [pageStatus, setPageStatus] = useState<ReactNode>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -21,6 +32,39 @@ export function StatusProvider({ children }: { children: ReactNode }) {
         // Hints stay on by default if settings can't load.
       });
   }, []);
+
+  // Take the hint down once the machine has been still for HINT_IDLE_MS.
+  //
+  // Costed deliberately, because the obvious version of this is expensive: the
+  // listeners exist only while a hint is showing (so the common case, no hint,
+  // subscribes to nothing at all), activity writes a plain local rather than
+  // state (so a mousemove never renders anything), and the timeout is one
+  // interval instead of a timer torn down and rebuilt per event. Moving the
+  // mouse across the app therefore costs one assignment per event, and only
+  // while a hint is on screen.
+  const hintShowing = hint !== null;
+  useEffect(() => {
+    if (!hintShowing) return;
+    let last = Date.now();
+    const bump = () => {
+      last = Date.now();
+    };
+    // Capture phase, because xterm stops keydown from bubbling out of a
+    // terminal and typing into one is exactly the activity this looks for.
+    const events = ["mousemove", "mousedown", "wheel", "keydown"] as const;
+    for (const name of events) {
+      window.addEventListener(name, bump, { passive: true, capture: true });
+    }
+    const timer = window.setInterval(() => {
+      if (Date.now() - last >= HINT_IDLE_MS) setHint(null);
+    }, HINT_IDLE_TICK_MS);
+    return () => {
+      for (const name of events) {
+        window.removeEventListener(name, bump, { capture: true });
+      }
+      window.clearInterval(timer);
+    };
+  }, [hintShowing]);
 
   const showHint = useCallback((text: string) => {
     if (import.meta.env.DEV) warnIfTooWide(text);

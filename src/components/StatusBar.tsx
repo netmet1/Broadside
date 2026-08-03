@@ -11,7 +11,8 @@ import { useWindowSize } from "@/lib/useWindowSize";
  * as long as it is up, because a hint is a thing the reader asked for by
  * pointing at a control and these three are only ever there to be glanced at.
  * They are the numbers you want while you are changing them, which is exactly
- * when a hint is not showing. */
+ * when a hint is not showing. An abandoned hint (pointer parked on a control,
+ * nobody at the machine) times out in StatusProvider and gives the line back. */
 export function StatusBar() {
   const { pageStatus, hint, hintsEnabled } = useStatus();
   const { prefs } = useUiPrefs();

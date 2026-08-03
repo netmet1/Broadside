@@ -8,7 +8,12 @@ import {
 
 /** Shared state for the global bottom status bar: a per-page status line
  * (right side) and a transient help hint (left side) shown while the user
- * hovers or focuses an actionable control. */
+ * hovers or focuses an actionable control.
+ *
+ * A hint normally ends when the pointer leaves the control that raised it.
+ * `StatusProvider` also takes one down after fifteen seconds with no mouse or
+ * keyboard activity anywhere, so a pointer parked on a button while nobody is
+ * at the machine does not hold the line forever. */
 export type StatusContextValue = {
   pageStatus: ReactNode;
   setPageStatus: (status: ReactNode) => void;
