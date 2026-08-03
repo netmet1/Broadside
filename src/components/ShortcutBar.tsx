@@ -28,6 +28,7 @@ export function ShortcutBar({
   shortcuts,
   activeScope,
   disabled,
+  compact,
   onRun,
   onManage,
 }: {
@@ -37,6 +38,9 @@ export function ShortcutBar({
    * page. null = nothing runs (e.g. no active terminal) so the list is empty. */
   activeScope: ShortcutScope | null;
   disabled?: boolean;
+  /** The rail this sits in has run out of room, so Go gives up its label and
+   * keeps its icon (see lib/useRailCompact). */
+  compact?: boolean;
   onRun: (command: string) => void;
   onManage: () => void;
 }) {
@@ -75,7 +79,12 @@ export function ShortcutBar({
   };
 
   return (
-    <div className="flex items-center gap-1.5">
+    // min-w-0 the whole way down to the trigger. The picker is the widest thing
+    // in either rail (14rem, which is 280px at a 20px app font), so it is what
+    // should give up room first when the row is tight; without min-w-0 at every
+    // level a flex item will not shrink below its own content and the row runs
+    // off the edge instead.
+    <div className="flex min-w-0 items-center gap-1.5">
       <Select
         value={selected}
         onValueChange={(v) => {
@@ -88,7 +97,7 @@ export function ShortcutBar({
       >
         <SelectTrigger
           size="sm"
-          className="w-56 font-mono text-xs"
+          className="w-56 min-w-0 font-mono text-xs"
           aria-label="Shortcut command"
           {...hint("Pick a shortcut command, then press Go to run it")}
         >
@@ -127,14 +136,15 @@ export function ShortcutBar({
         </SelectContent>
       </Select>
       <Button
-        size="sm"
+        size={compact ? "icon-sm" : "sm"}
         variant="outline"
         disabled={!runnable}
         onClick={() => onRun(selectedCmd)}
+        aria-label={compact ? "Go" : undefined}
         {...hint("Run the selected shortcut command")}
       >
         <PlayIcon />
-        Go
+        {!compact && "Go"}
       </Button>
     </div>
   );

@@ -13,6 +13,15 @@
  * changes height reflows the terminal grid underneath it every time a
  * conditional button appears.
  *
+ * Grouping alone only held at a 16px app font, though, because the budget it
+ * was measured against was in rem and the window minimum it had to fit is in
+ * pixels. At 20px the same row wants a quarter more room than it did and the
+ * Sessions button was clipped off the edge again. So the row now measures
+ * itself (see lib/useRailCompact) and, when it will not fit, keeps the icons
+ * and drops the words. Tabs | Grid is the exception: it is not a pair of
+ * actions but a report of which mode is on, and two icons alone do not say
+ * which of them is lit.
+ *
  * What stays out of the menu is decided by how often it is used, not by what it
  * does. Fullscreen and Grid Titles are the two most-toggled controls in grid
  * mode, so they stay in the rail as icon-only buttons (~32px each against ~120px
@@ -29,12 +38,14 @@
  * user had no way to find it.
  */
 
+import { useRef } from "react";
 import {
   ChevronDownIcon,
   Columns2Icon,
   EyeIcon,
   EyeOffIcon,
   LayoutGridIcon,
+  ListIcon,
   Maximize2Icon,
   Minimize2Icon,
   PanelTopIcon,
@@ -59,6 +70,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { useHint } from "@/lib/status";
+import { useRailCompact } from "@/lib/useRailCompact";
+import { useUiPrefs } from "@/lib/uiPrefs";
 import type { ShortcutScope } from "@/lib/tauri/settings";
 import type { ScopedShortcut } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
@@ -147,15 +160,37 @@ export function TerminalRail({
       ? "The grid fills the screen. Click (or press Ctrl+Shift+G, or Esc) to come back."
       : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a strip you hover to reveal.";
 
+  // Out of room: the words go and the icons stay. The key is everything other
+  // than the pane's width that changes how wide this row wants to be, so a
+  // font change or a control appearing re-asks the question from scratch.
+  const railRef = useRef<HTMLDivElement>(null);
+  const { prefs } = useUiPrefs();
+  const compact = useRailCompact(
+    railRef,
+    [
+      prefs.appFontSize,
+      canFullscreen,
+      gridMode,
+      showTwoUpFlip,
+      sessions.length > 0,
+    ].join("|"),
+  );
+
   return (
-    <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
+    <div
+      ref={railRef}
+      className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5"
+    >
       {/* Pane layout toggle: one tab at a time, or every open pane tiled at
           once like a skill run. A segmented switch rather than a single
           button so the current mode reads at a glance. */}
       <div
         role="group"
         aria-label="Terminal layout"
-        className="flex items-center gap-0.5 rounded-md border border-input p-0.5"
+        // shrink-0 unlike the Buttons around it, which get it from
+        // ui/button.tsx: these are plain <button>s, so without it the row
+        // squeezes the two labels here before it touches the picker.
+        className="flex shrink-0 items-center gap-0.5 rounded-md border border-input p-0.5"
       >
         <button
           type="button"
@@ -193,10 +228,11 @@ export function TerminalRail({
           page, so the panes you are watching are the ones that answer.
           Available in both layouts; Grid is what it is really for. */}
       <Button
-        size="sm"
+        size={compact ? "icon-sm" : "sm"}
         variant={broadcastRail ? "secondary" : "outline"}
         onClick={toggleBroadcastRail}
         aria-pressed={broadcastRail}
+        aria-label="Broadcast"
         {...hint(
           broadcastRail
             ? "Hide the broadcast rail."
@@ -204,7 +240,7 @@ export function TerminalRail({
         )}
       >
         <RadioTowerIcon className="h-3.5 w-3.5" />
-        Broadcast
+        {!compact && "Broadcast"}
       </Button>
 
       {/* Fullscreen. In Grid every tile fills the screen and all the chrome
@@ -260,15 +296,20 @@ export function TerminalRail({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            size="sm"
+            size={compact ? "icon-sm" : "sm"}
             variant="outline"
+            aria-label="View"
             {...hint(
               "Fullscreen, tab labels, tile arrangement and the two reset actions.",
             )}
           >
             <SlidersHorizontalIcon className="h-3.5 w-3.5" />
-            View
-            <ChevronDownIcon className="-mr-1 h-3.5 w-3.5 opacity-60" />
+            {!compact && (
+              <>
+                View
+                <ChevronDownIcon className="-mr-1 h-3.5 w-3.5 opacity-60" />
+              </>
+            )}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
@@ -358,6 +399,7 @@ export function TerminalRail({
           shortcuts={shortcuts}
           activeScope={activeScope}
           disabled={activeId === null}
+          compact={compact}
           onRun={runShortcut}
           onManage={onManageShortcuts}
         />
@@ -370,13 +412,19 @@ export function TerminalRail({
               <Button
                 size="sm"
                 variant="outline"
+                aria-label="Sessions"
                 {...hint("Jump to an open terminal session, or close them all.")}
               >
-                Sessions
+                {/* The count stays whatever happens: it is the live number of
+                    open sessions, not decoration, and it is the reason someone
+                    looks at this button without meaning to open it. */}
+                {compact ? <ListIcon className="h-3.5 w-3.5" /> : "Sessions"}
                 <span className="text-muted-foreground">
                   {sessions.length}
                 </span>
-                <ChevronDownIcon className="-mr-1 h-3.5 w-3.5 opacity-60" />
+                {!compact && (
+                  <ChevronDownIcon className="-mr-1 h-3.5 w-3.5 opacity-60" />
+                )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-w-72">
