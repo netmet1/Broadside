@@ -56,6 +56,7 @@ import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { TerminalRail } from "@/pages/terminals/TerminalRail";
 import { useGridFocus } from "@/pages/terminals/useGridFocus";
+import { escapeIsSpokenFor } from "@/lib/escapeOwner";
 import type { SearchOptions } from "@/lib/search";
 import { getAppSettings } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
@@ -486,11 +487,18 @@ export function TerminalsPage({
         e.preventDefault();
         e.stopPropagation();
         onGridFullscreen(!gridFullscreen);
-      } else if (e.key === "Escape" && gridFullscreen && !chromeHasFocus()) {
+      } else if (
+        e.key === "Escape" &&
+        gridFullscreen &&
+        !chromeHasFocus() &&
+        !escapeIsSpokenFor()
+      ) {
         // Esc only exits; it must stay available to the shell otherwise.
         // With the keyboard in the strip it means "give me the terminal back"
         // instead, handled below, or one press would both drop focus and take
         // the grid out of fullscreen and you could never walk the strip twice.
+        // And a dialog or an open find bar is asked about first, because this
+        // listener would otherwise stop the key before either of them saw it.
         e.preventDefault();
         e.stopPropagation();
         onGridFullscreen(false);

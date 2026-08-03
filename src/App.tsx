@@ -21,6 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { escapeIsSpokenFor } from "@/lib/escapeOwner";
 import { isExitGuardEnabled } from "@/lib/exitGuard";
 import { HostsPage } from "@/pages/HostsPage";
 import { BroadcastPage } from "@/pages/BroadcastPage";
@@ -354,8 +355,27 @@ function App() {
   // F11 toggles the maximized terminal, the standard fullscreen key, and
   // (unlike Esc) one the shell and TUI apps like vim/less never use, so it's
   // safe to capture. Capture phase fires before xterm consumes the key.
+  //
+  // Esc also comes back out, and only out. The help and the control's own hint
+  // have always said it did, and grid fullscreen has answered to Esc since it
+  // shipped, so a maximized terminal not answering to it was the odd one. It is
+  // a narrow claim on purpose: only while something is maximized, and never on
+  // the way in, so the key belongs to the terminal every other moment.
+  //
+  // It is not free. Esc is vim's own key, and a vim session in a maximized
+  // terminal gives up one press to un-maximize before it can be used again. The
+  // way out of that is F11 (or the restore button in the banner), which leaves
+  // Esc alone; the trade is deliberate, because a fullscreen with no visible way
+  // back is worse than a key that has to be pressed twice.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (!maximized || escapeIsSpokenFor()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setMaxSessionId(null);
+        return;
+      }
       if (e.key !== "F11") return;
       e.preventDefault();
       e.stopPropagation();
