@@ -1055,7 +1055,35 @@ export function TerminalsPage({
               // a box whose bottom edge lands exactly on y=0 can still be hit
               // at y=0 once display scaling has rounded it; a pixel of clear
               // air is cheaper than finding that out on a 125% display.
-              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%+1px)] border-b border-border bg-background shadow-lg transition-transform duration-150 data-chrome-keyboard:translate-y-0 has-[[data-state=open]]:translate-y-0",
+              //
+              // `delay-100` is on leaving only: every holder cancels it with
+              // its own delay-0, so the strip arrives the instant it is asked
+              // for and only ever dawdles on the way out. It is a debounce,
+              // and it is here because a holder can drop out for a frame while
+              // nothing has actually changed.
+              //
+              // The one that does: a modal Radix menu puts pointer-events:none
+              // on the body, and DismissableLayer takes it off again in a
+              // *passive* effect cleanup, which React runs after the browser
+              // has painted. So there is a painted frame in which the menu is
+              // gone, its data-state hold gone with it, and the body still
+              // inert. An inert body means :hover is false even with the
+              // pointer sitting on the strip, so the strip set off up the
+              // screen and came back when the style was removed. That is what
+              // closing a menu by clicking the tab looked like.
+              // (react-dismissable-layer, the effect that saves
+              // originalBodyPointerEvents and restores it in its cleanup.)
+              //
+              // Waiting was the wrong answer to the older blink and is the
+              // right one to this, which is worth being clear about. That one
+              // was focus arriving late and dragging the strip back down, and
+              // the fix was to stop treating a library handing focus back as
+              // somebody asking for the strip. There is no such mistake here:
+              // the pointer is on the strip throughout and never asked to
+              // leave. Nothing is being papered over. There is a frame in
+              // which the browser cannot be asked where the pointer is, and
+              // 100ms is longer than that frame and shorter than a person.
+              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%+1px)] border-b border-border bg-background shadow-lg transition-transform delay-100 duration-150 data-chrome-keyboard:translate-y-0 data-chrome-keyboard:delay-0 has-[[data-state=open]]:translate-y-0 has-[[data-state=open]]:delay-0",
             // Hover is the holder a click switches off, and it is dropped from
             // the class list rather than fought with a more specific rule,
             // because "is hover still a reason to be here" is a question React
@@ -1063,7 +1091,7 @@ export function TerminalsPage({
             // purpose: an open menu still has to be attached to something, and
             // a keyboard that was sent here by Ctrl+Shift+T is not finished
             // just because it pressed Enter on a button.
-            gridFullscreen && !stripDismissed && "hover:translate-y-0",
+            gridFullscreen && !stripDismissed && "hover:translate-y-0 hover:delay-0",
           )}
         >
       <TerminalRail
