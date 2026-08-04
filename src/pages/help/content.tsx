@@ -565,7 +565,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing",
     body: (
       <>
         <Lead>
@@ -772,7 +772,7 @@ export const SECTIONS: HelpSection[] = [
               in: it holds the size and scrolls instead. When you find yourself
               scrolling, these are the four things that buy space back, roughly
               in order of how much. <Nav>Ctrl+Shift+G</Nav> gives the grid the
-              whole screen and folds every bar away into a strip you hover.{" "}
+              whole screen and folds every bar away behind a tab at the top.{" "}
               <Nav>Grid Titles</Nav> (the eye) takes a title bar off every tile.
               The grid button on a tab drops that terminal out of the grid
               without closing it, so a session you only need occasionally stops
@@ -853,14 +853,18 @@ export const SECTIONS: HelpSection[] = [
             <li>
               <Nav>Fullscreen</Nav> (also <Nav>Ctrl+Shift+G</Nav>) gives the
               grid the whole screen: the toolbar, the tab strip, the sidebar and
-              the status bar all slide away, leaving a thin strip at the very
-              top. Move the mouse to that strip and everything slides back down,
-              so you can pick a tab, close one, or use the dropdown without
-              leaving fullscreen. It is somewhere to go and do one thing, so it
-              hides again the moment you do it: clicking any button, choosing
-              from any menu, or picking a tab sends it away without waiting for
-              you to move the mouse off. Moving the mouse back to the top brings
-              it down again, and so does <Nav>Ctrl+Shift+T</Nav>. The one thing
+              the status bar all slide away, leaving one small tab in the middle
+              of the top edge. Put the mouse on that tab and everything slides
+              back down, so you can pick a tab, close one, or use the dropdown
+              without leaving fullscreen. The tab is the only place that does
+              it, and deliberately so: the rest of the top edge is yours, so
+              reaching for the top row of tiles does not keep pulling the
+              controls down over what you are working in. It is somewhere to go
+              and do one thing, so it hides again the moment you do it: clicking
+              any button, choosing from any menu, or picking a tab sends it away
+              without waiting for you to move the mouse off. Going back to the
+              tab brings it down again, and so does <Nav>Ctrl+Shift+T</Nav>,
+              which needs no aim at all. The one thing
               that does not send it away is clicking into a box you are about to
               type in, such as renaming a tab. Closing the last terminal ends
               fullscreen as well, whether one tab at a time or with{" "}
@@ -1062,9 +1066,10 @@ export const SECTIONS: HelpSection[] = [
               <b>Fullscreen means the layout you are in.</b> In Tabs it fills
               the window with the terminal you are looking at, which is what{" "}
               <Nav>F11</Nav> has always done; in Grid it fills the screen with
-              the whole wall (<Nav>Ctrl+Shift+G</Nav>) and collapses the chrome
-              to a strip you hover to reveal, which hides again as soon as you
-              click anything on it. The icon and the <Nav>View</Nav>{" "}
+              the whole wall (<Nav>Ctrl+Shift+G</Nav>) and folds the chrome away
+              behind a tab in the middle of the top edge, which you hover to
+              bring it back and which hides again as soon as you click anything
+              on it. The icon and the <Nav>View</Nav>{" "}
               entry both do whichever one applies, and each names its own key.
               Neither answers to <Nav>Esc</Nav>, which belongs to whatever is
               running in the terminal.

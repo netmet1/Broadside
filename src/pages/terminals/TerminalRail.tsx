@@ -187,7 +187,7 @@ export function TerminalRail({
       ? "Fill the window with the active terminal (F11). F11 again brings the app back."
       : gridFullscreen
         ? "The grid fills the screen. Click, or press Ctrl+Shift+G, to come back."
-        : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a strip you hover to reveal.";
+        : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a tab at the top centre you hover to bring them back.";
 
   // Out of room: the words go and the icons stay. The key is everything other
   // than the pane's width that changes how wide this row wants to be, so a

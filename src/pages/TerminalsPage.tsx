@@ -945,11 +945,11 @@ export function TerminalsPage({
           only the terminal pane and the AppShell banner remain.
 
           In grid fullscreen the same chrome stays, but slides up out of the way
-          so only a thin strip shows, and slides back down when the pointer
-          reaches it or Ctrl+Shift+T asks for it. Anything clicked in it sends
-          it away again: it is somewhere to go and do one thing, not a bar that
-          waits to be dismissed. It is positioned out of flow, so the tiles get
-          the whole window.
+          until only a small tab shows at the top centre, and slides back down
+          when the pointer reaches that tab or Ctrl+Shift+T asks for it.
+          Anything clicked in it sends it away again: it is somewhere to go and
+          do one thing, not a bar that waits to be dismissed. It is positioned
+          out of flow, so the tiles get the whole window.
           Deliberately a transform rather than a height animation with
           overflow-hidden: the "+" launcher's dropdown has to be able to escape
           the strip. */}
@@ -982,18 +982,25 @@ export function TerminalsPage({
           // it does not count: a drag ends without a click. Text fields are the
           // one exception, because clicking into the tab-rename box is the
           // start of typing rather than the end of a job, and the strip has to
-          // still be there to type into. Menus need no exception: clicking a
-          // trigger marks the strip dismissed, but data-state holds it open
-          // until the menu closes, which is exactly when it should go.
+          // still be there to type into. The reveal tab is the other, and for
+          // the opposite reason: it is not in the strip to be used, it is how
+          // you got here, and clicking it rather than hovering it would take
+          // the strip straight back up again. Menus need no exception:
+          // clicking a trigger marks the strip dismissed, but data-state holds
+          // it open until the menu closes, which is exactly when it should go.
           onClick={(e) => {
             const el = e.target as Element | null;
-            if (el?.closest("input,textarea,[contenteditable]")) return;
+            if (el?.closest("input,textarea,[contenteditable],[data-strip-tab]"))
+              return;
             setStripDismissed(true);
           }}
           // And the pointer leaving puts it back in play, so moving away and
           // returning always reveals it. This also fires when the strip slides
           // out from under a stationary pointer, which is the usual way it
-          // resets after a click.
+          // resets after a click. The exception is the pointer landing on the
+          // tab as the strip goes: the tab is part of the strip, so nothing
+          // has been left and the latch holds, which is what stops a click in
+          // the top-centre of the strip from bouncing it straight back down.
           onMouseLeave={() => setStripDismissed(false)}
           data-chrome-keyboard={chromeKeyboard ? "1" : undefined}
           className={cn(
@@ -1037,7 +1044,18 @@ export function TerminalsPage({
               // shortcut itself rather than inferred: see the effect that
               // handles it for why :focus-visible cannot be trusted to notice
               // programmatic focus.
-              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 data-chrome-keyboard:translate-y-0 has-[[data-state=open]]:translate-y-0",
+              //
+              // The strip goes all the way off the top, plus a pixel. It used
+              // to stop 6px short so a sliver stayed on screen to hover, which
+              // made the entire width of the top edge a live target in the one
+              // mode whose whole point is to give the screen to the terminals:
+              // any flick of the mouse towards the top pulled the controls
+              // down over the top row of tiles. What reaches over the edge now
+              // is the tab below, and only the tab. The extra pixel is because
+              // a box whose bottom edge lands exactly on y=0 can still be hit
+              // at y=0 once display scaling has rounded it; a pixel of clear
+              // air is cheaper than finding that out on a 125% display.
+              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%+1px)] border-b border-border bg-background shadow-lg transition-transform duration-150 data-chrome-keyboard:translate-y-0 has-[[data-state=open]]:translate-y-0",
             // Hover is the holder a click switches off, and it is dropped from
             // the class list rather than fought with a more specific rule,
             // because "is hover still a reason to be here" is a question React
@@ -1507,14 +1525,40 @@ export function TerminalsPage({
           )}
         </div>
       </div>
-      {/* The sliver left showing when the strip is slid up: a grab handle, so
-          it reads as "there is something here" rather than a stray border. */}
+      {/* The tab: the only part of the strip left on screen when it is slid
+          up, and the only part of it a pointer can reach. It hangs off the
+          strip's bottom edge rather than sitting inside it, so when the strip
+          is up the tab is what pokes out below the top of the window.
+
+          A child of the strip, not a sibling, and that is the whole trick.
+          Hovering the tab is hovering the strip, so `hover:translate-y-0`
+          above needs nothing added to it; and the pointer crossing from tab to
+          strip and back is movement within one element, so it fires no
+          mouse-leave and cannot flicker at the seam. The dismissal latch gets
+          the same for free: after a click sends the strip away, a pointer left
+          sitting on the tab has never left the strip, so the latch stays set
+          and the strip stays up until the pointer actually goes somewhere
+          else. That is what "does not come back unless you move back to it"
+          means when the pointer never moved.
+
+          Big enough to aim at, and no bigger: every pixel of it is a pixel of
+          the top tile covered. It sits on the top edge of the window, so there
+          is no vertical aim to get wrong; only the horizontal, and 192px in
+          the middle of the screen is a target you can find without looking.
+          The full width of the edge is not needed for that and cost too much
+          (see the strip's own class list).
+
+          20px tall for 18 on screen, three times the 6px sliver it replaces.
+          Two go missing: `top-full` is the strip's padding box, so the tab
+          starts a border inside it, and the strip itself is lifted by the
+          pixel of clear air described above. */}
       {gridFullscreen && (
         <div
-          className="flex h-1.5 items-center justify-center bg-border/70"
-          title="Hover to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
+          data-strip-tab=""
+          className="absolute left-1/2 top-full flex h-5 w-48 -translate-x-1/2 items-center justify-center rounded-b-md border border-t-0 border-border bg-background shadow-md transition-colors hover:bg-accent"
+          title="Hover here to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
         >
-          <div className="h-0.5 w-16 rounded-full bg-muted-foreground/70" />
+          <div className="h-1 w-24 rounded-full bg-muted-foreground/70" />
         </div>
       )}
         </div>
