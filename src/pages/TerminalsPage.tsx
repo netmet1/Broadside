@@ -508,8 +508,8 @@ export function TerminalsPage({
   // are slid up out of the way and the mouse was the only way back to them:
   // pressing Tab cannot do it, because Tab belongs to whatever has focus, and
   // in a grid that is a terminal, where Tab is the shell's own completion key.
-  // The strip slides down whenever anything inside it takes focus, so this is
-  // the whole of the way in; Tab and Shift+Tab then walk it, and Esc hands the
+  // Setting chromeKeyboard is what slides the strip down, so this is the whole
+  // of the way in; Tab and Shift+Tab then walk it, and Esc hands the
   // keyboard back to the terminal. Same reasoning as Ctrl+Shift+G for the
   // letter: a terminal cannot see the Shift, so nothing is taken from the
   // program.
@@ -517,10 +517,12 @@ export function TerminalsPage({
   // `chromeKeyboard` says the keyboard got here by this shortcut, and it does
   // two things nothing else can:
   //
-  //  - It paints the ring. Programmatic focus does not reliably satisfy
+  //  - It paints the ring, and in grid fullscreen it is also what holds the
+  //    strip on screen. Programmatic focus does not reliably satisfy
   //    :focus-visible, so the first press moved focus with nothing on screen to
   //    show for it and the ring only appeared after a Tab. A flag we set
-  //    ourselves does not guess.
+  //    ourselves does not guess, which matters twice as much now that the strip
+  //    no longer comes down for focus alone.
   //  - It keeps Tab in the strip. Walking off the end used to fall into the
   //    grid, first through per-tab buttons that are invisible until hovered and
   //    then into a tile, where focusing a terminal scrolls the grid and leaves
@@ -560,7 +562,18 @@ export function TerminalsPage({
   // rather than let focus escape into the grid.
   const onChromeKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.key !== "Tab" || !chromeKeyboard) return;
+      if (e.key !== "Tab") return;
+      if (!chromeKeyboard) {
+        // Reaching for Tab in here is the keyboard taking over, whether or not
+        // Ctrl+Shift+T was what got focus in. Worth saying so only in
+        // fullscreen, where the strip stays on screen for exactly as long as
+        // this flag is set: click a control with the mouse, move the pointer
+        // off, then press Tab, and without this focus would walk along a strip
+        // that had already slid away. Outside fullscreen the chrome is always
+        // visible and ordinary Tab should stay ordinary, so nothing changes.
+        if (!gridFullscreen) return;
+        setChromeKeyboard(true);
+      }
       const items = focusablesIn(chromeRef.current);
       if (items.length === 0) return;
       const here = items.indexOf(document.activeElement as HTMLElement);
@@ -571,7 +584,7 @@ export function TerminalsPage({
       e.preventDefault();
       items[e.shiftKey ? items.length - 1 : 0]?.focus();
     },
-    [chromeKeyboard],
+    [chromeKeyboard, gridFullscreen],
   );
 
   // Leaving Grid (or maximizing a pane) has to give the chrome back, or it
@@ -923,9 +936,17 @@ export function TerminalsPage({
           // And so does focus leaving the strip by any other route (a dialog,
           // a click into a tile, navigating away).
           onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-              setChromeKeyboard(false);
-            }
+            const to = e.relatedTarget as Element | null;
+            if (e.currentTarget.contains(to)) return;
+            // Except into a menu opened from here. That menu is portalled to
+            // the body, so focus entering it reads as focus leaving the strip,
+            // and it is not: the same person is still working these controls.
+            // In fullscreen this flag is what holds the strip on screen, so
+            // clearing it here would take the strip away the instant a
+            // keyboard user picked something out of the menu, leaving the
+            // focus ring on a control that had slid off the top.
+            if (to?.closest("[role=menu],[role=listbox]")) return;
+            setChromeKeyboard(false);
           }}
           data-chrome-keyboard={chromeKeyboard ? "1" : undefined}
           className={cn(
@@ -951,20 +972,25 @@ export function TerminalsPage({
               // covers every menu and select in the strip, including the "+"
               // launcher in the tab row below, with nothing to keep in sync.
               //
-              // The delay is the other half of that, and it is why retracting
-              // waits and revealing does not. Picking an item from a menu ends
-              // the data-state hold at once, but the mouse is down where the
-              // menu was rather than on the strip, and focus is briefly on
-              // nothing at all: Radix hands it back to the trigger from inside
-              // a setTimeout(0) (react-focus-scope, to dodge a React 16 unmount
-              // bug). For that one gap no trigger holds, and the strip started
-              // sliding away and came straight back, which read as a blink.
-              // Waiting out the gap before retracting means the flip back to
-              // translate-y-0 lands first and nothing ever moves. Only the base
-              // state carries the delay, because a CSS transition takes its
-              // timing from the state it is going to, so the strip still
-              // appears the instant it is hovered.
-              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform delay-150 duration-150 focus-within:translate-y-0 focus-within:delay-0 hover:translate-y-0 hover:delay-0 has-[[data-state=open]]:translate-y-0 has-[[data-state=open]]:delay-0",
+              // Note what is NOT a holder: focus. It used to be, as a plain
+              // focus-within, and that is what made the strip blink after a
+              // menu selection. Picking an item ends the data-state hold at
+              // once, the mouse is down where the menu was rather than on the
+              // strip, and focus is briefly on nothing at all, because Radix
+              // hands it back to the trigger from inside a setTimeout(0)
+              // (react-focus-scope, dodging a React 16 unmount bug). So the
+              // strip set off up the screen and focus-within dragged it back.
+              //
+              // Focus is the wrong thing to ask anyway. Radix returning focus
+              // to a trigger is tidying up, not the operator asking to see the
+              // controls, and treating it as a request is what kept the strip
+              // on screen after the work was done. The two real requests are
+              // the pointer being here and the keyboard having been sent here
+              // by Ctrl+Shift+T, and data-chrome-keyboard is set by that
+              // shortcut itself rather than inferred: see the effect that
+              // handles it for why :focus-visible cannot be trusted to notice
+              // programmatic focus.
+              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 hover:translate-y-0 data-chrome-keyboard:translate-y-0 has-[[data-state=open]]:translate-y-0",
           )}
         >
       <TerminalRail

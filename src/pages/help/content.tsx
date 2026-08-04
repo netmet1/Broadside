@@ -856,7 +856,11 @@ export const SECTIONS: HelpSection[] = [
               the status bar all slide away, leaving a thin strip at the very
               top. Move the mouse to that strip and everything slides back down,
               so you can pick a tab, close one, or use the dropdown without
-              leaving fullscreen; move away and it hides again.{" "}
+              leaving fullscreen; move away and it hides again. Choosing
+              something from one of its menus hides it too, straight away,
+              rather than leaving it sitting over the top row of tiles once the
+              job is done. The mouse brings it back, and so does{" "}
+              <Nav>Ctrl+Shift+T</Nav>.{" "}
               <Nav>Ctrl+Shift+G</Nav> or the button brings the chrome back. The
               shortcut is a Ctrl+Shift one on purpose: a terminal cannot tell
               Ctrl+Shift+G from Ctrl+G, so nothing is taken away from a program
@@ -1053,7 +1057,8 @@ export const SECTIONS: HelpSection[] = [
               the window with the terminal you are looking at, which is what{" "}
               <Nav>F11</Nav> has always done; in Grid it fills the screen with
               the whole wall (<Nav>Ctrl+Shift+G</Nav>) and collapses the chrome
-              to a strip you hover to reveal. The icon and the <Nav>View</Nav>{" "}
+              to a strip you hover to reveal, which hides again as soon as you
+              choose something from it. The icon and the <Nav>View</Nav>{" "}
               entry both do whichever one applies, and each names its own key.
               Neither answers to <Nav>Esc</Nav>, which belongs to whatever is
               running in the terminal.
