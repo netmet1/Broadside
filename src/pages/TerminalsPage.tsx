@@ -950,7 +950,21 @@ export function TerminalsPage({
               // against the attribute rather than a piece of React state so it
               // covers every menu and select in the strip, including the "+"
               // launcher in the tab row below, with nothing to keep in sync.
-              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 focus-within:translate-y-0 hover:translate-y-0 has-[[data-state=open]]:translate-y-0",
+              //
+              // The delay is the other half of that, and it is why retracting
+              // waits and revealing does not. Picking an item from a menu ends
+              // the data-state hold at once, but the mouse is down where the
+              // menu was rather than on the strip, and focus is briefly on
+              // nothing at all: Radix hands it back to the trigger from inside
+              // a setTimeout(0) (react-focus-scope, to dodge a React 16 unmount
+              // bug). For that one gap no trigger holds, and the strip started
+              // sliding away and came straight back, which read as a blink.
+              // Waiting out the gap before retracting means the flip back to
+              // translate-y-0 lands first and nothing ever moves. Only the base
+              // state carries the delay, because a CSS transition takes its
+              // timing from the state it is going to, so the strip still
+              // appears the instant it is hovered.
+              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform delay-150 duration-150 focus-within:translate-y-0 focus-within:delay-0 hover:translate-y-0 hover:delay-0 has-[[data-state=open]]:translate-y-0 has-[[data-state=open]]:delay-0",
           )}
         >
       <TerminalRail
