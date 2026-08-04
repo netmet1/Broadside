@@ -862,7 +862,11 @@ export const SECTIONS: HelpSection[] = [
               you to move the mouse off. Moving the mouse back to the top brings
               it down again, and so does <Nav>Ctrl+Shift+T</Nav>. The one thing
               that does not send it away is clicking into a box you are about to
-              type in, such as renaming a tab.{" "}
+              type in, such as renaming a tab. Closing the last terminal ends
+              fullscreen as well, whether one tab at a time or with{" "}
+              <Nav>Close all</Nav>: there is nothing left to fill the screen
+              with, and an empty screen with the chrome still hidden gives you
+              nothing to work with.{" "}
               <Nav>Ctrl+Shift+G</Nav> or the button brings the chrome back. The
               shortcut is a Ctrl+Shift one on purpose: a terminal cannot tell
               Ctrl+Shift+G from Ctrl+G, so nothing is taken away from a program

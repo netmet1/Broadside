@@ -597,10 +597,18 @@ export function TerminalsPage({
   );
 
   // Leaving Grid (or maximizing a pane) has to give the chrome back, or it
-  // would be missing with nothing on screen able to restore it.
+  // would be missing with nothing on screen able to restore it. So does closing
+  // the last terminal, whether one tab at a time or with Close all: fullscreen
+  // is for filling the screen with something, and an empty black screen with
+  // the chrome hidden gives no sign that the app is still there.
+  //
+  // Deliberately "no sessions" rather than "nothing in the grid". Every tile
+  // hidden while tabs are still open is a state the grid supports and explains
+  // in words, and the tabs to undo it with are in the strip a hover away.
   useEffect(() => {
-    if (gridFullscreen && !gridMode) onGridFullscreen(false);
-  }, [gridFullscreen, gridMode, onGridFullscreen]);
+    if (!gridFullscreen) return;
+    if (!gridMode || sessions.length === 0) onGridFullscreen(false);
+  }, [gridFullscreen, gridMode, sessions.length, onGridFullscreen]);
 
   // Entering fullscreen starts with the strip in play, whatever the last thing
   // clicked before it was. Outside fullscreen the flag does nothing, so it can
