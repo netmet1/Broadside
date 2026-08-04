@@ -457,6 +457,12 @@ export function TerminalsPage({
   // them. See the Ctrl+Shift+T effect below for what the flag is for.
   const chromeRef = useRef<HTMLDivElement | null>(null);
   const [chromeKeyboard, setChromeKeyboard] = useState(false);
+  // Fullscreen only: a click in the strip has been acted on, so the strip is
+  // done and should go even though the pointer is still sitting on it. This is
+  // the one thing that can beat hover, and it is deliberately short-lived: the
+  // pointer leaving clears it, so moving back to the strip always brings it
+  // down again. See the click and mouse-leave handlers on the strip itself.
+  const [stripDismissed, setStripDismissed] = useState(false);
   const chromeHasFocus = useCallback(
     () =>
       document.activeElement !== null &&
@@ -552,6 +558,8 @@ export function TerminalsPage({
       e.preventDefault();
       e.stopPropagation();
       setChromeKeyboard(true);
+      // Asking for the strip out loud outranks a click that dismissed it.
+      setStripDismissed(false);
       first.focus();
     };
     window.addEventListener("keydown", onKey, true);
@@ -573,6 +581,7 @@ export function TerminalsPage({
         // visible and ordinary Tab should stay ordinary, so nothing changes.
         if (!gridFullscreen) return;
         setChromeKeyboard(true);
+        setStripDismissed(false);
       }
       const items = focusablesIn(chromeRef.current);
       if (items.length === 0) return;
@@ -592,6 +601,14 @@ export function TerminalsPage({
   useEffect(() => {
     if (gridFullscreen && !gridMode) onGridFullscreen(false);
   }, [gridFullscreen, gridMode, onGridFullscreen]);
+
+  // Entering fullscreen starts with the strip in play, whatever the last thing
+  // clicked before it was. Outside fullscreen the flag does nothing, so it can
+  // sit set for as long as it likes; this is only so it cannot be found still
+  // set on the way back in.
+  useEffect(() => {
+    if (!gridFullscreen) setStripDismissed(false);
+  }, [gridFullscreen]);
 
   // Drag-to-reorder tab state: the session being dragged and the tab it's
   // currently hovering over (drives the drop-indicator border).
@@ -920,9 +937,11 @@ export function TerminalsPage({
           only the terminal pane and the AppShell banner remain.
 
           In grid fullscreen the same chrome stays, but slides up out of the way
-          so only a thin strip shows, and slides back down on hover or when
-          anything inside it takes focus (so it is reachable from the keyboard
-          too). It is positioned out of flow, so the tiles get the whole window.
+          so only a thin strip shows, and slides back down when the pointer
+          reaches it or Ctrl+Shift+T asks for it. Anything clicked in it sends
+          it away again: it is somewhere to go and do one thing, not a bar that
+          waits to be dismissed. It is positioned out of flow, so the tiles get
+          the whole window.
           Deliberately a transform rather than a height animation with
           overflow-hidden: the "+" launcher's dropdown has to be able to escape
           the strip. */}
@@ -948,6 +967,26 @@ export function TerminalsPage({
             if (to?.closest("[role=menu],[role=listbox]")) return;
             setChromeKeyboard(false);
           }}
+          // A click in here has been acted on, so in fullscreen the strip has
+          // done its job and goes, even though the pointer is still on it.
+          //
+          // On click rather than pointerdown, so that dragging a tab to reorder
+          // it does not count: a drag ends without a click. Text fields are the
+          // one exception, because clicking into the tab-rename box is the
+          // start of typing rather than the end of a job, and the strip has to
+          // still be there to type into. Menus need no exception: clicking a
+          // trigger marks the strip dismissed, but data-state holds it open
+          // until the menu closes, which is exactly when it should go.
+          onClick={(e) => {
+            const el = e.target as Element | null;
+            if (el?.closest("input,textarea,[contenteditable]")) return;
+            setStripDismissed(true);
+          }}
+          // And the pointer leaving puts it back in play, so moving away and
+          // returning always reveals it. This also fires when the strip slides
+          // out from under a stationary pointer, which is the usual way it
+          // resets after a click.
+          onMouseLeave={() => setStripDismissed(false)}
           data-chrome-keyboard={chromeKeyboard ? "1" : undefined}
           className={cn(
             // `terminal-chrome` is the hook for the loud focus ring (index.css).
@@ -990,7 +1029,15 @@ export function TerminalsPage({
               // shortcut itself rather than inferred: see the effect that
               // handles it for why :focus-visible cannot be trusted to notice
               // programmatic focus.
-              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 hover:translate-y-0 data-chrome-keyboard:translate-y-0 has-[[data-state=open]]:translate-y-0",
+              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%-0.375rem)] border-b border-border bg-background shadow-lg transition-transform duration-150 data-chrome-keyboard:translate-y-0 has-[[data-state=open]]:translate-y-0",
+            // Hover is the holder a click switches off, and it is dropped from
+            // the class list rather than fought with a more specific rule,
+            // because "is hover still a reason to be here" is a question React
+            // already knows the answer to. The other two survive a click on
+            // purpose: an open menu still has to be attached to something, and
+            // a keyboard that was sent here by Ctrl+Shift+T is not finished
+            // just because it pressed Enter on a button.
+            gridFullscreen && !stripDismissed && "hover:translate-y-0",
           )}
         >
       <TerminalRail
