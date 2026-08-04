@@ -1551,11 +1551,27 @@ export function TerminalsPage({
           20px tall for 18 on screen, three times the 6px sliver it replaces.
           Two go missing: `top-full` is the strip's padding box, so the tab
           starts a border inside it, and the strip itself is lifted by the
-          pixel of clear air described above. */}
+          pixel of clear air described above.
+
+          Part-transparent, because it is parked over the top of a terminal for
+          as long as fullscreen lasts and there is no reason for it to take
+          those characters away. The border and the grabber are what carry the
+          shape, so the fill can afford to be thin: they stay at full strength
+          and it is only the panel behind them that lets the text through.
+          Hover fills it in, which doubles as the acknowledgement that the
+          pointer arrived.
+
+          The same at rest whether the strip is up or down, rather than solid
+          while the strip is out. It could be told apart, but only by naming
+          all three of the things that hold the strip down a second time over
+          here, and a copy of that list is a copy that can fall out of step
+          with the original. The tab is 20px of flap under a bar that is
+          already covering a hundred, so there is nothing under it worth
+          reading at that moment anyway. */}
       {gridFullscreen && (
         <div
           data-strip-tab=""
-          className="absolute left-1/2 top-full flex h-5 w-48 -translate-x-1/2 items-center justify-center rounded-b-md border border-t-0 border-border bg-background shadow-md transition-colors hover:bg-accent"
+          className="absolute left-1/2 top-full flex h-5 w-48 -translate-x-1/2 items-center justify-center rounded-b-md border border-t-0 border-border bg-background/50 shadow-md transition-colors hover:bg-accent"
           title="Hover here to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
         >
           <div className="h-1 w-24 rounded-full bg-muted-foreground/70" />
