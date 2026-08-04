@@ -13,12 +13,17 @@ import { getAppSettings, setHelpHintsEnabled } from "@/lib/tauri/settings";
  * back. A hint is cleared by the pointer leaving the control that raised it, so
  * the only way one lingers is nobody being there: the mouse was parked on a
  * button and the operator walked away. What the line shows instead (the window
- * size and the two font sizes) is the more useful thing to come back to. */
-const HINT_IDLE_MS = 15_000;
+ * size and the two font sizes) is the more useful thing to come back to.
+ *
+ * Short on purpose. This is not a reading-time budget, because a reader is
+ * moving the mouse and the timer never fires for them; it is how long a hint
+ * outlives the last sign of life in the room. Longer felt like the bar was
+ * stuck. Anything much shorter would start firing at a slow reader. */
+const HINT_IDLE_MS = 3_500;
 
-/** How often the idle check runs. A second is far finer than a fifteen-second
- * timeout needs, and it only ticks while a hint is actually up. */
-const HINT_IDLE_TICK_MS = 1_000;
+/** How often the idle check runs. Fine enough that the timeout lands within a
+ * quarter-second of what it says, and it only ticks while a hint is up. */
+const HINT_IDLE_TICK_MS = 250;
 
 export function StatusProvider({ children }: { children: ReactNode }) {
   const [pageStatus, setPageStatus] = useState<ReactNode>(null);

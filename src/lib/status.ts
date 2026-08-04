@@ -11,7 +11,7 @@ import {
  * hovers or focuses an actionable control.
  *
  * A hint normally ends when the pointer leaves the control that raised it.
- * `StatusProvider` also takes one down after fifteen seconds with no mouse or
+ * `StatusProvider` also takes one down after a few seconds with no mouse or
  * keyboard activity anywhere, so a pointer parked on a button while nobody is
  * at the machine does not hold the line forever. */
 export type StatusContextValue = {
