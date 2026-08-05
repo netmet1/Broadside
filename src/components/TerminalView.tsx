@@ -147,6 +147,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     searchHandleRef,
   ) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // The whole pane, which is the terminal plus whatever is overlaid on it. The
+  // banners and the connecting overlay are siblings of the terminal container
+  // rather than children, so a listener on the container alone stops at their
+  // edges: Ctrl+wheel over the disconnected banner did nothing.
+  const paneRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
@@ -177,7 +182,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // Ctrl + wheel over this pane resizes the terminal text (unless Strict is set
   // in Settings). The size change lands back in `prefs`, so the effect below
   // applies it here and in every other open pane.
-  useTerminalFontZoom(containerRef);
+  useTerminalFontZoom(paneRef);
   const { resolvedTheme } = useTheme();
   // Read once at terminal creation; live changes are applied by the
   // prefs effect below without recreating the terminal.
@@ -711,7 +716,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   }, [visible]);
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={paneRef} className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
       {(phase.kind === "connecting" ||
         phase.kind === "gate" ||

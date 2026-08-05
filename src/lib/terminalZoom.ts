@@ -15,8 +15,11 @@
  * would be its own kind of surprise, and the reader who wants a permanent size
  * has the field right there.
  *
- * On the terminal's own container rather than the window, so Ctrl + wheel is
- * only the zoom while the pointer is over a terminal.
+ * On the pane rather than the window, so Ctrl + wheel is only the zoom while
+ * the pointer is over a terminal. The pane and not the terminal container
+ * inside it, because the overlays (connecting, failed, the shell warning and
+ * disconnected banners) are siblings of that container: a listener on it alone
+ * had holes in it wherever one of those was drawn.
  */
 
 import { useEffect, useRef } from "react";
