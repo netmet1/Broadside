@@ -95,6 +95,26 @@ function focusablesIn(root: HTMLElement | null): HTMLElement[] {
   return [...found].filter((el) => el.offsetParent !== null);
 }
 
+/** Is a point inside an element's box? Measured, not hit-tested.
+ *
+ * getBoundingClientRect gives the rectangle the element is painted in, transform
+ * and all, and it does not care what pointer-events has been set to: a box that
+ * has been made inert is still exactly where it was. That is the whole reason
+ * this exists rather than :hover or elementFromPoint. See the fullscreen strip's
+ * pointer tracker for what makes the difference. */
+function pointInBox(el: HTMLElement | null, x: number, y: number): boolean {
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+/** Nothing hanging from the top of the window reaches this far down, so a
+ * pointer below this line cannot be on the fullscreen strip and does not need
+ * measuring. Only here to keep the tracker from reading layout on every mouse
+ * move across a wall of terminals; the answer above the line is still measured.
+ * A generous multiple of the tallest the strip gets at the largest app font. */
+const STRIP_REACH_PX = 400;
+
 /** Session shapes and naming live in ./terminals/session, so anything that only
  * needs "what is this tab called" can have it without importing this page.
  * Re-exported here because App and the broadcast pages already import the types
@@ -463,6 +483,59 @@ export function TerminalsPage({
   // pointer leaving clears it, so moving back to the strip always brings it
   // down again. See the click and mouse-leave handlers on the strip itself.
   const [stripDismissed, setStripDismissed] = useState(false);
+  // Fullscreen only: is the pointer on the strip, or on the tab hanging off it?
+  // Taken from the pointer's own coordinates rather than asked of :hover, and
+  // that is the entire point of it.
+  //
+  // A Radix menu is modal, so opening one puts pointer-events:none on the body,
+  // and nothing under an inert body can be hovered: while a menu from the strip
+  // is up, the browser answers "no" to :hover wherever the pointer really is.
+  // The menu's own data-state holds the strip down meanwhile, so that stayed
+  // invisible, and the two do not end together. DismissableLayer puts the body
+  // back in a *passive* effect cleanup, which React runs after the browser has
+  // painted, so there is a painted frame with the hold gone and the body still
+  // inert. Nothing held the strip for that frame. It set off up the screen and
+  // came back when the style went: the bounce.
+  //
+  // A delay only hid that, and could never be better than a guess at how long
+  // the frame is. This is not a guess. pointer-events decides what a mouse event
+  // *hits*, not whether it is dispatched (Radix's own click-outside dismissal
+  // rides on exactly that), so the moves still arrive while the body is inert,
+  // and a point inside a rectangle is inside it whatever the hit-tester has been
+  // told to ignore. The answer survives the frame because it was never the
+  // hit-tester's to give.
+  //
+  // :hover stays on as a second holder, for the one thing coordinates cannot
+  // see: a strip that arrives under a pointer which has not moved (Ctrl+Shift+T,
+  // or a menu opening) is being hovered with no mouse move to notice it. Either
+  // holder is enough on its own, and the same click drops both.
+  const [stripHover, setStripHover] = useState(false);
+  const stripHoverRef = useRef(false);
+  const stripTabRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!gridFullscreen) return;
+    const onMove = (e: MouseEvent) => {
+      const inside =
+        e.clientY <= STRIP_REACH_PX &&
+        (pointInBox(chromeRef.current, e.clientX, e.clientY) ||
+          pointInBox(stripTabRef.current, e.clientX, e.clientY));
+      if (inside === stripHoverRef.current) return;
+      stripHoverRef.current = inside;
+      setStripHover(inside);
+      // Arriving is a fresh visit, so it outranks a click that sent the strip
+      // away. On the way in rather than on the way out, because the way in is
+      // the edge that always comes: a pointer can be left sitting where the
+      // strip never reaches, or on the tab it just clicked, and from either
+      // place the next thing it does is arrive.
+      if (inside) setStripDismissed(false);
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      stripHoverRef.current = false;
+      setStripHover(false);
+    };
+  }, [gridFullscreen]);
   const chromeHasFocus = useCallback(
     () =>
       document.activeElement !== null &&
@@ -946,7 +1019,8 @@ export function TerminalsPage({
 
           In grid fullscreen the same chrome stays, but slides up out of the way
           until only a small tab shows at the top centre, and slides back down
-          when the pointer reaches that tab or Ctrl+Shift+T asks for it.
+          when the pointer reaches that tab (or clicks it), or Ctrl+Shift+T asks
+          for it.
           Anything clicked in it sends it away again: it is somewhere to go and
           do one thing, not a bar that waits to be dismissed. It is positioned
           out of flow, so the tiles get the whole window.
@@ -988,21 +1062,21 @@ export function TerminalsPage({
           // the strip straight back up again. Menus need no exception:
           // clicking a trigger marks the strip dismissed, but data-state holds
           // it open until the menu closes, which is exactly when it should go.
+          //
+          // What puts it back in play is the pointer arriving from outside, in
+          // the tracker above. There is deliberately no mouse-leave handler
+          // here: leaving is the edge an inert body can invent, and this latch
+          // is the one thing in here that can beat every holder at once.
           onClick={(e) => {
             const el = e.target as Element | null;
             if (el?.closest("input,textarea,[contenteditable],[data-strip-tab]"))
               return;
             setStripDismissed(true);
           }}
-          // And the pointer leaving puts it back in play, so moving away and
-          // returning always reveals it. This also fires when the strip slides
-          // out from under a stationary pointer, which is the usual way it
-          // resets after a click. The exception is the pointer landing on the
-          // tab as the strip goes: the tab is part of the strip, so nothing
-          // has been left and the latch holds, which is what stops a click in
-          // the top-centre of the strip from bouncing it straight back down.
-          onMouseLeave={() => setStripDismissed(false)}
           data-chrome-keyboard={chromeKeyboard ? "1" : undefined}
+          data-strip-hover={
+            gridFullscreen && stripHover && !stripDismissed ? "1" : undefined
+          }
           className={cn(
             // `terminal-chrome` is the hook for the loud focus ring (index.css).
             // Ctrl+Shift+T is the only way into these controls from a terminal,
@@ -1056,42 +1130,27 @@ export function TerminalsPage({
               // at y=0 once display scaling has rounded it; a pixel of clear
               // air is cheaper than finding that out on a 125% display.
               //
-              // `delay-100` is on leaving only: every holder cancels it with
-              // its own delay-0, so the strip arrives the instant it is asked
-              // for and only ever dawdles on the way out. It is a debounce,
-              // and it is here because a holder can drop out for a frame while
-              // nothing has actually changed.
-              //
-              // The one that does: a modal Radix menu puts pointer-events:none
-              // on the body, and DismissableLayer takes it off again in a
-              // *passive* effect cleanup, which React runs after the browser
-              // has painted. So there is a painted frame in which the menu is
-              // gone, its data-state hold gone with it, and the body still
-              // inert. An inert body means :hover is false even with the
-              // pointer sitting on the strip, so the strip set off up the
-              // screen and came back when the style was removed. That is what
-              // closing a menu by clicking the tab looked like.
-              // (react-dismissable-layer, the effect that saves
-              // originalBodyPointerEvents and restores it in its cleanup.)
-              //
-              // Waiting was the wrong answer to the older blink and is the
-              // right one to this, which is worth being clear about. That one
-              // was focus arriving late and dragging the strip back down, and
-              // the fix was to stop treating a library handing focus back as
-              // somebody asking for the strip. There is no such mistake here:
-              // the pointer is on the strip throughout and never asked to
-              // leave. Nothing is being papered over. There is a frame in
-              // which the browser cannot be asked where the pointer is, and
-              // 100ms is longer than that frame and shorter than a person.
-              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%+1px)] border-b border-border bg-background shadow-lg transition-transform delay-100 duration-150 data-chrome-keyboard:translate-y-0 data-chrome-keyboard:delay-0 has-[[data-state=open]]:translate-y-0 has-[[data-state=open]]:delay-0",
-            // Hover is the holder a click switches off, and it is dropped from
-            // the class list rather than fought with a more specific rule,
-            // because "is hover still a reason to be here" is a question React
-            // already knows the answer to. The other two survive a click on
-            // purpose: an open menu still has to be attached to something, and
-            // a keyboard that was sent here by Ctrl+Shift+T is not finished
-            // just because it pressed Enter on a button.
-            gridFullscreen && !stripDismissed && "hover:translate-y-0 hover:delay-0",
+              // There is no transition-delay in here, and for a while there
+              // was, which is worth saying out loud. It was a debounce over the
+              // painted frame in which a closing menu has given up its
+              // data-state hold and has not yet given the body back, leaving
+              // :hover false with the pointer sitting on the strip. Being a
+              // guess at the length of a frame it did not reliably cover it,
+              // and it made everyone wait on the way out for a case that only
+              // arises when a menu closes. `data-strip-hover` measures the
+              // pointer instead and answers straight through that frame, so
+              // there is nothing left to wait for.
+              "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%+1px)] border-b border-border bg-background shadow-lg transition-transform duration-150 data-chrome-keyboard:translate-y-0 has-[[data-state=open]]:translate-y-0 data-strip-hover:translate-y-0",
+            // The pointer being here is the holder a click switches off, and
+            // both of the ways of knowing it are switched off together: the
+            // measured one loses its attribute below, and :hover is dropped
+            // from the class list rather than fought with a more specific rule,
+            // because "is the pointer still a reason to be here" is a question
+            // React already knows the answer to. The other two survive a click
+            // on purpose: an open menu still has to be attached to something,
+            // and a keyboard sent here by Ctrl+Shift+T is not finished just
+            // because it pressed Enter on a button.
+            gridFullscreen && !stripDismissed && "hover:translate-y-0",
           )}
         >
       <TerminalRail
@@ -1595,12 +1654,29 @@ export function TerminalsPage({
           here, and a copy of that list is a copy that can fall out of step
           with the original. The tab is 20px of flap under a bar that is
           already covering a hundred, so there is nothing under it worth
-          reading at that moment anyway. */}
+          reading at that moment anyway.
+
+          It takes clicks as well as hovers, and the click is not just there to
+          be obliging. A click in the strip latches it away until the pointer
+          arrives from somewhere else, and the one place a pointer can be left
+          that it never has to arrive at is this tab, because the tab follows
+          the strip up and parks itself under the pointer that clicked it. From
+          there hovering is a no-op and clicking is what the hand does next, so
+          that is what clears the latch. Kept a div rather than a button on
+          purpose: it would otherwise become a Tab stop in a strip whose tab
+          order is walked deliberately, and it is the one control here with a
+          keyboard equivalent that needs no aim at all. */}
       {gridFullscreen && (
         <div
+          ref={stripTabRef}
           data-strip-tab=""
-          className="absolute left-1/2 top-full flex h-5 w-48 -translate-x-1/2 items-center justify-center rounded-b-md border border-t-0 border-border bg-background/50 shadow-md transition-colors hover:bg-accent"
-          title="Hover here to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
+          onClick={() => {
+            stripHoverRef.current = true;
+            setStripHover(true);
+            setStripDismissed(false);
+          }}
+          className="absolute left-1/2 top-full flex h-5 w-48 -translate-x-1/2 cursor-pointer items-center justify-center rounded-b-md border border-t-0 border-border bg-background/50 shadow-md transition-colors hover:bg-accent"
+          title="Hover or click here to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
         >
           <div className="h-1 w-24 rounded-full bg-muted-foreground/70" />
         </div>
