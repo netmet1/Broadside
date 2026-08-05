@@ -128,6 +128,15 @@ const SHORTCUTS: ShortcutGroup[] = [
         where: "Terminals",
         what: "Previous / next terminal tab, wrapping at the ends. Works with the focus inside a terminal; the shell never sees the key.",
       },
+      {
+        keys: (
+          <>
+            <Kbd>Left</Kbd> / <Kbd>Right</Kbd> then <Kbd>Enter</Kbd>
+          </>
+        ),
+        where: "Tab strip",
+        what: "Walk along the tabs once Tab has put the keyboard on the strip (Home and End jump to the ends), then Enter or Space chooses one. Walking does not choose as it goes: in Grid that would point your typing at each session in turn. This is also the way to pick a session without the mouse moving at all, which is what stops the tile under the pointer taking it straight back.",
+      },
     ],
   },
   {

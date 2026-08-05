@@ -718,6 +718,47 @@ export function TerminalsPage({
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const tabElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
+  // Arrow keys walk the tab strip, Enter or Space picks one (see the tab's own
+  // key handler). Deliberately not the other pattern, where arrowing switches
+  // session as it goes: activating a session re-points the shortcut bar, Find
+  // and every keystroke at another host, and walking past four of them on the
+  // way to the fifth is not four decisions.
+  const onTabStripKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (
+        e.key !== "ArrowLeft" &&
+        e.key !== "ArrowRight" &&
+        e.key !== "Home" &&
+        e.key !== "End"
+      ) {
+        return;
+      }
+      // Only while the keyboard is on a tab. A rename box in one of them wants
+      // Home and the arrows for editing text.
+      const el = document.activeElement;
+      if (!(el instanceof HTMLElement) || el.getAttribute("role") !== "tab") {
+        return;
+      }
+      const tabs = sessions
+        .map((s) => tabElRefs.current.get(s.id))
+        .filter((t): t is HTMLDivElement => t !== undefined);
+      const here = tabs.indexOf(el as HTMLDivElement);
+      if (here === -1) return;
+      e.preventDefault();
+      const last = tabs.length - 1;
+      const next =
+        e.key === "Home"
+          ? 0
+          : e.key === "End"
+            ? last
+            : e.key === "ArrowLeft"
+              ? (here - 1 + tabs.length) % tabs.length
+              : (here + 1) % tabs.length;
+      tabs[next]?.focus();
+    },
+    [sessions],
+  );
+
   // A live map of each tile's element, so selecting a tab/session while in Grid
   // can bring its tile fully into view when it's scrolled off (only >2 tiles
   // ever scroll; otherwise this no-ops). The container itself is gridScrollRef,
@@ -740,7 +781,6 @@ export function TerminalsPage({
       (id: string) => searchHandles.current.get(id)?.focusTerminal(),
       [],
     ),
-    chromeRef,
     chromeKeyboard,
   });
 
@@ -750,7 +790,7 @@ export function TerminalsPage({
     if (activeId === null) return;
     // Right for a click, wrong for a hover: the strip would slide about as the
     // mouse sweeps across the grid.
-    if (gridFocus.activatedByPointer.current) return;
+    if (gridFocus.pointerActivated.current === activeId) return;
     const container = tabScrollRef.current;
     const target = tabElRefs.current.get(activeId);
     if (!container || !target) return;
@@ -759,7 +799,7 @@ export function TerminalsPage({
     if (t.left >= c.left && t.right <= c.right) return; // already visible
     const delta = t.left + t.width / 2 - (c.left + c.width / 2);
     container.scrollTo({ left: container.scrollLeft + delta, behavior: "smooth" });
-  }, [activeId, sessions, gridFocus.activatedByPointer]);
+  }, [activeId, sessions, gridFocus.pointerActivated]);
 
   // In Grid, when the active session changes, scroll its tile just enough to be
   // fully visible in the pane area, but leave it alone if it already is.
@@ -768,7 +808,7 @@ export function TerminalsPage({
     // Never scroll the grid because the pointer arrived somewhere: the tile is
     // under the cursor, so it is by definition already on screen, and moving it
     // would drag the whole wall out from under the mouse.
-    if (gridFocus.activatedByPointer.current) return;
+    if (gridFocus.pointerActivated.current === activeId) return;
     const container = gridScrollRef.current;
     const target = paneElRefs.current.get(activeId);
     if (!container || !target) return;
@@ -779,7 +819,7 @@ export function TerminalsPage({
     const delta =
       t.top < c.top ? t.top - c.top : t.bottom - c.bottom;
     container.scrollTo({ top: container.scrollTop + delta, behavior: "smooth" });
-  }, [activeId, sessions, gridMode, gridFocus.activatedByPointer]);
+  }, [activeId, sessions, gridMode, gridFocus.pointerActivated]);
 
   const [gates, setGates] = useState<Map<string, ConnectionGate>>(new Map());
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
@@ -1004,12 +1044,20 @@ export function TerminalsPage({
    * interactive here, same as if they typed it themselves. */
   const runShortcut = (cmd: string) => {
     if (activeId === null) return;
+    const target = activeId;
     // Submit with a carriage return (\r), the byte a real Enter keypress sends.
     // Windows ConPTY shells (PowerShell/cmd) need \r to execute; \n leaves the
     // line at a ">>" continuation prompt. \r is also correct for SSH/WSL.
-    ptyWrite(activeId, cmd + "\r").catch((e) => {
+    ptyWrite(target, cmd + "\r").catch((e) => {
       toast.error(errorMessage(e));
     });
+    // The command has gone to a terminal, so the keyboard goes with it. Go is
+    // not somewhere to stay: pressing it leaves DOM focus on the button, and
+    // the next thing anyone does is read or answer what the command printed.
+    // Without this the keyboard sat in the strip and the only way back into
+    // the pane was to click it, which is a poor reward for using the toolbar.
+    setChromeKeyboard(false);
+    searchHandles.current.get(target)?.focusTerminal();
   };
 
   return (
@@ -1198,6 +1246,8 @@ export function TerminalsPage({
       <div className="flex items-center gap-1 border-b border-border/50 px-2 pt-2">
         <div
           ref={tabScrollRef}
+          role="tablist"
+          onKeyDown={onTabStripKeyDown}
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
         >
         {sessions.map((s) => {
@@ -1280,7 +1330,25 @@ export function TerminalsPage({
               gridFocus.noteDeliberateActivation();
               onActivate(s.id);
             }}
+            onKeyDown={(e) => {
+              // The tab itself, not the rename box or one of the little buttons
+              // that live inside it: those have their own use for Enter.
+              if (e.target !== e.currentTarget) return;
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              gridFocus.noteDeliberateActivation();
+              onActivate(s.id);
+            }}
             role="tab"
+            // One Tab stop for the whole strip, walked with the arrow keys from
+            // there. Without this the tabs were the one thing in the row the
+            // keyboard could not reach at all: they are divs, so Tab went
+            // straight past them into the per-tab buttons, and the only ways to
+            // change session without a mouse were Alt+arrow and the Sessions
+            // menu. It also puts the case this page is built around within
+            // reach of a test: choosing a session while the pointer sits still
+            // over a different tile.
+            tabIndex={s.id === activeId ? 0 : -1}
             aria-selected={s.id === activeId}
             title={tabsCompact ? `${sessionLabel(s)}${tabSuffix.get(s.id)}` : undefined}
           >

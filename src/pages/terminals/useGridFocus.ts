@@ -21,6 +21,35 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
+/**
+ * How still the pointer has to be before the tile under it takes over.
+ *
+ * The pointer activates the tile it comes to **rest** on, not every tile it
+ * crosses. Without this, reaching from a tile in the bottom row up to the
+ * shortcut bar handed the grid to each tile on the way and left it with
+ * whichever one the pointer passed over last: the ring ended up somewhere
+ * nobody chose, the shortcut list was rebuilt for that session's shell, and Go
+ * would have run the command there. A wall of production hosts is the worst
+ * possible place for "whichever one was on the way".
+ *
+ * Every real move restarts the clock, so a crossing never fires: the pointer
+ * keeps pushing the deadline ahead of itself and then leaves. Long enough to
+ * outlast a deliberate sweep across a tile, short enough that stopping
+ * somewhere to work in it does not feel gated.
+ */
+const SETTLE_MS = 250;
+
+/**
+ * Something is open that owns the keyboard until it is dismissed.
+ *
+ * A modal Radix layer makes the body inert, so the pointer cannot reach a tile
+ * at all while one is up and none of this runs. The check is here for the
+ * settle that was already armed when it opened, which fires from a timer with
+ * no such protection.
+ */
+const MODAL_SELECTOR =
+  "[data-slot='dialog-overlay'], [role='alertdialog'], [role='menu'], [role='listbox']";
+
 /** What the caller needs to drive, and to suppress, when the pointer activates
  * a tile. */
 export type GridFocus = {
@@ -28,11 +57,21 @@ export type GridFocus = {
   tileProps: (sessionId: string) => {
     onPointerMove: (e: React.PointerEvent<HTMLElement>) => void;
     onPointerLeave: () => void;
+    onPointerDown: () => void;
   };
-  /** True when the activation being processed came from the pointer, so the
-   * tab-centering and tile-scrolling effects can sit that one out. Read during
-   * render of those effects, hence a ref rather than state. */
-  activatedByPointer: React.RefObject<boolean>;
+  /**
+   * The session the **pointer** last made active, or null.
+   *
+   * The tab-centering and tile-scrolling effects sit out an activation that
+   * came from the pointer: the tile is under the cursor, so it is on screen
+   * already, and scrolling would drag the wall out from under the mouse. An id
+   * rather than a "this one was the pointer" flag, because a flag has to be
+   * cleared on a schedule and the settle now fires from a timer rather than
+   * from inside a React event, where the ordering between that clear and the
+   * effects reading it is no longer something to rely on. Comparing against
+   * `activeId` needs no timing at all.
+   */
+  pointerActivated: React.RefObject<string | null>;
   /** Call whenever `activeId` is set by anything that is *not* the pointer, so
    * a resting cursor cannot immediately undo it. */
   noteDeliberateActivation: () => void;
@@ -44,7 +83,6 @@ export function useGridFocus({
   resizing,
   onActivate,
   focusTerminal,
-  chromeRef,
   chromeKeyboard,
 }: {
   gridMode: boolean;
@@ -55,7 +93,7 @@ export function useGridFocus({
   onActivate: (id: string) => void;
   /** Moves real DOM keyboard focus into that pane's terminal. */
   focusTerminal: (id: string) => void;
-  chromeRef: React.RefObject<HTMLDivElement | null>;
+  /** Ctrl+Shift+T has deliberately parked the keyboard in the chrome strip. */
   chromeKeyboard: boolean;
 }): GridFocus {
   // Last pointer position we acted on. `pointermove` is used rather than
@@ -63,93 +101,163 @@ export function useGridFocus({
   // under a stationary mouse -- a tile closing, the grid reflowing -- which
   // would hand focus to whatever slid beneath the cursor.
   const lastPos = useRef<{ x: number; y: number } | null>(null);
-  const activatedByPointer = useRef(false);
+  const pointerActivated = useRef<string | null>(null);
+
+  // Read when the settle fires rather than when it was armed, because a quarter
+  // of a second is long enough for any of them to have changed.
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  const gridModeRef = useRef(gridMode);
+  gridModeRef.current = gridMode;
+  const resizingRef = useRef(resizing);
+  resizingRef.current = resizing;
+  const chromeKeyboardRef = useRef(chromeKeyboard);
+  chromeKeyboardRef.current = chromeKeyboard;
+  const onActivateRef = useRef(onActivate);
+  onActivateRef.current = onActivate;
+  const focusTerminalRef = useRef(focusTerminal);
+  focusTerminalRef.current = focusTerminal;
 
   // Deliberate intent beats an idle cursor.
   //
   // The classic focus-follows-mouse complaint: your mouse is parked over TG3
-  // while you read it, you click TG1's tab (or press Alt+Left) to work in TG1,
-  // and that lands correctly because a stationary mouse fires no pointermove --
-  // then you nudge the mouse two pixels and focus snaps back to TG3. A movement
-  // threshold does not fix this, it only delays it.
+  // while you read it, you press Alt+Left (or pick TG1 from the Sessions menu,
+  // or walk the tab strip with the arrow keys) to work in TG1, and that lands
+  // correctly because a stationary mouse fires no pointermove -- then you nudge
+  // the mouse two pixels and focus snaps back to TG3. A movement threshold does
+  // not fix this, it only delays it, and neither does the settle: a nudge is
+  // real movement that then stops.
   //
   // So a non-pointer activation arms this, and it clears only when the pointer
   // actually *leaves* the tile it is resting over. Nudging in place changes
-  // nothing; moving to another tile resumes normal behaviour at once.
+  // nothing; moving to another tile and stopping there resumes normal
+  // behaviour, as does clicking, which is the pointer saying it outright.
   const suppressed = useRef(false);
   const noteDeliberateActivation = useCallback(() => {
-    if (activatedByPointer.current) return;
     suppressed.current = true;
+    pointerActivated.current = null;
+  }, []);
+
+  const timer = useRef<number | undefined>(undefined);
+  const cancel = useCallback(() => {
+    if (timer.current === undefined) return;
+    window.clearTimeout(timer.current);
+    timer.current = undefined;
   }, []);
 
   // Leaving grid mode drops the suppression, so returning to it is not stuck in
-  // whatever state the last tab-click left behind.
+  // whatever state the last deliberate activation left behind.
   useEffect(() => {
-    if (!gridMode) {
-      suppressed.current = false;
-      lastPos.current = null;
-    }
-  }, [gridMode]);
+    if (gridMode) return;
+    cancel();
+    suppressed.current = false;
+    lastPos.current = null;
+    pointerActivated.current = null;
+  }, [gridMode, cancel]);
+
+  // A drag-resize starting mid-settle: the pointer is about to sweep across
+  // tiles on purpose and a timer armed a moment ago would land inside that.
+  useEffect(() => {
+    if (resizing) cancel();
+  }, [resizing, cancel]);
+
+  useEffect(() => cancel, [cancel]);
+
+  /**
+   * The pointer has chosen this tile: ring, `activeId` and the keyboard all
+   * move to it together, which is the entire point of the feature.
+   *
+   * `fromSettle` is what the scroll effects read through `pointerActivated`. A
+   * tile the pointer merely came to rest on must not drag the tab strip or the
+   * grid along behind it; a tile it pressed is a choice like any other, and one
+   * whose tab is worth bringing into view.
+   */
+  const take = useCallback((sessionId: string, fromSettle: boolean) => {
+    pointerActivated.current = fromSettle ? sessionId : null;
+    onActivateRef.current(sessionId);
+    focusTerminalRef.current(sessionId);
+  }, []);
+
+  const settle = useCallback(
+    (sessionId: string) => {
+      cancel();
+      timer.current = window.setTimeout(() => {
+        timer.current = undefined;
+        if (!gridModeRef.current || resizingRef.current) return;
+        if (suppressed.current) return;
+        // Ctrl+Shift+T deliberately parks focus in the chrome strip, and Tab
+        // wraps around inside it. Sweeping the mouse across the grid must not
+        // yank that away.
+        if (chromeKeyboardRef.current) return;
+        // Typing anywhere that is not a terminal -- the Find box, the
+        // composer, a rename, a dialog field -- outranks the mouse. Without
+        // this, coming to rest over the grid mid-word sends the rest of the
+        // word to a host.
+        const active = document.activeElement as HTMLElement | null;
+        if (active && isTextEntry(active)) return;
+        if (document.querySelector(MODAL_SELECTOR)) return;
+
+        if (sessionId === activeIdRef.current) {
+          // Already the tile everything is pointed at, so there is no ring to
+          // move. The keyboard is another matter: pressing Go, or anything
+          // else in the strip, leaves DOM focus on that control, and coming
+          // back to rest over the grid is asking for it back. Without this the
+          // only way home was to click, which is what made a strip button feel
+          // like a trap.
+          focusTerminalRef.current(sessionId);
+          return;
+        }
+        take(sessionId, true);
+      }, SETTLE_MS);
+    },
+    [cancel, take],
+  );
 
   const tileProps = useCallback(
     (sessionId: string) => ({
       onPointerMove: (e: React.PointerEvent<HTMLElement>) => {
-        if (!gridMode || resizing) return;
+        if (!gridMode || resizing) {
+          cancel();
+          return;
+        }
         // A selection drag that crosses a tile boundary must not switch panes
         // out from under the drag.
-        if (e.buttons !== 0) return;
+        if (e.buttons !== 0) {
+          cancel();
+          return;
+        }
         // Real movement only. A pointermove can also fire from the element
         // moving beneath a still cursor.
         const prev = lastPos.current;
         if (prev && prev.x === e.clientX && prev.y === e.clientY) return;
         lastPos.current = { x: e.clientX, y: e.clientY };
-        if (suppressed.current) return;
-        if (sessionId === activeId) return;
-
-        // Ctrl+Shift+T deliberately parks focus in the chrome strip, and Tab
-        // wraps around inside it. Sweeping the mouse across the grid must not
-        // yank that away.
-        if (chromeKeyboard) return;
-        const active = document.activeElement as HTMLElement | null;
-        if (chromeRef.current?.contains(active ?? null)) return;
-        // Typing anywhere that is not a terminal -- the shortcut box, the
-        // composer, a search field, a dialog -- outranks the mouse. Without
-        // this, moving the pointer over the grid mid-word sends the rest of the
-        // word to a host.
-        if (active && isTextEntry(active)) return;
-        // A modal is open: it owns input until it is dismissed.
-        if (document.querySelector("[data-slot='dialog-overlay'], [role='alertdialog']")) {
-          return;
-        }
-
-        activatedByPointer.current = true;
-        onActivate(sessionId);
-        focusTerminal(sessionId);
-        // Cleared on a microtask so the effects that run for this activation
-        // (tab centering, tile scroll-into-view) see it set and skip, while the
-        // next activation from any source starts clean.
-        queueMicrotask(() => {
-          activatedByPointer.current = false;
-        });
+        settle(sessionId);
       },
       onPointerLeave: () => {
+        // Gone before it ever came to rest, which is what a tile on the way to
+        // somewhere else looks like.
+        cancel();
         // The cursor genuinely moved off this tile, so a deliberate activation
         // has had its stay of execution.
         suppressed.current = false;
       },
+      onPointerDown: () => {
+        // A press is the pointer saying so outright, so it does not wait out
+        // the settle. It has to be this way round: a right-click paste is
+        // aimed at the tile under the pointer, and if the keyboard were still
+        // in the last tile the Enter that follows would run the pasted command
+        // on a different host.
+        cancel();
+        if (!gridMode || resizing) return;
+        suppressed.current = false;
+        if (sessionId === activeIdRef.current) return;
+        take(sessionId, false);
+      },
     }),
-    [
-      gridMode,
-      resizing,
-      activeId,
-      chromeKeyboard,
-      chromeRef,
-      onActivate,
-      focusTerminal,
-    ],
+    [gridMode, resizing, cancel, settle, take],
   );
 
-  return { tileProps, activatedByPointer, noteDeliberateActivation };
+  return { tileProps, pointerActivated, noteDeliberateActivation };
 }
 
 /** Whether this element takes typed text. xterm's own hidden textarea is
