@@ -77,11 +77,17 @@ export type GridFocus = {
   /**
    * The session the **pointer** last made active, or null.
    *
-   * The tab-centering and tile-scrolling effects sit out an activation that
-   * came from the pointer: the tile is under the cursor, so it is on screen
-   * already, and scrolling would drag the wall out from under the mouse. An id
-   * rather than a "this one was the pointer" flag, because a flag has to be
-   * cleared on a schedule and the settle now fires from a timer rather than
+   * The tab strip sits out an activation that came from the pointer: sweeping
+   * the mouse across the grid would have the strip sliding about underneath it,
+   * and the tab of the tile you are looking at is not information you were
+   * asking for. The **grid** used to sit it out too, on the reasoning that a
+   * tile under the cursor is on screen by definition. It is not: only the part
+   * under the cursor is, and a tile whose header is cut off above the fold is
+   * exactly the one you want brought down. It scrolls for the pointer now, by
+   * the minimum, which cannot move the tile out from under the mouse.
+   *
+   * An id rather than a "this one was the pointer" flag, because a flag has to
+   * be cleared on a schedule and the settle now fires from a timer rather than
    * from inside a React event, where the ordering between that clear and the
    * effects reading it is no longer something to rely on. Comparing against
    * `activeId` needs no timing at all.
@@ -98,6 +104,7 @@ export function useGridFocus({
   resizing,
   onActivate,
   focusTerminal,
+  revealTile,
   chromeKeyboard,
   releaseChrome,
 }: {
@@ -109,6 +116,11 @@ export function useGridFocus({
   onActivate: (id: string) => void;
   /** Moves real DOM keyboard focus into that pane's terminal. */
   focusTerminal: (id: string) => void;
+  /** Scrolls the grid the minimum needed to show all of that tile, and does
+   * nothing when it is already whole. Called only where the pointer picks a
+   * tile that is **already** active: everywhere else `activeId` changes, and
+   * the page's own effect on that does the same job. */
+  revealTile: (id: string) => void;
   /** Ctrl+Shift+T has deliberately parked the keyboard in the chrome strip. */
   chromeKeyboard: boolean;
   /** Drop that, because the mouse has just used a tile outright. Merely moving
@@ -137,6 +149,8 @@ export function useGridFocus({
   onActivateRef.current = onActivate;
   const focusTerminalRef = useRef(focusTerminal);
   focusTerminalRef.current = focusTerminal;
+  const revealTileRef = useRef(revealTile);
+  revealTileRef.current = revealTile;
   const releaseChromeRef = useRef(releaseChrome);
   releaseChromeRef.current = releaseChrome;
 
@@ -167,14 +181,56 @@ export function useGridFocus({
     timer.current = undefined;
   }, []);
 
-  // Leaving grid mode drops the suppression, so returning to it is not stuck in
-  // whatever state the last deliberate activation left behind.
+  // Where the pointer is, anywhere in the window. The tile handlers below only
+  // hear about the cursor once it has moved over a tile, and the moment a mode
+  // change needs to know where it is, is exactly the moment that has not
+  // happened yet. Written into the same object every time rather than replacing
+  // it: this fires for every move anywhere in the window, and there is no call
+  // to hand the collector a few hundred objects a second for two numbers.
+  const seenPos = useRef({ x: 0, y: 0, seen: false });
   useEffect(() => {
-    if (gridMode) return;
+    const track = (e: PointerEvent) => {
+      const p = seenPos.current;
+      p.x = e.clientX;
+      p.y = e.clientY;
+      p.seen = true;
+    };
+    // Capture, so nothing on the way up can keep this from hearing about a move
+    // by stopping the event, and passive because it only ever reads.
+    const opts = { capture: true, passive: true } as const;
+    window.addEventListener("pointermove", track, opts);
+    return () => window.removeEventListener("pointermove", track, opts);
+  }, []);
+
+  // A change of mode, in either direction, drops everything the pointer was
+  // holding.
+  //
+  // This used to reset on the way *out* of grid mode only, which left the way
+  // in carrying whatever the last deliberate activation had set. Clicking a tab
+  // is a deliberate activation and the tab strip is there in Tab mode too, so
+  // the ordinary round trip -- switch to Tabs, pick a tab, switch back to Grid
+  // -- arrived with the suppression still armed. The first tile the pointer
+  // came to rest on was then ignored and it took a click to get in, while the
+  // *second* tile hovered behaved normally, because leaving the first one is
+  // what finally cleared the flag. What the suppression protects is a cursor
+  // resting over a tile while the keyboard picks another one; a mode change has
+  // just rebuilt every tile there is, so there is nothing of that left to
+  // protect and the flag is only stale state.
+  //
+  // `lastPos` is seeded on the way in rather than cleared, which is the case
+  // the old reset was quietly covering. Re-laying the grid under a still cursor
+  // makes the browser send one pointermove at the position it is already at,
+  // and against a null `lastPos` that reads as real movement and hands the grid
+  // to whichever tile has arrived under the mouse: F11 into a maximized pane
+  // and back out is enough to do it. Seeded with where the pointer actually is,
+  // that move compares equal and is ignored, and the first genuine one still
+  // lands.
+  useEffect(() => {
     cancel();
     suppressed.current = false;
-    lastPos.current = null;
     pointerActivated.current = null;
+    const p = seenPos.current;
+    lastPos.current = gridMode && p.seen ? { x: p.x, y: p.y } : null;
   }, [gridMode, cancel]);
 
   // A drag-resize starting mid-settle: the pointer is about to sweep across
@@ -215,6 +271,10 @@ export function useGridFocus({
       releaseChromeRef.current();
       if (sessionId === activeIdRef.current) {
         focusTerminalRef.current(sessionId);
+        // Nothing here changed `activeId`, so the page's scroll effect will not
+        // run and a tile that is half off the top of the grid would stay there
+        // however often it is pressed.
+        revealTileRef.current(sessionId);
         return;
       }
       take(sessionId, false);
@@ -254,6 +314,9 @@ export function useGridFocus({
           // only way home was to click, which is what made a strip button feel
           // like a trap.
           focusTerminalRef.current(sessionId);
+          // And the same as in `claim`: no `activeId` change means no scroll
+          // effect, so bring a clipped tile down from behind the fold here.
+          revealTileRef.current(sessionId);
           return;
         }
         take(sessionId, true);

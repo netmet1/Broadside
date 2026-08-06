@@ -770,6 +770,28 @@ export function TerminalsPage({
   // during render rather than inside the closure.
   const searchHandles = useRef<Map<string, TerminalSearchHandle>>(new Map());
 
+  /**
+   * Scroll the grid the minimum needed to show all of one tile, and leave it
+   * alone when the tile is already whole. Reads nothing but refs, so it can be
+   * called from anywhere that picks a tile without going round a render.
+   */
+  const revealTile = useCallback((id: string) => {
+    const container = gridScrollRef.current;
+    const target = paneElRefs.current.get(id);
+    if (!container || !target) return;
+    const c = container.getBoundingClientRect();
+    const t = target.getBoundingClientRect();
+    if (t.top >= c.top && t.bottom <= c.bottom) return; // already fully visible
+    // A tile taller than the pane can never be shown whole, so show its top and
+    // stop. Without the height test it alternates: top-aligned, its bottom is
+    // still past the fold, so the next call scrolls to align the bottom instead
+    // and puts the header back out of reach.
+    const delta =
+      t.height > c.height || t.top < c.top ? t.top - c.top : t.bottom - c.bottom;
+    if (delta === 0) return;
+    container.scrollTo({ top: container.scrollTop + delta, behavior: "smooth" });
+  }, []);
+
   // Focus follows the mouse across grid tiles, so the ring that marks the
   // active tile is also where a paste, a keystroke and Find will land.
   const gridFocus = useGridFocus({
@@ -781,6 +803,7 @@ export function TerminalsPage({
       (id: string) => searchHandles.current.get(id)?.focusTerminal(),
       [],
     ),
+    revealTile,
     chromeKeyboard,
     releaseChrome: useCallback(() => setChromeKeyboard(false), []),
   });
@@ -804,23 +827,17 @@ export function TerminalsPage({
 
   // In Grid, when the active session changes, scroll its tile just enough to be
   // fully visible in the pane area, but leave it alone if it already is.
+  //
+  // This does *not* sit out an activation that came from the pointer, though it
+  // used to. The argument for sitting it out was that a tile under the cursor
+  // is on screen already; only the part under the cursor is, and a tile whose
+  // header is cut off above the fold is the one case where the pointer wants
+  // the grid to move. It can only move by the amount that was hidden, and the
+  // tile moves with it, so the cursor cannot end up over a different one.
   useEffect(() => {
     if (!gridMode || activeId === null) return;
-    // Never scroll the grid because the pointer arrived somewhere: the tile is
-    // under the cursor, so it is by definition already on screen, and moving it
-    // would drag the whole wall out from under the mouse.
-    if (gridFocus.pointerActivated.current === activeId) return;
-    const container = gridScrollRef.current;
-    const target = paneElRefs.current.get(activeId);
-    if (!container || !target) return;
-    const c = container.getBoundingClientRect();
-    const t = target.getBoundingClientRect();
-    if (t.top >= c.top && t.bottom <= c.bottom) return; // already fully visible
-    // Scroll the minimum so the tile sits within the viewport (nearest edge).
-    const delta =
-      t.top < c.top ? t.top - c.top : t.bottom - c.bottom;
-    container.scrollTo({ top: container.scrollTop + delta, behavior: "smooth" });
-  }, [activeId, sessions, gridMode, gridFocus.pointerActivated]);
+    revealTile(activeId);
+  }, [activeId, sessions, gridMode, revealTile]);
 
   const [gates, setGates] = useState<Map<string, ConnectionGate>>(new Map());
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
