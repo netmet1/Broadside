@@ -90,6 +90,7 @@ export function useColumnResize() {
       onDoubleClick={() => autoSizeColumn(id)}
       className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize border-r border-border/70 hover:border-primary hover:bg-primary/20"
       aria-hidden
+      data-resize-handle=""
       title="Drag to resize · double-click to fit"
     />
   );

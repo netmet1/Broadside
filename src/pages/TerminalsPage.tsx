@@ -2064,6 +2064,7 @@ export function TerminalsPage({
                     aria-orientation="vertical"
                     aria-label="Drag to set the width of every grid tile"
                     title="Drag to set the width of every tile"
+                    data-resize-handle=""
                     className="absolute inset-y-0 right-0 w-1.5 cursor-col-resize hover:bg-primary/40"
                   />
                   <div
@@ -2074,6 +2075,7 @@ export function TerminalsPage({
                     aria-orientation="horizontal"
                     aria-label="Drag to set the height of every grid tile"
                     title="Drag to set the height of every tile"
+                    data-resize-handle=""
                     className="absolute inset-x-0 bottom-0 h-1.5 cursor-row-resize hover:bg-primary/40"
                   />
                   <div
@@ -2083,6 +2085,7 @@ export function TerminalsPage({
                     role="separator"
                     aria-label="Drag to set the size of every grid tile"
                     title="Drag to set the size of every tile"
+                    data-resize-handle=""
                     className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize hover:bg-primary/50"
                   />
                 </>

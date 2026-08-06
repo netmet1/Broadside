@@ -409,6 +409,7 @@ export function AppShell({
             localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_MAX_WIDTH));
           }}
           title="Drag to resize · double-click to reset"
+          data-resize-handle=""
           className={cn(
             "w-1 shrink-0 cursor-col-resize hover:bg-primary/40",
             dragging && "bg-primary/50",

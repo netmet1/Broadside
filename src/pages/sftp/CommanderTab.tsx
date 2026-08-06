@@ -348,6 +348,7 @@ export function CommanderTab({
           role="separator"
           aria-orientation="vertical"
           onMouseDown={startResize}
+          data-resize-handle=""
           className="group mx-1 flex w-1.5 shrink-0 cursor-col-resize items-center justify-center"
           title="Drag to resize"
         >

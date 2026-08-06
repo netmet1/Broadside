@@ -225,6 +225,19 @@
   box-shadow: none !important;
 }
 
+/* Drag-to-resize handles (tile edges, the sidebar edge, table columns, the
+   SFTP splitters) light up under the pointer and switch it to the resize
+   arrows, the exact invitation everything above is busy retracting. One
+   property retires all of it: with no pointer events there is no :hover to
+   light, no cursor to change and no tooltip, whatever each handle's resting
+   style happens to be. A deliberate press is not lost, it lands on whatever
+   is under the handle, and a press into an unfocused window claims the window
+   (and, on a tile, that tile) rather than starting a drag nobody could see
+   coming. The handles wake with the window, when the attribute goes. */
+[data-window-blurred] [data-resize-handle] {
+  pointer-events: none;
+}
+
 /* The Help filter's match colour lives in useHelpHighlight.ts, not here: its
  * `::highlight()` rule is newer than the CSS parser this build runs through,
  * which passes it along but complains about it every time. It is injected at

@@ -437,6 +437,7 @@ export function BroadcastTab({
               role="separator"
               aria-orientation="vertical"
               title="Drag to resize"
+              data-resize-handle=""
               className="mx-1.5 w-1.5 shrink-0 cursor-col-resize self-stretch rounded-full border-x border-border/40 hover:border-primary hover:bg-primary/20"
             />
 
