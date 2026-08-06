@@ -179,6 +179,44 @@
   outline-offset: 2px;
 }
 
+/* The window is not the one the operating system is sending keys to.
+ *
+ * An unfocused window still receives every mouse event that happens over it, so
+ * without these rules the app goes on looking exactly as alive as it does when
+ * it is listening: hover states light up, and xterm's scrollbar fades in under
+ * the pointer as if the pane were yours to scroll. It reads as "this window has
+ * the keyboard", and the first thing typed goes to whatever actually does.
+ *
+ * Behaviour is not defended here (see `useGridFocus`, which stops following the
+ * mouse for the same reason). This is only the app being honest about being
+ * asleep. `data-window-blurred` is set on the root element by
+ * `useWindowBlurredAttr`.
+ *
+ * Unlayered on purpose: `xterm.css` arrives unlayered too, and an unlayered
+ * rule beats a layered one whatever the specificity, so putting this in
+ * `@layer base` would lose to the very rule it exists to override. */
+[data-window-blurred] .xterm .xterm-scrollable-element > .scrollbar {
+  /* xterm fades this in on mouseover with no notion of window focus. Four
+     class selectors deep so it outranks the `.visible` xterm sets there. */
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The app's own scrollbars darken under the pointer. Same small lie, so it
+   holds still too. */
+[data-window-blurred] *::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb);
+}
+
+/* The live tile keeps its outline, so coming back still shows where the
+   keyboard was left, but loses the host colour and the glow that say the keys
+   are landing there now. `!important` because the host-coloured version is an
+   inline style, computed from a colour only the session knows. */
+[data-window-blurred] [data-tile-active] {
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
 /* The Help filter's match colour lives in useHelpHighlight.ts, not here: its
  * `::highlight()` rule is newer than the CSS parser this build runs through,
  * which passes it along but complains about it every time. It is injected at

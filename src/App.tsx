@@ -57,8 +57,13 @@ import {
   requiresMasterPassword,
 } from "@/lib/tauri/hosts";
 import { onPtySudo, onPtySudoRejected } from "@/lib/tauri/pty";
+import { useWindowBlurredAttr } from "@/lib/windowFocus";
 
 function App() {
+  // Let the stylesheet know when the window is not the one taking keys, so the
+  // app stops looking alive while it is asleep. Nothing else here reads it.
+  useWindowBlurredAttr();
+
   const [page, setPage] = useState<Page>("hosts");
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [sessions, setSessions] = useState<TermSession[]>([]);

@@ -1877,6 +1877,12 @@ export function TerminalsPage({
                 else paneElRefs.current.delete(s.id);
               }}
               style={tileStyle}
+              // The one hook the stylesheet has on "this is the live tile".
+              // A host-tinted tile takes its ring from tileStyle above, as
+              // inline colours no class can name, so muting it while the window
+              // is asleep has nothing else to aim at. See the
+              // [data-window-blurred] rules in index.css.
+              data-tile-active={gridMode && isActive ? "" : undefined}
               className={cn(
                 gridMode
                   ? excluded

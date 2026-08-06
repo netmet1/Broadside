@@ -21,6 +21,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
+import { isWindowFocused } from "@/lib/windowFocus";
+
 /**
  * How still the pointer has to be before the tile under it takes over.
  *
@@ -226,6 +228,11 @@ export function useGridFocus({
       timer.current = window.setTimeout(() => {
         timer.current = undefined;
         if (!gridModeRef.current || resizingRef.current) return;
+        // The window went to sleep during the wait. Checked here as well as at
+        // the move, because a pointer that comes to rest and *then* loses the
+        // window (Alt+Tab, a notification stealing the foreground) sends no
+        // further moves to catch it with.
+        if (!isWindowFocused()) return;
         if (suppressed.current) return;
         // Ctrl+Shift+T deliberately parks focus in the chrome strip, and Tab
         // wraps around inside it. Sweeping the mouse across the grid must not
@@ -262,6 +269,15 @@ export function useGridFocus({
           cancel();
           return;
         }
+        // The window is not the one taking keys, and an unfocused window still
+        // gets every move the pointer makes over it. Following the mouse here
+        // would move the ring, rebuild the shortcut bar for another host and
+        // put DOM focus in that tile, all invisibly: come back with Alt+Tab and
+        // the keyboard is wherever the mouse drifted, not where it was left.
+        if (!isWindowFocused()) {
+          cancel();
+          return;
+        }
         // A selection drag that crosses a tile boundary must not switch panes
         // out from under the drag.
         if (e.buttons !== 0) {
@@ -279,6 +295,13 @@ export function useGridFocus({
         // Gone before it ever came to rest, which is what a tile on the way to
         // somewhere else looks like.
         cancel();
+        // Nothing about which tile is chosen may change while the window is
+        // asleep, and this is the one piece of that state a mere movement can
+        // still reach. Sweeping across the grid on the way to another
+        // application would otherwise quietly spend the protection a
+        // deliberate selection is holding, and the first nudge after coming
+        // back would hand the grid to whatever the pointer had stopped over.
+        if (!isWindowFocused()) return;
         // The cursor genuinely moved off this tile, so a deliberate activation
         // has had its stay of execution.
         suppressed.current = false;
@@ -293,7 +316,18 @@ export function useGridFocus({
       // that tile, so the ring belongs there and so does the keyboard: reading
       // what scrolled past and then typing is one gesture, not two. Nothing is
       // taken from the wheel itself, which goes on to the terminal as usual.
-      onWheel: () => claim(sessionId),
+      //
+      // Not while the window is asleep, though, and this is the one place the
+      // wheel and a press have to part company. Windows sends the wheel to
+      // whatever is under the pointer without focusing it, so glancing at a
+      // tile's history from another application is an ordinary thing to do and
+      // must stay a scroll and nothing else. A press is different: it activates
+      // the window on its way in, so by the time it is acted on this *is* the
+      // focused window.
+      onWheel: () => {
+        if (!isWindowFocused()) return;
+        claim(sessionId);
+      },
     }),
     [gridMode, resizing, cancel, settle, claim],
   );
