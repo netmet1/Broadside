@@ -32,12 +32,16 @@ import { useCallback, useEffect, useRef } from "react";
  * would have run the command there. A wall of production hosts is the worst
  * possible place for "whichever one was on the way".
  *
- * Every real move restarts the clock, so a crossing never fires: the pointer
- * keeps pushing the deadline ahead of itself and then leaves. Long enough to
- * outlast a deliberate sweep across a tile, short enough that stopping
- * somewhere to work in it does not feel gated.
+ * Every real move restarts the clock, so a crossing never fires **whatever this
+ * number is**: the pointer keeps pushing the deadline ahead of itself and then
+ * leaves, and a tile 300px tall crossed at any speed a hand can manage never
+ * gets a gap this long between two moves. What the number actually buys is
+ * tolerance for a pointer that hesitates, and for a mouse that reports
+ * unevenly. So it wants to be as small as it can be and no smaller: a quarter
+ * of a second was picked for safety it did not need, and felt like a lag
+ * between arriving somewhere and being able to work there.
  */
-const SETTLE_MS = 250;
+const SETTLE_MS = 100;
 
 /**
  * Something is open that owns the keyboard until it is dismissed.
@@ -58,6 +62,7 @@ export type GridFocus = {
     onPointerMove: (e: React.PointerEvent<HTMLElement>) => void;
     onPointerLeave: () => void;
     onPointerDown: () => void;
+    onWheel: () => void;
   };
   /**
    * The session the **pointer** last made active, or null.
@@ -84,6 +89,7 @@ export function useGridFocus({
   onActivate,
   focusTerminal,
   chromeKeyboard,
+  releaseChrome,
 }: {
   gridMode: boolean;
   activeId: string | null;
@@ -95,6 +101,9 @@ export function useGridFocus({
   focusTerminal: (id: string) => void;
   /** Ctrl+Shift+T has deliberately parked the keyboard in the chrome strip. */
   chromeKeyboard: boolean;
+  /** Drop that, because the mouse has just used a tile outright. Merely moving
+   * the pointer does not: that is the whole point of the flag. */
+  releaseChrome: () => void;
 }): GridFocus {
   // Last pointer position we acted on. `pointermove` is used rather than
   // `pointerenter` precisely because enter also fires when the layout shifts
@@ -117,6 +126,8 @@ export function useGridFocus({
   onActivateRef.current = onActivate;
   const focusTerminalRef = useRef(focusTerminal);
   focusTerminalRef.current = focusTerminal;
+  const releaseChromeRef = useRef(releaseChrome);
+  releaseChromeRef.current = releaseChrome;
 
   // Deliberate intent beats an idle cursor.
   //
@@ -177,6 +188,28 @@ export function useGridFocus({
     onActivateRef.current(sessionId);
     focusTerminalRef.current(sessionId);
   }, []);
+
+  /**
+   * The pointer has used this tile rather than merely arrived at it: a press or
+   * a wheel. No settle, no waiting, and it beats both of the things that hold
+   * the pointer off. A deliberate activation elsewhere has been overruled by
+   * the hand doing something here, and so has Ctrl+Shift+T: the keyboard was
+   * put in the strip on purpose, and this is the same mouse taking it back.
+   */
+  const claim = useCallback(
+    (sessionId: string) => {
+      cancel();
+      if (!gridModeRef.current || resizingRef.current) return;
+      suppressed.current = false;
+      releaseChromeRef.current();
+      if (sessionId === activeIdRef.current) {
+        focusTerminalRef.current(sessionId);
+        return;
+      }
+      take(sessionId, false);
+    },
+    [cancel, take],
+  );
 
   const settle = useCallback(
     (sessionId: string) => {
@@ -241,20 +274,19 @@ export function useGridFocus({
         // has had its stay of execution.
         suppressed.current = false;
       },
-      onPointerDown: () => {
-        // A press is the pointer saying so outright, so it does not wait out
-        // the settle. It has to be this way round: a right-click paste is
-        // aimed at the tile under the pointer, and if the keyboard were still
-        // in the last tile the Enter that follows would run the pasted command
-        // on a different host.
-        cancel();
-        if (!gridMode || resizing) return;
-        suppressed.current = false;
-        if (sessionId === activeIdRef.current) return;
-        take(sessionId, false);
-      },
+      // A press is the pointer saying so outright, so it does not wait out the
+      // settle. It has to be this way round: a right-click paste is aimed at
+      // the tile under the pointer, and if the keyboard were still in the last
+      // tile the Enter that follows would run the pasted command on a
+      // different host.
+      onPointerDown: () => claim(sessionId),
+      // And so is a wheel. Scrolling back through a tile's output is working in
+      // that tile, so the ring belongs there and so does the keyboard: reading
+      // what scrolled past and then typing is one gesture, not two. Nothing is
+      // taken from the wheel itself, which goes on to the terminal as usual.
+      onWheel: () => claim(sessionId),
     }),
-    [gridMode, resizing, cancel, settle, take],
+    [gridMode, resizing, cancel, settle, claim],
   );
 
   return { tileProps, pointerActivated, noteDeliberateActivation };

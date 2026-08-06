@@ -782,6 +782,7 @@ export function TerminalsPage({
       [],
     ),
     chromeKeyboard,
+    releaseChrome: useCallback(() => setChromeKeyboard(false), []),
   });
 
   // When the active session changes, center its tab in the strip, but only if
