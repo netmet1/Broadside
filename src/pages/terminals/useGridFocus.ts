@@ -40,8 +40,16 @@ import { useCallback, useEffect, useRef } from "react";
  * unevenly. So it wants to be as small as it can be and no smaller: a quarter
  * of a second was picked for safety it did not need, and felt like a lag
  * between arriving somewhere and being able to work there.
+ *
+ * The floor is the reporting interval, not zero. A moving pointer delivers a
+ * `pointermove` about every frame, so this has to stay several frames clear of
+ * that or an ordinary hitch mid-sweep -- a burst of output repainting a wall of
+ * panes, a garbage collection -- reads as a pause and hands over a tile nobody
+ * chose. Sixty milliseconds is roughly four frames at 60Hz and more on a faster
+ * panel, which is the smallest number with any real margin left in it. Below
+ * about forty there is none.
  */
-const SETTLE_MS = 100;
+const SETTLE_MS = 60;
 
 /**
  * Something is open that owns the keyboard until it is dismissed.
@@ -112,8 +120,9 @@ export function useGridFocus({
   const lastPos = useRef<{ x: number; y: number } | null>(null);
   const pointerActivated = useRef<string | null>(null);
 
-  // Read when the settle fires rather than when it was armed, because a quarter
-  // of a second is long enough for any of them to have changed.
+  // Read when the settle fires rather than when it was armed. Short as the wait
+  // is, it is long enough for any of them to have changed, and a stale read
+  // here is a keypress landing on the wrong host.
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const gridModeRef = useRef(gridMode);
