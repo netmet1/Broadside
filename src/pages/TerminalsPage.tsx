@@ -798,10 +798,14 @@ export function TerminalsPage({
     activeId,
     resizing,
     onActivate,
-    focusTerminal: useCallback(
-      (id: string) => searchHandles.current.get(id)?.focusTerminal(),
-      [],
-    ),
+    // Whether the keyboard actually arrived, which is not the same question as
+    // whether it was asked for: a pane taken out of the grid is display:none,
+    // and focus does not stick to something that is not being displayed.
+    focusTerminal: useCallback((id: string) => {
+      searchHandles.current.get(id)?.focusTerminal();
+      const pane = paneElRefs.current.get(id);
+      return pane !== undefined && pane.contains(document.activeElement);
+    }, []),
     chromeKeyboard,
     releaseChrome: useCallback(() => setChromeKeyboard(false), []),
   });
@@ -1057,12 +1061,14 @@ export function TerminalsPage({
       if (idx < 0) return;
       const n = sessions.length;
       const nextIdx = dir === "next" ? (idx + 1) % n : (idx - 1 + n) % n;
-      // Keyboard navigation outranks a resting cursor: without this, Alt+Left
-      // lands on the right tab and the next nudge of the mouse takes it back.
-      gridFocus.noteDeliberateActivation();
-      onActivate(sessions[nextIdx]!.id);
+      // Not the page's own onActivate: keyboard navigation outranks a resting
+      // cursor (without that, Alt+Left lands on the right tab and the next
+      // nudge of the mouse takes it back) and in a grid it has to carry the
+      // keyboard with it, since every pane is on screen and none of them will
+      // take it by itself.
+      gridFocus.activateDeliberately(sessions[nextIdx]!.id);
     },
-    [sessions, activeId, onActivate, gridFocus],
+    [sessions, activeId, gridFocus],
   );
 
   // Alt+Left/Right while the Terminals page is visible but a terminal pane is
@@ -1291,11 +1297,9 @@ export function TerminalsPage({
         onManageShortcuts={onManageShortcuts}
         sessions={sessions}
         tabSuffix={tabSuffix}
-        onActivate={(id) => {
-          // Picking from the Sessions menu is as deliberate as clicking a tab.
-          gridFocus.noteDeliberateActivation();
-          onActivate(id);
-        }}
+        // Picking from the Sessions menu is as deliberate as clicking a tab,
+        // and as much a request to work there.
+        onActivate={gridFocus.activateDeliberately}
         onCloseAll={() => setCloseAllOpen(true)}
       />
 
@@ -1387,9 +1391,11 @@ export function TerminalsPage({
             onClick={() => {
               // A tab click is a deliberate choice, and the mouse is over the
               // strip rather than the grid. It holds until the pointer moves
-              // off whichever tile it happens to be resting on.
-              gridFocus.noteDeliberateActivation();
-              onActivate(s.id);
+              // off whichever tile it happens to be resting on, and the
+              // keyboard goes to the tile it names: in Tabs the pane that
+              // becomes visible takes it anyway, so this is the grid catching
+              // up with what clicking a tab has always done.
+              gridFocus.activateDeliberately(s.id);
             }}
             onKeyDown={(e) => {
               // The tab itself, not the rename box or one of the little buttons
@@ -1397,8 +1403,7 @@ export function TerminalsPage({
               if (e.target !== e.currentTarget) return;
               if (e.key !== "Enter" && e.key !== " ") return;
               e.preventDefault();
-              gridFocus.noteDeliberateActivation();
-              onActivate(s.id);
+              gridFocus.activateDeliberately(s.id);
             }}
             role="tab"
             // One Tab stop for the whole strip, walked with the arrow keys from

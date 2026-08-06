@@ -54,15 +54,28 @@ import { isWindowFocused } from "@/lib/windowFocus";
 const SETTLE_MS = 60;
 
 /**
- * Something is open that owns the keyboard until it is dismissed.
+ * A dialog is up, and owns the keyboard until it is dismissed.
  *
  * A modal Radix layer makes the body inert, so the pointer cannot reach a tile
- * at all while one is up and none of this runs. The check is here for the
- * settle that was already armed when it opened, which fires from a timer with
- * no such protection.
+ * at all while one is up and none of this runs. The check is here for the two
+ * things that still can: a settle that was already armed when it opened and
+ * fires from a timer with no such protection, and a window-level shortcut,
+ * which goes on working because it listens on `window` rather than inside the
+ * tree that was made inert.
  */
-const MODAL_SELECTOR =
-  "[data-slot='dialog-overlay'], [role='alertdialog'], [role='menu'], [role='listbox']";
+const MODAL_SELECTOR = "[data-slot='dialog-overlay'], [role='alertdialog']";
+
+/**
+ * A menu or a select is up. That is a different problem from a dialog rather
+ * than a smaller one: it is on its way out, and while it is still there its
+ * focus scope pulls any focus set outside it straight back in, then puts the
+ * keyboard on the trigger button as it goes. A hand-over aimed at a terminal
+ * has to wait for that rather than be abandoned.
+ */
+const MENU_SELECTOR = "[role='menu'], [role='listbox']";
+
+/** Either of them: something that is not the grid is holding the keyboard. */
+const LAYER_SELECTOR = `${MODAL_SELECTOR}, ${MENU_SELECTOR}`;
 
 /** What the caller needs to drive, and to suppress, when the pointer activates
  * a tile. */
@@ -94,9 +107,13 @@ export type GridFocus = {
    * `activeId` needs no timing at all.
    */
   pointerActivated: React.RefObject<string | null>;
-  /** Call whenever `activeId` is set by anything that is *not* the pointer, so
-   * a resting cursor cannot immediately undo it. */
-  noteDeliberateActivation: () => void;
+  /**
+   * Activate a session from something that is *not* the pointer: Alt+arrow, the
+   * Sessions menu, a tab. Use it in place of the page's own `onActivate` at
+   * every one of those, because there are two more things that have to happen
+   * with it and they are the same two every time.
+   */
+  activateDeliberately: (id: string) => void;
 };
 
 export function useGridFocus({
@@ -114,8 +131,10 @@ export function useGridFocus({
    * purpose and must not select any of them. */
   resizing: boolean;
   onActivate: (id: string) => void;
-  /** Moves real DOM keyboard focus into that pane's terminal. */
-  focusTerminal: (id: string) => void;
+  /** Moves real DOM keyboard focus into that pane's terminal, and says whether
+   * it landed: a pane can be on screen, or hidden from the grid and unable to
+   * hold focus at all, and asking is not the same as arriving. */
+  focusTerminal: (id: string) => boolean;
   /** Ctrl+Shift+T has deliberately parked the keyboard in the chrome strip. */
   chromeKeyboard: boolean;
   /** Drop that, because the mouse has just used a tile outright. Merely moving
@@ -162,10 +181,65 @@ export function useGridFocus({
   // nothing; moving to another tile and stopping there resumes normal
   // behaviour, as does clicking, which is the pointer saying it outright.
   const suppressed = useRef(false);
-  const noteDeliberateActivation = useCallback(() => {
-    suppressed.current = true;
-    pointerActivated.current = null;
+
+  /**
+   * Hand the keyboard to a pane's terminal.
+   *
+   * Grid mode only, because it is the one layout where nothing else does it. In
+   * every other layout exactly one pane is on screen and a pane takes the
+   * keyboard when it becomes the visible one, which is what makes Alt+Left in
+   * Tabs land where it looks like it landed. In a grid every pane is visible at
+   * once, so `activeId` moving is the whole of the event: the ring went to the
+   * session that was chosen and the keys carried on arriving at the one before
+   * it, on another host, with nothing on screen saying so.
+   *
+   * It gives way to anywhere the keyboard is on purpose: a dialog, the chrome
+   * strip after Ctrl+Shift+T, or a box being typed into, which is Find and a
+   * tab rename and is the same rule the settle keeps.
+   */
+  const handKeyboardTo = useCallback((id: string) => {
+    if (!gridModeRef.current) return;
+    if (chromeKeyboardRef.current) return;
+    const before = document.activeElement as HTMLElement | null;
+    if (before && isTextEntry(before)) return;
+    if (document.querySelector(MODAL_SELECTOR)) return;
+    if (focusTerminalRef.current(id)) return;
+    // It would not take it. A tile hidden from the grid is `display:none`, and
+    // that cannot hold focus at all, so the line above did nothing and the
+    // keyboard is still sitting in whichever terminal had it: a different host
+    // from the one now ringed and named in the strip. There is nothing to hand
+    // it to, so take it off the wrong one instead. Typing then goes nowhere,
+    // which is the honest answer to choosing a session with no tile, and every
+    // window-level shortcut still works.
+    if (before?.closest(".xterm")) before.blur();
   }, []);
+
+  /**
+   * A session has been chosen by something that is not the pointer.
+   *
+   * Both halves of that, together: hold the pointer off, and take the keyboard
+   * with you. They were two calls at four call sites, and the second was
+   * missing from all four, which is how Alt+Left came to move the ring in a
+   * grid while the keys went on landing where they had been.
+   */
+  const activateDeliberately = useCallback(
+    (id: string) => {
+      suppressed.current = true;
+      pointerActivated.current = null;
+      onActivateRef.current(id);
+      // A menu is still open, because this was one of its items and it closes
+      // on the way out of this handler. Taking the keyboard now would be undone
+      // twice over, so wait a frame and take it once the menu has gone. The
+      // same wait, for the same reason, that a pane makes before focusing
+      // itself on becoming visible.
+      if (document.querySelector(MENU_SELECTOR)) {
+        requestAnimationFrame(() => handKeyboardTo(id));
+        return;
+      }
+      handKeyboardTo(id);
+    },
+    [handKeyboardTo],
+  );
 
   const timer = useRef<number | undefined>(undefined);
   const cancel = useCallback(() => {
@@ -293,7 +367,7 @@ export function useGridFocus({
         // word to a host.
         const active = document.activeElement as HTMLElement | null;
         if (active && isTextEntry(active)) return;
-        if (document.querySelector(MODAL_SELECTOR)) return;
+        if (document.querySelector(LAYER_SELECTOR)) return;
 
         if (sessionId === activeIdRef.current) {
           // Already the tile everything is pointed at, so there is no ring to
@@ -381,7 +455,7 @@ export function useGridFocus({
     [gridMode, resizing, cancel, settle, claim],
   );
 
-  return { tileProps, pointerActivated, noteDeliberateActivation };
+  return { tileProps, pointerActivated, activateDeliberately };
 }
 
 /** Whether this element takes typed text. xterm's own hidden textarea is
