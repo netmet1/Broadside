@@ -959,7 +959,13 @@ export const SECTIONS: HelpSection[] = [
               tile disappears and the remaining tiles fill the space, while the
               shell keeps running untouched; the button turns amber so you can
               see which tabs are hidden, and clicking it again puts the tile
-              back. Hidden tabs still work normally in <Nav>Tabs</Nav>.
+              back. Hidden tabs still work normally in <Nav>Tabs</Nav>. A hidden
+              session can still be selected in Grid, from <Nav>Sessions</Nav> or
+              with <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav>, and there is then
+              no tile to type into: rather than leave your keystrokes going to
+              the terminal you were last in, the keyboard is set down and typing
+              goes nowhere until you put the tile back or switch to{" "}
+              <Nav>Tabs</Nav>.
             </li>
             <li>
               To pin the grid, open <Nav>Settings</Nav> and the <Nav>Grid</Nav>{" "}
