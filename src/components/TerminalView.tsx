@@ -73,6 +73,36 @@ function readTerminalTheme() {
   };
 }
 
+/** How Find paints its matches, from the same theme-aware CSS variables the
+ * terminal colours come from.
+ *
+ * These are opaque on purpose. xterm's DOM renderer applies a decoration by
+ * overriding the cell's background colour and drops the alpha channel doing it,
+ * so a translucent value would be silently flattened against black.
+ *
+ * The active match is mostly drawn by the terminal's own selection, which
+ * findNext sets and which paints over a decoration. Its decoration still earns
+ * its place: it is the only handle the addon has on which of the matches is the
+ * active one, so without it there is a count but no `3 of 17`.
+ *
+ * The overview-ruler colours are required by the addon's type but land nowhere:
+ * the ruler is only built when the `overviewRuler` terminal option carries a
+ * width, and nothing here sets one. */
+function readSearchDecorations() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) =>
+    cs.getPropertyValue(name).trim() || fallback;
+  const match = v("--terminal-search-match", "#5c4a00");
+  const activeMatch = v("--terminal-search-active", "#9a7d00");
+  return {
+    matchBackground: match,
+    matchOverviewRuler: match,
+    activeMatchBackground: activeMatch,
+    activeMatchBorder: v("--terminal-search-active-border", "#ffcc33"),
+    activeMatchColorOverviewRuler: activeMatch,
+  };
+}
+
 type Phase =
   | { kind: "connecting" }
   | { kind: "open" }
@@ -109,7 +139,9 @@ type Props = {
   onSearchRequest: () => void;
   /** Alt+Left/Right pressed while the terminal has focus, switch tabs. */
   onTabNav: (dir: "prev" | "next") => void;
-  /** Live match feedback from the search addon. */
+  /** Live match feedback from the search addon. A `resultCount` of -1 is not a
+   * count at all: it says the search threw and there is no answer, which the
+   * Find bar must show as a failure rather than as an empty result. */
   onSearchResults: (resultIndex: number, resultCount: number) => void;
   /** Fires whenever this session's live-connection state flips (used for
    * the Hosts page connected indicators). */
@@ -215,6 +247,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       fontSize: prefsRef.current.terminalFontSize,
       cursorBlink: true,
       theme: readTerminalTheme(),
+      // Find needs it. `registerDecoration` is still behind xterm's proposed-API
+      // gate, and the search addon calls it for every match it highlights; with
+      // the gate shut the call throws, which is why the Find bar could never say
+      // how many matches there were (see findNext below).
+      allowProposedApi: true,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -474,21 +511,31 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // the throw white-screened the app). Contain it here so a bad search
       // is a no-op, and log the stack for diagnosis rather than crashing.
       try {
-        // No `decorations` here on purpose: passing them makes the addon
-        // register overview-ruler match decorations, which throw unless the
-        // terminal has a non-zero overview-ruler width, that throw (swallowed
-        // by this catch since PR #20) is why every search said "No matches"
-        // (T2). Without decorations, findNext still scrolls to + selects the
-        // active match and reports the count via onDidChangeResults.
+        // `decorations` is what makes the addon count. It sweeps the whole
+        // buffer for every match only when it has somewhere to paint them, and
+        // onDidChangeResults returns early unless they are on, so a Find bar
+        // without them can say nothing beyond "something was found" (T2, and
+        // A4 on smoke 46-2: no `3 of 17`, so Up and Down were walking blind).
+        //
+        // They were off because they threw. Not the overview ruler, as the note
+        // here used to say: the addon registers a decoration per match, and
+        // `registerDecoration` is proposed API, which throws unless the terminal
+        // was constructed with `allowProposedApi` (it now is). The catch below
+        // swallowed it, so every search reported no matches at all.
         searchRef.current?.findNext(pattern, {
           regex: options.regex,
           caseSensitive: options.caseSensitive,
           wholeWord: options.wholeWord,
           incremental,
+          decorations: readSearchDecorations(),
         });
       } catch (err) {
         console.error("[TerminalView] search findNext failed", err);
-        onSearchResultsRef.current(-1, 0);
+        // A count of -1 means "the search itself failed", not "nothing matched".
+        // Reporting zero here is what hid the proposed-API throw above for as
+        // long as it was hidden: a broken Find is indistinguishable from an
+        // empty one, and every search politely said No matches.
+        onSearchResultsRef.current(-1, -1);
       }
     },
     findPrevious: (pattern, options) => {
@@ -497,10 +544,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           regex: options.regex,
           caseSensitive: options.caseSensitive,
           wholeWord: options.wholeWord,
+          decorations: readSearchDecorations(),
         });
       } catch (err) {
         console.error("[TerminalView] search findPrevious failed", err);
-        onSearchResultsRef.current(-1, 0);
+        onSearchResultsRef.current(-1, -1);
       }
     },
     clearSearch: () => {

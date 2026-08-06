@@ -89,6 +89,11 @@
     --terminal-fg: #1f2328;
     --terminal-cursor: #1f2328;
     --terminal-selection: #3b82f640;
+    /* Find match highlighting inside a terminal. Opaque, because xterm paints a
+       match by overriding the cell background and throws the alpha away. */
+    --terminal-search-match: #ffe9a3;
+    --terminal-search-active: #ffc046;
+    --terminal-search-active-border: #b45309;
     /* Scrollbar thumb (theme-aware). */
     --scrollbar-thumb: oklch(0 0 0 / 22%);
     --scrollbar-thumb-hover: oklch(0 0 0 / 35%);
@@ -133,6 +138,9 @@
     --terminal-fg: #e5e5e5;
     --terminal-cursor: #e5e5e5;
     --terminal-selection: #3b82f680;
+    --terminal-search-match: #4a3a00;
+    --terminal-search-active: #7a5f00;
+    --terminal-search-active-border: #fbbf24;
     --scrollbar-thumb: oklch(1 0 0 / 18%);
     --scrollbar-thumb-hover: oklch(1 0 0 / 30%);
 }

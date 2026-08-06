@@ -880,6 +880,18 @@ export function TerminalsPage({
     [activeId],
   );
 
+  // The pane Find last painted matches into. Now that the search highlights
+  // them, a pane has to be told when the bar has moved on: otherwise the tab
+  // you searched keeps its matches lit, and its addon keeps re-sweeping the
+  // buffer for them every time the shell there goes quiet.
+  const searchedPane = useRef<string | null>(null);
+  const clearLastSearched = useCallback(() => {
+    const id = searchedPane.current;
+    if (id === null) return;
+    searchedPane.current = null;
+    searchHandles.current.get(id)?.clearSearch();
+  }, []);
+
   // Ctrl+F while the Terminals page is visible. Presses with the terminal
   // focused arrive via onSearchRequest instead (xterm swallows them).
   useEffect(() => {
@@ -898,25 +910,31 @@ export function TerminalsPage({
     setSearchOpen(false);
     setSearchQuery(null);
     setSearchResults(null);
+    clearLastSearched();
     activeHandle()?.clearSearch();
     activeHandle()?.focusTerminal();
-  }, [activeHandle]);
+  }, [activeHandle, clearLastSearched]);
 
-  // Switching tabs while searching: re-run the query against the new pane.
+  // Switching tabs while searching: re-run the query against the new pane, and
+  // take the highlights off the one being left.
   useEffect(() => {
     if (!searchOpen || !searchQuery) return;
+    clearLastSearched();
     setSearchResults(null);
-    if (searchQuery.pattern) {
+    if (searchQuery.pattern && activeId !== null) {
       activeHandle()?.findNext(searchQuery.pattern, searchQuery.options, true);
+      searchedPane.current = activeId;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
   const handleQueryChange = (pattern: string, options: SearchOptions) => {
     setSearchQuery({ pattern, options });
-    if (pattern) {
+    if (pattern && activeId !== null) {
       activeHandle()?.findNext(pattern, options, true);
+      searchedPane.current = activeId;
     } else {
+      clearLastSearched();
       activeHandle()?.clearSearch();
       setSearchResults(null);
     }
@@ -931,12 +949,19 @@ export function TerminalsPage({
     }
   };
 
+  const searchFailed = searchResults !== null && searchResults.count < 0;
   const searchStatus = (() => {
     if (!searchQuery?.pattern || !searchResults) return "";
+    // -1 is TerminalView's sentinel for "the search threw", which is a different
+    // thing from finding nothing and has to read as one.
+    if (searchFailed) return "Search failed";
     if (searchResults.count === 0) return "No matches";
-    // resultIndex is -1 when the count exceeds the addon's highlight limit.
+    // "3 of 17", so Up and Down have somewhere to count from. The index is -1
+    // when the active match is not one of the ones the addon is tracking, which
+    // is what happens past its 1000-match highlight limit; there is no honest
+    // position to report then, only the total.
     return searchResults.index >= 0
-      ? `${searchResults.index + 1}/${searchResults.count} matches`
+      ? `${searchResults.index + 1} of ${searchResults.count}`
       : `${searchResults.count} matches`;
   })();
 
@@ -1759,6 +1784,7 @@ export function TerminalsPage({
           mode="find"
           onModeChange={() => {}}
           status={searchStatus}
+          statusTone={searchFailed ? "error" : "normal"}
           onQueryChange={handleQueryChange}
           onNavigate={handleNavigate}
           onClose={closeSearch}
