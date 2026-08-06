@@ -198,10 +198,13 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // it is drawn. Armed by the reset effect below, disarmed by the first hit.
   // Zero means not armed.
   const swallowEchoUntilRef = useRef(0);
-  // A font change landed while this pane was hidden (display:none has no
-  // measurable box, so the fit had to be skipped). Settled by the visible
-  // effect below with a second-frame fit once the pane is back on screen.
-  const needsRefitRef = useRef(false);
+  // Whether this pane has pixels on screen, per the IntersectionObserver in
+  // the setup effect. It mirrors the private flag xterm keeps for pausing its
+  // renderer, because both observers watch the same box. `fit()` must never
+  // run while this is false: see the observer for what a fit against a paused
+  // renderer does to the viewport. Starts true because the renderer also
+  // starts unpaused, and only ever goes false once an observer says so.
+  const intersectingRef = useRef(true);
   const onSearchRequestRef = useRef(onSearchRequest);
   onSearchRequestRef.current = onSearchRequest;
   const onTabNavRef = useRef(onTabNav);
@@ -343,28 +346,54 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // re-pin it after, so the prompt stays where the resize leaves the cursor;
     // a viewport deliberately scrolled up into history is left alone.
     let refitRaf = 0;
-    let repinRaf = 0;
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(refitRaf);
-      cancelAnimationFrame(repinRaf);
       refitRaf = requestAnimationFrame(() => {
         if (!containerRef.current?.offsetParent) return;
+        // A pane with no pixels on screen waits: the IntersectionObserver
+        // below refits it the moment it has some. Fitting it now is the bug.
+        if (!intersectingRef.current) return;
         const buf = term.buffer.active;
         const pinned = buf.viewportY >= buf.baseY;
         fit.fit();
         if (pinned) term.scrollToBottom();
-        // And again next frame. A tile scrolled out of the grid's own scroll
-        // area is still display:block, so this observer fires for it, but xterm
-        // has paused its renderer and the fit above lands against the pane's
-        // previous height, which drags the buffer to the top of its scrollback.
-        // The long version is on the visible effect below, which repairs the
-        // same thing for a pane coming back from display:none.
-        repinRaf = requestAnimationFrame(() => {
-          if (pinned) term.scrollToBottom();
-        });
       });
     });
     if (containerRef.current) observer.observe(containerRef.current);
+
+    // The only gate through which a hidden pane comes back: refit it here, in
+    // our own IntersectionObserver, and nowhere earlier.
+    //
+    // xterm pauses its renderer while the pane is off screen, and a paused
+    // renderer defers the renderer half of a resize while its dimensions go on
+    // reporting the pane's OLD box. Any `fit()` in that window plants a mine:
+    // xterm's viewport clamps scroll offsets against the stale height (a
+    // full-window tab, where a grid tile is now), the clamp is reported back
+    // as though the operator had dragged the scrollbar, and the buffer is
+    // hauled to the top of its scrollback. Worse, when the stale height
+    // exceeds the buffer's own pixel height the scrollbar's range collapses to
+    // nothing and the wheel goes dead, and every public scroll call routes
+    // through that same collapsed scrollbar, so nothing can repair it from
+    // out here (smoke 46-3: TG1 at the top of its history, wheel inert, until
+    // an Enter forced output and output forced a fresh measure). The 46-3
+    // build tried to out-wait the pause by counting frames; the pause ends in
+    // xterm's own IntersectionObserver, which frame counting cannot order
+    // against. This observer can: xterm registers its observer inside
+    // `term.open()`, observers fire in creation order, and ours is created
+    // after, so by the time this callback runs xterm has already woken the
+    // renderer and re-measured the char size (which also covers a font change
+    // applied while the pane was hidden). A fit here is a fit against live
+    // dimensions, and every scroll sync that follows agrees with it.
+    const io = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      intersectingRef.current = entry.isIntersecting;
+      if (!entry.isIntersecting) return;
+      const buf = term.buffer.active;
+      const pinned = buf.viewportY >= buf.baseY;
+      fit.fit();
+      if (pinned) term.scrollToBottom();
+    });
+    if (containerRef.current) io.observe(containerRef.current);
 
     // Right-click to paste (Windows Terminal / PuTTY convention): read the
     // clipboard and send it to the shell as if typed. Suppresses the native
@@ -452,8 +481,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       resultsSub.dispose();
       resizeSub.dispose();
       cancelAnimationFrame(refitRaf);
-      cancelAnimationFrame(repinRaf);
       observer.disconnect();
+      io.disconnect();
       contextMenuEl?.removeEventListener("contextmenu", onContextMenu);
       contextMenuEl?.removeEventListener("mouseup", onMouseUp);
       unlistenData.then((fn) => fn());
@@ -712,14 +741,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     ) {
       term.options.fontFamily = prefs.terminalFontFamily;
       term.options.fontSize = prefs.terminalFontSize;
-      if (containerRef.current?.offsetParent) {
+      // Only a pane with pixels on screen refits now. A hidden one is left
+      // over- or under-sized until it returns, when the IntersectionObserver
+      // in the setup effect refits it, against the char size xterm re-measures
+      // on waking (a hidden pane measures the new font as nothing).
+      if (intersectingRef.current && containerRef.current?.offsetParent) {
         fitRef.current?.fit();
-      } else {
-        // Hidden pane (another tab/page is active): xterm still re-measures the
-        // font and restyles .xterm-screen to OLD rows x NEW cell height right
-        // away, leaving the pane over- or under-sized until a real fit can run.
-        // Mark it so the visible effect refits when the pane returns.
-        needsRefitRef.current = true;
       }
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
@@ -738,62 +765,19 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     return () => cancelAnimationFrame(raf);
   }, [resolvedTheme]);
 
-  // Refit + focus when this pane becomes visible. Same bottom-pin rule as the
-  // ResizeObserver refit: a pane re-shown after being hidden from the grid was
-  // resized while display:none (where fit is a no-op), so snap the viewport
-  // back to the prompt unless it was scrolled up into history.
+  // Hand the keyboard to this pane when it becomes visible. The refit that
+  // used to happen here (and the frame-counting that tried to re-pin the
+  // viewport after it) moved to the IntersectionObserver in the setup effect,
+  // which is the only place a fit is safe: this effect runs before xterm's
+  // renderer has woken up, and a fit that early is what dragged returning grid
+  // tiles to the top of their scrollback and killed their scroll wheel
+  // (smoke 46-3, and the banner-instead-of-prompt bug before it).
   useEffect(() => {
     if (!visible) return;
-    let raf2 = 0;
     const raf = requestAnimationFrame(() => {
-      const term = termRef.current;
-      const buf = term?.buffer.active;
-      const pinned = buf ? buf.viewportY >= buf.baseY : false;
-      fitRef.current?.fit();
-      if (pinned) term?.scrollToBottom();
-      if (phaseRef.current.kind === "open") term?.focus();
-      // A font change applied while this pane was hidden needs one more fit a
-      // frame later: xterm pauses its renderer for off-screen terminals and
-      // only unpauses via its own IntersectionObserver, which fires AFTER this
-      // frame's rAF callbacks, so the fit above can run against a still-paused
-      // renderer whose deferred resize never lands (the "whole panel scrolls /
-      // blank terminal after a Settings font change" bug). By the second frame
-      // the renderer is live, so this fit applies synchronously and sticks.
-      raf2 = requestAnimationFrame(() => {
-        if (needsRefitRef.current) {
-          needsRefitRef.current = false;
-          fitRef.current?.fit();
-        }
-        // The pin is asserted again here whether or not there was a refit to
-        // do, and this is the fix for "switch to Grid and half the tiles are
-        // showing their login banner instead of the prompt".
-        //
-        // The same renderer pause is behind it. A `fit` in the frame the pane
-        // comes back resizes the buffer, but the renderer is still asleep and
-        // defers its half, so for that one frame it goes on reporting the
-        // height of the pane's OLD box: a full-window tab, where a grid tile is
-        // now. xterm's viewport clamps scroll offsets against that height, and
-        // against a height that large there is nothing to scroll, so the offset
-        // clamps to zero. The clamp is then reported back through the scrollbar
-        // as though the operator had dragged it, and the buffer follows it to
-        // the top of the scrollback. That is also why output stopped following
-        // afterwards: a terminal scrolled up is a terminal the operator is
-        // reading, so xterm stops auto-scrolling until it is back at the
-        // bottom.
-        //
-        // By this frame the intersection observer has fired, the renderer is
-        // awake and its deferred resize has been flushed, so the clamp cannot
-        // happen again and one more scrollToBottom sticks. `pinned` is
-        // deliberately the reading from before the first fit: the question is
-        // where the viewport sat when the pane came back, not where the clamp
-        // may since have dragged it.
-        if (pinned) term?.scrollToBottom();
-      });
+      if (phaseRef.current.kind === "open") termRef.current?.focus();
     });
-    return () => {
-      cancelAnimationFrame(raf);
-      cancelAnimationFrame(raf2);
-    };
+    return () => cancelAnimationFrame(raf);
   }, [visible]);
 
   return (

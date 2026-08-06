@@ -36,7 +36,6 @@ export function RunPanel({
   skillName,
   stepIds,
   active,
-  visible,
   allowTransfer,
   uncapped,
   setTakenOver,
@@ -56,9 +55,6 @@ export function RunPanel({
    * skill's steps is this". */
   stepIds: string[];
   active: boolean;
-  /** Whether this panel is the thing on screen (it is kept mounted while
-   * hidden, so its terminals need to refit when it returns). */
-  visible: boolean;
   /** The running skill allows handing a host's shell to a terminal tab. */
   allowTransfer: boolean;
   /** The running skill has no repeat cap: if it loops, nothing here ends it. */
@@ -165,7 +161,6 @@ export function RunPanel({
             host={h}
             stepIds={stepIds}
             fill={single}
-            visible={visible}
             allowTransfer={allowTransfer}
             logOpen={logOpen}
             onLogOpenChange={onLogOpenChange}
@@ -185,7 +180,6 @@ function HostPane({
   host,
   stepIds,
   fill,
-  visible,
   allowTransfer,
   logOpen: logOpenDefault,
   onLogOpenChange,
@@ -201,8 +195,6 @@ function HostPane({
   /** This pane is the only one on screen, so it fills the panel and its own
    * focus control is spent. */
   fill: boolean;
-  /** Whether the run panel is on screen (for the terminal's refit). */
-  visible: boolean;
   /** The running skill allows handing this shell to a terminal tab. */
   allowTransfer: boolean;
   /** Whether this pane opens with its log showing. Panes are independent once
@@ -463,7 +455,6 @@ function HostPane({
         <SkillTerminalPane
           sessionId={pane.sessionId}
           interactive={host.takenOver && status === "paused"}
-          visible={visible}
           resetNonce={resetNonce}
           onInput={(data) => {
             skillSendInput(runId, pane.hostId, data).catch(() => {

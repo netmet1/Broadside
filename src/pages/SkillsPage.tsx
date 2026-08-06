@@ -473,7 +473,6 @@ export function SkillsPage({
               skillName={runningSkill.name}
               stepIds={runStepIds}
               active={run.active}
-              visible={view.kind === "run"}
               allowTransfer={runAllowsTransfer}
               uncapped={runUncapped}
               setTakenOver={run.setTakenOver}
