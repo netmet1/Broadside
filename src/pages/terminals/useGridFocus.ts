@@ -77,14 +77,15 @@ export type GridFocus = {
   /**
    * The session the **pointer** last made active, or null.
    *
-   * The tab strip sits out an activation that came from the pointer: sweeping
-   * the mouse across the grid would have the strip sliding about underneath it,
-   * and the tab of the tile you are looking at is not information you were
-   * asking for. The **grid** used to sit it out too, on the reasoning that a
-   * tile under the cursor is on screen by definition. It is not: only the part
-   * under the cursor is, and a tile whose header is cut off above the fold is
-   * exactly the one you want brought down. It scrolls for the pointer now, by
-   * the minimum, which cannot move the tile out from under the mouse.
+   * The two scroll effects on the page read it, and want opposite things from
+   * it. The **grid** sits out an activation that came from the pointer: the
+   * tile is under the cursor, so it is on screen, and sliding a wall of live
+   * terminals about because the mouse crossed one of them is not worth what it
+   * buys. The **tab strip** does follow the pointer, because it is the one
+   * place that names the session you are about to type into and a tab off the
+   * end of the strip names nothing; it reads this only to scroll by the least
+   * that makes the tab whole, rather than centring it as a deliberate pick
+   * does, so a sweep across the grid does not send it travelling.
    *
    * An id rather than a "this one was the pointer" flag, because a flag has to
    * be cleared on a schedule and the settle now fires from a timer rather than
@@ -104,7 +105,6 @@ export function useGridFocus({
   resizing,
   onActivate,
   focusTerminal,
-  revealTile,
   chromeKeyboard,
   releaseChrome,
 }: {
@@ -116,11 +116,6 @@ export function useGridFocus({
   onActivate: (id: string) => void;
   /** Moves real DOM keyboard focus into that pane's terminal. */
   focusTerminal: (id: string) => void;
-  /** Scrolls the grid the minimum needed to show all of that tile, and does
-   * nothing when it is already whole. Called only where the pointer picks a
-   * tile that is **already** active: everywhere else `activeId` changes, and
-   * the page's own effect on that does the same job. */
-  revealTile: (id: string) => void;
   /** Ctrl+Shift+T has deliberately parked the keyboard in the chrome strip. */
   chromeKeyboard: boolean;
   /** Drop that, because the mouse has just used a tile outright. Merely moving
@@ -149,8 +144,6 @@ export function useGridFocus({
   onActivateRef.current = onActivate;
   const focusTerminalRef = useRef(focusTerminal);
   focusTerminalRef.current = focusTerminal;
-  const revealTileRef = useRef(revealTile);
-  revealTileRef.current = revealTile;
   const releaseChromeRef = useRef(releaseChrome);
   releaseChromeRef.current = releaseChrome;
 
@@ -271,10 +264,6 @@ export function useGridFocus({
       releaseChromeRef.current();
       if (sessionId === activeIdRef.current) {
         focusTerminalRef.current(sessionId);
-        // Nothing here changed `activeId`, so the page's scroll effect will not
-        // run and a tile that is half off the top of the grid would stay there
-        // however often it is pressed.
-        revealTileRef.current(sessionId);
         return;
       }
       take(sessionId, false);
@@ -314,9 +303,6 @@ export function useGridFocus({
           // only way home was to click, which is what made a strip button feel
           // like a trap.
           focusTerminalRef.current(sessionId);
-          // And the same as in `claim`: no `activeId` change means no scroll
-          // effect, so bring a clipped tile down from behind the fold here.
-          revealTileRef.current(sessionId);
           return;
         }
         take(sessionId, true);

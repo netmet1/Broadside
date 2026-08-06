@@ -772,8 +772,7 @@ export function TerminalsPage({
 
   /**
    * Scroll the grid the minimum needed to show all of one tile, and leave it
-   * alone when the tile is already whole. Reads nothing but refs, so it can be
-   * called from anywhere that picks a tile without going round a render.
+   * alone when the tile is already whole.
    */
   const revealTile = useCallback((id: string) => {
     const container = gridScrollRef.current;
@@ -803,41 +802,60 @@ export function TerminalsPage({
       (id: string) => searchHandles.current.get(id)?.focusTerminal(),
       [],
     ),
-    revealTile,
     chromeKeyboard,
     releaseChrome: useCallback(() => setChromeKeyboard(false), []),
   });
 
-  // When the active session changes, center its tab in the strip, but only if
-  // it isn't already fully visible, so activating an on-screen tab never jumps.
+  // When the active session changes, bring its tab into the strip, and leave
+  // the strip alone when the tab is already whole.
+  //
+  // The pointer counts. The strip used to sit out an activation that came from
+  // the mouse, on the grounds that it would slide about as the mouse swept the
+  // grid; but the strip is the one place that names the session you are about
+  // to type into, and with more tabs than fit, hovering a tile could leave its
+  // name off the end of the strip entirely. It corrects itself now.
+  //
+  // How far it moves is what stops the sliding being a nuisance. A deliberate
+  // pick centres its tab, so there is context either side, which is what
+  // clicking a tab has always done. The pointer gets the least scroll that
+  // makes the tab whole: a sweep across a wall of tiles is a run of
+  // activations, and centring each one in turn would have the strip travelling
+  // its own length for every tile the mouse passes over.
   useEffect(() => {
     if (activeId === null) return;
-    // Right for a click, wrong for a hover: the strip would slide about as the
-    // mouse sweeps across the grid.
-    if (gridFocus.pointerActivated.current === activeId) return;
     const container = tabScrollRef.current;
     const target = tabElRefs.current.get(activeId);
     if (!container || !target) return;
     const c = container.getBoundingClientRect();
     const t = target.getBoundingClientRect();
     if (t.left >= c.left && t.right <= c.right) return; // already visible
-    const delta = t.left + t.width / 2 - (c.left + c.width / 2);
+    let delta: number;
+    if (gridFocus.pointerActivated.current === activeId) {
+      // Nearest edge, and the left one for a tab too wide to fit at all, which
+      // otherwise alternates between its two ends on every hover.
+      delta =
+        t.width > c.width || t.left < c.left ? t.left - c.left : t.right - c.right;
+    } else {
+      delta = t.left + t.width / 2 - (c.left + c.width / 2);
+    }
+    if (delta === 0) return;
     container.scrollTo({ left: container.scrollLeft + delta, behavior: "smooth" });
   }, [activeId, sessions, gridFocus.pointerActivated]);
 
   // In Grid, when the active session changes, scroll its tile just enough to be
   // fully visible in the pane area, but leave it alone if it already is.
   //
-  // This does *not* sit out an activation that came from the pointer, though it
-  // used to. The argument for sitting it out was that a tile under the cursor
-  // is on screen already; only the part under the cursor is, and a tile whose
-  // header is cut off above the fold is the one case where the pointer wants
-  // the grid to move. It can only move by the amount that was hidden, and the
-  // tile moves with it, so the cursor cannot end up over a different one.
+  // Unlike the strip above, this still sits out an activation that came from
+  // the pointer. The strip is an index, small and off to one side, and moving
+  // it to name the tile you are pointing at costs nothing; the grid is the work
+  // itself, and sliding a wall of live terminals about because the mouse
+  // crossed one of them is a different proposition. The tile is under the
+  // cursor either way, so nothing is hidden that you cannot see by looking.
   useEffect(() => {
     if (!gridMode || activeId === null) return;
+    if (gridFocus.pointerActivated.current === activeId) return;
     revealTile(activeId);
-  }, [activeId, sessions, gridMode, revealTile]);
+  }, [activeId, sessions, gridMode, revealTile, gridFocus.pointerActivated]);
 
   const [gates, setGates] = useState<Map<string, ConnectionGate>>(new Map());
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
