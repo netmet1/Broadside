@@ -343,14 +343,25 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // re-pin it after, so the prompt stays where the resize leaves the cursor;
     // a viewport deliberately scrolled up into history is left alone.
     let refitRaf = 0;
+    let repinRaf = 0;
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(refitRaf);
+      cancelAnimationFrame(repinRaf);
       refitRaf = requestAnimationFrame(() => {
         if (!containerRef.current?.offsetParent) return;
         const buf = term.buffer.active;
         const pinned = buf.viewportY >= buf.baseY;
         fit.fit();
         if (pinned) term.scrollToBottom();
+        // And again next frame. A tile scrolled out of the grid's own scroll
+        // area is still display:block, so this observer fires for it, but xterm
+        // has paused its renderer and the fit above lands against the pane's
+        // previous height, which drags the buffer to the top of its scrollback.
+        // The long version is on the visible effect below, which repairs the
+        // same thing for a pane coming back from display:none.
+        repinRaf = requestAnimationFrame(() => {
+          if (pinned) term.scrollToBottom();
+        });
       });
     });
     if (containerRef.current) observer.observe(containerRef.current);
@@ -441,6 +452,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       resultsSub.dispose();
       resizeSub.dispose();
       cancelAnimationFrame(refitRaf);
+      cancelAnimationFrame(repinRaf);
       observer.disconnect();
       contextMenuEl?.removeEventListener("contextmenu", onContextMenu);
       contextMenuEl?.removeEventListener("mouseup", onMouseUp);
@@ -748,12 +760,33 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // blank terminal after a Settings font change" bug). By the second frame
       // the renderer is live, so this fit applies synchronously and sticks.
       raf2 = requestAnimationFrame(() => {
-        if (!needsRefitRef.current) return;
-        needsRefitRef.current = false;
-        fitRef.current?.fit();
-        // `pinned` is deliberately the reading from before the first fit: the
-        // question is where the viewport sat when the pane came back, and the
-        // fit above may already have moved it.
+        if (needsRefitRef.current) {
+          needsRefitRef.current = false;
+          fitRef.current?.fit();
+        }
+        // The pin is asserted again here whether or not there was a refit to
+        // do, and this is the fix for "switch to Grid and half the tiles are
+        // showing their login banner instead of the prompt".
+        //
+        // The same renderer pause is behind it. A `fit` in the frame the pane
+        // comes back resizes the buffer, but the renderer is still asleep and
+        // defers its half, so for that one frame it goes on reporting the
+        // height of the pane's OLD box: a full-window tab, where a grid tile is
+        // now. xterm's viewport clamps scroll offsets against that height, and
+        // against a height that large there is nothing to scroll, so the offset
+        // clamps to zero. The clamp is then reported back through the scrollbar
+        // as though the operator had dragged it, and the buffer follows it to
+        // the top of the scrollback. That is also why output stopped following
+        // afterwards: a terminal scrolled up is a terminal the operator is
+        // reading, so xterm stops auto-scrolling until it is back at the
+        // bottom.
+        //
+        // By this frame the intersection observer has fired, the renderer is
+        // awake and its deferred resize has been flushed, so the clamp cannot
+        // happen again and one more scrollToBottom sticks. `pinned` is
+        // deliberately the reading from before the first fit: the question is
+        // where the viewport sat when the pane came back, not where the clamp
+        // may since have dragged it.
         if (pinned) term?.scrollToBottom();
       });
     });
