@@ -48,6 +48,17 @@
  * that only exists at exactly two tiles; the entry itself is meaningless
  * elsewhere, so it goes.
  *
+ * The Sessions menu's two bulk repairs, **Retry all** and **Unhide all**, are
+ * the other exception, and they are worth naming because they look at first
+ * like a breach of the rule rather than a limit on it. What greying buys is a
+ * reader learning that an action exists before the day they want it, and that
+ * is worth two permanently dead rows when the action is the only clue to
+ * something non-obvious: Reset grid greyed is how anyone finds out a tile edge
+ * can be dragged at all. Neither of these teaches anything. "Retry all" arrives
+ * already understood the moment a pane goes red, and "Unhide all" the moment
+ * one is hidden, so carrying them through every other moment buys nothing and
+ * costs length in the one menu that is already as long as the session list.
+ *
  * Each of the three says what it is waiting for, in the status bar, while it is
  * greyed, which takes a little work: the browser will not dispatch a mouse
  * event to a disabled button and the menu's own disabled style drops pointer
@@ -62,12 +73,14 @@ import {
   Columns2Icon,
   EyeIcon,
   EyeOffIcon,
+  Grid2x2Icon,
   LayoutGridIcon,
   ListIcon,
   Maximize2Icon,
   Minimize2Icon,
   PanelTopIcon,
   RadioTowerIcon,
+  RefreshCwIcon,
   RotateCcwIcon,
   Rows2Icon,
   SlidersHorizontalIcon,
@@ -124,6 +137,10 @@ export function TerminalRail({
   tabSuffix,
   onActivate,
   onCloseAll,
+  retryableCount,
+  onRetryAll,
+  hiddenCount,
+  onUnhideAll,
 }: {
   tabsCompact: boolean;
   toggleTabsCompact: () => void;
@@ -155,6 +172,12 @@ export function TerminalRail({
   tabSuffix: Map<string, string>;
   onActivate: (id: string) => void;
   onCloseAll: () => void;
+  /** How many panes are sitting on a Try again / Reconnect button. */
+  retryableCount: number;
+  onRetryAll: () => void;
+  /** How many open terminals are currently taken out of the grid. */
+  hiddenCount: number;
+  onUnhideAll: () => void;
 }) {
   const hint = useHint();
   // The flip is only meaningful at exactly two tiles: one fills the area, three
@@ -188,6 +211,19 @@ export function TerminalRail({
       : gridFullscreen
         ? "The grid fills the screen. Click, or press Ctrl+Shift+G, to come back."
         : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a tab at the top centre you hover or click to bring them back.";
+
+  // What the Sessions menu is offering right now. Its two repair entries come
+  // and go with the state of the sessions, so the hint that advertises the menu
+  // has to as well: naming a way out that isn't in the list is worse than not
+  // naming it at all.
+  const sessionsExtras: string[] = [];
+  if (retryableCount > 0) sessionsExtras.push("retry the ones that dropped");
+  if (gridMode && hiddenCount > 0) {
+    sessionsExtras.push("put hidden ones back in the grid");
+  }
+  const sessionsHint = `Jump to an open terminal session, ${sessionsExtras
+    .map((e) => `${e}, `)
+    .join("")}or close them all.`;
 
   // Out of room: the words go and the icons stay. The key is everything other
   // than the pane's width that changes how wide this row wants to be, so a
@@ -483,7 +519,7 @@ export function TerminalRail({
                 size="sm"
                 variant="outline"
                 aria-label="Sessions"
-                {...hint("Jump to an open terminal session, or close them all.")}
+                {...hint(sessionsHint)}
               >
                 {/* The count stays whatever happens: it is the live number of
                     open sessions, not decoration, and it is the reason someone
@@ -522,6 +558,57 @@ export function TerminalRail({
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
+
+              {/* The two bulk repairs, above the bulk destruction. Both are the
+                  way out of a state you can otherwise only leave one tab at a
+                  time, which is the whole reason they are here: twenty panes
+                  that lost their connection is twenty Try again buttons, and a
+                  grid you have emptied hides the very tabs whose eye buttons
+                  would fill it again.
+
+                  These two are the exception to this file's greyed-not-removed
+                  rule, and the exception is narrow: greying teaches an operator
+                  that an action exists before they need it, which is worth two
+                  dead rows for something like Reset grid, where the action is
+                  the only clue that tile edges can be dragged at all. Retry all
+                  and Unhide all teach nothing you don't already know the moment
+                  they appear, so a menu that stays short is worth more. */}
+              {retryableCount > 0 && (
+                <DropdownMenuItem
+                  onSelect={onRetryAll}
+                  {...hint(
+                    retryableCount === 1
+                      ? "Reconnect the one session that dropped or was refused. Sessions still connecting, and any waiting on a host-key answer, are left alone."
+                      : `Reconnect all ${retryableCount} sessions that dropped or were refused, in one go. Sessions still connecting, and any waiting on a host-key answer, are left alone.`,
+                  )}
+                >
+                  <RefreshCwIcon />
+                  Retry all
+                  <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
+                    {retryableCount}
+                  </span>
+                </DropdownMenuItem>
+              )}
+
+              {/* Grid-only, like the per-tab eye button it undoes: in Tabs
+                  every tab shows its own pane and nothing is hidden. */}
+              {gridMode && hiddenCount > 0 && (
+                <DropdownMenuItem
+                  onSelect={onUnhideAll}
+                  {...hint(
+                    hiddenCount === 1
+                      ? "Put the one hidden terminal back in the grid."
+                      : `Put all ${hiddenCount} hidden terminals back in the grid at once.`,
+                  )}
+                >
+                  <Grid2x2Icon />
+                  Unhide all
+                  <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
+                    {hiddenCount}
+                  </span>
+                </DropdownMenuItem>
+              )}
+
               <DropdownMenuItem
                 onSelect={onCloseAll}
                 {...hint(

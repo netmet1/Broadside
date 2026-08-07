@@ -110,6 +110,14 @@ type Phase =
   | { kind: "failed"; message: string }
   | { kind: "closed"; message: string };
 
+/** How far along a pane's connection is, without the message that goes with it.
+ * Reported to the page (see `onPhaseChange`) because "not connected" is four
+ * different situations and only two of them are worth retrying: a pane that is
+ * still `connecting` has a connect in flight that a retry would tear down, and
+ * one at a `gate` is waiting on a host-key dialog the operator has to answer
+ * either way. `failed` and `closed` are the ones showing a Try again button. */
+export type TerminalPhaseKind = Phase["kind"];
+
 /** What backs this terminal: an SSH host, or a local shell over ConPTY. A local
  * source may carry a saved profile's `cwd` (passed to the spawn) and
  * `startupCommand` (typed into the shell once it opens). */
@@ -146,6 +154,11 @@ type Props = {
   /** Fires whenever this session's live-connection state flips (used for
    * the Hosts page connected indicators). */
   onConnectionChange?: (sessionId: string, connected: boolean) => void;
+  /** Fires with the same transitions as `onConnectionChange`, but says which of
+   * the not-connected states this is. The page needs the distinction for Retry
+   * all: `connecting` and `gate` are both "red" in the tab strip and neither
+   * wants a retry. */
+  onPhaseChange?: (sessionId: string, phase: TerminalPhaseKind) => void;
   /** Adopt a backend PTY that is already open (a skill run handed its shell
    * over) instead of opening a new one. Skips `pty_open` on the first mount and
    * binds to the existing session id; a later Reconnect opens for real. */
@@ -173,6 +186,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       onTabNav,
       onSearchResults,
       onConnectionChange,
+      onPhaseChange,
       adoptExisting,
       adoptSnapshot,
     }: Props,
@@ -213,6 +227,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   onSearchResultsRef.current = onSearchResults;
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
+  const onPhaseChangeRef = useRef(onPhaseChange);
+  onPhaseChangeRef.current = onPhaseChange;
   const { prefs } = useUiPrefs();
   // Ctrl + wheel over this pane resizes the terminal text (unless Strict is set
   // in Settings). The size change lands back in `prefs`, so the effect below
@@ -239,6 +255,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       phaseRef.current = p;
       setPhaseState(p);
       onConnectionChangeRef.current?.(sessionId, p.kind === "open");
+      onPhaseChangeRef.current?.(sessionId, p.kind);
     },
     [sessionId],
   );

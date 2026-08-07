@@ -22,10 +22,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 
 import {
   TerminalView,
   type ConnectionGate,
+  type TerminalPhaseKind,
   type TerminalSearchHandle,
 } from "@/components/TerminalView";
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
@@ -419,6 +421,7 @@ export function TerminalsPage({
     displayIndex,
     excludedFromGrid,
     toggleGridExcluded,
+    clearGridExcluded,
     hideGridHeaders,
     toggleGridHeaders,
     twoUpSplit,
@@ -893,6 +896,34 @@ export function TerminalsPage({
   const [retryNonces, setRetryNonces] = useState<Map<string, number>>(
     new Map(),
   );
+
+  // How far along each pane's connection is. The tab strip only needs "is it
+  // up", which `connectedSessions` already answers, but Retry all needs to know
+  // *why* a pane is down: a connect still in flight would be torn down by a
+  // retry, and one parked at a host-key gate is waiting on a dialog the
+  // operator has to answer whether or not anything is retried around it. Only
+  // `failed` and `closed` are the panes actually offering a Try again button,
+  // which is the set the menu acts on.
+  const [phases, setPhases] = useState<Map<string, TerminalPhaseKind>>(
+    () => new Map(),
+  );
+  const onPhaseChange = useCallback(
+    (id: string, phase: TerminalPhaseKind) =>
+      setPhases((prev) =>
+        prev.get(id) === phase ? prev : new Map(prev).set(id, phase),
+      ),
+    [],
+  );
+  // Drop entries whose session has closed, so the map can't grow without bound
+  // (the same housekeeping the grid's exclusion set does).
+  useEffect(() => {
+    setPhases((prev) => {
+      if (prev.size === 0) return prev;
+      const live = new Set(sessions.map((s) => s.id));
+      const next = new Map([...prev].filter(([id]) => live.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [sessions]);
   /** Per-session counter for the Reset display control. Bumping one re-inits
    * that terminal's xterm view without touching the session behind it. */
   const [resetNonces, setResetNonces] = useState<Map<string, number>>(
@@ -1068,6 +1099,32 @@ export function TerminalsPage({
   // backend id is free again once the old session ended).
   const reconnectSession = (id: string) => {
     setRetryNonces((prev) => new Map(prev).set(id, (prev.get(id) ?? 0) + 1));
+  };
+
+  // Every pane currently showing a Try again / Reconnect button: a connect that
+  // was refused, and a session whose shell went away. Both have the same remedy
+  // and the same button on the pane, so "retry everything that is offering a
+  // retry" is one idea rather than two.
+  //
+  // Deliberately NOT "everything the tab strip paints red". That set also holds
+  // panes mid-connect, which a retry would abort and start over, and panes
+  // holding a host-key dialog, which are not waiting on a retry but on an
+  // answer. Both would look like the button had done nothing, or worse.
+  const retryableIds = useMemo(
+    () =>
+      sessions
+        .filter((s) => {
+          const p = phases.get(s.id);
+          return p === "failed" || p === "closed";
+        })
+        .map((s) => s.id),
+    [sessions, phases],
+  );
+  // One pass, no stagger. Each retry is a state bump that React batches, and the
+  // connects that follow are no heavier than the launcher's own "open N at
+  // once", which the same operator can already fire from the + menu.
+  const retryAll = () => {
+    for (const id of retryableIds) reconnectSession(id);
   };
 
   // Close-all guard rail (T-…): confirm before tearing down every session.
@@ -1329,6 +1386,10 @@ export function TerminalsPage({
         // and as much a request to work there.
         onActivate={gridFocus.activateDeliberately}
         onCloseAll={() => setCloseAllOpen(true)}
+        retryableCount={retryableIds.length}
+        onRetryAll={retryAll}
+        hiddenCount={excludedFromGrid.size}
+        onUnhideAll={clearGridExcluded}
       />
 
       {/* Tab strip on its own line below the controls. The row itself does NOT
@@ -1922,12 +1983,19 @@ export function TerminalsPage({
         style={gridStyle}
       >
         {/* Every tile hidden but terminals still open: say so, or the grid
-            reads as broken. */}
+            reads as broken. The way out is offered here rather than only
+            described, because the tabs this text sends you to are precisely the
+            ones whose eye buttons you would have to find one at a time, and
+            this is the state where that is most tedious. */}
         {gridMode && gridCount === 0 && sessions.length > 0 && (
-          <p className="col-span-full p-4 text-sm text-muted-foreground">
-            Every terminal is hidden from the grid. Use the grid button on a tab
-            to bring one back.
-          </p>
+          <div className="col-span-full flex flex-wrap items-center gap-3 p-4 text-sm text-muted-foreground">
+            <span>Every terminal is hidden from the grid.</span>
+            <Button size="sm" variant="outline" onClick={clearGridExcluded}>
+              <Grid2x2Icon className="h-3.5 w-3.5" />
+              Unhide all ({excludedFromGrid.size})
+            </Button>
+            <span>Or use the grid button on a tab to bring back just one.</span>
+          </div>
         )}
         {paneOrder.map((s) => {
           const isActive = s.id === activeId;
@@ -2127,6 +2195,7 @@ export function TerminalsPage({
                     setSearchResults({ index, count })
                   }
                   onConnectionChange={onConnectionChange}
+                  onPhaseChange={onPhaseChange}
                   adoptExisting={s.type === "ssh" && s.adopted === true}
                   adoptSnapshot={s.type === "ssh" ? s.adoptSnapshot : undefined}
                 />

@@ -95,6 +95,9 @@ export type GridLayout = {
 
   excludedFromGrid: Set<string>;
   toggleGridExcluded: (id: string) => void;
+  /** Put every hidden terminal back in the grid at once. The per-tab eye button
+   * is fine for one; it is not a way out of a grid you have emptied. */
+  clearGridExcluded: () => void;
 
   hideGridHeaders: boolean;
   toggleGridHeaders: () => void;
@@ -227,6 +230,11 @@ export function useGridLayout({
       if (!next.delete(id)) next.add(id);
       return next;
     });
+  }, []);
+  // Returns the same set when it is already empty, so a menu that offers this
+  // unconditionally can't cause a re-render by being clicked with nothing hidden.
+  const clearGridExcluded = useCallback(() => {
+    setExcludedFromGrid((prev) => (prev.size === 0 ? prev : new Set()));
   }, []);
   // Drop ids whose session has closed so the set can't grow without bound.
   useEffect(() => {
@@ -554,6 +562,7 @@ export function useGridLayout({
     displayIndex,
     excludedFromGrid,
     toggleGridExcluded,
+    clearGridExcluded,
     hideGridHeaders,
     toggleGridHeaders,
     twoUpSplit,
