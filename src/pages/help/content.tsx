@@ -568,7 +568,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches",
     body: (
       <>
         <Lead>
@@ -610,6 +610,59 @@ export const SECTIONS: HelpSection[] = [
               <Nav>PowerShell</Nav>, your own name, and{" "}
               <Nav>PowerShell 03</Nav>: renaming one tab is not a reason to
               relabel a different one under you.
+            </li>
+          </Bullets>
+          <H3>Serial consoles (COM ports)</H3>
+          <Bullets>
+            <li>
+              The <Nav>plus button</Nav> menu also lists the COM ports on this
+              PC, under <Nav>Serial console</Nav>. Picking one opens the console
+              cable as an ordinary terminal tab, so the switch, router or
+              firewall you are plugged into sits beside your SSH sessions
+              instead of in a second program. Where the OS knows what a port is
+              (the product name of a USB serial adapter, say) it is shown under
+              the port name, which is the only way to tell two identical black
+              dongles apart.
+            </li>
+            <li>
+              The box beside each port is the <Nav>line speed</Nav> in baud. It
+              starts at <Nav>9600</Nav>, which is what a console port is set to
+              unless someone changed it; a board that wants{" "}
+              <Nav>115200</Nav> says so in its documentation. Whatever you open
+              a port at is remembered for that port, so the next time is one
+              click. The other line settings are the usual 8 data bits, no
+              parity, one stop bit, no flow control.
+            </li>
+            <li>
+              A serial tab looks empty when it opens, and that is normal: the
+              port is a piece of wire and nothing has spoken yet. Press{" "}
+              <Nav>Enter</Nav> to make the device draw its prompt. The tab's
+              label carries the speed (<Nav>COM3 @ 9600</Nav>), which is the
+              first thing to check if what comes back is garbage rather than
+              text.
+            </li>
+            <li>
+              A COM port belongs to one program at a time. If PuTTY, Tera Term
+              or another Broadside tab already has the port open, the tab says
+              so and names the fix; close the other one and press{" "}
+              <Nav>Try again</Nav>. Unplugging the adapter mid-session ends the
+              tab with the reason on its banner.
+            </li>
+            <li>
+              Unlike a shell, a serial port has no size and no working
+              directory, so <Nav>How many</Nav> does not apply to it (one cable
+              is one tab) and resizing the pane does not tell the far end
+              anything. Devices that care are told by hand, usually with a{" "}
+              <Nav>terminal width</Nav> command of their own.
+            </li>
+            <li>
+              Serial tabs have their own family in{" "}
+              <SectionLink id="help-sec-ptybroadcast">
+                PTY Broadcast
+              </SectionLink>{" "}
+              and in the <Nav>Broadcast</Nav> rail, so one line can go to a rack
+              of console cables at once. Every serial send asks for confirmation
+              first.
             </li>
           </Bullets>
           <H3>How local shells are detected (important)</H3>
@@ -1293,7 +1346,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-ptybroadcast",
     title: "PTY Broadcast",
     keywords:
-      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return",
+      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return serial console com port switches routers several consoles at once fifth tab",
     body: (
       <>
         <Lead>
@@ -1321,15 +1374,23 @@ export const SECTIONS: HelpSection[] = [
               <Nav>PTY Broadcast</Nav> for interactive ones.
             </li>
           </Bullets>
-          <H3>Four tabs, one shell language each</H3>
+          <H3>One tab per shell language</H3>
           <Bullets>
             <li>
-              The page is split into four fixed tabs: <Nav>SSH</Nav>,{" "}
-              <Nav>PowerShell</Nav>, <Nav>Command Prompt</Nav>, and <Nav>WSL</Nav>.
-              Each open terminal shows up under its own tab, so a single command
-              is always valid for the shells it reaches (PowerShell and Command
-              Prompt stay separate because their syntax differs). A small count on
-              each tab shows how many shells of that kind are open.
+              The page is split into fixed tabs: <Nav>SSH</Nav>,{" "}
+              <Nav>PowerShell</Nav>, <Nav>Command Prompt</Nav>, <Nav>WSL</Nav>{" "}
+              and <Nav>Serial consoles</Nav>. Each open terminal shows up under
+              its own tab, so a single command is always valid for the shells it
+              reaches (PowerShell and Command Prompt stay separate because their
+              syntax differs, and a serial console is talking to a device rather
+              than a shell). A small count on each tab shows how many of that
+              kind are open.
+            </li>
+            <li>
+              The <Nav>Serial consoles</Nav> tab is the one to be most careful
+              with, and it is the reason every send outside <Nav>SSH</Nav> asks
+              first. A line typed here goes into several pieces of network
+              hardware at once, and a switch has no undo.
             </li>
             <li>
               The <Nav>SSH</Nav> tab is the host-oriented view: it has the same{" "}

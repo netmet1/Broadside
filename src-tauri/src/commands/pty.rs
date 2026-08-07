@@ -186,9 +186,36 @@ pub async fn list_local_shells() -> Vec<crate::local::LocalShell> {
     crate::local::list_local_shells_cached().await
 }
 
+/// The COM ports on this machine, for the "New local shell" launcher's serial
+/// section. Not cached, unlike the shell list: a USB serial adapter is meant to
+/// be unplugged, and the enumeration is only a registry read.
+#[tauri::command]
+pub fn list_serial_ports() -> Vec<crate::serial::SerialPort> {
+    crate::serial::list_ports()
+}
+
+/// A serial console shell id: `serial:<port>@<baud>`, e.g. `serial:COM3@115200`.
+/// Split into its two halves, with nothing validated here; `open_serial` is the
+/// gate, and it has to be, since it is what turns a name into a `CreateFile`.
+fn parse_serial_id(rest: &str) -> AppResult<(&str, u32)> {
+    let (port, baud) = rest
+        .split_once('@')
+        .ok_or_else(|| AppError::InvalidInput(format!("bad serial target: {rest}")))?;
+    let baud: u32 = baud
+        .parse()
+        .map_err(|_| AppError::InvalidInput(format!("bad line speed: {baud}")))?;
+    Ok((port, baud))
+}
+
 /// Opens a local shell tab over ConPTY. Mirrors `pty_open` but the source is a
 /// local process rather than an SSH host; the same session id then flows through
 /// `pty_write`/`pty_resize`/`pty_close`.
+///
+/// Also the way in for serial consoles (`serial:<port>@<baud>`), which are not a
+/// local process at all. They ride this command rather than getting one of their
+/// own because everything either side of the open is identical: the same session
+/// id, the same write/resize/close, the same Reconnect. Encoding the target in
+/// the shell id is the convention `wsl:<distro>` and `custom:<id>` already set.
 #[tauri::command]
 pub fn pty_open_local(
     session_id: String,
@@ -200,6 +227,10 @@ pub fn pty_open_local(
     pty_state: State<'_, PtyState>,
     state: State<'_, DbState>,
 ) -> AppResult<()> {
+    if let Some(rest) = shell_id.strip_prefix("serial:") {
+        let (port, baud) = parse_serial_id(rest)?;
+        return crate::serial::open_serial(app, &pty_state, session_id, port, baud);
+    }
     // A `custom:<id>` shell names a row in custom_terminals, never a path. The
     // program and its arguments are read here, from the database, so the only
     // thing the frontend can influence is WHICH stored terminal to launch, an

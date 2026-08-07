@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { RadioTowerIcon, SquareTerminalIcon, TerminalIcon } from "lucide-react";
+import {
+  CableIcon,
+  RadioTowerIcon,
+  SquareTerminalIcon,
+  TerminalIcon,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -10,16 +15,18 @@ import type {
 import { SshBroadcastPanel } from "@/pages/ptyBroadcast/SshBroadcastPanel";
 import { LocalBroadcastPanel } from "@/pages/ptyBroadcast/LocalBroadcastPanel";
 
-/** The four fixed broadcast families. Always shown, even when no shell of that
- * kind is open (each panel renders its own empty state). */
-type PtyTab = "ssh" | "powershell" | "cmd" | "wsl";
+/** The fixed broadcast families. Always shown, even when no shell of that kind
+ * is open (each panel renders its own empty state). */
+type PtyTab = "ssh" | "powershell" | "cmd" | "wsl" | "serial";
 
 /** Persisted last-open tab (restored across restarts; defaults to SSH). */
 const TAB_KEY = "pty-broadcast-tab";
 
 function readTab(): PtyTab {
   const v = localStorage.getItem(TAB_KEY);
-  return v === "powershell" || v === "cmd" || v === "wsl" ? v : "ssh";
+  return v === "powershell" || v === "cmd" || v === "wsl" || v === "serial"
+    ? v
+    : "ssh";
 }
 
 /**
@@ -82,6 +89,20 @@ export function PtyBroadcastPage({
       ),
     [sessions],
   );
+  // Serial consoles get a family of their own rather than joining one, for the
+  // reason above: what answers on a console cable is a switch or a firewall,
+  // not a shell, so a command valid for the POSIX panel is not valid here. It
+  // is also the family with the strongest case for existing, since a rack of
+  // console cables is precisely where typing one line once beats typing it
+  // five times.
+  const serialSessions = useMemo(
+    () =>
+      sessions.filter(
+        (s): s is LocalTermSession =>
+          s.type === "local" && s.shell.kind === "serial",
+      ),
+    [sessions],
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -114,6 +135,13 @@ export function PtyBroadcastPage({
           icon={<TerminalIcon className="h-4 w-4" />}
           label="WSL / POSIX"
           count={wslSessions.length}
+        />
+        <TabButton
+          active={tab === "serial"}
+          onClick={() => setTab("serial")}
+          icon={<CableIcon className="h-4 w-4" />}
+          label="Serial consoles"
+          count={serialSessions.length}
         />
       </div>
 
@@ -158,6 +186,20 @@ export function PtyBroadcastPage({
             scope="ssh"
             onManageShortcuts={onManageShortcuts}
             storagePrefix="pty-broadcast-wsl"
+          />
+        </div>
+        <div className={tab === "serial" ? "h-full" : "hidden"}>
+          <LocalBroadcastPanel
+            visible={visible && tab === "serial"}
+            family="Serial consoles"
+            sessions={serialSessions}
+            connectedSessions={connectedSessions}
+            // Same reasoning as `sessionScope`: the far end of a console cable
+            // is not Windows, and offering it a PowerShell command would be
+            // worse than offering it a POSIX one.
+            scope="ssh"
+            onManageShortcuts={onManageShortcuts}
+            storagePrefix="pty-broadcast-serial"
           />
         </div>
       </div>

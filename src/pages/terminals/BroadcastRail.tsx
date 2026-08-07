@@ -27,16 +27,28 @@ import { useSessionBroadcast } from "@/pages/ptyBroadcast/useSessionBroadcast";
 const LOCAL_COLOR = "#6b7280";
 
 /** The broadcast families, in the order the rail lists them. This mirrors the
- * PTY Broadcast page's four tabs deliberately: a command has to be valid for
+ * PTY Broadcast page's tabs deliberately: a command has to be valid for
  * everything it reaches, so a broadcast is always within one family. Custom
- * POSIX terminals ride with WSL, as they do there. */
-type Family = "ssh" | "powershell" | "cmd" | "posix";
+ * POSIX terminals ride with WSL, as they do there.
+ *
+ * Serial consoles have their own family rather than being folded into one of
+ * the others, and rather than being left out. Left out is what would have
+ * happened by default (this function returned null for anything unrecognised),
+ * and a session that silently belongs to no family is one you cannot reach from
+ * either broadcast surface with nothing on screen saying why. Folded in is
+ * worse: what is on a console cable is not what is in a WSL tab, and the whole
+ * premise of a family is that one command is valid for everything in it. Their
+ * own is also the useful answer, because a rack of switch consoles is exactly
+ * the case where typing the same line once instead of five times is worth
+ * something. */
+type Family = "ssh" | "powershell" | "cmd" | "posix" | "serial";
 
 const FAMILY_LABELS: Record<Family, string> = {
   ssh: "SSH hosts",
   powershell: "PowerShell",
   cmd: "Command Prompt",
   posix: "WSL / POSIX",
+  serial: "Serial consoles",
 };
 
 function familyOf(s: TermSession): Family | null {
@@ -45,6 +57,7 @@ function familyOf(s: TermSession): Family | null {
   if (k === "powershell" || k === "pwsh") return "powershell";
   if (k === "cmd") return "cmd";
   if (k === "wsl" || k === "posix") return "posix";
+  if (k === "serial") return "serial";
   return null;
 }
 
@@ -102,6 +115,7 @@ export function BroadcastRail({
       powershell: [],
       cmd: [],
       posix: [],
+      serial: [],
     };
     for (const s of sessions) {
       const f = familyOf(s);

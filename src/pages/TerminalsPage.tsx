@@ -23,6 +23,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  BAUD_RATES,
+  DEFAULT_BAUD,
+  listSerialPorts,
+  loadBaud,
+  saveBaud,
+  serialAsShell,
+  type SerialPort,
+} from "@/lib/tauri/serial";
 
 import {
   TerminalView,
@@ -254,6 +263,55 @@ export function TerminalsPage({
       window.removeEventListener("keydown", onKey);
     };
   }, [shellMenuOpen]);
+
+  // COM ports, for the launcher's serial section. Re-read every time the menu
+  // opens rather than once at startup like the shell list: a USB serial adapter
+  // is a thing you plug in, and a list fixed at launch would mean restarting the
+  // app to see a dongle you have just connected. The enumeration is a registry
+  // read, so asking again costs nothing.
+  const [serialPorts, setSerialPorts] = useState<SerialPort[]>([]);
+  // The line speed each port will open at. Seeded from what that port was last
+  // opened at, so the second console session on the same cable is one click.
+  const [serialBauds, setSerialBauds] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!shellMenuOpen) return;
+    let cancelled = false;
+    listSerialPorts()
+      .then((ports) => {
+        if (cancelled) return;
+        setSerialPorts(ports);
+        setSerialBauds((prev) => {
+          const next = { ...prev };
+          // Only fill gaps: a speed the operator has already changed in this
+          // open menu must not be reset by the list refreshing under them.
+          for (const p of ports) {
+            if (next[p.name] === undefined) next[p.name] = loadBaud(p.name);
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        // No serial hardware, or an enumeration that failed: the section says
+        // "no ports" either way, and nothing else in the menu is affected.
+        if (!cancelled) setSerialPorts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shellMenuOpen]);
+
+  // Open one serial console. Deliberately not routed through requestOpenShells:
+  // that exists to open N copies of a shell, and a COM port is exclusive, so the
+  // second copy could only ever fail. One cable, one tab.
+  const openSerial = useCallback(
+    (port: SerialPort) => {
+      const baud = serialBauds[port.name] ?? DEFAULT_BAUD;
+      saveBaud(port.name, baud);
+      setShellMenuOpen(false);
+      onOpenLocalShell(serialAsShell(port, baud));
+    },
+    [serialBauds, onOpenLocalShell],
+  );
 
   // Bulk-open: how many copies of a chosen shell the "+" launcher opens at once,
   // and the cap on that count (the configured max concurrent sessions, or the
@@ -1846,6 +1904,82 @@ export function TerminalsPage({
                   </div>
                 </>
               )}
+              {/* Serial consoles. A COM port is not a shell and does not
+                  belong in the list above: nothing is spawned, there is no
+                  working directory, and the port is exclusive, so "how
+                  many" cannot apply to it. Its own group, listed fresh
+                  every time this menu opens.
+
+                  The speed sits on the row rather than above the list
+                  because it belongs to the port, not to the session you are
+                  about to start: two cables in the same machine routinely
+                  want different speeds, and what each one wanted last time
+                  is the answer you want offered. */}
+              <div className="mt-1 border-t border-border/60 pt-1">
+                <div className="px-2 py-1">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Serial console
+                  </span>
+                </div>
+                {serialPorts.length === 0 ? (
+                  <p className="px-2 py-1 text-xs text-muted-foreground">
+                    No COM ports found. Plug in a console cable or USB serial
+                    adapter and open this menu again.
+                  </p>
+                ) : (
+                  serialPorts.map((p) => (
+                    <div
+                      key={p.name}
+                      className="group flex items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => openSerial(p)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        {...hint(
+                          `Open a terminal on ${p.name} at ${
+                            serialBauds[p.name] ?? DEFAULT_BAUD
+                          } baud, 8N1. Nothing appears until the device says something, so press Enter if the pane looks empty.`,
+                        )}
+                      >
+                        <LocalShellIcon
+                          kind="serial"
+                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate">{p.name}</span>
+                          {p.description && (
+                            <span className="block truncate text-[11px] text-muted-foreground">
+                              {p.description}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                      {/* A native select: this menu is a hand-rolled div
+                          rather than a portalled one, so there is no focus
+                          or layering to fight. */}
+                      <select
+                        value={serialBauds[p.name] ?? DEFAULT_BAUD}
+                        onChange={(e) =>
+                          setSerialBauds((prev) => ({
+                            ...prev,
+                            [p.name]: Number(e.target.value),
+                          }))
+                        }
+                        aria-label={`Line speed for ${p.name}`}
+                        title="Line speed (baud)"
+                        className="shrink-0 rounded border border-input bg-background px-1 py-0.5 font-mono text-xs"
+                      >
+                        {BAUD_RATES.map((b) => (
+                          <option key={b} value={b}>
+                            {b}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
         </div>
