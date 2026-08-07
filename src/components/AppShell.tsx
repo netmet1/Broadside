@@ -45,7 +45,9 @@ const NAV_ITEMS: {
     page: "hosts",
     label: "Hosts",
     icon: ServerIcon,
-    hint: "Manage SSH connection targets and credentials",
+    // Carries what the Hosts page used to print under its heading: the page is
+    // the connection targets, and the credentials for them live elsewhere.
+    hint: "Manage SSH connection targets; credentials are stored separately",
   },
   {
     page: "terminals",

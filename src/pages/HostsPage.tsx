@@ -385,12 +385,14 @@ export function HostsPage({
   return (
     <div className="flex h-full flex-col gap-4 p-6">
       <div ref={railRef} className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="font-heading text-xl font-semibold tracking-tight">Hosts</h1>
-          <p className="truncate text-sm text-muted-foreground">
-            SSH connection targets. Credentials are managed separately.
-          </p>
-        </div>
+        {/* No subtitle under the heading. What it said now reaches the status
+            bar from the sidebar's Hosts hint, which says it on keyboard focus
+            too, and every other page carries a bare heading. The room it gave
+            back is what keeps the buttons on the right labelled for longer at
+            a narrow window. */}
+        <h1 className="min-w-0 truncate font-heading text-xl font-semibold tracking-tight">
+          Hosts
+        </h1>
         <div className="flex shrink-0 gap-2">
           {/* Ctrl-f style label search over the table, mirroring the broadcast
               rails' "Find by label…" box. Narrows the table with the tag filter. */}
