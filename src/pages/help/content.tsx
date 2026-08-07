@@ -1874,7 +1874,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font",
     body: (
       <>
         <Lead>
@@ -1908,7 +1908,13 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Appearance</Nav>: light or dark theme, the terminal font and
               its size, the size of the application text, which <Nav>Hosts</Nav>{" "}
               columns to show, and which detected local shells appear in the
-              Terminals <Nav>plus button</Nav> menu. Holding <Nav>Ctrl</Nav> and
+              Terminals <Nav>plus button</Nav> menu. The{" "}
+              <Nav>Terminal font</Nav> list holds only fonts that are installed
+              on this machine and are fixed-width, each drawn in itself so you
+              can see it before you choose it, so there is no way to land on a
+              font that is not there. A font you install while Broadside is
+              running appears in the list once you restart it. Holding{" "}
+              <Nav>Ctrl</Nav> and
               turning the mouse wheel over any terminal changes the terminal
               font size from where you are reading and saves it here, unless{" "}
               <Nav>Strict</Nav> beside that field is ticked, which leaves the

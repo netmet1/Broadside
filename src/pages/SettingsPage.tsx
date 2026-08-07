@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { HIDEABLE_COLUMNS } from "@/lib/hostColumns";
+import { GENERIC_MONOSPACE, cssFontFamily } from "@/lib/monospaceFonts";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
 import { useHint, useStatus } from "@/lib/status";
 import { useTheme } from "next-themes";
@@ -113,6 +114,8 @@ export function SettingsPage({
     toggleShell,
     termFontFamily,
     setTermFontFamily,
+    fontOptions,
+    unknownFont,
     termFontSize,
     setTermFontSize,
     termFontStrict,
@@ -1133,18 +1136,47 @@ export function SettingsPage({
               instantly; no Save needed.
             </p>
           </div>
+          {/* Only the monospace fonts this machine actually has. It used to be a
+              free-text CSS list, which meant a typo or an absent font fell
+              through to the next name silently and the only symptom was a
+              terminal that looked slightly off. Every entry here has been
+              measured (see lib/monospaceFonts) and is drawn in itself, so the
+              list doubles as the preview. */}
           <div className="grid gap-1">
             <Label htmlFor="term-font">Terminal font</Label>
-            <Input
-              id="term-font"
-              value={termFontFamily}
-              onChange={(e) => setTermFontFamily(e.target.value)}
-              placeholder="Consolas, 'Cascadia Mono', monospace"
-              className="font-mono text-sm"
-              autoComplete="off"
-            />
+            <Select value={termFontFamily} onValueChange={setTermFontFamily}>
+              <SelectTrigger id="term-font" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {fontOptions.map((f) => (
+                  <SelectItem key={f} value={f}>
+                    <span
+                      className="text-sm"
+                      // The generic has no face of its own to show, and the
+                      // unrecognised stored value is by definition not
+                      // installed, so neither can preview; both are plain.
+                      style={
+                        f === GENERIC_MONOSPACE || f === unknownFont
+                          ? undefined
+                          : { fontFamily: cssFontFamily(f) }
+                      }
+                    >
+                      {f === GENERIC_MONOSPACE ? "System monospace" : f}
+                    </span>
+                    {f === unknownFont && (
+                      <span className="text-xs text-muted-foreground">
+                        (not installed)
+                      </span>
+                    )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <p className="text-xs text-muted-foreground">
-              CSS font-family list; the font must be installed on this machine.
+              {unknownFont !== null
+                ? "Your saved font isn't installed on this machine, so it is listed as it was stored and left alone until you pick another."
+                : "Every font listed is installed here and fixed-width. A font installed while Broadside is running appears after a restart."}
             </p>
           </div>
           <div className="grid gap-1">
