@@ -90,7 +90,9 @@ function App() {
   const handleSettingsReady = useCallback(() => setSettingsReady(true), []);
   // Maximized terminal: the id of the session filling the whole window (null =
   // normal view). Tracking the id (not a bool) lets us drop back to the tabbed
-  // view automatically when that specific terminal is closed.
+  // view automatically when that terminal is closed. It follows the active
+  // session while maximized (see the effect below), so it is always the id of
+  // what is actually on screen rather than the id you maximized.
   const [maxSessionId, setMaxSessionId] = useState<string | null>(null);
   const maximized = maxSessionId !== null;
   // The Terminals grid filling the screen. A separate mode from maximizing one
@@ -413,6 +415,18 @@ function App() {
         closingRef.current = false;
       });
   }, []);
+
+  // A maximized terminal shows whichever session is active, because it is the
+  // only pane on screen and being active is what makes a pane the visible one.
+  // So the id has to follow the active session rather than remember the one
+  // that was maximized, or Alt+Left/Right in a maximized terminal swaps the
+  // terminal under a banner still naming the session you started from. It also
+  // keeps the drop-back below honest: closing the session you maximized while
+  // working in a different one should not throw you out of fullscreen.
+  useEffect(() => {
+    if (maxSessionId === null || activeSessionId === null) return;
+    if (activeSessionId !== maxSessionId) setMaxSessionId(activeSessionId);
+  }, [maxSessionId, activeSessionId]);
 
   // Drop back to the tabbed view when the maximized terminal is gone (closed
   // or terminated) or we've left the Terminals page.

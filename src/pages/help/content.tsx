@@ -395,7 +395,10 @@ export const SECTIONS: HelpSection[] = [
               running full-screen in a terminal is an editor. Taking a press of
               it to resize a window would cost more than it saved, so Esc goes
               straight through to whatever you are running. Use <Nav>F11</Nav>,
-              or the restore button in the banner along the top.
+              or the restore button in the banner along the top. The banner
+              names the terminal you are looking at, and{" "}
+              <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav> still change sessions
+              while you are maximized, so the name changes with them.
             </li>
           </Bullets>
         </Detail>
@@ -737,7 +740,11 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Enter</Nav> chooses the one you have reached. Walking is not
               choosing, deliberately: passing over four sessions on the way to
               the fifth is not four decisions, and in Grid it would point your
-              typing at each of them in turn.
+              typing at each of them in turn. Only the tab you have reached is
+              in the tab order, along with its own rename, hide, maximize and
+              close buttons, which <Nav>Tab</Nav> reaches next. So the strip
+              costs you one stop and the tab you are on, however many sessions
+              are open.
             </li>
             <li>
               Opening a second tab for the same host adds a small number to the
@@ -922,9 +929,12 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Ctrl+Shift+T</Nav> puts the keyboard into the controls, which
               slides the strip down as it goes, and puts a ring around the
               button that has the focus. <Nav>Tab</Nav> and <Nav>Shift+Tab</Nav>{" "}
-              then move along the toolbar and into the tab strip, where each
-              tab's buttons show themselves as they take the focus instead of
-              waiting for the mouse. Tab wraps round at the last control rather
+              then move along the toolbar and into the tab strip, which is one
+              stop for the strip and one for the tab you are on: that tab's own
+              buttons show themselves as they take the focus instead of waiting
+              for the mouse, and the other tabs stay out of the way until{" "}
+              <Nav>Left</Nav> and <Nav>Right</Nav> take you to them. Tab wraps
+              round at the last control rather
               than walking off into the grid, and <Nav>Esc</Nav> hands the
               keyboard back to the terminal you came from. That is the one thing
               Esc does here, and it is safe to claim precisely because the

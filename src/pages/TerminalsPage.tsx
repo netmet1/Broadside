@@ -86,13 +86,17 @@ const DEFAULT_MAX_SHELLS = 32;
  * buttons that only appear on hover and then a terminal, and focusing a
  * terminal scrolls the grid under it. Hidden controls are skipped: the "+"
  * launcher's menu items are not in the DOM until it opens, but a disabled or
- * display:none control would otherwise be a stop with nothing to see. */
+ * display:none control would otherwise be a stop with nothing to see. So is
+ * anything holding tabindex="-1", which is how the tab strip keeps itself to a
+ * single stop: a button is focusable by default, so asking for buttons and
+ * leaving it there counted the per-tab controls of every session, including the
+ * ones Tab itself walks straight past. */
 function focusablesIn(root: HTMLElement | null): HTMLElement[] {
   if (!root) return [];
   const found = root.querySelectorAll<HTMLElement>(
-    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]",
   );
-  return [...found].filter((el) => el.offsetParent !== null);
+  return [...found].filter((el) => el.tabIndex >= 0 && el.offsetParent !== null);
 }
 
 /** Is a point inside an element's box? Measured, not hit-tested.
@@ -718,6 +722,25 @@ export function TerminalsPage({
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const tabElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
+  // Which tab the strip's single Tab stop is currently sitting on. Null means
+  // the active one, which is where the strip always starts and where it goes
+  // back to when the keyboard leaves it.
+  //
+  // The strip being *one* stop is the whole point, and the tabindex on the tabs
+  // was only half of it. A button is focusable whether or not anyone says so,
+  // so the rename, hide, maximize and close buttons inside every tab were four
+  // more stops each: Tab walked past the tabs themselves (they are divs, and
+  // only the active one carried a tabindex) straight into the next session's
+  // little buttons, which is four presses per session to get anywhere and no
+  // way to see which tab you were on. Now the tab that holds the stop is the
+  // only one whose buttons are in the tab order, so Tab lands on a tab, the
+  // arrows walk between them, and Tab again reaches that tab's own controls.
+  const [tabStopId, setTabStopId] = useState<string | null>(null);
+  const rovingTabId =
+    tabStopId !== null && sessions.some((s) => s.id === tabStopId)
+      ? tabStopId
+      : (activeId ?? sessions[0]?.id ?? null);
+
   // Arrow keys walk the tab strip, Enter or Space picks one (see the tab's own
   // key handler). Deliberately not the other pattern, where arrowing switches
   // session as it goes: activating a session re-points the shortcut bar, Find
@@ -740,9 +763,9 @@ export function TerminalsPage({
         return;
       }
       const tabs = sessions
-        .map((s) => tabElRefs.current.get(s.id))
-        .filter((t): t is HTMLDivElement => t !== undefined);
-      const here = tabs.indexOf(el as HTMLDivElement);
+        .map((s) => ({ id: s.id, el: tabElRefs.current.get(s.id) }))
+        .filter((t): t is { id: string; el: HTMLDivElement } => t.el !== undefined);
+      const here = tabs.findIndex((t) => t.el === el);
       if (here === -1) return;
       e.preventDefault();
       const last = tabs.length - 1;
@@ -754,7 +777,12 @@ export function TerminalsPage({
             : e.key === "ArrowLeft"
               ? (here - 1 + tabs.length) % tabs.length
               : (here + 1) % tabs.length;
-      tabs[next]?.focus();
+      const target = tabs[next];
+      if (!target) return;
+      // The stop moves with the keyboard, so Tab from here reaches this tab's
+      // own buttons rather than the active tab's.
+      setTabStopId(target.id);
+      target.el.focus();
     },
     [sessions],
   );
@@ -1313,10 +1341,19 @@ export function TerminalsPage({
           ref={tabScrollRef}
           role="tablist"
           onKeyDown={onTabStripKeyDown}
+          onBlur={(e) => {
+            // Coming back to the strip later should land on the active tab
+            // again, not wherever the arrows were last left pointing.
+            if (!e.currentTarget.contains(e.relatedTarget)) setTabStopId(null);
+          }}
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
         >
         {sessions.map((s) => {
           const isActive = s.id === activeId;
+          // Whether this tab holds the strip's one Tab stop, for itself and for
+          // the little buttons inside it.
+          const isTabStop = s.id === rovingTabId;
+          const stopIndex = isTabStop ? 0 : -1;
           // A remote tab that's open but not connected (connecting, dropped or
           // failed) reads as disconnected; local shells never are.
           const disconnected =
@@ -1414,7 +1451,7 @@ export function TerminalsPage({
             // menu. It also puts the case this page is built around within
             // reach of a test: choosing a session while the pointer sits still
             // over a different tile.
-            tabIndex={s.id === activeId ? 0 : -1}
+            tabIndex={stopIndex}
             aria-selected={s.id === activeId}
             title={tabsCompact ? `${sessionLabel(s)}${tabSuffix.get(s.id)}` : undefined}
           >
@@ -1479,6 +1516,9 @@ export function TerminalsPage({
                 // the tab order, and a ring around something invisible tells you
                 // nothing about where the keyboard is.
                 className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
+                // Only for the tab holding the strip's stop. The mouse can
+                // still reach every one of them.
+                tabIndex={stopIndex}
                 onClick={(e) => {
                   e.stopPropagation();
                   startRename(s);
@@ -1503,6 +1543,7 @@ export function TerminalsPage({
                     ? "text-amber-600 opacity-100 dark:text-amber-500"
                     : "text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100",
                 )}
+                tabIndex={stopIndex}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleGridExcluded(s.id);
@@ -1529,6 +1570,7 @@ export function TerminalsPage({
             <button
               type="button"
               className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
+              tabIndex={stopIndex}
               onClick={(e) => {
                 e.stopPropagation();
                 onMaximize(s.id);
@@ -1541,6 +1583,7 @@ export function TerminalsPage({
             <button
               type="button"
               className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
+              tabIndex={stopIndex}
               onClick={(e) => {
                 e.stopPropagation();
                 closeSession(s.id);
