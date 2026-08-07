@@ -65,6 +65,7 @@ import {
 import { HIDEABLE_COLUMNS } from "@/lib/hostColumns";
 import { parseTags } from "@/lib/hostTags";
 import { ShellChip } from "@/components/ShellChip";
+import { HOSTS_NAV_HINT } from "@/components/AppShell";
 import type { ShellCapability } from "@/lib/shells";
 import { nextColor } from "@/lib/palette";
 import { useHint, usePageStatus } from "@/lib/status";
@@ -385,12 +386,18 @@ export function HostsPage({
   return (
     <div className="flex h-full flex-col gap-4 p-6">
       <div ref={railRef} className="flex items-center justify-between gap-4">
-        {/* No subtitle under the heading. What it said now reaches the status
-            bar from the sidebar's Hosts hint, which says it on keyboard focus
-            too, and every other page carries a bare heading. The room it gave
-            back is what keeps the buttons on the right labelled for longer at
-            a narrow window. */}
-        <h1 className="min-w-0 truncate font-heading text-xl font-semibold tracking-tight">
+        {/* No subtitle under the heading. What it said reaches the status bar
+            instead, from this heading and from the sidebar's Hosts button,
+            which is where every other page's description already lives. The
+            room it gave back is what keeps the buttons on the right labelled
+            for longer at a narrow window.
+
+            The heading is not a control, so it takes the hint on hover only;
+            the sidebar button is the one that answers to Tab. */}
+        <h1
+          className="min-w-0 truncate font-heading text-xl font-semibold tracking-tight"
+          {...hint(HOSTS_NAV_HINT)}
+        >
           Hosts
         </h1>
         <div className="flex shrink-0 gap-2">

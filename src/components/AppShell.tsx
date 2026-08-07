@@ -35,6 +35,11 @@ export type Page =
   | "settings"
   | "help";
 
+/** The Hosts hint, exported because the Hosts page puts it on its own heading
+ * as well. One string in one place: a heading and a nav button that describe
+ * the same page in two slightly different ways is worse than either alone. */
+export const HOSTS_NAV_HINT = "Manage SSH connection targets and credentials";
+
 const NAV_ITEMS: {
   page: Page;
   label: string;
@@ -45,9 +50,7 @@ const NAV_ITEMS: {
     page: "hosts",
     label: "Hosts",
     icon: ServerIcon,
-    // Carries what the Hosts page used to print under its heading: the page is
-    // the connection targets, and the credentials for them live elsewhere.
-    hint: "Manage SSH connection targets; credentials are stored separately",
+    hint: HOSTS_NAV_HINT,
   },
   {
     page: "terminals",
