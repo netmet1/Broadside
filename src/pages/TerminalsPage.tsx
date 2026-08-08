@@ -54,7 +54,10 @@ import {
   type LocalShellOpenOpts,
   type TermSession,
 } from "@/pages/terminals/session";
-import { reconcileDisabledShells } from "@/lib/localShellPrefs";
+import {
+  loadDisabledShells,
+  reconcileDisabledShells,
+} from "@/lib/localShellPrefs";
 import { isTintable } from "@/lib/terminalColors";
 import { useShellColors } from "@/lib/useShellColors";
 import {
@@ -222,10 +225,22 @@ export function TerminalsPage({
   // a database read for the custom ones.
   useEffect(() => {
     if (!visible) return;
+    // Re-read the hide list on every visit, so a change made in Settings takes
+    // effect on return: this page stays mounted, so nothing else would notice.
+    setDisabledShells(loadDisabledShells());
     listLocalShells()
       .then((s) => {
         setLocalShells(s);
         setShellsError(null);
+        // Pruning happens here, against the list that has just arrived, and not
+        // in an effect of its own keyed on `localShells`. That is what this was,
+        // and such an effect also runs the moment `visible` flips, when
+        // `localShells` is still the empty array it starts as. Reconciling
+        // against an empty list reads as "none of these shells exist any more",
+        // so it deleted the whole hide list and saved the deletion, on the first
+        // visit to this page in every run of the app. The setting looked like it
+        // did not survive a restart because it did not.
+        setDisabledShells(reconcileDisabledShells(s.map((x) => x.id)));
       })
       .catch((e) => {
         // Surface the failure (e.g. a stale build missing the command) instead
@@ -234,14 +249,6 @@ export function TerminalsPage({
         setShellsError(errorMessage(e));
       });
   }, [visible]);
-  // Re-read the hide list whenever the page is shown so changes made in Settings
-  // (this page stays mounted) take effect on return. Reconcile drops ids no
-  // longer detected so a shell that returns is enabled again.
-  useEffect(() => {
-    if (visible) {
-      setDisabledShells(reconcileDisabledShells(localShells.map((s) => s.id)));
-    }
-  }, [visible, localShells]);
   const enabledShells = useMemo(
     () => localShells.filter((s) => !disabledShells.has(s.id)),
     [localShells, disabledShells],
