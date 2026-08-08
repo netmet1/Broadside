@@ -1185,7 +1185,7 @@ export function SettingsPage({
               </SelectContent>
             </Select>
             {/* "My font is missing" is nearly always a proportional font, and
-                nearly always Inter or Segoe UI, so the list says what it holds
+                nearly always Segoe UI, so the list says what it holds
                 rather than only what it excludes. A terminal needs every
                 character the same width or nothing lines up: no columns, no
                 box drawing, no cursor where the cursor should be. */}

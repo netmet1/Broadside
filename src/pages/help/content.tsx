@@ -2047,9 +2047,9 @@ export const SECTIONS: HelpSection[] = [
               on this machine and are fixed-width, each drawn in itself so you
               can see it before you choose it, so there is no way to land on a
               font that is not there. <b>Fixed-width is the reason a font you
-              have is missing from the list.</b> A proportional font, Inter or
-              Segoe UI or Arial, is left out even when it is installed, because
-              a terminal needs every character to occupy the same cell: without
+              have is missing from the list.</b> A proportional font, Segoe UI
+              or Arial, is left out even when it is installed, because a
+              terminal needs every character to occupy the same cell: without
               that, columns do not line up, box drawing comes apart and the
               cursor lands somewhere other than where it belongs. Look for a
               variant with <i>Mono</i> in its name. A font you install while
