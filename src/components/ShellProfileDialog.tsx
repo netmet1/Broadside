@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { FolderOpenIcon } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -57,14 +57,21 @@ export function ShellProfileDialog({
   const [color, setColor] = useState("");
 
   // Seed the form when the dialog opens (new = blank; edit = the profile).
-  useEffect(() => {
-    if (!open) return;
-    setLabel(initial?.label ?? "");
-    setShellId(initial?.shellId ?? shells[0]?.id ?? "");
-    setCwd(initial?.cwd ?? "");
-    setStartupCommand(initial?.startupCommand ?? "");
-    setColor(initial?.color ?? "");
-  }, [open, initial, shells]);
+  // Adjusted during render rather than in an effect, React's documented way to
+  // reset state derived from props: an effect would paint the previous
+  // profile's values for one frame before replacing them, which on a dialog
+  // that opens over the top of the list is visible.
+  const [seed, setSeed] = useState({ open, initial, shells });
+  if (seed.open !== open || seed.initial !== initial || seed.shells !== shells) {
+    setSeed({ open, initial, shells });
+    if (open) {
+      setLabel(initial?.label ?? "");
+      setShellId(initial?.shellId ?? shells[0]?.id ?? "");
+      setCwd(initial?.cwd ?? "");
+      setStartupCommand(initial?.startupCommand ?? "");
+      setColor(initial?.color ?? "");
+    }
+  }
 
   // What the tab would look like with no colour set here: the colour the chosen
   // shell's kind carries. Shown rather than described, because "follow the

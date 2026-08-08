@@ -284,9 +284,25 @@ export function HostsPage({
     }
   }, []);
 
+  // The first load. Called here rather than through `refresh` so the state
+  // write is visibly in a continuation instead of behind a function the effect
+  // body appears to run synchronously, and so a list arriving after the page
+  // goes away is dropped. `refresh` stays for the reloads after an add, edit,
+  // delete or import.
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let alive = true;
+    listHosts()
+      .then((list) => {
+        if (alive) setHosts(list);
+      })
+      .catch((e) => toast.error(errorMessage(e)))
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const openAdd = () => {
     setEditing(null);

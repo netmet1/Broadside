@@ -50,11 +50,13 @@ export function SearchBar({
     inputRef.current?.focus();
   }, []);
 
-  // Slash syntax is a one-way power shortcut: typing /…/ flips regex on.
+  // Slash syntax is a one-way power shortcut: typing /…/ flips regex on. Set
+  // during render rather than in an effect: it converges immediately (once
+  // `regexOn` is true the condition is false), so React re-renders before
+  // painting instead of showing the box unticked for a frame and then ticking
+  // it in front of the reader.
   const slash = parseSlashSyntax(raw);
-  useEffect(() => {
-    if (slash && !regexOn) setRegexOn(true);
-  }, [slash, regexOn]);
+  if (slash && !regexOn) setRegexOn(true);
 
   const effectivePattern = slash ? slash.pattern : raw;
   const effectiveOptions: SearchOptions = {

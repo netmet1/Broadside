@@ -28,9 +28,25 @@ export function useSkillsModel() {
     }
   }, []);
 
+  // The initial load. Called here rather than through `reload` so the state
+  // write is visibly in a continuation instead of behind a function the effect
+  // body appears to run synchronously, and so a list arriving after the page
+  // unmounts is dropped rather than written to a dead component. `reload`
+  // stays for the imperative refreshes after a save or delete.
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    let alive = true;
+    listSkills()
+      .then((s) => {
+        if (alive) setSkills(s);
+      })
+      .catch((e) => toast.error(errorMessage(e)))
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   /** Saves a new skill or updates an existing one. Resolves to true on success
    * so the caller can close its form only when the save actually landed: the

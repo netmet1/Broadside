@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -43,9 +43,17 @@ export function BatchTofuDialog({
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
+  // Every unknown-key host starts ticked when the dialog opens, so trusting the
+  // batch is one click and untrusting one is deliberate. Adjusted during render
+  // rather than in an effect, React's documented way to reset state derived
+  // from props. Both triggers are kept: `entries` is re-seeded on too, because
+  // a second batch can arrive while the dialog is still up and its hosts would
+  // otherwise appear unticked.
+  const [seed, setSeed] = useState({ open, entries });
+  if (seed.open !== open || seed.entries !== entries) {
+    setSeed({ open, entries });
     if (open) setChecked(new Set(entries.map((e) => e.hostId)));
-  }, [open, entries]);
+  }
 
   const toggle = (hostId: number) => {
     setChecked((prev) => {

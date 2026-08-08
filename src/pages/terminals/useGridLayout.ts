@@ -266,9 +266,17 @@ export function useGridLayout({
     setStrictGrid(loadGridStrict());
     setRowFill(loadRowFill());
   }, []);
-  useEffect(() => {
+  // Adjusted on the visibility transition during render rather than in an
+  // effect. `reloadPrefs` is synchronous (it reads localStorage), so in an
+  // effect it renders the stale prefs once and then corrects them, which on a
+  // return to a pinned grid is a visible reflow. This is React's documented
+  // way to reset state derived from a prop, and it converges: the guard is
+  // false again the moment `wasVisible` catches up.
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (wasVisible !== visible) {
+    setWasVisible(visible);
     if (visible) reloadPrefs();
-  }, [visible, reloadPrefs]);
+  }
   // Also whenever anything writes a grid pref, from either screen. Coming back
   // to Terminals is no longer the only moment these can change: with strict off
   // a drag writes them itself, and Settings has to show the result.
