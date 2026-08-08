@@ -37,29 +37,44 @@ export function ParamForm({
   const config = useMemo(() => parseSequence(skill.config_json), [skill]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [preflight, setPreflight] = useState<SkillPreflight | null>(null);
-  const [checking, setChecking] = useState(false);
+  /** The inputs the verdict on screen was asked for, by identity. Set when a
+   * check settles, however it settled. */
+  const [answered, setAnswered] = useState<{
+    skillId: number;
+    values: Record<string, string>;
+    hosts: Host[];
+  } | null>(null);
 
-  // Seed from each parameter's default whenever the skill changes.
-  useEffect(() => {
+  // Seed from each parameter's default whenever the skill changes. Adjusted
+  // during render, React's documented way to reset state derived from props: an
+  // effect would show the previous skill's answers in the new skill's boxes for
+  // a frame, and those boxes are what the run is built from.
+  const [seededFor, setSeededFor] = useState({ config, skillId: skill.id });
+  if (seededFor.config !== config || seededFor.skillId !== skill.id) {
+    setSeededFor({ config, skillId: skill.id });
     const seed: Record<string, string> = {};
     for (const p of config.params) seed[p.key] = p.default ?? "";
     setValues(seed);
     setPreflight(null);
-  }, [config, skill.id]);
+  }
 
   const missing = config.params.filter(
     (p) => p.required && !(values[p.key] ?? "").trim(),
   );
 
+  // A verdict only means anything once every required value is filled in and
+  // there is a host to run it against. Dropped during render rather than in the
+  // effect below, so a stale PASS is never on screen for a frame beside a
+  // required box that has just been emptied. It converges: clearing it makes
+  // the condition false.
+  const canPreflight = missing.length === 0 && hosts.length > 0;
+  if (!canPreflight && preflight !== null) setPreflight(null);
+
   // Re-check as the values change: substitution happens backend-side, so the
   // guard verdict depends on what the user typed.
   useEffect(() => {
-    if (missing.length > 0 || hosts.length === 0) {
-      setPreflight(null);
-      return;
-    }
+    if (!canPreflight) return;
     let cancelled = false;
-    setChecking(true);
     skillPreflight({
       skillId: skill.id,
       hostIds: hosts.map((h) => h.id),
@@ -72,14 +87,29 @@ export function ParamForm({
         if (!cancelled) toast.error(errorMessage(e));
       })
       .finally(() => {
-        if (!cancelled) setChecking(false);
+        // Recorded however it settled, including a failure: this is what stops
+        // the spinner, and an error that left it spinning for good was the
+        // reason the old `checking` flag had a `finally` of its own.
+        if (!cancelled) setAnswered({ skillId: skill.id, values, hosts });
       });
     return () => {
       cancelled = true;
     };
-    // `missing` is derived from values, so depend on its length rather than the
-    // array: a fresh array identity every render would loop.
-  }, [skill.id, values, hosts, missing.length]);
+    // `canPreflight` is derived from `missing.length` and `hosts.length`, both
+    // scalars, so it cannot bring a fresh identity in and loop the way the
+    // `missing` array itself would.
+  }, [skill.id, values, hosts, canPreflight]);
+
+  // A check is outstanding when the answer on screen is not for what is in the
+  // boxes. Derived rather than a flag raised at the top of the effect, which
+  // would be a synchronous state write inside it, and this says the same thing
+  // without one: identity comparison against the very deps the effect runs on.
+  const checking =
+    canPreflight &&
+    (answered === null ||
+      answered.skillId !== skill.id ||
+      answered.values !== values ||
+      answered.hosts !== hosts);
 
   const ready = missing.length === 0 && preflight != null && !starting;
 

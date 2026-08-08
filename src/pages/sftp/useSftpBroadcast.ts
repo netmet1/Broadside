@@ -238,11 +238,12 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
   // On GET the local side is a per-host destination *folder*, so a file picked
   // earlier under PUT can't be a valid target, drop it when the direction flips
   // (the "Browse file…" button is hidden on GET for the same reason).
-  useEffect(() => {
-    if (direction === "get" && localPath && !localIsDir) {
-      setLocalPath("");
-    }
-  }, [direction, localPath, localIsDir]);
+  // Adjusted during render rather than in an effect, so the now-invalid file
+  // path is never shown against the new direction. It converges: clearing the
+  // path makes the condition false.
+  if (direction === "get" && localPath && !localIsDir) {
+    setLocalPath("");
+  }
 
   /** Size of a single local file (from listing its parent), 0 if unknown. */
   const localFileSize = useCallback(async (path: string): Promise<number> => {

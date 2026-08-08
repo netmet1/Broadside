@@ -266,6 +266,18 @@ export function HostFormPanel({
   // typed* (after the last comma), excluding ones already in the field. A native
   // <datalist> can't do this (it only matches the whole value), so this is a
   // small custom popover over the same suggestion list.
+  // The one React Compiler finding in this codebase that is not fixable here.
+  // `watch()` comes back from react-hook-form's `useForm()` and returns a new
+  // function identity on every render by design, which the compiler cannot
+  // memoize without risking stale UI, so it declines to optimize this component
+  // at all. That is a property of the library, not of this line: nothing short
+  // of dropping react-hook-form changes it, and the form's validation and dirty
+  // tracking are worth more than the memoization of one panel.
+  //
+  // Suppressed rather than left to warn so that the tree stays at zero and the
+  // next finding is visible the moment it appears. Revisit if this form is ever
+  // rewritten off react-hook-form.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const tagValue = watch("tag") ?? "";
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const [tagHighlight, setTagHighlight] = useState(0);

@@ -1,4 +1,11 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowUpIcon,
   FileIcon,
@@ -612,8 +619,17 @@ function FilePane({
   // Clear the selection whenever the listing reloads: a new reference lands on
   // navigation *and* on an explicit Refresh (same folder, fresh entries), so a
   // stale selection never survives either.
-  useEffect(() => {
+  // The set is state and resets during render; the anchor is a ref, which a
+  // render must not touch, so it is cleared in a layout effect. Both land
+  // before anything can act on them: a layout effect runs ahead of every
+  // passive effect, and the click handler that reads the anchor cannot fire
+  // until the browser paints.
+  const [prevEntries, setPrevEntries] = useState(entries);
+  if (prevEntries !== entries) {
+    setPrevEntries(entries);
     setSelected(new Set());
+  }
+  useLayoutEffect(() => {
     anchorRef.current = -1;
   }, [entries]);
 

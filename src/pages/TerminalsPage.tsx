@@ -223,11 +223,18 @@ export function TerminalsPage({
   // added in Settings shows up in the launcher straight away. The detected
   // shells behind this are cached in the backend, so the repeat calls only cost
   // a database read for the custom ones.
+  // Re-read the hide list on every visit, so a change made in Settings takes
+  // effect on return: this page stays mounted, so nothing else would notice.
+  // Adjusted during render rather than inside the effect below, so the launcher
+  // never paints the previous visit's list for a frame. It still lands before
+  // the fetch's own prune, because render runs before the effect does.
+  const [wasVisibleForShells, setWasVisibleForShells] = useState(visible);
+  if (wasVisibleForShells !== visible) {
+    setWasVisibleForShells(visible);
+    if (visible) setDisabledShells(loadDisabledShells());
+  }
   useEffect(() => {
     if (!visible) return;
-    // Re-read the hide list on every visit, so a change made in Settings takes
-    // effect on return: this page stays mounted, so nothing else would notice.
-    setDisabledShells(loadDisabledShells());
     listLocalShells()
       .then((s) => {
         setLocalShells(s);
@@ -385,9 +392,13 @@ export function TerminalsPage({
   // an edit made in the dialog on another visit reflects on return, like
   // disabledShells. Managed inline from the "+" launcher.
   const [profiles, setProfiles] = useState<ShellProfile[]>(loadProfiles);
-  useEffect(() => {
+  // Adjusted during render for the same reason as the hide list above: reading
+  // localStorage is synchronous, so an effect only delays showing the truth.
+  const [wasVisibleForProfiles, setWasVisibleForProfiles] = useState(visible);
+  if (wasVisibleForProfiles !== visible) {
+    setWasVisibleForProfiles(visible);
     if (visible) setProfiles(loadProfiles());
-  }, [visible]);
+  }
   // The profile editor: null = closed; { profile: null } = new; else edit.
   const [profileEdit, setProfileEdit] = useState<{
     profile: ShellProfile | null;
@@ -767,9 +778,7 @@ export function TerminalsPage({
   // clicked before it was. Outside fullscreen the flag does nothing, so it can
   // sit set for as long as it likes; this is only so it cannot be found still
   // set on the way back in.
-  useEffect(() => {
-    if (!gridFullscreen) setStripDismissed(false);
-  }, [gridFullscreen]);
+  if (!gridFullscreen && stripDismissed) setStripDismissed(false);
 
   // Drag-to-reorder tab state: the session being dragged and the tab it's
   // currently hovering over (drives the drop-indicator border).
@@ -1118,10 +1127,19 @@ export function TerminalsPage({
 
   // Switching tabs while searching: re-run the query against the new pane, and
   // take the highlights off the one being left.
+  //
+  // The count is dropped during render, so the effect below is left doing only
+  // what an effect is for here, which is reaching into the terminals. Without
+  // it the bar reads "3 of 17" against a pane those hits do not belong to until
+  // the new search answers.
+  const [prevActiveForSearch, setPrevActiveForSearch] = useState(activeId);
+  if (prevActiveForSearch !== activeId) {
+    setPrevActiveForSearch(activeId);
+    if (searchOpen && searchQuery) setSearchResults(null);
+  }
   useEffect(() => {
     if (!searchOpen || !searchQuery) return;
     clearLastSearched();
-    setSearchResults(null);
     if (searchQuery.pattern && activeId !== null) {
       activeHandle()?.findNext(searchQuery.pattern, searchQuery.options, true);
       searchedPane.current = activeId;

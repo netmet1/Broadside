@@ -164,7 +164,13 @@ function useLineSearch(lines: { key: string; text: string }[]) {
     return { perLine, hits };
   }, [matcher, lines]);
 
-  useEffect(() => setActiveIdx(0), [pattern, options]);
+  // Back to the first hit whenever the search itself changes, adjusted during
+  // render so the counter never shows the old position against a new pattern.
+  const [prevSearch, setPrevSearch] = useState({ pattern, options });
+  if (prevSearch.pattern !== pattern || prevSearch.options !== options) {
+    setPrevSearch({ pattern, options });
+    setActiveIdx(0);
+  }
 
   const navigate = useCallback(
     (dir: 1 | -1) => {
@@ -309,52 +315,72 @@ export function LogsPage({ visible }: { visible: boolean }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [visible, search]);
 
-  const refreshAudit = useCallback(async () => {
-    try {
-      setInfo(await auditInfo());
-      // Newest first (LG6), the tail is chronological (oldest first).
-      setAuditLines((await auditTail(1000)).reverse());
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
-  }, []);
-
+  // Each tab loads when it becomes the visible one, and again whenever
+  // something asks for a reload by bumping its nonce.
+  //
+  // The fetch lives inside the effect rather than in a function the effect
+  // calls, which is what keeps the state writes visibly in a continuation
+  // instead of behind a boundary that reads as a synchronous update. Routing
+  // the manual Refresh through a nonce is what stops that costing a second copy
+  // of the loader: there is still exactly one, and it is here.
+  //
+  // Each one also gained the liveness guard it never had. These pull a thousand
+  // rows; leaving the tab while one is in flight used to write the result into a
+  // page that had moved on.
+  const [auditNonce, setAuditNonce] = useState(0);
+  const refreshAudit = useCallback(() => setAuditNonce((n) => n + 1), []);
   useEffect(() => {
-    if (visible && tab === "audit") refreshAudit();
-  }, [visible, tab, refreshAudit]);
+    if (!visible || tab !== "audit") return;
+    let alive = true;
+    Promise.all([auditInfo(), auditTail(1000)])
+      .then(([i, tail]) => {
+        if (!alive) return;
+        setInfo(i);
+        // Newest first (LG6), the tail is chronological (oldest first).
+        setAuditLines(tail.reverse());
+      })
+      .catch((e) => toast.error(errorMessage(e)));
+    return () => {
+      alive = false;
+    };
+  }, [visible, tab, auditNonce]);
 
-  const refreshHistory = useCallback(async () => {
-    try {
-      setHistoryEntries(await commandHistory(1000));
-      // Reload hosts too so a colour/rename change since last view shows.
-      setHostsById(
-        new Map((await listHosts()).map((h) => [h.id, h] as const)),
-      );
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
-  }, []);
-
+  const [historyNonce, setHistoryNonce] = useState(0);
+  const refreshHistory = useCallback(() => setHistoryNonce((n) => n + 1), []);
   useEffect(() => {
-    if (visible && tab === "history") refreshHistory();
-  }, [visible, tab, refreshHistory]);
+    if (!visible || tab !== "history") return;
+    let alive = true;
+    // Hosts are reloaded too so a colour/rename change since the last view shows.
+    Promise.all([commandHistory(1000), listHosts()])
+      .then(([entries, hosts]) => {
+        if (!alive) return;
+        setHistoryEntries(entries);
+        setHostsById(new Map(hosts.map((h) => [h.id, h] as const)));
+      })
+      .catch((e) => toast.error(errorMessage(e)));
+    return () => {
+      alive = false;
+    };
+  }, [visible, tab, historyNonce]);
 
-  const refreshErrors = useCallback(async () => {
-    try {
-      // Newest first (LG6), the tail is chronological (oldest first).
-      setErrorEntries((await errorLogTail(1000)).reverse());
-      // Hosts for live-by-id tinting of the host label (LG2).
-      setHostsById(
-        new Map((await listHosts()).map((h) => [h.id, h] as const)),
-      );
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
-  }, []);
-
+  const [errorsNonce, setErrorsNonce] = useState(0);
+  const refreshErrors = useCallback(() => setErrorsNonce((n) => n + 1), []);
   useEffect(() => {
-    if (visible && tab === "errors") refreshErrors();
-  }, [visible, tab, refreshErrors]);
+    if (!visible || tab !== "errors") return;
+    let alive = true;
+    // Hosts for live-by-id tinting of the host label (LG2).
+    Promise.all([errorLogTail(1000), listHosts()])
+      .then(([tail, hosts]) => {
+        if (!alive) return;
+        // Newest first (LG6), the tail is chronological (oldest first).
+        setErrorEntries(tail.reverse());
+        setHostsById(new Map(hosts.map((h) => [h.id, h] as const)));
+      })
+      .catch((e) => toast.error(errorMessage(e)));
+    return () => {
+      alive = false;
+    };
+  }, [visible, tab, errorsNonce]);
 
   const openSession = async () => {
     try {

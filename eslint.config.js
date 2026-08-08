@@ -35,6 +35,11 @@ export default tseslint.config(
       // component: real advice, but not the same kind of claim as "you called a
       // hook conditionally". And naming them means a future plugin release
       // cannot add a rule to this codebase without someone deciding to.
+      //
+      // `warn` is not the soft option it looks like: `npm run lint` runs with
+      // `--max-warnings 0`, so any of these fails the build exactly as an error
+      // would. The severity is about what the message means, not about whether
+      // it is allowed through. The tree is at zero, and it stays there.
       "react-hooks/static-components": "warn",
       "react-hooks/use-memo": "warn",
       "react-hooks/void-use-memo": "warn",

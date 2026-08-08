@@ -120,9 +120,11 @@ export function useAppearance() {
   // would go on showing the old number: the same complaint the grid had when a
   // drag changed a tile size behind its back. Typing in the box does not move
   // `prefs`, so this cannot fight the reader mid-edit.
-  useEffect(() => {
+  const [prevTermFontSize, setPrevTermFontSize] = useState(prefs.terminalFontSize);
+  if (prevTermFontSize !== prefs.terminalFontSize) {
+    setPrevTermFontSize(prefs.terminalFontSize);
     setTermFontSize(String(prefs.terminalFontSize));
-  }, [prefs.terminalFontSize]);
+  }
 
   // Whether the field above is the last word. Off by default: the wheel works
   // out of the box and this is how it is turned off.

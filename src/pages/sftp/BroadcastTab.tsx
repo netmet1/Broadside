@@ -574,9 +574,11 @@ function ConfirmBody({
   const armed = typed === "CONFIRM";
   // The dialog stays mounted while closed, so clear the typed word each time it
   // closes, a destructive broadcast must be re-confirmed from scratch every run.
-  useEffect(() => {
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
     if (!open) setTyped("");
-  }, [open]);
+  }
   return (
     <AlertDialogContent>
       <AlertDialogHeader>

@@ -408,14 +408,20 @@ export function useGridLayout({
   const twoUpThreshold =
     2 * (Math.round(GRID_MIN_TILE_COLS * cell.cellW) + TILE_BORDER_X) +
     3 * gapPx;
-  useEffect(() => {
-    if (paneW === 0) return;
+  // Adjusted during render rather than in an effect: the pane's measured width
+  // arrives from a ResizeObserver, and deciding the column count a frame later
+  // means laying the grid out once at the old count and then again, which is a
+  // visible flash of two-up before it drops to one. The functional update
+  // returns the same boolean when the verdict has not changed, so this settles
+  // in a single pass, and the hysteresis is what stops it oscillating when
+  // dropping a column removes the scrollbar and widens the pane again.
+  if (paneW !== 0) {
     setTwoUpFits((fits) =>
       fits
         ? paneW >= twoUpThreshold
         : paneW >= twoUpThreshold + GRID_COLS_HYSTERESIS_PX,
     );
-  }, [paneW, twoUpThreshold]);
+  }
 
   // The real column count, for both the layout and the short-row fill, which
   // have to agree: the fill decides which tiles widen to close a gap, so a
