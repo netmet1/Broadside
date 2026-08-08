@@ -24,6 +24,8 @@ import { Label } from "@/components/ui/label";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { type LocalShell } from "@/lib/tauri/local";
 import { type ShellProfile } from "@/lib/localShellProfiles";
+import { PALETTE } from "@/lib/palette";
+import { useShellColors } from "@/lib/useShellColors";
 
 type Props = {
   open: boolean;
@@ -52,6 +54,7 @@ export function ShellProfileDialog({
   const [shellId, setShellId] = useState("");
   const [cwd, setCwd] = useState("");
   const [startupCommand, setStartupCommand] = useState("");
+  const [color, setColor] = useState("");
 
   // Seed the form when the dialog opens (new = blank; edit = the profile).
   useEffect(() => {
@@ -60,7 +63,15 @@ export function ShellProfileDialog({
     setShellId(initial?.shellId ?? shells[0]?.id ?? "");
     setCwd(initial?.cwd ?? "");
     setStartupCommand(initial?.startupCommand ?? "");
+    setColor(initial?.color ?? "");
   }, [open, initial, shells]);
+
+  // What the tab would look like with no colour set here: the colour the chosen
+  // shell's kind carries. Shown rather than described, because "follow the
+  // shell" means nothing until you can see which colour that is.
+  const shellColors = useShellColors();
+  const inheritedColor =
+    shellColors[shells.find((s) => s.id === shellId)?.kind ?? ""] ?? null;
 
   // The shell options: the offered shells, plus the profile's own shell if it
   // is not among them (hidden in Settings, or a removed WSL distro) so editing
@@ -97,6 +108,7 @@ export function ShellProfileDialog({
       shellId,
       cwd: cwd.trim(),
       startupCommand: startupCommand.trim(),
+      color,
     });
     onOpenChange(false);
   };
@@ -181,6 +193,71 @@ export function ShellProfileDialog({
             <p className="text-xs text-muted-foreground">
               Typed into the shell once it opens, as if you'd entered it.
             </p>
+          </div>
+
+          {/* A colour of its own, because a profile is a purpose rather than a
+              language: two profiles on the same pwsh want telling apart the way
+              two hosts do, and the shell's own colour cannot do that. Left
+              alone it follows the shell, and the swatch on the left shows which
+              colour that is rather than making the reader guess. */}
+          <div className="grid gap-1">
+            <Label>
+              Tab colour{" "}
+              <span className="text-xs text-muted-foreground">(optional)</span>
+            </Label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setColor("")}
+                aria-label="Follow the shell's own colour"
+                title="Follow the shell's own colour"
+                className={`flex h-7 items-center gap-1.5 rounded-md border-2 px-2 text-xs ${
+                  color === "" ? "border-foreground" : "border-transparent"
+                }`}
+              >
+                <span
+                  className="h-3.5 w-3.5 rounded-sm border border-border"
+                  style={
+                    inheritedColor
+                      ? { backgroundColor: inheritedColor }
+                      : undefined
+                  }
+                  aria-hidden="true"
+                />
+                Shell&apos;s colour
+              </button>
+              {PALETTE.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  aria-label={`Pick colour ${c}`}
+                  className={`h-7 w-7 rounded-md border-2 ${
+                    color.toLowerCase() === c.toLowerCase()
+                      ? "border-foreground"
+                      : "border-transparent"
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+              {/* The preview doubles as the button for the native picker, the
+                  same arrangement the Hosts form uses. */}
+              <span className="relative h-7 w-7 shrink-0">
+                <span
+                  className="block h-full w-full rounded-md border-2 border-dashed border-border"
+                  style={color ? { backgroundColor: color } : undefined}
+                  aria-hidden="true"
+                />
+                <input
+                  type="color"
+                  value={color || inheritedColor || "#3b82f6"}
+                  onChange={(e) => setColor(e.target.value)}
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  aria-label="Pick any colour"
+                  title="Pick any colour"
+                />
+              </span>
+            </div>
           </div>
         </div>
 

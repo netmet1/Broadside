@@ -48,12 +48,15 @@ import { errorMessage } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import {
   labelInitials,
+  sessionColor,
   sessionLabel,
   sessionScope,
   type LocalShellOpenOpts,
   type TermSession,
 } from "@/pages/terminals/session";
 import { reconcileDisabledShells } from "@/lib/localShellPrefs";
+import { isTintable } from "@/lib/terminalColors";
+import { useShellColors } from "@/lib/useShellColors";
 import {
   loadProfiles,
   removeProfile,
@@ -415,12 +418,16 @@ export function TerminalsPage({
         cwd: profile.cwd || undefined,
         startupCommand: profile.startupCommand || undefined,
         profileLabel: profile.label,
+        profileColor: profile.color || undefined,
       });
     },
     [localShells, requestOpenShells],
   );
 
   const hint = useHint();
+  // Per-kind tab colours, live: Settings and this page are mounted at the same
+  // time, so a colour changed there has to arrive here without a restart.
+  const shellColors = useShellColors();
   // How many of the open tabs are actually up. Same rule the tab strip paints
   // red with: an SSH tab that is connecting, dropped or failed is not
   // connected, and a local shell never is anything else. Twenty tabs of which
@@ -1511,24 +1518,23 @@ export function TerminalsPage({
           // failed) reads as disconnected; local shells never are.
           const disconnected =
             s.type === "ssh" && !connectedSessions.has(s.id);
-          const hostColor = s.type === "ssh" ? s.host.color : null;
-          // The active tab tints with the host's own dot color when it's a
-          // connected SSH tab with a valid hex color. Local shells and
-          // disconnected tabs have no usable hue, so they fall back to a
-          // theme-aware fill (bg-accent) with the foreground color as the bar.
-          const hostTint =
-            isActive &&
-            !disconnected &&
-            hostColor !== null &&
-            /^#[0-9a-fA-F]{6}$/.test(hostColor);
-          // ~20% alpha body fill + a full-strength top bar in the host color;
+          // The colour this tab wears: a host's, a shell kind's, or a profile's.
+          // Local tabs used to have none of these and were all the same grey,
+          // which is fine with two open and no help at all with ten.
+          const tabColor = sessionColor(s, shellColors);
+          // The active tab tints with that colour when it has a usable one and
+          // is not a remote session that has lost its connection. Anything left
+          // over falls back to a theme-aware fill (bg-accent) with the
+          // foreground colour as the bar.
+          const hostTint = isActive && !disconnected && isTintable(tabColor);
+          // ~20% alpha body fill + a full-strength top bar in the tab colour;
           // the theme-aware fallback just paints the 2px top bar. The top bar
           // rides the reserved transparent top border so nothing shifts. Set
           // inline (not via a border-t-* class) so it beats border-border/60.
           const activeStyle: React.CSSProperties | undefined = !isActive
             ? undefined
             : hostTint
-              ? { backgroundColor: `${hostColor}33`, borderTopColor: hostColor! }
+              ? { backgroundColor: `${tabColor}33`, borderTopColor: tabColor! }
               : { borderTopColor: "var(--foreground)" };
           return (
           <div
@@ -1614,9 +1620,18 @@ export function TerminalsPage({
                 style={{ backgroundColor: s.host.color }}
               />
             ) : (
+              // The icon carries the colour on a local tab, rather than a dot
+              // beside it: the icon is already there and already says which
+              // shell this is, so colouring it costs no width in a strip that
+              // has none to give, and an inactive tab still shows its colour
+              // where the tint (active tabs only) cannot.
               <LocalShellIcon
                 kind={s.shell.kind}
-                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0",
+                  !isTintable(tabColor) && "text-muted-foreground",
+                )}
+                style={isTintable(tabColor) ? { color: tabColor } : undefined}
               />
             )}
             {(() => {
@@ -1881,6 +1896,11 @@ export function TerminalsPage({
                         const shell = localShells.find(
                           (s) => s.id === p.shellId,
                         );
+                        // The colour the tab will come out, so the launcher
+                        // shows the same thing the tab strip will: the
+                        // profile's own if it set one, otherwise its shell's.
+                        const profileColor =
+                          p.color || shellColors[shell?.kind ?? ""] || null;
                         return (
                           <div
                             key={p.id}
@@ -1898,7 +1918,16 @@ export function TerminalsPage({
                             >
                               <LocalShellIcon
                                 kind={shell?.kind ?? "cmd"}
-                                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                                className={cn(
+                                  "h-3.5 w-3.5 shrink-0",
+                                  !isTintable(profileColor) &&
+                                    "text-muted-foreground",
+                                )}
+                                style={
+                                  isTintable(profileColor)
+                                    ? { color: profileColor }
+                                    : undefined
+                                }
                               />
                               <span
                                 className={cn(
@@ -2193,25 +2222,21 @@ export function TerminalsPage({
           // shell alive); it is simply not laid out.
           const excluded = gridMode && excludedFromGrid.has(s.id);
           const disconnected = s.type === "ssh" && !connectedSessions.has(s.id);
-          // The active tile's header mirrors the tab tint: a ~20% host-colour
-          // fill and a top bar in the host colour for a connected SSH tile,
-          // falling back to the theme accent (with a foreground top bar) for
-          // local or disconnected tiles that have no usable hue.
-          const hostColor = s.type === "ssh" ? s.host.color : null;
-          const hostTint =
-            isActive &&
-            !disconnected &&
-            hostColor !== null &&
-            /^#[0-9a-fA-F]{6}$/.test(hostColor);
+          // The active tile's header mirrors the tab tint: a ~20% fill in the
+          // tab's colour and a top bar in it, falling back to the theme accent
+          // (with a foreground top bar) for tiles with no usable hue, which now
+          // means a dropped remote or a shell whose colour has been cleared.
+          const tabColor = sessionColor(s, shellColors);
+          const hostTint = isActive && !disconnected && isTintable(tabColor);
           const headerStyle: React.CSSProperties | undefined = !isActive
             ? undefined
             : hostTint
-              ? { backgroundColor: `${hostColor}33`, borderTopColor: hostColor! }
+              ? { backgroundColor: `${tabColor}33`, borderTopColor: tabColor! }
               : { borderTopColor: "var(--foreground)" };
-          // Selected tile outlined in the host's own identifying colour (border +
-          // a matching soft ring) instead of the theme primary. Only for a
-          // connected SSH tile with a usable hue; local/disconnected fall back to
-          // the primary classes below.
+          // Selected tile outlined in its own identifying colour (border + a
+          // matching soft ring) instead of the theme primary. Only where there
+          // is a usable hue; a dropped remote, or a shell whose colour has been
+          // cleared, falls back to the primary classes below.
           const tileStyle: React.CSSProperties | undefined = !gridMode
             ? undefined
             : {
@@ -2231,8 +2256,8 @@ export function TerminalsPage({
                 ...(excluded ? {} : tileSpan(gridSlot.get(s.id) ?? 0)),
                 ...(hostTint
                   ? {
-                      borderColor: hostColor!,
-                      boxShadow: `0 0 0 1px ${hostColor}66`,
+                      borderColor: tabColor!,
+                      boxShadow: `0 0 0 1px ${tabColor}66`,
                     }
                   : {}),
               };
@@ -2299,7 +2324,13 @@ export function TerminalsPage({
                 ) : (
                   <LocalShellIcon
                     kind={s.shell.kind}
-                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0",
+                      !isTintable(tabColor) && "text-muted-foreground",
+                    )}
+                    style={
+                      isTintable(tabColor) ? { color: tabColor } : undefined
+                    }
                   />
                 )}
                 <span

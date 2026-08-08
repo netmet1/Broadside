@@ -1184,10 +1184,15 @@ export function SettingsPage({
                 ))}
               </SelectContent>
             </Select>
+            {/* "My font is missing" is nearly always a proportional font, and
+                nearly always Inter or Segoe UI, so the list says what it holds
+                rather than only what it excludes. A terminal needs every
+                character the same width or nothing lines up: no columns, no
+                box drawing, no cursor where the cursor should be. */}
             <p className="text-xs text-muted-foreground">
               {unknownFont !== null
                 ? "Your saved font isn't installed on this machine, so it is listed as it was stored and left alone until you pick another."
-                : "Every font listed is installed here and fixed-width. A font installed while Broadside is running appears after a restart."}
+                : "Fixed-width fonts installed on this machine only. A proportional font (Inter, Segoe UI, Arial) is not offered even when installed, because a terminal needs every character the same width. A font installed while Broadside is running appears after a restart."}
             </p>
           </div>
           <div className="grid gap-1">

@@ -44,6 +44,10 @@ export type LocalTermSession = {
   cwd?: string;
   startupCommand?: string;
   profileLabel?: string;
+  /** The launching profile's own colour, `#rrggbb`, when it set one. Overrides
+   * the colour the shell's kind would give this tab; empty or absent means the
+   * kind's colour applies. See {@link sessionColor}. */
+  profileColor?: string;
   /** Operator-set tab name, replacing the derived profile/shell label for the
    * rest of this session. Deliberately not persisted: session ids are fresh
    * UUIDs every run, so a stored name would have nothing to reattach to. */
@@ -57,6 +61,7 @@ export type LocalShellOpenOpts = {
   cwd?: string;
   startupCommand?: string;
   profileLabel?: string;
+  profileColor?: string;
 };
 
 /** Display label for a tab, regardless of session kind. A renamed local tab
@@ -82,6 +87,26 @@ export function sessionScope(s: TermSession): ShortcutScope {
   const k = s.shell.kind;
   if (k === "serial") return "serial";
   return k === "wsl" || k === "posix" ? "ssh" : "local";
+}
+
+/** The colour a tab wears, or null for the theme's own.
+ *
+ * One function for both kinds of session so the tab strip, the grid tile header
+ * and anything else that tints never have to ask what sort of tab this is. An
+ * SSH tab wears its host's colour, which names a machine; a local tab wears its
+ * shell's, which names a language; a profile-launched one wears the profile's,
+ * because a profile is a purpose and wants telling apart from another profile on
+ * the same shell.
+ *
+ * The colours map is passed in rather than read here: it lives in localStorage
+ * and is watched by a hook, and a function the render path calls per tab has no
+ * business touching storage. */
+export function sessionColor(
+  s: TermSession,
+  shellColors: Record<string, string | null | undefined>,
+): string | null {
+  if (s.type === "ssh") return s.host.color;
+  return s.profileColor || shellColors[s.shell.kind] || null;
 }
 
 /** Most initials we ever show. Camel/word splitting can produce a long run

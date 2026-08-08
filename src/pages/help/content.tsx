@@ -568,7 +568,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port console cable cisco ios show version",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width",
     body: (
       <>
         <Lead>
@@ -733,6 +733,45 @@ export const SECTIONS: HelpSection[] = [
               still pointing at it is flagged rather than silently broken.
             </li>
           </Bullets>
+          <H3>Tab colours</H3>
+          <Bullets>
+            <li>
+              A saved host carries a colour, and its tabs and grid tiles wear
+              it. Local tabs do too, set in <Nav>Settings</Nav> under{" "}
+              <Nav>Custom terminals</Nav>. The colour belongs to the{" "}
+              <b>kind of shell</b>, not to the tab: one for PowerShell, one for
+              Command Prompt, one for WSL, one for the Bash-like terminals, one
+              for serial. A custom terminal takes the colour of the command
+              language it declares, so Git Bash and MSYS2 are both Bash-like and
+              wear the same one.
+            </li>
+            <li>
+              Two PowerShell tabs being the same colour is the point rather than
+              a limitation. A host's colour answers <i>which machine</i>; a
+              local tab has no machine to name, so what is worth saying is{" "}
+              <i>which language am I about to type in</i>, which is the thing
+              that stops a Linux command going into a Command Prompt.
+            </li>
+            <li>
+              The defaults are dark blues from the Windows console family,
+              chosen to sit quietly behind text that still has to be readable in
+              both themes; the loud reds and greens of the host palette are
+              spoken for, and a local tab borrowing one would be saying
+              something it does not mean. <Nav>Serial</Nav> starts with no
+              colour at all, because a console cable is the one session that is
+              a piece of hardware rather than a program and leaving it plain is
+              what makes the coloured tabs read as the shells. Any of them can
+              be changed, or set to <Nav>None</Nav>, and{" "}
+              <Nav>Defaults</Nav> puts them all back.
+            </li>
+            <li>
+              A <b>profile</b> can override its shell's colour, picked when you
+              create it. A profile is a purpose rather than a language, which is
+              the same kind of thing a host is, so two profiles on the same pwsh
+              can be told apart the way two hosts can. Left alone, a profile
+              follows its shell.
+            </li>
+          </Bullets>
           <H3>Shell profiles</H3>
           <Bullets>
             <li>
@@ -749,7 +788,9 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Startup command</Nav>. The name becomes the tab label, so a
               profile tab is easy to tell apart from a plain shell tab. Leave the
               working directory empty to start in your home folder, the same as a
-              plain shell.
+              plain shell. <Nav>Tab colour</Nav> is optional and defaults to{" "}
+              <Nav>Shell&apos;s colour</Nav>, whose swatch shows you which colour
+              that is.
             </li>
             <li>
               Launching a profile opens the shell in that folder and, a moment
@@ -2005,8 +2046,15 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Terminal font</Nav> list holds only fonts that are installed
               on this machine and are fixed-width, each drawn in itself so you
               can see it before you choose it, so there is no way to land on a
-              font that is not there. A font you install while Broadside is
-              running appears in the list once you restart it. Holding{" "}
+              font that is not there. <b>Fixed-width is the reason a font you
+              have is missing from the list.</b> A proportional font, Inter or
+              Segoe UI or Arial, is left out even when it is installed, because
+              a terminal needs every character to occupy the same cell: without
+              that, columns do not line up, box drawing comes apart and the
+              cursor lands somewhere other than where it belongs. Look for a
+              variant with <i>Mono</i> in its name. A font you install while
+              Broadside is running appears in the list once you restart it.
+              Holding{" "}
               <Nav>Ctrl</Nav> and
               turning the mouse wheel over any terminal changes the terminal
               font size from where you are reading and saves it here, unless{" "}

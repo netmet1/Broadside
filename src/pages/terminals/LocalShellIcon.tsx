@@ -13,9 +13,13 @@ import { CableIcon, SquareTerminalIcon, TerminalIcon } from "lucide-react";
 export function LocalShellIcon({
   kind,
   className,
+  style,
 }: {
   kind: string;
   className?: string;
+  /** Lets a caller paint the icon in the tab's colour (see lib/terminalColors).
+   * Inline because the colour is a stored hex, not a theme token. */
+  style?: React.CSSProperties;
 }) {
   const Icon =
     kind === "serial"
@@ -23,5 +27,5 @@ export function LocalShellIcon({
       : kind === "wsl" || kind === "posix"
         ? TerminalIcon
         : SquareTerminalIcon;
-  return <Icon className={className} />;
+  return <Icon className={className} style={style} />;
 }

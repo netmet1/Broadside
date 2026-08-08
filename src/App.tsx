@@ -216,6 +216,7 @@ function App() {
         cwd: opts?.cwd,
         startupCommand: opts?.startupCommand,
         profileLabel: opts?.profileLabel,
+        profileColor: opts?.profileColor,
       };
       setSessions((prev) => [...prev, session]);
       setActiveSessionId(session.id);

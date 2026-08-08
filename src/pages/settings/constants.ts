@@ -49,9 +49,9 @@ export const SECTION_KEYWORDS: Record<string, string> = {
   "Destructive command guard": "rm dangerous confirm warning block rules pattern regex mkfs dd shutdown reboot guard rails safety typed confirmation",
   "Shortcut commands": "commands dropdown one click quick canned saved snippets scope linux windows both broadcast terminals go button",
   Appearance:
-    "theme dark light mode colour color font family size text bigger smaller zoom ctrl wheel scroll terminal font application font columns host table hide shells launcher local shells strict",
+    "theme dark light mode colour color font family size text bigger smaller zoom ctrl wheel scroll terminal font application font columns host table hide shells launcher local shells strict my font is missing inter segoe ui arial proportional variable width not in the list monospace fixed width only install a font",
   "Custom terminals":
-    "git bash msys msys2 cygwin add my own program exe application launcher path arguments browse posix bash-like command language family terminal application third party",
+    "git bash msys msys2 cygwin add my own program exe application launcher path arguments browse posix bash-like command language family terminal application third party colour color tab colours tint highlight powershell command prompt wsl serial which tab am i in tell tabs apart profile colour",
   Grid: "tiles layout columns rows tile size width height strict drag resize short last row stretch tall gaps split screen side by side",
   "Backup & Restore": "backup restore export import copy save file folder migrate move to another pc database",
   Help: "hints status bar tooltips bottom bar explanations hover guidance",

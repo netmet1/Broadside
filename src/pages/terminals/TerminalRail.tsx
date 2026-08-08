@@ -107,7 +107,13 @@ import type { ShortcutScope } from "@/lib/tauri/settings";
 import type { ScopedShortcut } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
-import { sessionLabel, type TermSession } from "@/pages/terminals/session";
+import {
+  sessionColor,
+  sessionLabel,
+  type TermSession,
+} from "@/pages/terminals/session";
+import { isTintable } from "@/lib/terminalColors";
+import { useShellColors } from "@/lib/useShellColors";
 
 export function TerminalRail({
   tabsCompact,
@@ -185,6 +191,7 @@ export function TerminalRail({
   onUnhideAll: () => void;
 }) {
   const hint = useHint();
+  const shellColors = useShellColors();
   // The flip is only meaningful at exactly two tiles: one fills the area, three
   // or more tile and scroll. Two always take this layout whether or not a Grid
   // size is pinned, so customGrid is false here by construction.
@@ -541,7 +548,12 @@ export function TerminalRail({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-w-72">
-              {sessions.map((s) => (
+              {sessions.map((s) => {
+                // Same colour the tab wears, for the same reason: this list is
+                // how you find a session when there are too many tabs to read,
+                // and a column of identical grey icons is no help at all.
+                const color = sessionColor(s, shellColors);
+                return (
                 <DropdownMenuItem
                   key={s.id}
                   onSelect={() => onActivate(s.id)}
@@ -555,7 +567,11 @@ export function TerminalRail({
                   ) : (
                     <LocalShellIcon
                       kind={s.shell.kind}
-                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0",
+                        !isTintable(color) && "text-muted-foreground",
+                      )}
+                      style={isTintable(color) ? { color } : undefined}
                     />
                   )}
                   <span className="truncate">
@@ -563,7 +579,8 @@ export function TerminalRail({
                     {tabSuffix.get(s.id)}
                   </span>
                 </DropdownMenuItem>
-              ))}
+                );
+              })}
               <DropdownMenuSeparator />
 
               {/* The bulk repairs, above the bulk destruction. Each is the way
