@@ -7,8 +7,6 @@ mod common;
 
 use std::time::Duration;
 
-use base64::engine::general_purpose::STANDARD as B64;
-use base64::Engine;
 use common::{Fixture, PASSWORD, USER};
 use broadside_lib::ssh::pty::{
     open, PtyBlock, PtyClosed, PtyData, PtyEvents, PtyState, SudoInjected,
@@ -66,7 +64,7 @@ async fn read_until(
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         match tokio::time::timeout(remaining, rx.recv()).await {
             Ok(Some(Event::Data(d))) => {
-                buffer.push_str(&String::from_utf8_lossy(&B64.decode(&d.data_b64).unwrap()));
+                buffer.push_str(&String::from_utf8_lossy(&d.data));
                 if buffer.contains(needle) {
                     return buffer;
                 }

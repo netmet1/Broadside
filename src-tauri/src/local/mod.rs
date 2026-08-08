@@ -10,8 +10,6 @@
 
 use std::io::{Read, Write};
 
-use base64::engine::general_purpose::STANDARD as B64;
-use base64::Engine;
 use portable_pty::{CommandBuilder, PtySize};
 use serde::Serialize;
 
@@ -283,7 +281,7 @@ pub fn open_local<E: PtyEvents>(
         let emit = |session_id: &str, bytes: &[u8], events: &E| {
             events.data(PtyData {
                 session_id: session_id.to_string(),
-                data_b64: B64.encode(bytes),
+                data: bytes.to_vec(),
             });
         };
 

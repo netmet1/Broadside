@@ -30,8 +30,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use base64::engine::general_purpose::STANDARD as B64;
-use base64::Engine;
 use serde::Serialize;
 
 use crate::error::{AppError, AppResult};
@@ -378,7 +376,7 @@ pub fn open_serial<E: PtyEvents>(
         let emit = |session_id: &str, bytes: &[u8], events: &E| {
             events.data(PtyData {
                 session_id: session_id.to_string(),
-                data_b64: B64.encode(bytes),
+                data: bytes.to_vec(),
             });
         };
 

@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -43,11 +44,24 @@ const TERM: &str = "xterm-256color";
 /// outcome. Ten seconds matches the other phases.
 const SHELL_SETUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct PtyData {
     pub session_id: String,
-    /// Raw terminal bytes, base64-encoded (JSON events can't carry binary).
-    pub data_b64: String,
+    /// Raw terminal bytes. Base64 is a property of the Tauri event wire rather
+    /// than of this type, so it is applied once, at the emit boundary. Keeping
+    /// the bytes raw in here is also what makes batching possible at all: two
+    /// base64 strings cannot be concatenated into the encoding of the two
+    /// chunks joined, because of the padding in the middle.
+    pub data: Vec<u8>,
+}
+
+/// The `pty:data` payload in the shape the frontend actually receives. JSON
+/// cannot carry binary, so the bytes travel base64-encoded; `onPtyData` in
+/// `src/lib/tauri/pty.ts` is the other half of this.
+#[derive(Serialize, Clone)]
+struct PtyDataWire<'a> {
+    session_id: &'a str,
+    data_b64: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -81,6 +95,10 @@ pub struct PtyBlock {
 /// integration tests implement it with a channel.
 pub trait PtyEvents: Send + Sync + 'static {
     fn data(&self, payload: PtyData);
+    /// Send anything this sink has gathered for the session right now, rather
+    /// than when its batch window closes. Only matters to a sink that batches,
+    /// so it defaults to doing nothing.
+    fn flush(&self, _session_id: &str) {}
     fn closed(&self, payload: PtyClosed);
     /// A command finished, its completion-delimited block (D-061).
     fn block(&self, payload: PtyBlock);
@@ -90,11 +108,163 @@ pub trait PtyEvents: Send + Sync + 'static {
     fn sudo_rejected(&self, payload: SudoInjected);
 }
 
+/// How long a session's output may be gathered before it has to go out.
+///
+/// Nothing ever waits this long unless the session is *already* producing
+/// faster than the window: the first chunk after a quiet moment is emitted on
+/// the spot. So an echoed keystroke never pays it, while a `cat` of a large
+/// file stops paying a JSON serialize, a JS source string and a WebView2
+/// parse-and-compile for every single read the session task does.
+const COALESCE_WINDOW: Duration = Duration::from_millis(4);
+
+/// Force a batch out once it reaches this size, rather than waiting for the
+/// window. The window already bounds the batch under any normal load; this
+/// only matters if a flush is delayed, and it stops one emit from becoming
+/// arbitrarily large.
+const COALESCE_MAX_BYTES: usize = 256 * 1024;
+
+#[derive(Default)]
+struct PumpSlot {
+    /// When bytes last went out for this session. `None` until the first ones
+    /// do, which is what makes a brand new session take the immediate path.
+    last_emit: Option<Instant>,
+    /// Gathered since then, waiting for the window to close.
+    pending: Vec<u8>,
+    /// A flush is already scheduled, so don't schedule a second one.
+    armed: bool,
+}
+
+/// Batches `pty:data` on its way to the UI (see [`COALESCE_WINDOW`]).
+///
+/// The ordering rule that makes this safe: a chunk only takes the immediate
+/// path when nothing is already gathered for that session. So bytes can never
+/// overtake bytes, and the pane sees exactly the stream the host sent.
+#[derive(Default)]
+pub struct DataPump {
+    slots: Mutex<HashMap<String, PumpSlot>>,
+}
+
+/// What [`PumpSlot::accept`] decided should happen to one chunk.
+#[derive(Debug)]
+enum PumpAction {
+    /// These bytes go out now.
+    SendNow(Vec<u8>),
+    /// Added to the batch; a flush is already scheduled for it.
+    Gathered,
+    /// Added to the batch, and the caller now owes it a scheduled flush.
+    GatheredArmFlush,
+}
+
+impl PumpSlot {
+    /// Decide what happens to one chunk. Split out from [`DataPump::push`] so
+    /// the batching rules can be tested with a clock we control, rather than
+    /// only through a live `AppHandle`.
+    fn accept(&mut self, now: Instant, bytes: &[u8]) -> PumpAction {
+        let quiet = self
+            .last_emit
+            .is_none_or(|t| now.duration_since(t) >= COALESCE_WINDOW);
+        // Going out immediately is conditional on nothing being gathered yet,
+        // not merely on the session being quiet, and that is the whole ordering
+        // guarantee: bytes can never overtake bytes that are already waiting.
+        if self.pending.is_empty() && quiet {
+            self.last_emit = Some(now);
+            return PumpAction::SendNow(bytes.to_vec());
+        }
+        self.pending.extend_from_slice(bytes);
+        if self.pending.len() >= COALESCE_MAX_BYTES {
+            self.last_emit = Some(now);
+            return PumpAction::SendNow(std::mem::take(&mut self.pending));
+        }
+        if self.armed {
+            PumpAction::Gathered
+        } else {
+            self.armed = true;
+            PumpAction::GatheredArmFlush
+        }
+    }
+
+    /// Take whatever is gathered, disarming the flush that was scheduled for it.
+    fn take_pending(&mut self, now: Instant) -> Option<Vec<u8>> {
+        self.armed = false;
+        if self.pending.is_empty() {
+            return None;
+        }
+        self.last_emit = Some(now);
+        Some(std::mem::take(&mut self.pending))
+    }
+}
+
+impl DataPump {
+    /// Deliver `bytes` for `session_id`: immediately if the session has been
+    /// quiet, otherwise added to the batch already forming for it.
+    fn push(&self, app: &tauri::AppHandle, session_id: &str, bytes: &[u8]) {
+        let action = {
+            let mut slots = self.slots.lock().unwrap();
+            slots
+                .entry(session_id.to_string())
+                .or_default()
+                .accept(Instant::now(), bytes)
+        };
+        // Emitting happens outside the lock deliberately: an emit hops to the
+        // UI thread, and holding the map across it would queue every other
+        // session's output behind this one.
+        match action {
+            PumpAction::SendNow(bytes) => emit_data(app, session_id, &bytes),
+            PumpAction::Gathered => {}
+            PumpAction::GatheredArmFlush => {
+                let app = app.clone();
+                let session_id = session_id.to_string();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(COALESCE_WINDOW).await;
+                    app.state::<DataPump>().flush_session(&app, &session_id);
+                });
+            }
+        }
+    }
+
+    /// Send whatever is gathered for this session right now.
+    fn flush_session(&self, app: &tauri::AppHandle, session_id: &str) {
+        let send_now = {
+            let mut slots = self.slots.lock().unwrap();
+            slots
+                .get_mut(session_id)
+                .and_then(|slot| slot.take_pending(Instant::now()))
+        };
+        if let Some(bytes) = send_now {
+            emit_data(app, session_id, &bytes);
+        }
+    }
+
+    /// Flush a finished session and forget it, so the map tracks live sessions
+    /// only rather than growing for the life of the process.
+    fn retire(&self, app: &tauri::AppHandle, session_id: &str) {
+        self.flush_session(app, session_id);
+        self.slots.lock().unwrap().remove(session_id);
+    }
+}
+
+fn emit_data(app: &tauri::AppHandle, session_id: &str, bytes: &[u8]) {
+    let _ = app.emit(
+        DATA_EVENT,
+        PtyDataWire {
+            session_id,
+            data_b64: B64.encode(bytes),
+        },
+    );
+}
+
 impl PtyEvents for tauri::AppHandle {
     fn data(&self, payload: PtyData) {
-        let _ = self.emit(DATA_EVENT, &payload);
+        self.state::<DataPump>()
+            .push(self, &payload.session_id, &payload.data);
+    }
+    fn flush(&self, session_id: &str) {
+        self.state::<DataPump>().flush_session(self, session_id);
     }
     fn closed(&self, payload: PtyClosed) {
+        // Anything still gathered is this session's last words, so it has to
+        // reach the pane before the pane is told the session ended.
+        self.state::<DataPump>().retire(self, &payload.session_id);
         let _ = self.emit(CLOSED_EVENT, &payload);
     }
     fn block(&self, payload: PtyBlock) {
@@ -419,12 +589,17 @@ pub async fn open<E: PtyEvents>(
                         }
                         events.data(PtyData {
                             session_id: session_id.clone(),
-                            data_b64: B64.encode(data),
+                            data: data.to_vec(),
                         });
                         // Answer a sudo prompt after the bytes reach the UI so
                         // the operator sees the prompt (D-065). The password
                         // never enters the visible stream.
                         if let Some(payload) = sudo.on_output(&data[..]) {
+                            // "Reach the UI" has to mean it, so the prompt is
+                            // pushed out ahead of the password rather than
+                            // sitting in a batch while the password is typed
+                            // for it.
+                            events.flush(&session_id);
                             if channel.data(payload.as_bytes()).await.is_ok() {
                                 events.sudo_injected(sudo_meta.clone());
                             }
@@ -501,4 +676,91 @@ pub async fn open<E: PtyEvents>(
         capability: probed,
         integration: shell_pref,
     })
+}
+
+#[cfg(test)]
+mod pump_tests {
+    use super::*;
+
+    fn sent(action: PumpAction) -> Option<Vec<u8>> {
+        match action {
+            PumpAction::SendNow(bytes) => Some(bytes),
+            _ => None,
+        }
+    }
+
+    /// The property the whole design rests on: a session nobody is flooding
+    /// pays nothing. Every chunk after a quiet moment goes straight out, so an
+    /// echoed keystroke is never held back.
+    #[test]
+    fn a_quiet_session_always_sends_immediately() {
+        let mut slot = PumpSlot::default();
+        let t0 = Instant::now();
+        assert_eq!(sent(slot.accept(t0, b"a")).as_deref(), Some(&b"a"[..]));
+        let later = t0 + COALESCE_WINDOW * 2;
+        assert_eq!(sent(slot.accept(later, b"b")).as_deref(), Some(&b"b"[..]));
+        let later_still = later + COALESCE_WINDOW * 5;
+        assert_eq!(
+            sent(slot.accept(later_still, b"c")).as_deref(),
+            Some(&b"c"[..])
+        );
+    }
+
+    #[test]
+    fn a_busy_session_gathers_and_goes_out_in_one_piece() {
+        let mut slot = PumpSlot::default();
+        let t0 = Instant::now();
+        assert!(sent(slot.accept(t0, b"one")).is_some());
+        // Inside the window now, so these gather; only the first one owes a
+        // scheduled flush, or every chunk would spawn its own.
+        let t1 = t0 + Duration::from_millis(1);
+        assert!(matches!(
+            slot.accept(t1, b"two"),
+            PumpAction::GatheredArmFlush
+        ));
+        assert!(matches!(slot.accept(t1, b"three"), PumpAction::Gathered));
+        assert_eq!(slot.take_pending(t1).as_deref(), Some(&b"twothree"[..]));
+        // Disarmed by the take, so the next burst arms a fresh flush.
+        assert!(!slot.armed);
+    }
+
+    /// The ordering invariant. Once anything is waiting, a later chunk joins
+    /// the queue instead of jumping it, even long after the window has passed,
+    /// so the pane can never be shown bytes out of the order the host sent them.
+    #[test]
+    fn nothing_overtakes_bytes_that_are_already_waiting() {
+        let mut slot = PumpSlot::default();
+        let t0 = Instant::now();
+        slot.accept(t0, b"first");
+        slot.accept(t0 + Duration::from_millis(1), b"second");
+        let long_after = t0 + COALESCE_WINDOW * 10;
+        assert!(matches!(
+            slot.accept(long_after, b"third"),
+            PumpAction::Gathered
+        ));
+        assert_eq!(
+            slot.take_pending(long_after).as_deref(),
+            Some(&b"secondthird"[..])
+        );
+    }
+
+    #[test]
+    fn a_batch_past_the_cap_is_forced_out_without_waiting() {
+        let mut slot = PumpSlot::default();
+        let t0 = Instant::now();
+        slot.accept(t0, b"x");
+        let big = vec![b'y'; COALESCE_MAX_BYTES];
+        let out = sent(slot.accept(t0 + Duration::from_millis(1), &big))
+            .expect("a batch at the cap goes out at once rather than growing");
+        assert_eq!(out.len(), COALESCE_MAX_BYTES);
+        assert!(slot.pending.is_empty());
+    }
+
+    #[test]
+    fn taking_from_an_idle_slot_emits_nothing() {
+        // The scheduled flush fires even when the burst already drained itself
+        // through the size cap, and it must not emit an empty payload.
+        let mut slot = PumpSlot::default();
+        assert!(slot.take_pending(Instant::now()).is_none());
+    }
 }
