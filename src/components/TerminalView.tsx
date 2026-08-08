@@ -799,7 +799,23 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
 
   return (
     <div ref={paneRef} className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
+      {/* A hair of gutter so the first column is not printed against the wall.
+          In a grid tile the terminal fills the tile's content box exactly, so
+          without this the leftmost character sits on the border line and a
+          full-width line reads as if it has been trimmed.
+
+          On the container rather than on `.xterm`: the fit addon measures this
+          element's computed width, which is its content box, so the padding is
+          already discounted and the column count stays right; and everything
+          xterm measures for itself (selection, mouse reporting, the cursor)
+          keeps working against its own box, which has simply moved. The strip
+          it uncovers is the pane's `--terminal-bg`, the same colour the
+          terminal paints, so it reads as margin and not as a gap.
+
+          A literal 2px, not `pl-0.5`: rem follows the app font size and a
+          terminal cell does not, so a rem gutter would grow against text that
+          had not moved. */}
+      <div ref={containerRef} className="h-full w-full pl-[2px]" />
       {(phase.kind === "connecting" ||
         phase.kind === "gate" ||
         phase.kind === "failed") && (

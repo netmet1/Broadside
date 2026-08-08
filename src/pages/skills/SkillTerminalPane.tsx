@@ -248,5 +248,8 @@ export function SkillTerminalPane({
     if (containerRef.current?.offsetParent) fitRef.current?.fit();
   }, [resetNonce]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  // pl-[2px]: the same left gutter a Terminals pane has, for the same reason
+  // and with the same reasoning behind putting it here rather than on `.xterm`.
+  // See TerminalView's container.
+  return <div ref={containerRef} className="h-full w-full pl-[2px]" />;
 }
