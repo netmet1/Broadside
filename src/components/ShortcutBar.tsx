@@ -88,20 +88,25 @@ export function ShortcutBar({
 
   // Nothing at all to pick. In practice this is a serial console and only a
   // serial console: SSH and Windows tabs always have the built-in commands
-  // behind them, and a cable has none by design. The whole control goes flat
-  // rather than opening onto an empty list, since an empty list is a thing you
-  // have to open to learn nothing from.
+  // behind them, and a cable has none by design.
   //
-  // What that costs is the Manage shortcuts… entry inside the list, at the one
-  // moment it would be useful, so the hint below carries the destination
-  // instead. It has to be hung on a wrapper: the browser dispatches no mouse
-  // events to a disabled control, so a hint on the trigger itself would go
-  // silent exactly when it has something to say.
+  // The control stays live. Greying it out was the first attempt and it was the
+  // wrong answer: the one thing wanted at that exact moment is the way to add
+  // the first command, and that lives inside the list as Manage shortcuts…, so
+  // a flat trigger locks the door on the room you were being sent to. The
+  // trigger says No serial shortcuts so the state is legible without opening
+  // it, and opening it says the same thing again, greyed and unpickable, above
+  // the way out.
   const nothingToPick = items.length === 0;
+  const emptyLabel =
+    activeScope === "serial" ? "No serial shortcuts" : "No shortcuts";
+  // Kept inside the status bar's one line (see HINT_BUDGET_PX). Why Broadside
+  // ships no serial commands is a paragraph, and a paragraph belongs in Help,
+  // which carries it; the hint's job is to say where the commands come from.
   const emptyHint =
     activeScope === "serial"
-      ? "No shortcut commands for serial consoles yet. A console port might be a switch, a BIOS menu or a bootloader, so Broadside ships none; add your own under Settings, Shortcut commands, and pick Serial console as the scope."
-      : "No shortcut commands available for this terminal. Add one under Settings, Shortcut commands.";
+      ? "Broadside ships no serial commands: a console port might be anything. Add your own from Manage shortcuts in this list."
+      : "No shortcut commands for this terminal. Add one from Manage shortcuts in this list.";
   const selectedCmd = selected ? selected.slice(selected.indexOf(SEP) + 1) : "";
 
   // A `both` shortcut borrows the active terminal's icon; others use their own
@@ -121,9 +126,16 @@ export function ShortcutBar({
     // shrink-0 for the opposite reason: the button inside it already refuses to
     // shrink, and a wrapper that does would clip it instead of the row giving.
     <div className="flex min-w-0 items-center gap-1.5">
+      {/* The hint hangs on this wrapper rather than on the trigger so it is one
+          element whichever state the picker is in, and so it survives the
+          trigger being replaced by whatever Radix renders. */}
       <span
         className="flex min-w-0 flex-1"
-        {...(nothingToPick ? hint(emptyHint) : {})}
+        {...hint(
+          nothingToPick
+            ? emptyHint
+            : "Pick a shortcut command, then press Go to run it",
+        )}
       >
       <Select
         value={selected}
@@ -137,21 +149,11 @@ export function ShortcutBar({
       >
         <SelectTrigger
           size="sm"
-          disabled={nothingToPick}
           className="w-56 min-w-0 font-mono text-xs"
           aria-label="Shortcut command"
-          {...(nothingToPick
-            ? {}
-            : hint("Pick a shortcut command, then press Go to run it"))}
         >
           <SelectValue
-            placeholder={
-              nothingToPick
-                ? activeScope === "serial"
-                  ? "No serial shortcuts"
-                  : "No shortcuts"
-                : "Shortcut command…"
-            }
+            placeholder={nothingToPick ? emptyLabel : "Shortcut command…"}
           />
         </SelectTrigger>
         <SelectContent>
@@ -180,6 +182,14 @@ export function ShortcutBar({
               </SelectItem>
             );
           })}
+          {/* A plain div, not a disabled SelectItem: it is a caption and not an
+              option, so it should not be reachable by arrow key or typeahead,
+              and it needs no fake value to be skipped over. */}
+          {nothingToPick && (
+            <div className="px-1.5 py-1 text-xs text-muted-foreground">
+              {emptyLabel} yet
+            </div>
+          )}
           <SelectSeparator />
           <SelectItem value={MANAGE_VALUE} className="text-xs">
             Manage shortcuts…
