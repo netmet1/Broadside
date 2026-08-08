@@ -475,7 +475,22 @@ async fn connect_and_auth_once(
         trusted_fingerprints: trusted_fingerprints.clone(),
         seen: seen.clone(),
     };
-    let config = Arc::new(client::Config::default());
+    // TCP_NODELAY, as OpenSSH has set it on interactive sessions for decades.
+    // russh's default is the opposite (`nodelay: false`, i.e. Nagle's algorithm
+    // active), which is wrong for a terminal: Nagle withholds a small segment
+    // while any earlier byte is still unacknowledged, so two keystrokes typed
+    // closer together than one round trip get coalesced and the second one
+    // waits for an ACK before it even leaves the machine. Invisible on a LAN,
+    // where the ACK always beats the next keypress; on a link with real
+    // latency it reads as intermittent stickiness while typing, which is
+    // exactly the complaint it was found from.
+    //
+    // Costs nothing in return here. SSH already batches at the packet layer,
+    // and bulk transfers fill segments on their own.
+    let config = Arc::new(client::Config {
+        nodelay: true,
+        ..Default::default()
+    });
 
     let connect = client::connect(config, (hostname, port), handler);
     let mut handle = match tokio::time::timeout(CONNECT_TIMEOUT, connect).await {
