@@ -998,19 +998,16 @@ export function TerminalsPage({
   );
   // Drop entries whose session has closed, so the map can't grow without bound
   // (the same housekeeping the grid's exclusion set does).
-  // Adjusted during render, like the grid's exclusion set. The early return on
-  // an empty map and the identity return when nothing was dropped are what make
-  // it converge.
-  const [prevSessionsForPhases, setPrevSessionsForPhases] = useState(sessions);
-  if (prevSessionsForPhases !== sessions) {
-    setPrevSessionsForPhases(sessions);
-    setPhases((prev) => {
-      if (prev.size === 0) return prev;
-      const live = new Set(sessions.map((s) => s.id));
-      const next = new Map([...prev].filter(([id]) => live.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }
+  // Guarded on the outcome, like the grid's exclusion set: the same map comes
+  // back unless an entry was actually dropped, so this cannot write twice and a
+  // render-phase update cannot loop.
+  const livePhases = (() => {
+    if (phases.size === 0) return phases;
+    const live = new Set(sessions.map((s) => s.id));
+    const next = new Map([...phases].filter(([id]) => live.has(id)));
+    return next.size === phases.size ? phases : next;
+  })();
+  if (livePhases !== phases) setPhases(livePhases);
 
   // COM ports this app already has a live tab on.
   //
