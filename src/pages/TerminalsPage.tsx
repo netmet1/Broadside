@@ -1210,6 +1210,13 @@ export function TerminalsPage({
   const retryAll = () => {
     for (const id of retryableIds) reconnectSession(id);
   };
+  // The other answer to the same set. Close all asks first because it can take
+  // away work in progress; this cannot, since every tab it touches has already
+  // lost its shell, so a confirmation would only be a step between the operator
+  // and a tidy-up they have already decided on.
+  const closeFailed = () => {
+    for (const id of retryableIds) closeSession(id);
+  };
 
   // Close-all guard rail (T-…): confirm before tearing down every session.
   const [closeAllOpen, setCloseAllOpen] = useState(false);
@@ -1472,6 +1479,7 @@ export function TerminalsPage({
         onCloseAll={() => setCloseAllOpen(true)}
         retryableCount={retryableIds.length}
         onRetryAll={retryAll}
+        onCloseFailed={closeFailed}
         hiddenCount={excludedFromGrid.size}
         onUnhideAll={clearGridExcluded}
       />
@@ -2160,9 +2168,17 @@ export function TerminalsPage({
             reads as broken. The way out is offered here rather than only
             described, because the tabs this text sends you to are precisely the
             ones whose eye buttons you would have to find one at a time, and
-            this is the state where that is most tedious. */}
+            this is the state where that is most tedious.
+
+            Centred in the empty area, and stacked, rather than a row along the
+            top edge. This is the only thing on screen in this state, so the
+            eye has nothing else to land on and no reason to be sent to a
+            corner; and read as one line the sentence, the button and the
+            second sentence ran together into something that looked like prose
+            with a control stuck in the middle of it. Three lines make the
+            button the middle of the three rather than an interruption. */}
         {gridMode && gridCount === 0 && sessions.length > 0 && (
-          <div className="col-span-full flex flex-wrap items-center gap-3 p-4 text-sm text-muted-foreground">
+          <div className="col-span-full flex h-full flex-col items-center justify-center gap-3 p-4 text-center text-sm text-muted-foreground">
             <span>Every terminal is hidden from the grid.</span>
             <Button size="sm" variant="outline" onClick={clearGridExcluded}>
               <Grid2x2Icon className="h-3.5 w-3.5" />

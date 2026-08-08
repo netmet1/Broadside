@@ -48,16 +48,17 @@
  * that only exists at exactly two tiles; the entry itself is meaningless
  * elsewhere, so it goes.
  *
- * The Sessions menu's two bulk repairs, **Retry all** and **Unhide all**, are
- * the other exception, and they are worth naming because they look at first
- * like a breach of the rule rather than a limit on it. What greying buys is a
- * reader learning that an action exists before the day they want it, and that
- * is worth two permanently dead rows when the action is the only clue to
- * something non-obvious: Reset grid greyed is how anyone finds out a tile edge
- * can be dragged at all. Neither of these teaches anything. "Retry all" arrives
- * already understood the moment a pane goes red, and "Unhide all" the moment
- * one is hidden, so carrying them through every other moment buys nothing and
- * costs length in the one menu that is already as long as the session list.
+ * The Sessions menu's bulk repairs, **Retry all**, **Close failed** and
+ * **Unhide all**, are the other exception, and they are worth naming because
+ * they look at first like a breach of the rule rather than a limit on it. What
+ * greying buys is a reader learning that an action exists before the day they
+ * want it, and that is worth a permanently dead row when the action is the only
+ * clue to something non-obvious: Reset grid greyed is how anyone finds out a
+ * tile edge can be dragged at all. None of these three teaches anything. "Retry
+ * all" and "Close failed" arrive already understood the moment a pane goes red,
+ * and "Unhide all" the moment one is hidden, so carrying them through every
+ * other moment buys nothing and costs length in the one menu that is already as
+ * long as the session list.
  *
  * Each of the three says what it is waiting for, in the status bar, while it is
  * greyed, which takes a little work: the browser will not dispatch a mouse
@@ -139,6 +140,7 @@ export function TerminalRail({
   onCloseAll,
   retryableCount,
   onRetryAll,
+  onCloseFailed,
   hiddenCount,
   onUnhideAll,
 }: {
@@ -172,9 +174,12 @@ export function TerminalRail({
   tabSuffix: Map<string, string>;
   onActivate: (id: string) => void;
   onCloseAll: () => void;
-  /** How many panes are sitting on a Try again / Reconnect button. */
+  /** How many panes are sitting on a Try again / Reconnect button. One number
+   * for both repairs: whatever Retry all would bring back is exactly what Close
+   * failed would clear away, which is what makes the pair readable. */
   retryableCount: number;
   onRetryAll: () => void;
+  onCloseFailed: () => void;
   /** How many open terminals are currently taken out of the grid. */
   hiddenCount: number;
   onUnhideAll: () => void;
@@ -217,7 +222,9 @@ export function TerminalRail({
   // has to as well: naming a way out that isn't in the list is worse than not
   // naming it at all.
   const sessionsExtras: string[] = [];
-  if (retryableCount > 0) sessionsExtras.push("retry the ones that dropped");
+  if (retryableCount > 0) {
+    sessionsExtras.push("retry or clear away the ones that dropped");
+  }
   if (gridMode && hiddenCount > 0) {
     sessionsExtras.push("put hidden ones back in the grid");
   }
@@ -559,20 +566,20 @@ export function TerminalRail({
               ))}
               <DropdownMenuSeparator />
 
-              {/* The two bulk repairs, above the bulk destruction. Both are the
-                  way out of a state you can otherwise only leave one tab at a
-                  time, which is the whole reason they are here: twenty panes
-                  that lost their connection is twenty Try again buttons, and a
-                  grid you have emptied hides the very tabs whose eye buttons
-                  would fill it again.
+              {/* The bulk repairs, above the bulk destruction. Each is the way
+                  out of a state you can otherwise only leave one tab at a time,
+                  which is the whole reason they are here: twenty panes that lost
+                  their connection is twenty Try again buttons or twenty little
+                  x's, and a grid you have emptied hides the very tabs whose eye
+                  buttons would fill it again.
 
-                  These two are the exception to this file's greyed-not-removed
+                  These are the exception to this file's greyed-not-removed
                   rule, and the exception is narrow: greying teaches an operator
-                  that an action exists before they need it, which is worth two
-                  dead rows for something like Reset grid, where the action is
-                  the only clue that tile edges can be dragged at all. Retry all
-                  and Unhide all teach nothing you don't already know the moment
-                  they appear, so a menu that stays short is worth more. */}
+                  that an action exists before they need it, which is worth a
+                  dead row for something like Reset grid, where the action is
+                  the only clue that tile edges can be dragged at all. These
+                  three teach nothing you don't already know the moment they
+                  appear, so a menu that stays short is worth more. */}
               {retryableCount > 0 && (
                 <DropdownMenuItem
                   onSelect={onRetryAll}
@@ -584,6 +591,29 @@ export function TerminalRail({
                 >
                   <RefreshCwIcon />
                   Retry all
+                  <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
+                    {retryableCount}
+                  </span>
+                </DropdownMenuItem>
+              )}
+
+              {/* The other answer to the same tabs, and it shares Retry all's
+                  count on purpose: the pane you would retry is the pane you
+                  would give up on, so a reader who has understood one entry has
+                  understood both. No confirmation, unlike Close all, because
+                  every tab this touches is already dead, its shell already
+                  gone; there is nothing here to interrupt or lose. */}
+              {retryableCount > 0 && (
+                <DropdownMenuItem
+                  onSelect={onCloseFailed}
+                  {...hint(
+                    retryableCount === 1
+                      ? "Close the one tab that dropped or was refused. Nothing is running in it, so nothing is interrupted."
+                      : `Close all ${retryableCount} tabs that dropped or were refused, in one go. Nothing is running in them, so nothing is interrupted.`,
+                  )}
+                >
+                  <XIcon />
+                  Close failed
                   <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
                     {retryableCount}
                   </span>
