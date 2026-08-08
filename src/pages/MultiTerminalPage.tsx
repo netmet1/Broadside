@@ -199,7 +199,16 @@ export function MultiTerminalPage({
   // CONNECTED, open sessions: a disconnect or close removes a session from the
   // selection (disconnected ones are ghosted in the rail and can't be a dispatch
   // target). The user's checks are otherwise preserved.
-  useEffect(() => {
+  // Adjusted during render rather than in an effect: an effect leaves the box
+  // ticked for a frame after its session went down, and that is the frame in
+  // which a dispatch could still be aimed at it. Returning `prev` when nothing
+  // was dropped is what makes it converge.
+  const [prevLiveness, setPrevLiveness] = useState({ sessions, connectedSessions });
+  if (
+    prevLiveness.sessions !== sessions ||
+    prevLiveness.connectedSessions !== connectedSessions
+  ) {
+    setPrevLiveness({ sessions, connectedSessions });
     setSelected((prev) => {
       const connectedOpen = new Set(
         sessions.filter((s) => connectedSessions.has(s.id)).map((s) => s.id),
@@ -212,7 +221,7 @@ export function MultiTerminalPage({
       }
       return changed ? next : prev;
     });
-  }, [sessions, connectedSessions]);
+  }
 
   // Refs so the always-on block listener sees current state without
   // re-subscribing. Copied in a layout effect rather than during render: a
@@ -365,7 +374,12 @@ export function MultiTerminalPage({
       ),
     [visibleSessions, connectedSessions],
   );
-  useEffect(() => {
+  // Same rule against the filtered rail, and adjusted during render for the
+  // same reason. The narrowing sticks on purpose: clearing the filter does not
+  // bring a host back checked, so this cannot become a read-time derivation.
+  const [prevSelectable, setPrevSelectable] = useState(selectableIds);
+  if (prevSelectable !== selectableIds) {
+    setPrevSelectable(selectableIds);
     setSelected((prev) => {
       let changed = false;
       const next = new Set<string>();
@@ -375,7 +389,7 @@ export function MultiTerminalPage({
       }
       return changed ? next : prev;
     });
-  }, [selectableIds]);
+  }
   const allSelected = selectableIds.size > 0 && selected.size === selectableIds.size;
   const toggleAll = () =>
     setSelected(allSelected ? new Set() : new Set(selectableIds));

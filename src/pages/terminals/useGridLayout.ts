@@ -237,14 +237,19 @@ export function useGridLayout({
     setExcludedFromGrid((prev) => (prev.size === 0 ? prev : new Set()));
   }, []);
   // Drop ids whose session has closed so the set can't grow without bound.
-  useEffect(() => {
+  // Adjusted during render rather than in an effect; the early return on an
+  // empty set and the identity return when nothing was dropped are what make
+  // it converge.
+  const [prevSessions, setPrevSessions] = useState(sessions);
+  if (prevSessions !== sessions) {
+    setPrevSessions(sessions);
     setExcludedFromGrid((prev) => {
       if (prev.size === 0) return prev;
       const live = new Set(sessions.map((s) => s.id));
       const next = new Set([...prev].filter((id) => live.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [sessions]);
+  }
 
   const gridTiles = useMemo(
     () => paneOrder.filter((s) => !excludedFromGrid.has(s.id)),
