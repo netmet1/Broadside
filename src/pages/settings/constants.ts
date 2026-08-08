@@ -5,6 +5,7 @@ export const SCOPE_LABELS: Record<ShortcutScope, string> = {
   ssh: "SSH / WSL (Linux)",
   local: "Command Prompt / PowerShell",
   both: "Both (Linux and Windows)",
+  serial: "Serial console (COM port)",
 };
 
 /** Stable DOM id for a settings section, used by the jump-to dropdown. */

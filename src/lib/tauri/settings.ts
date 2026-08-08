@@ -35,8 +35,14 @@ export type UserRule = {
 
 /** Where a shortcut runs: `ssh` covers remote SSH hosts and local WSL tabs (both
  * Linux); `local` covers local Command Prompt and PowerShell tabs (Windows);
- * `both` runs in either. */
-export type ShortcutScope = "ssh" | "local" | "both";
+ * `both` runs in either.
+ *
+ * `serial` is a console cable and stands alone: `both` does not reach it,
+ * because "both" has always meant both shell *languages* and the far end of a
+ * console cable speaks neither. There are no built-in serial shortcuts either,
+ * so until the operator adds one the picker and Go are greyed out rather than
+ * offering commands that cannot work. */
+export type ShortcutScope = "ssh" | "local" | "both" | "serial";
 
 /** A user-defined shortcut command (D-054). */
 export type ShortcutCommand = {

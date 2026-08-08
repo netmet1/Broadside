@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
-import { PlayIcon, SquareTerminalIcon, TerminalIcon } from "lucide-react";
+import {
+  CableIcon,
+  PlayIcon,
+  SquareTerminalIcon,
+  TerminalIcon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -49,11 +54,22 @@ export function ShortcutBar({
 
   // Only the shortcuts that run in the active terminal: matching scope or both.
   // De-duped by scope+command, sorted alphabetically by command.
+  //
+  // `both` means both shell *languages*, Linux and Windows, which is why it does
+  // not reach a serial console: the far end of a console cable speaks neither,
+  // and a list headed "runs everywhere" that puts `whoami` in front of a switch
+  // is worse than a short list. A serial tab therefore shows the operator's own
+  // serial shortcuts and nothing else, which is often nothing at all.
   const items = useMemo(() => {
     const seen = new Set<string>();
     const out: ScopedShortcut[] = [];
+    // Serial is the only scope `both` is kept out of. Anything else, including
+    // "no active terminal", keeps the behaviour it had, so the list a reader is
+    // used to seeing does not change under them anywhere but on a cable.
+    const bothApplies = activeScope !== "serial";
     for (const s of shortcuts) {
-      if (s.scope !== "both" && s.scope !== activeScope) continue;
+      const matches = s.scope === activeScope || (s.scope === "both" && bothApplies);
+      if (!matches) continue;
       const key = s.scope + SEP + s.command;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -69,22 +85,46 @@ export function ShortcutBar({
   // Go stays disabled until the selected shortcut is one of the current items.
   const runnable =
     !disabled && selected !== "" && items.some((s) => valueOf(s) === selected);
+
+  // Nothing at all to pick. In practice this is a serial console and only a
+  // serial console: SSH and Windows tabs always have the built-in commands
+  // behind them, and a cable has none by design. The whole control goes flat
+  // rather than opening onto an empty list, since an empty list is a thing you
+  // have to open to learn nothing from.
+  //
+  // What that costs is the Manage shortcuts… entry inside the list, at the one
+  // moment it would be useful, so the hint below carries the destination
+  // instead. It has to be hung on a wrapper: the browser dispatches no mouse
+  // events to a disabled control, so a hint on the trigger itself would go
+  // silent exactly when it has something to say.
+  const nothingToPick = items.length === 0;
+  const emptyHint =
+    activeScope === "serial"
+      ? "No shortcut commands for serial consoles yet. A console port might be a switch, a BIOS menu or a bootloader, so Broadside ships none; add your own under Settings, Shortcut commands, and pick Serial console as the scope."
+      : "No shortcut commands available for this terminal. Add one under Settings, Shortcut commands.";
   const selectedCmd = selected ? selected.slice(selected.indexOf(SEP) + 1) : "";
 
   // A `both` shortcut borrows the active terminal's icon; others use their own
   // scope (which, after filtering, equals the active scope anyway).
   const iconFor = (scope: ShortcutScope) => {
     const effective = scope === "both" ? activeScope : scope;
+    if (effective === "serial") return CableIcon;
     return effective === "local" ? SquareTerminalIcon : TerminalIcon;
   };
 
   return (
-    // min-w-0 the whole way down to the trigger. The picker is the widest thing
-    // in either rail (14rem, which is 280px at a 20px app font), so it is what
-    // should give up room first when the row is tight; without min-w-0 at every
-    // level a flex item will not shrink below its own content and the row runs
-    // off the edge instead.
+    // min-w-0 the whole way down to the trigger, through the hint wrapper as
+    // well. The picker is the widest thing in either rail (14rem, which is 280px
+    // at a 20px app font), so it is what should give up room first when the row
+    // is tight; without min-w-0 at every level a flex item will not shrink below
+    // its own content and the row runs off the edge instead. The Go wrapper is
+    // shrink-0 for the opposite reason: the button inside it already refuses to
+    // shrink, and a wrapper that does would clip it instead of the row giving.
     <div className="flex min-w-0 items-center gap-1.5">
+      <span
+        className="flex min-w-0 flex-1"
+        {...(nothingToPick ? hint(emptyHint) : {})}
+      >
       <Select
         value={selected}
         onValueChange={(v) => {
@@ -97,11 +137,22 @@ export function ShortcutBar({
       >
         <SelectTrigger
           size="sm"
+          disabled={nothingToPick}
           className="w-56 min-w-0 font-mono text-xs"
           aria-label="Shortcut command"
-          {...hint("Pick a shortcut command, then press Go to run it")}
+          {...(nothingToPick
+            ? {}
+            : hint("Pick a shortcut command, then press Go to run it"))}
         >
-          <SelectValue placeholder="Shortcut command…" />
+          <SelectValue
+            placeholder={
+              nothingToPick
+                ? activeScope === "serial"
+                  ? "No serial shortcuts"
+                  : "No shortcuts"
+                : "Shortcut command…"
+            }
+          />
         </SelectTrigger>
         <SelectContent>
           {items.map((s) => {
@@ -135,17 +186,25 @@ export function ShortcutBar({
           </SelectItem>
         </SelectContent>
       </Select>
-      <Button
-        size={compact ? "icon-sm" : "sm"}
-        variant="outline"
-        disabled={!runnable}
-        onClick={() => onRun(selectedCmd)}
-        aria-label={compact ? "Go" : undefined}
-        {...hint("Run the selected shortcut command")}
+      </span>
+      <span
+        className="shrink-0"
+        {...(runnable
+          ? {}
+          : hint(nothingToPick ? emptyHint : "Pick a shortcut command first"))}
       >
-        <PlayIcon />
-        {!compact && "Go"}
-      </Button>
+        <Button
+          size={compact ? "icon-sm" : "sm"}
+          variant="outline"
+          disabled={!runnable}
+          onClick={() => onRun(selectedCmd)}
+          aria-label={compact ? "Go" : undefined}
+          {...(runnable ? hint("Run the selected shortcut command") : {})}
+        >
+          <PlayIcon />
+          {!compact && "Go"}
+        </Button>
+      </span>
     </div>
   );
 }

@@ -69,17 +69,19 @@ export function sessionLabel(s: TermSession): string {
 
 /** Which shortcut scope a tab belongs to. SSH hosts, local WSL tabs and custom
  * POSIX terminals (Git Bash and the like) run Linux commands (ssh); local
- * Command Prompt / PowerShell run Windows ones (local).
+ * Command Prompt / PowerShell run Windows ones (local); a serial console has
+ * its own scope.
  *
- * A serial console goes with the first group, which is a choice rather than a
- * fact: what is on the far end of the cable might be a Linux box on its console
- * port, for which it is exactly right, or it might be a switch running IOS, for
- * which neither scope is. Between two wrong answers, the one that never offers
- * a Windows command down a console cable is the better wrong answer. */
+ * Serial used to borrow the `ssh` scope, on the grounds that of two wrong
+ * answers the one that never offers a Windows command down a console cable is
+ * the better wrong answer. It was still a wrong answer: `ls -la` is no more use
+ * to a switch than `dir` is. A cable gets its own scope, no built-in commands,
+ * and a picker that greys out until the operator has said what belongs there. */
 export function sessionScope(s: TermSession): ShortcutScope {
   if (s.type === "ssh") return "ssh";
   const k = s.shell.kind;
-  return k === "wsl" || k === "posix" || k === "serial" ? "ssh" : "local";
+  if (k === "serial") return "serial";
+  return k === "wsl" || k === "posix" ? "ssh" : "local";
 }
 
 /** Most initials we ever show. Camel/word splitting can produce a long run

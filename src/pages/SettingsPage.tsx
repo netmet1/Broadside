@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArchiveIcon,
+  CableIcon,
   CircleHelpIcon,
   Loader2Icon,
   LockIcon,
@@ -1053,12 +1054,22 @@ export function SettingsPage({
                       {SCOPE_LABELS.both}
                     </span>
                   </SelectItem>
+                  <SelectItem value="serial">
+                    <span className="flex items-center gap-2">
+                      <CableIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      {SCOPE_LABELS.serial}
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
                 SSH / WSL commands run on SSH hosts and WSL tabs; Command Prompt /
                 PowerShell commands run on local Windows shells; Both runs in
-                every terminal (for example whoami).
+                either of those (for example whoami). Serial console stands on
+                its own, and Both does not reach it: the far end of a console
+                cable is a switch or a firewall rather than a shell, so
+                Broadside ships no commands for it and the picker on a serial
+                tab stays empty until you add some here.
               </p>
             </div>
             <div className="flex gap-2 pt-1">

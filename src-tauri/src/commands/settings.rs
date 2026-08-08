@@ -32,6 +32,15 @@ pub const DEFAULT_APP_FONT_SIZE: u16 = 16;
 /// tabs (Windows); `Both` runs in either (e.g. `whoami`). Defaults to `Ssh` so
 /// shortcuts saved before scopes existed (any JSON missing the field) keep their
 /// original SSH behavior.
+///
+/// `Serial` is a console cable, and it stands on its own: `Both` deliberately
+/// does NOT reach it. "Both" has always meant both *shell languages*, Linux and
+/// Windows, and the far end of a console cable speaks neither. Offering
+/// `whoami` down a wire to a switch would be offering a command that cannot
+/// work, and doing it under a label that says it works everywhere. There are no
+/// built-in serial shortcuts for the same reason: a console port might be IOS,
+/// might be a BIOS menu, might be a bootloader, and nothing sensible is common
+/// to all of them. The commands worth having there are the operator's own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ShortcutScope {
@@ -39,6 +48,7 @@ pub enum ShortcutScope {
     Ssh,
     Local,
     Both,
+    Serial,
 }
 
 /// Built-in SSH/Linux shortcut commands (D-054). Also offered on WSL tabs, which
@@ -468,6 +478,27 @@ mod tests {
         assert_eq!(cores[0].command, "ls -la");
         assert_eq!(cores[6].command, "whoami");
         assert_eq!(cores[8].command, "dir");
+    }
+
+    #[test]
+    fn serial_scope_round_trips_and_has_no_core_commands() {
+        let json = serde_json::to_string(&ShortcutCommand {
+            id: "x".into(),
+            command: "show version".into(),
+            scope: ShortcutScope::Serial,
+            label: None,
+        })
+        .unwrap();
+        assert!(json.contains("\"scope\":\"serial\""), "got {json}");
+        let back: ShortcutCommand = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.scope, ShortcutScope::Serial);
+
+        // A console port might be IOS, a BIOS menu or a bootloader; nothing is
+        // common to all of them, so the built-in list must stay empty and the
+        // bar must grey out until the operator adds their own.
+        assert!(core_shortcuts()
+            .iter()
+            .all(|c| c.scope != ShortcutScope::Serial));
     }
 
     #[test]

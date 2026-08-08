@@ -194,10 +194,11 @@ export function PtyBroadcastPage({
             family="Serial consoles"
             sessions={serialSessions}
             connectedSessions={connectedSessions}
-            // Same reasoning as `sessionScope`: the far end of a console cable
-            // is not Windows, and offering it a PowerShell command would be
-            // worse than offering it a POSIX one.
-            scope="ssh"
+            // Its own scope, same as `sessionScope` gives a serial tab. The
+            // picker here is empty until the operator has written commands for
+            // their own hardware, which is the honest state: nothing Broadside
+            // ships knows what is on the other end of a console cable.
+            scope="serial"
             onManageShortcuts={onManageShortcuts}
             storagePrefix="pty-broadcast-serial"
           />
