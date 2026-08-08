@@ -18,16 +18,38 @@ export default tseslint.config(
       "react-refresh": reactRefresh,
     },
     rules: {
-      // The two classic hook rules, named explicitly rather than spread from
-      // the plugin's `recommended`. As of eslint-plugin-react-hooks 7 that
-      // preset also switches on the React Compiler rule set (purity,
-      // immutability, set-state-in-effect and friends), which flags a lot of
-      // deliberate existing code. Taking those on is a lint-policy decision to
-      // make on its own merits, not a side effect of the eslint 10 security
-      // upgrade that brought the plugin with it. This keeps enforcement
-      // exactly what it was under react-hooks 5.
+      // The two classic hook rules stay errors, as they always were.
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
+
+      // The React Compiler rule set, adopted deliberately (2026-08-08) rather
+      // than inherited. eslint-plugin-react-hooks 7 switched these on in its
+      // `recommended` preset, and the preset arrived here as a side effect of
+      // the eslint 10 upgrade taken to clear a `brace-expansion` advisory. They
+      // were pinned off at the time so a security upgrade could not quietly
+      // change lint policy; this is the policy decision made on its own merits.
+      //
+      // They are listed by name, at `warn`, rather than spread from the preset,
+      // for two reasons. The preset sets most of them to `error`, and these
+      // describe what the React Compiler would need in order to memoize a
+      // component: real advice, but not the same kind of claim as "you called a
+      // hook conditionally". And naming them means a future plugin release
+      // cannot add a rule to this codebase without someone deciding to.
+      "react-hooks/static-components": "warn",
+      "react-hooks/use-memo": "warn",
+      "react-hooks/void-use-memo": "warn",
+      "react-hooks/preserve-manual-memoization": "warn",
+      "react-hooks/incompatible-library": "warn",
+      "react-hooks/immutability": "warn",
+      "react-hooks/globals": "warn",
+      "react-hooks/refs": "warn",
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/error-boundaries": "warn",
+      "react-hooks/purity": "warn",
+      "react-hooks/set-state-in-render": "warn",
+      "react-hooks/unsupported-syntax": "warn",
+      "react-hooks/config": "warn",
+      "react-hooks/gating": "warn",
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },

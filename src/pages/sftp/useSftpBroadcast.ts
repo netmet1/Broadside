@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 
@@ -140,9 +140,14 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
   const xferIdToHost = useRef<Map<string, number>>(new Map());
 
   // Volatile run config read inside the (stable) worker callbacks, avoids stale
-  // closures without threading every input through the callback deps.
+  // closures without threading every input through the callback deps. Written
+  // in a layout effect rather than during render: a render can be discarded and
+  // must not mutate anything outside itself, while a layout effect lands before
+  // the browser paints, so a callback cannot read a value older than the screen.
   const cfgRef = useRef({ direction, createPath, localPath, localIsDir, remotePath, mode });
-  cfgRef.current = { direction, createPath, localPath, localIsDir, remotePath, mode };
+  useLayoutEffect(() => {
+    cfgRef.current = { direction, createPath, localPath, localIsDir, remotePath, mode };
+  });
 
   // Load the host list when the page becomes visible. Nothing is selected by
   // default, broadcasting writes to every selected host, so the user opts in

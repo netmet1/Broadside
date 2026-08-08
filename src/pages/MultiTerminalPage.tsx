@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -214,13 +214,19 @@ export function MultiTerminalPage({
     });
   }, [sessions, connectedSessions]);
 
-  // Refs so the always-on block listener sees current state without re-subscribing.
+  // Refs so the always-on block listener sees current state without
+  // re-subscribing. Copied in a layout effect rather than during render: a
+  // render may be discarded and must not mutate anything outside itself, while
+  // a layout effect lands before the browser paints or delivers another event,
+  // so the listener cannot read a value older than what is on screen.
   const mirrorRef = useRef(mirrorTyped);
-  mirrorRef.current = mirrorTyped;
   const sessionsByIdRef = useRef(sessionsById);
-  sessionsByIdRef.current = sessionsById;
   const selectedRef = useRef(selected);
-  selectedRef.current = selected;
+  useLayoutEffect(() => {
+    mirrorRef.current = mirrorTyped;
+    sessionsByIdRef.current = sessionsById;
+    selectedRef.current = selected;
+  });
   // Per-session FIFO queue of commands WE dispatched, so a block can be tagged
   // dispatched (always shown) vs hand-typed (shown only when mirror is on).
   const pendingDispatched = useRef<Map<string, string[]>>(new Map());
