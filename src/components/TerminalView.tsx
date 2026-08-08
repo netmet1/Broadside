@@ -438,8 +438,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     };
     contextMenuEl?.addEventListener("mouseup", onMouseUp);
 
-    const unlistenData = onPtyData((id, bytes) => {
-      if (id !== sessionId) return;
+    const unlistenData = onPtyData(sessionId, (bytes) => {
       // Reset display sent a form feed. If a command is running in the
       // foreground the shell is not reading its keyboard, so the tty echoes
       // that keystroke back as the two characters `^L` (see the reset effect).
