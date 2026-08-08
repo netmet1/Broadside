@@ -114,7 +114,7 @@ export function SettingsPage({
     disabledShells,
     toggleShell,
     termFontFamily,
-    setTermFontFamily,
+    chooseFontFamily,
     fontOptions,
     unknownFont,
     termFontSize,
@@ -127,7 +127,7 @@ export function SettingsPage({
     parsedTermFontSize,
     parsedAppFontSize,
     syncFromSettings: syncAppearanceFromSettings,
-    saveAppearance,
+    saveFontSizes,
   } = useAppearance();
 
   // Opt-in admin lock (gates the sudo toggle, credential editing and Reset).
@@ -1155,7 +1155,7 @@ export function SettingsPage({
               list doubles as the preview. */}
           <div className="grid gap-1">
             <Label htmlFor="term-font">Terminal font</Label>
-            <Select value={termFontFamily} onValueChange={setTermFontFamily}>
+            <Select value={termFontFamily} onValueChange={chooseFontFamily}>
               <SelectTrigger id="term-font" className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -1192,59 +1192,84 @@ export function SettingsPage({
             <p className="text-xs text-muted-foreground">
               {unknownFont !== null
                 ? "Your saved font isn't installed on this machine, so it is listed as it was stored and left alone until you pick another."
-                : "Fixed-width fonts installed on this machine only. A proportional font (Inter, Segoe UI, Arial) is not offered even when installed, because a terminal needs every character the same width. A font installed while Broadside is running appears after a restart."}
+                : "Fixed-width fonts installed on this machine only. A proportional font (Inter, Segoe UI, Arial) is not offered even when installed, because a terminal needs every character the same width. A font installed while Broadside is running appears after a restart."}{" "}
+              Applies as you pick it; no Save needed.
             </p>
           </div>
-          <div className="grid gap-1">
-            <Label htmlFor="term-font-size">Terminal font size</Label>
-            <div className="flex items-center gap-3">
+          {/* The two size boxes are the only things in Appearance that need a
+              Save, and they are boxed with it so it is obvious which controls it
+              is for. Everything outside this frame writes as you touch it.
+              They need one because they are free text: a numeric field has no
+              valid intermediate state, and applying per keystroke would take the
+              app font through 2px on the way from 16 to 20, which collapses the
+              UI you are typing into. The font dropdown above has no such state,
+              which is why it left. */}
+          <div className="grid max-w-md gap-4 rounded-md border border-border/40 p-4">
+            <div className="grid gap-1">
+              <Label htmlFor="term-font-size">Terminal font size</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="term-font-size"
+                  value={termFontSize}
+                  onChange={(e) => setTermFontSize(e.target.value)}
+                  className={`w-40 font-mono text-sm ${parsedTermFontSize === undefined ? "border-destructive" : ""}`}
+                  autoComplete="off"
+                />
+                {/* Strict sits with the field it protects, not in a list of
+                    toggles somewhere else: it is only about this number. */}
+                <label
+                  className="flex cursor-pointer items-center gap-1.5 text-sm"
+                  {...hint(
+                    termFontStrict
+                      ? "Strict: only this field changes the size. Ctrl and the wheel are left to the terminal, so mouse reporting works as before."
+                      : "Not strict: Ctrl and the mouse wheel over a terminal resize the text, and the new size is saved here as you go.",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={termFontStrict}
+                    onChange={(e) => toggleTermFontStrict(e.target.checked)}
+                  />
+                  <span className="font-medium">Strict</span>
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                8-32 px. Hold <span className="font-medium">Ctrl</span> and turn
+                the mouse wheel over a terminal to change it from there; the size
+                you land on is saved, no Save needed. Tick{" "}
+                <span className="font-medium">Strict</span> to make this field
+                the only way to set it, which also hands Ctrl and the wheel back
+                to the terminal for anything that wants them itself.
+              </p>
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="app-font-size">Application font size</Label>
               <Input
-                id="term-font-size"
-                value={termFontSize}
-                onChange={(e) => setTermFontSize(e.target.value)}
-                className={`w-40 font-mono text-sm ${parsedTermFontSize === undefined ? "border-destructive" : ""}`}
+                id="app-font-size"
+                value={appFontSize}
+                onChange={(e) => setAppFontSize(e.target.value)}
+                className={`w-40 font-mono text-sm ${parsedAppFontSize === undefined ? "border-destructive" : ""}`}
                 autoComplete="off"
               />
-              {/* Strict sits with the field it protects, not in a list of
-                  toggles somewhere else: it is only about this number. */}
-              <label
-                className="flex cursor-pointer items-center gap-1.5 text-sm"
-                {...hint(
-                  termFontStrict
-                    ? "Strict: only this field changes the size. Ctrl and the wheel are left to the terminal, so mouse reporting works as before."
-                    : "Not strict: Ctrl and the mouse wheel over a terminal resize the text, and the new size is saved here as you go.",
-                )}
-              >
-                <input
-                  type="checkbox"
-                  className="accent-primary"
-                  checked={termFontStrict}
-                  onChange={(e) => toggleTermFontStrict(e.target.checked)}
-                />
-                <span className="font-medium">Strict</span>
-              </label>
+              <p className="text-xs text-muted-foreground">
+                12-20 px. Scales the whole UI except terminal panes.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              8-32 px. Hold <span className="font-medium">Ctrl</span> and turn
-              the mouse wheel over a terminal to change it from there; the size
-              you land on is saved. Tick <span className="font-medium">Strict</span>{" "}
-              to make this field the only way to set it, which also hands Ctrl
-              and the wheel back to the terminal for anything that wants them
-              itself.
-            </p>
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="app-font-size">Application font size</Label>
-            <Input
-              id="app-font-size"
-              value={appFontSize}
-              onChange={(e) => setAppFontSize(e.target.value)}
-              className={`w-40 font-mono text-sm ${parsedAppFontSize === undefined ? "border-destructive" : ""}`}
-              autoComplete="off"
-            />
-            <p className="text-xs text-muted-foreground">
-              12-20 px. Scales the whole UI except terminal panes.
-            </p>
+            <div>
+              <Button
+                size="sm"
+                onClick={saveFontSizes}
+                disabled={
+                  savingUi ||
+                  parsedTermFontSize === undefined ||
+                  parsedAppFontSize === undefined
+                }
+              >
+                {savingUi && <Loader2Icon className="animate-spin" />}
+                Save font sizes
+              </Button>
+            </div>
           </div>
           <div className="grid gap-1.5">
             <Label>Host table columns</Label>
@@ -1298,20 +1323,6 @@ export function SettingsPage({
                 ))}
               </div>
             )}
-          </div>
-          <div>
-            <Button
-              size="sm"
-              onClick={saveAppearance}
-              disabled={
-                savingUi ||
-                parsedTermFontSize === undefined ||
-                parsedAppFontSize === undefined
-              }
-            >
-              {savingUi && <Loader2Icon className="animate-spin" />}
-              Save
-            </Button>
           </div>
         </div>
       </section>

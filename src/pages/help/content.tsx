@@ -2009,7 +2009,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it",
     body: (
       <>
         <Lead>
@@ -2056,13 +2056,20 @@ export const SECTIONS: HelpSection[] = [
               that, columns do not line up, box drawing comes apart and the
               cursor lands somewhere other than where it belongs. Look for a
               variant with <i>Mono</i> in its name. A font you install while
-              Broadside is running appears in the list once you restart it.
-              Holding{" "}
+              Broadside is running appears in the list once you restart it.{" "}
+              <b>Picking a font applies it straight away</b>, so you can try one
+              against your own terminals rather than commit to it unseen. The
+              two size boxes are the only part of <Nav>Appearance</Nav> behind a{" "}
+              <Nav>Save font sizes</Nav> button, and they are framed together
+              with it: a half-typed number is not a size, and applying one on
+              every keystroke would take the application text through 2 px on
+              the way from 16 to 20. Everything outside that frame takes effect
+              as you touch it. Holding{" "}
               <Nav>Ctrl</Nav> and
               turning the mouse wheel over any terminal changes the terminal
-              font size from where you are reading and saves it here, unless{" "}
-              <Nav>Strict</Nav> beside that field is ticked, which leaves the
-              wheel alone.
+              font size from where you are reading and saves it here without the
+              button, unless <Nav>Strict</Nav> beside that field is ticked,
+              which leaves the wheel alone.
             </li>
             <li>
               <Nav>Backup &amp; Restore</Nav>: save a copy of your app data, or

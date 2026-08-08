@@ -132,6 +132,45 @@ export function useAppearance() {
     saveTerminalFontStrict(v);
   };
 
+  /** How a family is stored: a detected name gets the generic behind it, and an
+   * unrecognised stored value is written back exactly as it came, so choosing
+   * something else and changing your mind cannot mangle it. */
+  const storedValueFor = useCallback(
+    (family: string) => (family === unknownFont ? family : storedFontValue(family)),
+    [unknownFont],
+  );
+
+  /** The family applies as it is picked, with no Save. Every value the dropdown
+   * can produce has been measured and is a legal font, so unlike the size boxes
+   * below it there is no half-typed state to protect against; and a font you
+   * cannot see until you commit is a font you are guessing at, which is the
+   * same argument the tab-colour swatches already make.
+   *
+   * The sizes deliberately do not ride along. They are free text and may be
+   * mid-edit or outright invalid at this moment, so this writes the sizes that
+   * are currently in force rather than whatever is sitting in the boxes:
+   * picking a font must not commit a number nobody has finished typing.
+   *
+   * The dropdown moves first and rolls back if the write fails, so a font that
+   * did not save cannot be left looking as though it did. */
+  const chooseFontFamily = async (family: string) => {
+    const previous = termFontFamily;
+    if (family === previous) return;
+    setTermFontFamily(family);
+    const fontValue = storedValueFor(family);
+    try {
+      await setUiSettings({
+        terminal_font_family: fontValue,
+        terminal_font_size: prefs.terminalFontSize,
+        app_font_size: prefs.appFontSize,
+      });
+      applyUiPrefs({ ...prefs, terminalFontFamily: fontValue });
+    } catch (e) {
+      setTermFontFamily(previous);
+      toast.error(errorMessage(e));
+    }
+  };
+
   const parsedTermFontSize = (() => {
     const n = Number(termFontSize);
     return Number.isInteger(n) && n >= 8 && n <= 32 ? n : undefined;
@@ -141,18 +180,15 @@ export function useAppearance() {
     return Number.isInteger(n) && n >= 12 && n <= 20 ? n : undefined;
   })();
 
-  const saveAppearance = async () => {
+  /** The two size boxes, and only those. The family is already saved by the
+   * time this runs (see chooseFontFamily), and is re-sent unchanged because the
+   * backend takes the three together. */
+  const saveFontSizes = async () => {
     if (parsedTermFontSize === undefined || parsedAppFontSize === undefined) {
       return;
     }
     setSavingUi(true);
-    // A detected family is stored with the generic behind it; an unrecognised
-    // stored value is written back exactly as it came, so choosing something
-    // else and changing your mind cannot mangle it.
-    const fontValue =
-      termFontFamily === unknownFont
-        ? termFontFamily
-        : storedFontValue(termFontFamily);
+    const fontValue = storedValueFor(termFontFamily);
     try {
       await setUiSettings({
         terminal_font_family: fontValue,
@@ -164,7 +200,7 @@ export function useAppearance() {
         terminalFontSize: parsedTermFontSize,
         appFontSize: parsedAppFontSize,
       });
-      toast.success("Appearance saved");
+      toast.success("Font sizes saved");
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
@@ -179,7 +215,7 @@ export function useAppearance() {
     disabledShells,
     toggleShell,
     termFontFamily,
-    setTermFontFamily,
+    chooseFontFamily,
     fontOptions,
     unknownFont,
     termFontSize,
@@ -192,6 +228,6 @@ export function useAppearance() {
     parsedTermFontSize,
     parsedAppFontSize,
     syncFromSettings,
-    saveAppearance,
+    saveFontSizes,
   };
 }
