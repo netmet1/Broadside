@@ -642,9 +642,12 @@ export const SECTIONS: HelpSection[] = [
               text.
             </li>
             <li>
-              A COM port belongs to one program at a time. If PuTTY, Tera Term
-              or another Broadside tab already has the port open, the tab says
-              so and names the fix; close the other one and press{" "}
+              A COM port belongs to one program at a time. A port you already
+              have a tab on is shown in the menu as{" "}
+              <Nav>already open</Nav> and cannot be picked twice, so the only
+              way to meet this is another program holding it: PuTTY, Tera Term,
+              a script of your own. Then the tab says the port is already open
+              elsewhere and names the fix; close the other one and press{" "}
               <Nav>Try again</Nav>. Unplugging the adapter mid-session ends the
               tab with the reason on its banner.
             </li>

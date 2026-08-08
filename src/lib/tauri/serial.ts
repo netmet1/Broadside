@@ -42,6 +42,21 @@ export function serialShellId(port: string, baud: number): string {
   return `serial:${port}@${baud}`;
 }
 
+/** The port a shell id names, or null if the id is not a serial one.
+ *
+ * The inverse of {@link serialShellId}, and the reason the launcher can know
+ * which cables it already has a tab on without any bookkeeping of its own: the
+ * open sessions already carry the answer. The speed is dropped on purpose, since
+ * exclusivity is a property of the port and not of the speed it was opened at.
+ */
+export function serialPortOf(shellId: string): string | null {
+  if (!shellId.startsWith("serial:")) return null;
+  const rest = shellId.slice("serial:".length);
+  const at = rest.indexOf("@");
+  const port = at === -1 ? rest : rest.slice(0, at);
+  return port || null;
+}
+
 /** A port and speed as a launchable shell. The label is what the tab is called,
  * so it carries the speed: two consoles open at different speeds are otherwise
  * indistinguishable, and the speed is exactly what you check when the output is

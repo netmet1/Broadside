@@ -30,6 +30,7 @@ import {
   loadBaud,
   saveBaud,
   serialAsShell,
+  serialPortOf,
   type SerialPort,
 } from "@/lib/tauri/serial";
 
@@ -982,6 +983,31 @@ export function TerminalsPage({
       return next.size === prev.size ? prev : next;
     });
   }, [sessions]);
+
+  // COM ports this app already has a live tab on.
+  //
+  // A serial port belongs to one program at a time, so a second tab on the same
+  // cable can only fail, and Windows refuses it with "Access is denied", which
+  // reads as a permissions problem rather than as "you already have that open".
+  // Saying so in the launcher is better than explaining it in a banner
+  // afterwards. Nothing has to be kept in step: an open session already carries
+  // its port in its shell id.
+  //
+  // A pane sitting on a Try again or Reconnect banner is holding nothing, so it
+  // does not count. That is the same dead-pane test Retry all uses, for the same
+  // reason: the phase is what says whether a session exists as more than a tab.
+  const openSerialPorts = useMemo(() => {
+    const held = new Set<string>();
+    for (const s of sessions) {
+      if (s.type !== "local") continue;
+      const phase = phases.get(s.id);
+      if (phase === "failed" || phase === "closed") continue;
+      const port = serialPortOf(s.shell.id);
+      if (port) held.add(port);
+    }
+    return held;
+  }, [sessions, phases]);
+
   /** Per-session counter for the Reset display control. Bumping one re-inits
    * that terminal's xterm view without touching the session behind it. */
   const [resetNonces, setResetNonces] = useState<Map<string, number>>(
@@ -1927,19 +1953,24 @@ export function TerminalsPage({
                     adapter and open this menu again.
                   </p>
                 ) : (
-                  serialPorts.map((p) => (
+                  serialPorts.map((p) => {
+                    const alreadyOpen = openSerialPorts.has(p.name);
+                    return (
                     <div
                       key={p.name}
                       className="group flex items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
                     >
                       <button
                         type="button"
+                        disabled={alreadyOpen}
                         onClick={() => openSerial(p)}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
                         {...hint(
-                          `Open a terminal on ${p.name} at ${
-                            serialBauds[p.name] ?? DEFAULT_BAUD
-                          } baud, 8N1. Nothing appears until the device says something, so press Enter if the pane looks empty.`,
+                          alreadyOpen
+                            ? `${p.name} is already open in a tab. A COM port belongs to one program at a time, so close that tab before opening it again.`
+                            : `Open a terminal on ${p.name} at ${
+                                serialBauds[p.name] ?? DEFAULT_BAUD
+                              } baud, 8N1. Nothing appears until the device says something, so press Enter if the pane looks empty.`,
                         )}
                       >
                         <LocalShellIcon
@@ -1947,7 +1978,14 @@ export function TerminalsPage({
                           className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
                         />
                         <span className="min-w-0">
-                          <span className="block truncate">{p.name}</span>
+                          <span className="block truncate">
+                            {p.name}
+                            {alreadyOpen && (
+                              <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
+                                already open
+                              </span>
+                            )}
+                          </span>
                           {p.description && (
                             <span className="block truncate text-[11px] text-muted-foreground">
                               {p.description}
@@ -1960,6 +1998,7 @@ export function TerminalsPage({
                           or layering to fight. */}
                       <select
                         value={serialBauds[p.name] ?? DEFAULT_BAUD}
+                        disabled={alreadyOpen}
                         onChange={(e) =>
                           setSerialBauds((prev) => ({
                             ...prev,
@@ -1968,7 +2007,7 @@ export function TerminalsPage({
                         }
                         aria-label={`Line speed for ${p.name}`}
                         title="Line speed (baud)"
-                        className="shrink-0 rounded border border-input bg-background px-1 py-0.5 font-mono text-xs"
+                        className="shrink-0 rounded border border-input bg-background px-1 py-0.5 font-mono text-xs disabled:opacity-50"
                       >
                         {BAUD_RATES.map((b) => (
                           <option key={b} value={b}>
@@ -1977,7 +2016,8 @@ export function TerminalsPage({
                         ))}
                       </select>
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>

@@ -135,6 +135,44 @@ fn valid_baud(baud: u32) -> bool {
     (50..=4_000_000).contains(&baud)
 }
 
+/// The Windows device path for a COM port. `CreateFile` reaches a serial port
+/// only through the `\\.\` device namespace, which is what `serialport` builds
+/// internally and what [`refusal_reason`] has to reproduce to ask the same
+/// question. Only ever called with a name [`is_com_port`] has already passed.
+fn device_path(port_name: &str) -> String {
+    format!(r"\\.\{port_name}")
+}
+
+/// Why Windows refused a port, when `serialport` will not say.
+///
+/// Its Windows backend folds `ERROR_ACCESS_DENIED` (someone else has the port),
+/// `ERROR_FILE_NOT_FOUND` and `ERROR_PATH_NOT_FOUND` into a single
+/// `ErrorKind::NoDevice`, and keeps only the OS's own localized message. So the
+/// kind cannot tell "another program has it" from "it is gone", and the message
+/// cannot be read without assuming the machine runs in English. That folding is
+/// why the first version of this shipped saying *Access is denied* for a busy
+/// port: the arm matching `Io(PermissionDenied)` was never reachable, and every
+/// failure fell through to the branch that prints what the OS said.
+///
+/// Opening the same device name through `std::fs` asks Windows again and gets a
+/// real `io::Error` back, which std maps to the right kind whatever language the
+/// machine is in. Read-only, because a port held by another process refuses any
+/// `CreateFile` regardless of the access requested, and asking for less is the
+/// smaller thing to do to a piece of hardware.
+///
+/// Only ever called *after* the real open has already failed, so the working
+/// path never touches the port twice. By then the port is either busy (this
+/// fails the same way, having opened nothing) or absent.
+fn refusal_reason(port_name: &str) -> std::io::ErrorKind {
+    match std::fs::File::open(device_path(port_name)) {
+        // It opened this time, so whatever refused a moment ago has let go, or
+        // was never about the port being taken. Nothing useful to say; the
+        // caller falls back to reporting what the OS said.
+        Ok(_) => std::io::ErrorKind::Other,
+        Err(e) => e.kind(),
+    }
+}
+
 /// What the reader thread sends back: bytes off the wire, or the reason it
 /// stopped. A serial port has no EOF, so a fault is the only way a session ends
 /// other than by being closed, and it has to carry its message.
@@ -237,15 +275,23 @@ pub fn open_serial<E: PtyEvents>(
         .timeout(READ_TIMEOUT)
         .open()
         .map_err(|e| match e.kind() {
-            // The overwhelmingly likely first-run failure, and the OS phrasing
-            // for it ("Access is denied") sends people looking for a
-            // permissions problem they do not have.
-            serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied) => {
-                AppError::State(format!(
-                    "{port_name} is already open in another program. Close that \
-                     terminal (PuTTY, Tera Term, another Broadside tab) and try again."
-                ))
-            }
+            // Busy or absent, and `serialport` reports both as this. Ask
+            // Windows again to find out which; see `refusal_reason`.
+            serialport::ErrorKind::NoDevice => match refusal_reason(port_name) {
+                // The overwhelmingly likely first-run failure, and the OS
+                // phrasing for it ("Access is denied") sends people looking for
+                // a permissions problem they do not have.
+                std::io::ErrorKind::PermissionDenied => AppError::State(format!(
+                    "{port_name} is already open in another program. Close that terminal \
+                     (PuTTY, Tera Term, a script, or another Broadside tab) and try again."
+                )),
+                // Enumerated a moment ago and gone by the time we opened it:
+                // the dongle came out between the menu and the click.
+                std::io::ErrorKind::NotFound => AppError::State(format!(
+                    "{port_name} is no longer connected. Check the cable, then reopen the list."
+                )),
+                _ => AppError::State(format!("open {port_name}: {e}")),
+            },
             _ => AppError::State(format!("open {port_name}: {e}")),
         })?;
 
@@ -389,7 +435,7 @@ pub fn open_serial<E: PtyEvents>(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_com_port, port_number, valid_baud};
+    use super::{device_path, is_com_port, list_ports, port_number, refusal_reason, valid_baud};
 
     #[test]
     fn only_com_names_are_accepted() {
@@ -416,6 +462,27 @@ mod tests {
         // The bug a string sort produces: COM10 ahead of COM9.
         assert!(port_number("COM9") < port_number("COM10"));
         assert!(port_number("COM1") < port_number("COM2"));
+    }
+
+    #[test]
+    fn a_port_name_becomes_a_device_path() {
+        // A bare "COM3" handed to CreateFile is a filename in the working
+        // directory; only the device namespace reaches the hardware.
+        assert_eq!(device_path("COM3"), r"\\.\COM3");
+    }
+
+    #[test]
+    fn an_absent_port_reads_as_not_found() {
+        // The point of this one is the plumbing, not the answer. It proves the
+        // device path actually reaches CreateFile through std::fs: a path std
+        // mangled on the way would come back as InvalidInput or PermissionDenied
+        // instead, and `refusal_reason` would then quietly stop telling a busy
+        // port apart from a missing one, which is the bug it exists to fix.
+        let name = "COM254";
+        if list_ports().iter().any(|p| p.name == name) {
+            return; // this machine really does have one
+        }
+        assert_eq!(refusal_reason(name), std::io::ErrorKind::NotFound);
     }
 
     #[test]
