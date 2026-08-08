@@ -100,22 +100,23 @@ export function useSessionBroadcast<T extends { id: string }>({
   // stays mounted) but not restarts.
   // Adjusted during render rather than in an effect: an effect would leave the
   // box ticked for a frame after the session behind it went down, which is the
-  // one frame in which a broadcast could be sent to it. Returning `prev` when
-  // nothing was dropped is what makes it converge.
-  const [prevLiveness, setPrevLiveness] = useState({ sessions, connectedSessions });
-  if (
-    prevLiveness.sessions !== sessions ||
-    prevLiveness.connectedSessions !== connectedSessions
-  ) {
-    setPrevLiveness({ sessions, connectedSessions });
-    setSelected((prev) => {
-      const live = new Set(
-        sessions.filter((s) => connectedSessions.has(s.id)).map((s) => s.id),
-      );
-      const next = new Set([...prev].filter((id) => live.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }
+  // one frame in which a broadcast could be sent to it.
+  //
+  // Guarded on the *outcome*, not on the inputs. Remembering a copy of the
+  // visible set and comparing identities would loop forever the moment that set
+  // were rebuilt on each render, because a render-phase update re-runs this
+  // component and React does not bail out on an unchanged value the way it does
+  // for an update dispatched outside render. Returning the very same set when
+  // nothing was dropped makes convergence a property of this code rather than
+  // of the memoization somewhere above it.
+  const prunedSelected = (() => {
+    const live = new Set(
+      sessions.filter((s) => connectedSessions.has(s.id)).map((s) => s.id),
+    );
+    const next = new Set([...selected].filter((id) => live.has(id)));
+    return next.size === selected.size ? selected : next;
+  })();
+  if (prunedSelected !== selected) setSelected(prunedSelected);
 
   // Reload persisted dispatch history on mount (SSH only).
   useEffect(() => {

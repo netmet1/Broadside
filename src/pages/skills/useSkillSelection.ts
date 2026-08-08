@@ -53,20 +53,25 @@ export function useSkillSelection(visible: boolean) {
   // deliberately). Same rule as the broadcast rails.
   // Adjusted during render, not in an effect. It cannot be a plain derivation:
   // the unchecking is meant to stick once the filter clears, so the set really
-  // is written. Returning `prev` when nothing was dropped makes it converge.
-  const [prevVisibleIds, setPrevVisibleIds] = useState(visibleIds);
-  if (prevVisibleIds !== visibleIds) {
-    setPrevVisibleIds(visibleIds);
-    setSelected((prev) => {
-      let changed = false;
-      const next = new Set<number>();
-      for (const id of prev) {
-        if (visibleIds.has(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }
+  // is written.
+  //
+  // Guarded on the *outcome*, not on the inputs. Remembering a copy of the
+  // visible set and comparing identities would loop forever the moment that set
+  // were rebuilt on each render, because a render-phase update re-runs this
+  // component and React does not bail out on an unchanged value the way it does
+  // for an update dispatched outside render. Returning the very same set when
+  // nothing was dropped makes convergence a property of this code rather than
+  // of the memoization somewhere above it.
+  const prunedSelected = (() => {
+    let changed = false;
+    const next = new Set<number>();
+    for (const id of selected) {
+      if (visibleIds.has(id)) next.add(id);
+      else changed = true;
+    }
+    return changed ? next : selected;
+  })();
+  if (prunedSelected !== selected) setSelected(prunedSelected);
 
   const toggleHost = useCallback((id: number) => {
     setSelected((prev) => {

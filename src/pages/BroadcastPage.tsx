@@ -315,21 +315,25 @@ export function BroadcastPage({
   // Adjusted during render rather than in an effect. Note this cannot become a
   // plain derivation (selection intersected with visible at read time): the
   // narrowing is meant to stick, so clearing the filter must not bring the
-  // hosts back checked. The set genuinely has to be written. Returning `prev`
-  // unchanged when nothing was dropped is what makes it converge.
-  const [prevVisibleIds, setPrevVisibleIds] = useState(visibleIds);
-  if (prevVisibleIds !== visibleIds) {
-    setPrevVisibleIds(visibleIds);
-    setSelected((prev) => {
-      let changed = false;
-      const next = new Set<number>();
-      for (const id of prev) {
-        if (visibleIds.has(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }
+  // hosts back checked. The set genuinely has to be written.
+  //
+  // Guarded on the *outcome*, not on the inputs. Remembering a copy of the
+  // visible set and comparing identities would loop forever the moment that set
+  // were rebuilt on each render, because a render-phase update re-runs this
+  // component and React does not bail out on an unchanged value the way it does
+  // for an update dispatched outside render. Returning the very same set when
+  // nothing was dropped makes convergence a property of this code rather than
+  // of the memoization somewhere above it.
+  const prunedSelected = (() => {
+    let changed = false;
+    const next = new Set<number>();
+    for (const id of selected) {
+      if (visibleIds.has(id)) next.add(id);
+      else changed = true;
+    }
+    return changed ? next : selected;
+  })();
+  if (prunedSelected !== selected) setSelected(prunedSelected);
 
   const allSelected =
     visibleRailHosts.length > 0 && visibleRailHosts.every((h) => selected.has(h.id));

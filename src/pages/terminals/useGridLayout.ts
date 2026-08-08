@@ -237,19 +237,16 @@ export function useGridLayout({
     setExcludedFromGrid((prev) => (prev.size === 0 ? prev : new Set()));
   }, []);
   // Drop ids whose session has closed so the set can't grow without bound.
-  // Adjusted during render rather than in an effect; the early return on an
-  // empty set and the identity return when nothing was dropped are what make
-  // it converge.
-  const [prevSessions, setPrevSessions] = useState(sessions);
-  if (prevSessions !== sessions) {
-    setPrevSessions(sessions);
-    setExcludedFromGrid((prev) => {
-      if (prev.size === 0) return prev;
-      const live = new Set(sessions.map((s) => s.id));
-      const next = new Set([...prev].filter((id) => live.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }
+  // Guarded on the outcome: the very same set comes back unless something was
+  // actually dropped, so the write cannot repeat and a render-phase update
+  // cannot loop.
+  const liveExcluded = (() => {
+    if (excludedFromGrid.size === 0) return excludedFromGrid;
+    const live = new Set(sessions.map((s) => s.id));
+    const next = new Set([...excludedFromGrid].filter((id) => live.has(id)));
+    return next.size === excludedFromGrid.size ? excludedFromGrid : next;
+  })();
+  if (liveExcluded !== excludedFromGrid) setExcludedFromGrid(liveExcluded);
 
   const gridTiles = useMemo(
     () => paneOrder.filter((s) => !excludedFromGrid.has(s.id)),
@@ -411,17 +408,21 @@ export function useGridLayout({
   // Adjusted during render rather than in an effect: the pane's measured width
   // arrives from a ResizeObserver, and deciding the column count a frame later
   // means laying the grid out once at the old count and then again, which is a
-  // visible flash of two-up before it drops to one. The functional update
-  // returns the same boolean when the verdict has not changed, so this settles
-  // in a single pass, and the hysteresis is what stops it oscillating when
-  // dropping a column removes the scrollbar and widens the pane again.
-  if (paneW !== 0) {
-    setTwoUpFits((fits) =>
-      fits
-        ? paneW >= twoUpThreshold
-        : paneW >= twoUpThreshold + GRID_COLS_HYSTERESIS_PX,
-    );
-  }
+  // visible flash of two-up before it drops to one. The hysteresis is what
+  // stops it oscillating when dropping a column removes the pane's scrollbar
+  // and widens the content box back over the threshold.
+  //
+  // The verdict is computed first and the state is only written when it has
+  // actually changed. That guard is not an optimization, it is the difference
+  // between working and an infinite render loop: React's bail-out on an
+  // unchanged value applies to updates dispatched *outside* render, and a
+  // render-phase dispatch instead re-runs the component unconditionally, caps
+  // at 25 passes and throws "Too many re-renders". A functional updater that
+  // returns the same boolean does not save you; it is never consulted in time.
+  const wantsTwoUp = twoUpFits
+    ? paneW >= twoUpThreshold
+    : paneW >= twoUpThreshold + GRID_COLS_HYSTERESIS_PX;
+  if (paneW !== 0 && wantsTwoUp !== twoUpFits) setTwoUpFits(wantsTwoUp);
 
   // The real column count, for both the layout and the short-row fill, which
   // have to agree: the fill decides which tiles widen to close a gap, so a

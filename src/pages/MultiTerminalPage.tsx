@@ -201,27 +201,28 @@ export function MultiTerminalPage({
   // target). The user's checks are otherwise preserved.
   // Adjusted during render rather than in an effect: an effect leaves the box
   // ticked for a frame after its session went down, and that is the frame in
-  // which a dispatch could still be aimed at it. Returning `prev` when nothing
-  // was dropped is what makes it converge.
-  const [prevLiveness, setPrevLiveness] = useState({ sessions, connectedSessions });
-  if (
-    prevLiveness.sessions !== sessions ||
-    prevLiveness.connectedSessions !== connectedSessions
-  ) {
-    setPrevLiveness({ sessions, connectedSessions });
-    setSelected((prev) => {
-      const connectedOpen = new Set(
-        sessions.filter((s) => connectedSessions.has(s.id)).map((s) => s.id),
-      );
-      let changed = false;
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (connectedOpen.has(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }
+  // which a dispatch could still be aimed at it.
+  //
+  // Guarded on the *outcome*, not on the inputs. Remembering a copy of the
+  // visible set and comparing identities would loop forever the moment that set
+  // were rebuilt on each render, because a render-phase update re-runs this
+  // component and React does not bail out on an unchanged value the way it does
+  // for an update dispatched outside render. Returning the very same set when
+  // nothing was dropped makes convergence a property of this code rather than
+  // of the memoization somewhere above it.
+  const liveSelected = (() => {
+    const connectedOpen = new Set(
+      sessions.filter((s) => connectedSessions.has(s.id)).map((s) => s.id),
+    );
+    let changed = false;
+    const next = new Set<string>();
+    for (const id of selected) {
+      if (connectedOpen.has(id)) next.add(id);
+      else changed = true;
+    }
+    return changed ? next : selected;
+  })();
+  if (liveSelected !== selected) setSelected(liveSelected);
 
   // Refs so the always-on block listener sees current state without
   // re-subscribing. Copied in a layout effect rather than during render: a
@@ -374,22 +375,19 @@ export function MultiTerminalPage({
       ),
     [visibleSessions, connectedSessions],
   );
-  // Same rule against the filtered rail, and adjusted during render for the
-  // same reason. The narrowing sticks on purpose: clearing the filter does not
-  // bring a host back checked, so this cannot become a read-time derivation.
-  const [prevSelectable, setPrevSelectable] = useState(selectableIds);
-  if (prevSelectable !== selectableIds) {
-    setPrevSelectable(selectableIds);
-    setSelected((prev) => {
-      let changed = false;
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (selectableIds.has(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }
+  // Same rule against the filtered rail, guarded the same way. The narrowing
+  // sticks on purpose: clearing the filter does not bring a host back checked,
+  // so this cannot become a read-time derivation either.
+  const visibleSelected = (() => {
+    let changed = false;
+    const next = new Set<string>();
+    for (const id of selected) {
+      if (selectableIds.has(id)) next.add(id);
+      else changed = true;
+    }
+    return changed ? next : selected;
+  })();
+  if (visibleSelected !== selected) setSelected(visibleSelected);
   const allSelected = selectableIds.size > 0 && selected.size === selectableIds.size;
   const toggleAll = () =>
     setSelected(allSelected ? new Set() : new Set(selectableIds));
