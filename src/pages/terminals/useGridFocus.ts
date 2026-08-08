@@ -19,7 +19,7 @@
  * production hosts.
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import { isWindowFocused } from "@/lib/windowFocus";
 
@@ -151,20 +151,31 @@ export function useGridFocus({
   // Read when the settle fires rather than when it was armed. Short as the wait
   // is, it is long enough for any of them to have changed, and a stale read
   // here is a keypress landing on the wrong host.
+  //
+  // The copies are made in a *layout* effect rather than during render. React
+  // forbids a render touching anything outside itself, because a render can be
+  // started and discarded, and the compiler enforces it. A layout effect still
+  // runs synchronously once the commit is done, before the browser paints and
+  // before it can deliver the next mousemove or keypress, so nothing here can
+  // read a value older than what is on screen. A passive `useEffect` is flushed
+  // later and would leave precisely the gap these refs exist to close, which is
+  // why this is not that.
   const activeIdRef = useRef(activeId);
-  activeIdRef.current = activeId;
   const gridModeRef = useRef(gridMode);
-  gridModeRef.current = gridMode;
   const resizingRef = useRef(resizing);
-  resizingRef.current = resizing;
   const chromeKeyboardRef = useRef(chromeKeyboard);
-  chromeKeyboardRef.current = chromeKeyboard;
   const onActivateRef = useRef(onActivate);
-  onActivateRef.current = onActivate;
   const focusTerminalRef = useRef(focusTerminal);
-  focusTerminalRef.current = focusTerminal;
   const releaseChromeRef = useRef(releaseChrome);
-  releaseChromeRef.current = releaseChrome;
+  useLayoutEffect(() => {
+    activeIdRef.current = activeId;
+    gridModeRef.current = gridMode;
+    resizingRef.current = resizing;
+    chromeKeyboardRef.current = chromeKeyboard;
+    onActivateRef.current = onActivate;
+    focusTerminalRef.current = focusTerminal;
+    releaseChromeRef.current = releaseChrome;
+  });
 
   // Deliberate intent beats an idle cursor.
   //

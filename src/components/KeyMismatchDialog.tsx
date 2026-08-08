@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { TriangleAlertIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,9 +37,15 @@ export function KeyMismatchDialog({
   const [acknowledged, setAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
+  // Drop the acknowledgement as the dialog closes, so the next mismatched host
+  // is not pre-acknowledged. Adjusted during render rather than in an effect:
+  // it is state derived from a prop, which is React's documented way to reset
+  // it, and an effect would paint the stale value once before correcting it.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
     if (!open) setAcknowledged(false);
-  }, [open]);
+  }
 
   const trustNew = async () => {
     if (!host || !presented) return;

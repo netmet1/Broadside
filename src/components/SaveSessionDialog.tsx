@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { toast } from "sonner";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -43,12 +43,19 @@ export function SaveSessionDialog({ open, onOpenChange, buildLines }: Props) {
   const [show, setShow] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  // Clear the passphrase as the dialog closes, and re-hide it. Adjusted during
+  // render rather than in an effect: it is state derived from a prop, which is
+  // React's documented way to reset it, and an effect would leave the old
+  // passphrase in the box for one paint. A secret is the last thing that should
+  // linger a frame longer than it has to.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
     if (!open) {
       setPassphrase("");
       setShow(false);
     }
-  }, [open]);
+  }
 
   const handleSave = async () => {
     setSaving(true);

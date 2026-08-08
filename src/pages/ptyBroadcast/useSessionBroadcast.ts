@@ -98,7 +98,16 @@ export function useSessionBroadcast<T extends { id: string }>({
   // command silently going nowhere, so the box is unchecked and (in the panels)
   // disabled while it is down. State persists across tab switches (the page
   // stays mounted) but not restarts.
-  useEffect(() => {
+  // Adjusted during render rather than in an effect: an effect would leave the
+  // box ticked for a frame after the session behind it went down, which is the
+  // one frame in which a broadcast could be sent to it. Returning `prev` when
+  // nothing was dropped is what makes it converge.
+  const [prevLiveness, setPrevLiveness] = useState({ sessions, connectedSessions });
+  if (
+    prevLiveness.sessions !== sessions ||
+    prevLiveness.connectedSessions !== connectedSessions
+  ) {
+    setPrevLiveness({ sessions, connectedSessions });
     setSelected((prev) => {
       const live = new Set(
         sessions.filter((s) => connectedSessions.has(s.id)).map((s) => s.id),
@@ -106,7 +115,7 @@ export function useSessionBroadcast<T extends { id: string }>({
       const next = new Set([...prev].filter((id) => live.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [sessions, connectedSessions]);
+  }
 
   // Reload persisted dispatch history on mount (SSH only).
   useEffect(() => {

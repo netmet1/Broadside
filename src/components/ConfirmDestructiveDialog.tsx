@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { TriangleAlertIcon } from "lucide-react";
 
 import {
@@ -36,9 +36,15 @@ export function ConfirmDestructiveDialog({
   const [typed, setTyped] = useState("");
   const armed = typed === "CONFIRM";
 
-  useEffect(() => {
+  // Clear the confirmation box as the dialog closes, so the next destructive
+  // command does not arrive pre-armed. Adjusted during render rather than in an
+  // effect: this is state derived from a prop, React's documented way to reset
+  // it, and an effect would render the stale value once before correcting it.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
     if (!open) setTyped("");
-  }, [open]);
+  }
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>

@@ -22,7 +22,7 @@
  * had holes in it wherever one of those was drawn.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import { errorMessage } from "@/lib/tauri/hosts";
@@ -107,8 +107,17 @@ export function useTerminalFontZoom(
   ref: React.RefObject<HTMLElement | null>,
 ): void {
   const { prefs, apply } = useUiPrefs();
+  // The wheel listener below is registered once and has to see current prefs
+  // without re-subscribing. The copy is made in a *layout* effect rather than
+  // during render: a render can be started and thrown away, and React forbids
+  // touching anything outside it, but a layout effect still runs before the
+  // browser paints or delivers another event, so the listener can never read a
+  // value older than what is on screen. A passive `useEffect` would leave
+  // exactly that gap.
   const prefsRef = useRef(prefs);
-  prefsRef.current = prefs;
+  useLayoutEffect(() => {
+    prefsRef.current = prefs;
+  });
 
   // Once a change has been committed, that is the size to step from next,
   // whether it came from the wheel or from the field in Settings.

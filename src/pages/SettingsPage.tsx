@@ -192,9 +192,11 @@ export function SettingsPage({
   const [destroying, setDestroying] = useState(false);
   const [destroyTyped, setDestroyTyped] = useState("");
   const destroyArmed = destroyTyped === "DESTROY";
-  useEffect(() => {
+  const [wasDestroyOpen, setWasDestroyOpen] = useState(destroyOpen);
+  if (wasDestroyOpen !== destroyOpen) {
+    setWasDestroyOpen(destroyOpen);
     if (!destroyOpen) setDestroyTyped("");
-  }, [destroyOpen]);
+  }
   const destroyHosts = async () => {
     setDestroying(true);
     try {
@@ -247,17 +249,25 @@ export function SettingsPage({
   // or deep-link (focusSection) needs every section at once, so those jump
   // straight to fully revealed (and never step back, so nothing unmounts).
   const [revealCount, setRevealCount] = useState(1);
+  // A search or a deep link needs every section at once, so it jumps straight
+  // to fully revealed. That is a synchronous decision and belongs in render:
+  // in an effect it costs a frame in which the search has been typed and the
+  // sections it must match are not in the tree yet. It converges, because
+  // revealing them all makes the condition false.
+  const revealAllNow = query.trim() !== "" || focusSection !== null;
+  if (revealCount < SECTION_TITLES.length && revealAllNow) {
+    setRevealCount(SECTION_TITLES.length);
+  }
+  // The unhurried case: one more section per frame, so the first paint stays
+  // cheap and the cost of this large tree is spread instead of landing in one
+  // long commit. The page stays mounted between visits, so this runs once.
   useEffect(() => {
-    if (revealCount >= SECTION_TITLES.length) return;
-    if (query.trim() !== "" || focusSection !== null) {
-      setRevealCount(SECTION_TITLES.length);
-      return;
-    }
+    if (revealCount >= SECTION_TITLES.length || revealAllNow) return;
     const id = requestAnimationFrame(() =>
       setRevealCount((n) => Math.min(n + 1, SECTION_TITLES.length)),
     );
     return () => cancelAnimationFrame(id);
-  }, [revealCount, query, focusSection]);
+  }, [revealCount, revealAllNow]);
   const sectionReady = useCallback(
     (title: string) => SECTION_TITLES.indexOf(title) < revealCount,
     [revealCount],
@@ -351,18 +361,25 @@ export function SettingsPage({
 
   // Jump-to-section dropdown: picking a section clears any search filter (so
   // the target is mounted) and smooth-scrolls to it, no button needed.
-  const [pendingScroll, setPendingScroll] = useState<string | null>(null);
+  // A scroll request, carrying a serial number rather than being cleared once
+  // it has been acted on. Clearing it meant the effect that performed the
+  // scroll also had to write state, and the number does the same job: asking
+  // for the same section twice produces a new object, so the second click
+  // scrolls again.
+  const [scrollRequest, setScrollRequest] = useState<{
+    title: string;
+    n: number;
+  } | null>(null);
   const goToSection = useCallback((title: string) => {
     setQuery("");
-    setPendingScroll(title);
+    setScrollRequest((r) => ({ title, n: (r?.n ?? 0) + 1 }));
   }, []);
   useEffect(() => {
-    if (!pendingScroll) return;
+    if (!scrollRequest) return;
     document
-      .getElementById(sectionDomId(pendingScroll))
+      .getElementById(sectionDomId(scrollRequest.title))
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setPendingScroll(null);
-  }, [pendingScroll]);
+  }, [scrollRequest]);
 
   // Performance + network probe.
   const {
@@ -450,28 +467,39 @@ export function SettingsPage({
     deleteRule,
   } = useGuardRules(settings, setSettings);
 
-  const load = useCallback(async () => {
-    try {
-      const s = await getAppSettings();
-      setSettings(s);
-      syncPerfFromSettings(s);
-      syncAppearanceFromSettings(s);
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
-    try {
-      setAuditOn((await auditInfo()).enabled);
-    } catch {
-      // Audit info is non-critical for this page.
-    }
-    // Data has settled (or failed non-fatally), the page is now usable, so let
-    // the shell drop the branded loader.
-    onReady?.();
-  }, [syncPerfFromSettings, syncAppearanceFromSettings, onReady]);
-
+  // The initial load, written inside the effect rather than in a `load`
+  // callback it calls, so the state writes are visibly in a continuation. The
+  // liveness guard is new: this page is lazy-loaded and can be navigated away
+  // from while the settings are still in flight.
+  //
+  // `onReady` is deliberately outside that guard. It tells the shell to drop
+  // its branded loader, which is not this component's state, and skipping it
+  // because Settings went away would leave the loader on screen for good.
   useEffect(() => {
-    load();
-  }, [load]);
+    let alive = true;
+    void (async () => {
+      try {
+        const s = await getAppSettings();
+        if (alive) {
+          setSettings(s);
+          syncPerfFromSettings(s);
+          syncAppearanceFromSettings(s);
+        }
+      } catch (e) {
+        toast.error(errorMessage(e));
+      }
+      try {
+        const info = await auditInfo();
+        if (alive) setAuditOn(info.enabled);
+      } catch {
+        // Audit info is non-critical for this page.
+      }
+      onReady?.();
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [syncPerfFromSettings, syncAppearanceFromSettings, onReady]);
 
   // Deep-link scroll (e.g. "Manage shortcuts…" from Broadcast/Terminals).
   useEffect(() => {

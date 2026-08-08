@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -69,14 +69,19 @@ export function SkillTerminalPane({
   // wedge the scrollbar (see TerminalView, where the grid made it reproducible).
   const intersectingRef = useRef(true);
   // Read from the data handler so it never re-subscribes (and so the pane never
-  // misses bytes between renders).
+  // misses bytes between renders). Copied in a layout effect, not during
+  // render: a discarded render must not mutate anything outside itself, and a
+  // layout effect still lands before the browser paints or delivers the next
+  // event, so the handler cannot read a stale value.
   const interactiveRef = useRef(interactive);
-  interactiveRef.current = interactive;
   const onInputRef = useRef(onInput);
-  onInputRef.current = onInput;
   const { prefs } = useUiPrefs();
   const prefsRef = useRef(prefs);
-  prefsRef.current = prefs;
+  useLayoutEffect(() => {
+    interactiveRef.current = interactive;
+    onInputRef.current = onInput;
+    prefsRef.current = prefs;
+  });
   // Same Ctrl + wheel zoom a Terminals pane has: this is a terminal too, and a
   // skill's output is exactly the kind of thing worth leaning in to read.
   useTerminalFontZoom(containerRef);

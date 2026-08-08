@@ -424,27 +424,31 @@ function App() {
   // terminal under a banner still naming the session you started from. It also
   // keeps the drop-back below honest: closing the session you maximized while
   // working in a different one should not throw you out of fullscreen.
-  useEffect(() => {
-    if (maxSessionId === null || activeSessionId === null) return;
-    if (activeSessionId !== maxSessionId) setMaxSessionId(activeSessionId);
-  }, [maxSessionId, activeSessionId]);
+  // Adjusted during render rather than in an effect: in an effect the banner
+  // names the session you started from for one frame after Alt+Left has already
+  // swapped the terminal underneath it, which is the exact confusion this
+  // exists to prevent. It converges, because the assignment makes the condition
+  // false.
+  if (
+    maxSessionId !== null &&
+    activeSessionId !== null &&
+    activeSessionId !== maxSessionId
+  ) {
+    setMaxSessionId(activeSessionId);
+  }
 
   // Drop back to the tabbed view when the maximized terminal is gone (closed
   // or terminated) or we've left the Terminals page.
-  useEffect(() => {
-    if (
-      maxSessionId !== null &&
-      (page !== "terminals" || !sessions.some((s) => s.id === maxSessionId))
-    ) {
-      setMaxSessionId(null);
-    }
-  }, [maxSessionId, page, sessions]);
+  if (
+    maxSessionId !== null &&
+    (page !== "terminals" || !sessions.some((s) => s.id === maxSessionId))
+  ) {
+    setMaxSessionId(null);
+  }
 
   // Same for the fullscreen grid: navigating away must give the chrome back,
   // or the sidebar would be missing on a page that has no way to restore it.
-  useEffect(() => {
-    if (gridFullscreen && page !== "terminals") setGridFullscreen(false);
-  }, [gridFullscreen, page]);
+  if (gridFullscreen && page !== "terminals") setGridFullscreen(false);
 
   const connectedHostIds = useMemo(() => {
     const ids = new Set<number>();

@@ -55,7 +55,13 @@ export function GridSection({ id }: { id: string }) {
     setItemRows(fieldState(p.itemRows));
     setStrict(loadGridStrict());
     setRowFill(loadRowFill());
-  }, []);
+    // The setters are listed although React guarantees their identity is stable
+    // and `[]` would behave identically. The compiler cannot know that
+    // guarantee, so an empty array reads to it as a dependency list that does
+    // not match what the body uses, and it gives up optimizing the whole
+    // component rather than risk a stale closure. Naming them costs nothing and
+    // keeps the file compilable.
+  }, [setCols, setItemCols, setItemRows, setStrict, setRowFill]);
   useEffect(() => {
     window.addEventListener(GRID_PREFS_EVENT, reload);
     return () => window.removeEventListener(GRID_PREFS_EVENT, reload);

@@ -51,7 +51,12 @@ export function useSkillSelection(visible: boolean) {
   // Selection stays a subset of what's visible: hiding a host unchecks it, and
   // it stays unchecked once the filter clears (the user re-selects
   // deliberately). Same rule as the broadcast rails.
-  useEffect(() => {
+  // Adjusted during render, not in an effect. It cannot be a plain derivation:
+  // the unchecking is meant to stick once the filter clears, so the set really
+  // is written. Returning `prev` when nothing was dropped makes it converge.
+  const [prevVisibleIds, setPrevVisibleIds] = useState(visibleIds);
+  if (prevVisibleIds !== visibleIds) {
+    setPrevVisibleIds(visibleIds);
     setSelected((prev) => {
       let changed = false;
       const next = new Set<number>();
@@ -61,7 +66,7 @@ export function useSkillSelection(visible: boolean) {
       }
       return changed ? next : prev;
     });
-  }, [visibleIds]);
+  }
 
   const toggleHost = useCallback((id: number) => {
     setSelected((prev) => {

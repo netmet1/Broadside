@@ -24,7 +24,7 @@
  * width is void and the question starts again from full labels.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type React from "react";
 
 /** Slack required over the remembered full width before the labels come back,
@@ -39,11 +39,23 @@ export function useRailCompact(
   /** The width the row wanted when it last failed to fit. Null until it has. */
   const fullWidth = useRef<number | null>(null);
 
-  // Declared first so it runs first: by the time the measuring effect below
-  // re-runs for the same `key` change, there is no stale width left to trust.
-  useEffect(() => {
-    fullWidth.current = null;
+  // Reset both when the row's identity changes, so the measuring effect below
+  // never runs against a width belonging to a different row.
+  //
+  // Split in two on purpose. The flag is state, so it is adjusted during
+  // render, React's documented way to reset state derived from a prop. The
+  // remembered width is a ref, which a render must not touch, so it is cleared
+  // in a *layout* effect. That is also a stronger guarantee than what was here
+  // before: this used to rely on being declared above the measuring effect so
+  // it would run first, and a layout effect runs before every passive effect
+  // whatever the order they are written in.
+  const [prevKey, setPrevKey] = useState(key);
+  if (prevKey !== key) {
+    setPrevKey(key);
     setCompact(false);
+  }
+  useLayoutEffect(() => {
+    fullWidth.current = null;
   }, [key]);
 
   // `compact` is a dependency so that flipping it measures again against the

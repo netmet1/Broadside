@@ -104,9 +104,17 @@ export function useOutputSearch(runs: RunGroup[], visible: boolean) {
     [scan],
   );
 
-  useEffect(() => {
+  // Back to the first hit whenever the search itself changes. Adjusted during
+  // render rather than in an effect, so the "3 of 17" counter never shows the
+  // old position against the new pattern.
+  const [prevSearch, setPrevSearch] = useState({ searchPattern, searchOptions });
+  if (
+    prevSearch.searchPattern !== searchPattern ||
+    prevSearch.searchOptions !== searchOptions
+  ) {
+    setPrevSearch({ searchPattern, searchOptions });
     setActiveHitIdx(0);
-  }, [searchPattern, searchOptions]);
+  }
 
   const searchStatus = (() => {
     if (matcherOrError && "error" in matcherOrError) {

@@ -237,14 +237,19 @@ export function useGridLayout({
     setExcludedFromGrid((prev) => (prev.size === 0 ? prev : new Set()));
   }, []);
   // Drop ids whose session has closed so the set can't grow without bound.
-  useEffect(() => {
+  // Adjusted during render rather than in an effect; the early return on an
+  // empty set and the identity return when nothing was dropped are what make
+  // it converge.
+  const [prevSessions, setPrevSessions] = useState(sessions);
+  if (prevSessions !== sessions) {
+    setPrevSessions(sessions);
     setExcludedFromGrid((prev) => {
       if (prev.size === 0) return prev;
       const live = new Set(sessions.map((s) => s.id));
       const next = new Set([...prev].filter((id) => live.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [sessions]);
+  }
 
   const gridTiles = useMemo(
     () => paneOrder.filter((s) => !excludedFromGrid.has(s.id)),
@@ -266,9 +271,17 @@ export function useGridLayout({
     setStrictGrid(loadGridStrict());
     setRowFill(loadRowFill());
   }, []);
-  useEffect(() => {
+  // Adjusted on the visibility transition during render rather than in an
+  // effect. `reloadPrefs` is synchronous (it reads localStorage), so in an
+  // effect it renders the stale prefs once and then corrects them, which on a
+  // return to a pinned grid is a visible reflow. This is React's documented
+  // way to reset state derived from a prop, and it converges: the guard is
+  // false again the moment `wasVisible` catches up.
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (wasVisible !== visible) {
+    setWasVisible(visible);
     if (visible) reloadPrefs();
-  }, [visible, reloadPrefs]);
+  }
   // Also whenever anything writes a grid pref, from either screen. Coming back
   // to Terminals is no longer the only moment these can change: with strict off
   // a drag writes them itself, and Settings has to show the result.
@@ -395,14 +408,20 @@ export function useGridLayout({
   const twoUpThreshold =
     2 * (Math.round(GRID_MIN_TILE_COLS * cell.cellW) + TILE_BORDER_X) +
     3 * gapPx;
-  useEffect(() => {
-    if (paneW === 0) return;
+  // Adjusted during render rather than in an effect: the pane's measured width
+  // arrives from a ResizeObserver, and deciding the column count a frame later
+  // means laying the grid out once at the old count and then again, which is a
+  // visible flash of two-up before it drops to one. The functional update
+  // returns the same boolean when the verdict has not changed, so this settles
+  // in a single pass, and the hysteresis is what stops it oscillating when
+  // dropping a column removes the scrollbar and widens the pane again.
+  if (paneW !== 0) {
     setTwoUpFits((fits) =>
       fits
         ? paneW >= twoUpThreshold
         : paneW >= twoUpThreshold + GRID_COLS_HYSTERESIS_PX,
     );
-  }, [paneW, twoUpThreshold]);
+  }
 
   // The real column count, for both the layout and the short-row fill, which
   // have to agree: the fill decides which tiles widen to close a gap, so a

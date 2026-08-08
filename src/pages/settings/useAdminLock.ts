@@ -38,9 +38,24 @@ export function useAdminLock() {
     }
   }, []);
 
+  // The status on mount. The call is made here rather than by handing the
+  // effect `refreshLock`, so the state write is visibly in a continuation
+  // rather than hidden behind a function the effect body appears to run
+  // synchronously. The guard is the reason worth having: without it a status
+  // arriving after Settings unmounts would be written to a dead component.
   useEffect(() => {
-    refreshLock();
-  }, [refreshLock]);
+    let alive = true;
+    adminLockStatus()
+      .then((s) => {
+        if (alive) setLockStatus(s);
+      })
+      .catch(() => {
+        // Non-fatal; the section just won't reflect the latest lock state.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const savePasscode = async () => {
     if (pcNew.length < 4) {

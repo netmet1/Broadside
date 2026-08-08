@@ -312,7 +312,14 @@ export function BroadcastPage({
     () => new Set(visibleRailHosts.map((h) => h.id)),
     [visibleRailHosts],
   );
-  useEffect(() => {
+  // Adjusted during render rather than in an effect. Note this cannot become a
+  // plain derivation (selection intersected with visible at read time): the
+  // narrowing is meant to stick, so clearing the filter must not bring the
+  // hosts back checked. The set genuinely has to be written. Returning `prev`
+  // unchanged when nothing was dropped is what makes it converge.
+  const [prevVisibleIds, setPrevVisibleIds] = useState(visibleIds);
+  if (prevVisibleIds !== visibleIds) {
+    setPrevVisibleIds(visibleIds);
     setSelected((prev) => {
       let changed = false;
       const next = new Set<number>();
@@ -322,7 +329,7 @@ export function BroadcastPage({
       }
       return changed ? next : prev;
     });
-  }, [visibleIds]);
+  }
 
   const allSelected =
     visibleRailHosts.length > 0 && visibleRailHosts.every((h) => selected.has(h.id));
