@@ -44,17 +44,12 @@ function readTerminalTheme() {
 export function SkillTerminalPane({
   sessionId,
   interactive,
-  visible,
   resetNonce,
   onInput,
 }: {
   sessionId: string;
   /** Whether the operator currently has the keyboard for this pane. */
   interactive: boolean;
-  /** Whether the run panel is on screen. A pane mounts briefly hidden during
-   * the params-to-run transition, and a terminal sized while hidden fits to a
-   * zero-height box; this triggers a refit once it is shown. */
-  visible: boolean;
   /** Bumped to re-initialize the xterm view, for recovering a display a
    * full-screen program left garbled (alternate screen, a stray scroll region).
    * Local only: it clears this pane's buffer, the remote keeps running. */
@@ -67,9 +62,12 @@ export function SkillTerminalPane({
   // Whether term.open() has run. It must not run until the container is
   // visible and sized (see the ResizeObserver below).
   const openedRef = useRef(false);
-  // A font change landed while this pane was hidden (no measurable box, so the
-  // fit was skipped). Settled by the visible effect with a second-frame fit.
-  const needsRefitRef = useRef(false);
+  // Whether this pane has pixels on screen, per the IntersectionObserver in
+  // the setup effect. `fit()` must never run while this is false: xterm's
+  // renderer is paused off screen and a fit lands against its stale
+  // dimensions, which can drag the viewport to the top of its scrollback and
+  // wedge the scrollbar (see TerminalView, where the grid made it reproducible).
+  const intersectingRef = useRef(true);
   // Read from the data handler so it never re-subscribes (and so the pane never
   // misses bytes between renders).
   const interactiveRef = useRef(interactive);
@@ -109,7 +107,7 @@ export function SkillTerminalPane({
 
     // Keep the remote PTY the same size as this xterm, so the shell doesn't
     // stay at the size the run opened it with while the pane fits a different
-    // one. fit() below fires this with the real dimensions — but that first
+    // one. fit() below fires this with the real dimensions, but that first
     // fit races the SSH connect: the backend only registers the session once
     // the connection is up (seconds), so a resize sent before then is lost,
     // and with the pane's size never changing again it was never re-sent. The
@@ -148,13 +146,28 @@ export function SkillTerminalPane({
     // of its true height (the reported half-viewport bug). The ResizeObserver
     // fires when the element gains a real size, which is exactly when it's safe
     // to open; writes made before open() are buffered and drawn on open.
+    let io: IntersectionObserver | undefined;
     const observer = new ResizeObserver(() => {
       const node = containerRef.current;
       if (!node?.offsetParent) return;
       if (!openedRef.current) {
         term.open(node);
         openedRef.current = true;
+        // Created here because it must be created after `term.open()`: xterm
+        // registers its own IntersectionObserver inside open, observers fire
+        // in creation order, so by the time this one reports the pane back on
+        // screen xterm has already woken its renderer and re-measured the char
+        // size. That makes this the one safe place to refit a returning pane;
+        // a fit any earlier lands against the paused renderer's stale
+        // dimensions (see TerminalView's matching observer for the full
+        // pathology). It also covers a font change applied while hidden.
+        io = new IntersectionObserver((entries) => {
+          intersectingRef.current = entries[entries.length - 1].isIntersecting;
+          if (intersectingRef.current) fit.fit();
+        });
+        io.observe(node);
       }
+      if (!intersectingRef.current) return;
       fit.fit();
     });
     if (el) observer.observe(el);
@@ -175,6 +188,7 @@ export function SkillTerminalPane({
       dataSub.dispose();
       resizeSub.dispose();
       observer.disconnect();
+      io?.disconnect();
       el?.removeEventListener("mouseup", onMouseUp);
       void unlistenData.then((fn) => fn());
       unregisterPaneSnapshot(sessionId);
@@ -195,13 +209,15 @@ export function SkillTerminalPane({
     ) {
       term.options.fontFamily = prefs.terminalFontFamily;
       term.options.fontSize = prefs.terminalFontSize;
-      if (openedRef.current && containerRef.current?.offsetParent) {
+      // Hidden (or not yet opened) panes are left alone: the
+      // IntersectionObserver refits them on the way back, and an unopened
+      // terminal measures the new font when it opens.
+      if (
+        openedRef.current &&
+        intersectingRef.current &&
+        containerRef.current?.offsetParent
+      ) {
         fitRef.current?.fit();
-      } else {
-        // Hidden (or not yet opened): xterm still re-measures the font and
-        // restyles .xterm-screen at the old geometry right away. Mark it so
-        // the visible effect refits when the pane is back on screen.
-        needsRefitRef.current = true;
       }
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
@@ -232,33 +248,8 @@ export function SkillTerminalPane({
     if (containerRef.current?.offsetParent) fitRef.current?.fit();
   }, [resetNonce]);
 
-  // Refit when the run panel comes back on screen (the ResizeObserver also
-  // catches the display flip, but this covers a show that doesn't change the
-  // element's box size). Only once opened, so it never fits an unopened term.
-  useEffect(() => {
-    if (!visible) return;
-    let raf2 = 0;
-    const raf = requestAnimationFrame(() => {
-      if (openedRef.current && containerRef.current?.offsetParent)
-        fitRef.current?.fit();
-      // A font change applied while hidden needs one more fit a frame later:
-      // xterm's renderer is paused off-screen and only unpauses via its own
-      // IntersectionObserver, which fires after this frame's rAF callbacks —
-      // the fit above can therefore run against a still-paused renderer whose
-      // deferred resize never lands (see TerminalView's matching effect).
-      raf2 = requestAnimationFrame(() => {
-        if (!needsRefitRef.current) return;
-        if (openedRef.current && containerRef.current?.offsetParent) {
-          needsRefitRef.current = false;
-          fitRef.current?.fit();
-        }
-      });
-    });
-    return () => {
-      cancelAnimationFrame(raf);
-      cancelAnimationFrame(raf2);
-    };
-  }, [visible]);
-
-  return <div ref={containerRef} className="h-full w-full" />;
+  // pl-[2px]: the same left gutter a Terminals pane has, for the same reason
+  // and with the same reasoning behind putting it here rather than on `.xterm`.
+  // See TerminalView's container.
+  return <div ref={containerRef} className="h-full w-full pl-[2px]" />;
 }

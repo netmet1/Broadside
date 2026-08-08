@@ -40,7 +40,7 @@ keyring = { version = "3", features = ["windows-native"] }
 age = "0.11"
 # default-features off to swap aws-lc-rs (needs CMake/NASM on Windows) for ring
 russh = { version = "0.61", default-features = false, features = ["flate2", "ring", "rsa"] }
-# SFTP subsystem client (russh itself has no file transfer). Stream-agnostic —
+# SFTP subsystem client (russh itself has no file transfer). Stream-agnostic:
 # wraps russh's ChannelStream; independent of russh's version.
 russh-sftp = "2"
 tokio = { version = "1", features = ["time", "sync", "net", "io-util", "fs"] }
@@ -61,6 +61,15 @@ vte = "0.13"
 regex = "1"
 argon2 = "0.5.3"
 portable-pty = "0.9.0"
+# Serial console tabs: a COM port opened as a terminal session, so the console
+# cable into a router/switch is a pane beside the SSH ones. Enumeration is a
+# registry read and the port itself is CreateFile; no C deps, no service.
+#
+# default-features off drops the `libudev` feature, which is Linux-only and is
+# the one part of this crate that wants a C library. Broadside is a Windows
+# application, so it was never going to be compiled; leaving it on only put
+# libudev-sys and its friends in the lock file for `cargo audit` to walk.
+serialport = { version = "4", default-features = false }
 # Local-side deletes go to the Recycle Bin (recoverable) rather than std::fs
 # permanent removal. Pure-Rust Windows shell bindings, no C deps.
 trash = "5"

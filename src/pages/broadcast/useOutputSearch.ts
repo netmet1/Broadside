@@ -26,7 +26,7 @@ export function useOutputSearch(runs: RunGroup[], visible: boolean) {
   );
   const [activeHitIdx, setActiveHitIdx] = useState(0);
 
-  // Keyboard entry points (D-015). Only while this page is the visible one —
+  // Keyboard entry points (D-015). Only while this page is the visible one:
   // the component stays mounted in the background after navigation.
   useEffect(() => {
     if (!visible) return;

@@ -41,9 +41,9 @@ function wordInitials(label: string): string {
   return i || label.slice(0, 2).toUpperCase();
 }
 
-/** PTY Broadcast — SSH tab (work-queue 2026-06-12, extended 2026-06-13): mirrors
+/** PTY Broadcast: SSH tab (work-queue 2026-06-12, extended 2026-06-13): mirrors
  * the Broadcast page's host selection, but targets the already-open SSH terminal
- * sessions — the command is typed (with Enter) into every checked PTY. The
+ * sessions: the command is typed (with Enter) into every checked PTY. The
  * dispatch report (sent / failed per session) appends and persists; the actual
  * output lives in each terminal tab. */
 export function SshBroadcastPanel({
@@ -54,7 +54,7 @@ export function SshBroadcastPanel({
 }: {
   visible: boolean;
   sessions: SshTermSession[];
-  /** Session ids with a live connection — only these can receive input. */
+  /** Session ids with a live connection, only these can receive input. */
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
 }) {
@@ -142,7 +142,7 @@ export function SshBroadcastPanel({
       const cmd = (cmdOverride ?? command).trim();
       if (!cmd || selected.size === 0 || sending) return;
       // Same pre-send guard UX as Broadcast (D-014). Note: this path types
-      // into interactive PTYs, so the check here is frontend-side courtesy —
+      // into interactive PTYs, so the check here is frontend-side courtesy;
       // the backend keystroke channel stays guard-exempt by design.
       try {
         const hits = await checkDestructive(cmd);
@@ -235,7 +235,7 @@ export function SshBroadcastPanel({
         Results appear in each tab on the Terminals page.
       </div>
       <div className="flex min-h-0 flex-1">
-        {/* Session selection rail (collapsible — mirrors MultiTerminal). */}
+        {/* Session selection rail (collapsible, mirrors MultiTerminal). */}
         <div
           className={`flex shrink-0 flex-col border-r border-border/50 ${
             railCollapsed ? "w-14" : "w-60"
@@ -357,11 +357,20 @@ export function SshBroadcastPanel({
                   </span>
                   {/* Marked, never filtered (D-067): the session takes the
                       keystrokes fine, but the command may not be valid in that
-                      shell, and this is a panel that sends one to all of them. */}
+                      shell, and this is a panel that sends one to all of them.
+                      Read off the live host row, not `s.host`: that is a
+                      snapshot taken when the session opened, so a shell
+                      integration setting changed since would show its old
+                      value here until the app was restarted. */}
                   <ShellChip
-                    capability={s.host.shell_capability}
-                    loginShell={s.host.login_shell}
-                    pref={s.host.shell_integration}
+                    compact
+                    capability={
+                      (hostsById.get(s.host.id) ?? s.host).shell_capability
+                    }
+                    loginShell={(hostsById.get(s.host.id) ?? s.host).login_shell}
+                    pref={
+                      (hostsById.get(s.host.id) ?? s.host).shell_integration
+                    }
                   />
                   <span
                     className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
@@ -391,7 +400,7 @@ export function SshBroadcastPanel({
                 </p>
               )}
           </div>
-          {/* Bottom-pinned clear actions — stay visible while the session list
+          {/* Bottom-pinned clear actions, stay visible while the session list
               above scrolls (work queue 2026-06-13). Hidden when collapsed. */}
           {!railCollapsed && (
             <div className="shrink-0 space-y-1 border-t border-border/50 p-2">

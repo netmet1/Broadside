@@ -1,6 +1,6 @@
 //! VT stream interpretation for the MultiTerminal aggregate view (D-061).
 //!
-//! Each live PTY session is a full interactive VT byte stream — cursor moves,
+//! Each live PTY session is a full interactive VT byte stream, cursor moves,
 //! colours, prompt redraws, echoed keystrokes. You cannot pour N of those into
 //! one pane and get something readable. This module feeds one session's bytes
 //! through a [`vte`] parser plus a minimal screen model and emits **completion-
@@ -16,7 +16,7 @@
 //!   - `OSC 133 ; D [; <exit>]` command finished (optional exit code)
 //!
 //! Full-screen / redrawing apps (vi, less, htop, top, tmux, watch, …) must NOT
-//! be mirrored — their output is screen-painting garbage. Detection is
+//! be mirrored; their output is screen-painting garbage. Detection is
 //! **behaviour-based, never a program-name list** (D-061): the alternate-screen
 //! escape every full-screen app emits, plus a heuristic for main-screen
 //! redrawers (`watch`, some `top` builds, spinners) that don't use it.
@@ -28,7 +28,7 @@ use vte::{Params, Parser, Perform};
 
 use crate::ssh::ShellCapability;
 
-/// Min cursor-repositioning events before the redraw heuristic can fire — keeps
+/// Min cursor-repositioning events before the redraw heuristic can fire, keeps
 /// ordinary commands (which emit a few) from being misflagged.
 const REDRAW_MIN: u32 = 8;
 /// Redraw events must outnumber committed lines by this factor to count as an
@@ -39,7 +39,7 @@ const REDRAW_RATIO: usize = 3;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Interactivity {
-    /// Ordinary command — mirror its output lines.
+    /// Ordinary command, mirror its output lines.
     #[default]
     Normal,
     /// Switched to the alternate screen (vi, less, htop, tmux, man, …).
@@ -49,7 +49,7 @@ pub enum Interactivity {
 }
 
 impl Interactivity {
-    /// True when the block should show the "interactive — not mirrored" notice
+    /// True when the block should show the "interactive, not mirrored" notice
     /// instead of its captured output.
     pub fn is_interactive(&self) -> bool {
         !matches!(self, Interactivity::Normal)
@@ -63,7 +63,7 @@ pub struct CommandBlock {
     /// The command text, when known (captured between OSC 133 `B` and `C`).
     pub command: Option<String>,
     /// Committed output lines, plain text (escape sequences stripped). Empty
-    /// for interactive blocks — the UI shows the notice instead.
+    /// for interactive blocks, the UI shows the notice instead.
     pub lines: Vec<String>,
     /// Exit status from `OSC 133 ; D ; <code>`, when the shell reported one.
     pub exit_code: Option<i32>,
@@ -242,7 +242,7 @@ impl Perform for Performer {
         if !self.in_output {
             return;
         }
-        // Private DEC modes: ESC [ ? <n> h|l — the alternate-screen toggle.
+        // Private DEC modes: ESC [ ? <n> h|l, the alternate-screen toggle.
         if intermediates.first() == Some(&b'?') {
             let first = params
                 .iter()
@@ -276,9 +276,9 @@ impl Perform for Performer {
 /// (X4).
 ///
 /// Why it's shaped this way:
-/// - One single line (`;`-joined) so it's a single command — the hooks it
+/// - One single line (`;`-joined) so it's a single command: the hooks it
 ///   installs take effect on the *next* prompt, never around this setup line.
-/// - Octal escapes (`\033`/`\007`) not `\e` — portable across every `printf`.
+/// - Octal escapes (`\033`/`\007`) not `\e`: portable across every `printf`.
 /// - PROMPT_COMMAND is **prepended** (not clobbered) and `__omni_precmd` reads
 ///   `$?` first, so a user's existing PROMPT_COMMAND can't corrupt the exit
 ///   code we report.
@@ -297,7 +297,7 @@ pub fn shell_integration_command() -> String {
 
 /// The full one-time setup line sent on PTY connect (D-063, T1): installs the
 /// OSC 133 integration, clears the screen, reprints the MOTD, and re-echoes the
-/// real captured `Last login:` line — so the terminal looks like a fresh login
+/// real captured `Last login:` line, so the terminal looks like a fresh login
 /// without the visible setup command. It's a single line, so the integration's
 /// preexec guard suppresses any MultiTerminal block for the clear/MOTD/echo.
 ///
@@ -319,8 +319,8 @@ pub fn shell_setup_command(
         return None;
     }
     // Leading space so shells with `ignorespace`/`ignoreboth` in HISTCONTROL
-    // (the Debian/Ubuntu default) don't record this long line in shell history
-    // — otherwise an Up-arrow in the terminal recalls the whole setup line.
+    // (the Debian/Ubuntu default) don't record this long line in shell history;
+    // otherwise an Up-arrow in the terminal recalls the whole setup line.
     let mut cmd = String::from(" ");
     if capability.with_integration() {
         cmd.push_str(SHELL_INTEGRATION);
@@ -530,7 +530,7 @@ mod tests {
             b"sleep 100",
             &osc("C"),
             b"partial output\r\n",
-            &osc("A"), // next prompt — flushes the previous block
+            &osc("A"), // next prompt, flushes the previous block
         ]);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].command.as_deref(), Some("sleep 100"));
@@ -651,7 +651,7 @@ mod tests {
 
     #[test]
     fn a_shell_we_cannot_drive_is_sent_nothing_at_all() {
-        // The pfSense fix. Not "the integration is dropped" — *nothing* is
+        // The pfSense fix. Not "the integration is dropped", *nothing* is
         // built, because the clear/MOTD tail alone is what the console menu was
         // reading as a menu selection.
         for cap in [ShellCapability::Unsupported, ShellCapability::Unreadable] {

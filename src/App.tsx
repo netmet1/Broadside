@@ -57,8 +57,13 @@ import {
   requiresMasterPassword,
 } from "@/lib/tauri/hosts";
 import { onPtySudo, onPtySudoRejected } from "@/lib/tauri/pty";
+import { useWindowBlurredAttr } from "@/lib/windowFocus";
 
 function App() {
+  // Let the stylesheet know when the window is not the one taking keys, so the
+  // app stops looking alive while it is asleep. Nothing else here reads it.
+  useWindowBlurredAttr();
+
   const [page, setPage] = useState<Page>("hosts");
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [sessions, setSessions] = useState<TermSession[]>([]);
@@ -71,21 +76,23 @@ function App() {
   const [connectedSessions, setConnectedSessions] = useState<Set<string>>(
     new Set(),
   );
-  // Set when "Manage shortcuts…" is picked — Settings scrolls there on open.
+  // Set when "Manage shortcuts…" is picked, Settings scrolls there on open.
   const [settingsFocus, setSettingsFocus] = useState<string | null>(null);
   // Latch: once Settings has been opened it stays mounted (hidden) like the
   // other heavy pages, so re-visiting it doesn't pay the ~5s cost of remounting
   // its large Radix tree every time. The lazy chunk still loads only on first
   // open (kept out of the startup payload); after that the page persists.
   const [settingsMounted, setSettingsMounted] = useState(false);
-  // True once Settings has mounted AND loaded its data — drives whether we show
+  // True once Settings has mounted AND loaded its data, drives whether we show
   // the branded loader over the tab. Pre-warming (below) usually flips this
   // before the user ever clicks Settings, so the loader is rarely seen.
   const [settingsReady, setSettingsReady] = useState(false);
   const handleSettingsReady = useCallback(() => setSettingsReady(true), []);
   // Maximized terminal: the id of the session filling the whole window (null =
   // normal view). Tracking the id (not a bool) lets us drop back to the tabbed
-  // view automatically when that specific terminal is closed.
+  // view automatically when that terminal is closed. It follows the active
+  // session while maximized (see the effect below), so it is always the id of
+  // what is actually on screen rather than the id you maximized.
   const [maxSessionId, setMaxSessionId] = useState<string | null>(null);
   const maximized = maxSessionId !== null;
   // The Terminals grid filling the screen. A separate mode from maximizing one
@@ -132,7 +139,7 @@ function App() {
     };
   }, []);
 
-  // The auto-filled password bounced (sudo said "Sorry, try again.") — warn so
+  // The auto-filled password bounced (sudo said "Sorry, try again."), warn so
   // the operator fixes the stored sudo password (D-065, 11.3). Auto-fill has
   // already stopped itself; the prompt is now the operator's to answer.
   useEffect(() => {
@@ -209,6 +216,7 @@ function App() {
         cwd: opts?.cwd,
         startupCommand: opts?.startupCommand,
         profileLabel: opts?.profileLabel,
+        profileColor: opts?.profileColor,
       };
       setSessions((prev) => [...prev, session]);
       setActiveSessionId(session.id);
@@ -278,7 +286,7 @@ function App() {
 
   /** Terminate every live terminal session for a host (from the Hosts tab).
    * Removing the sessions unmounts their TerminalViews, whose cleanup calls
-   * ptyClose — the same teardown path as closing a tab. */
+   * ptyClose: the same teardown path as closing a tab. */
   const terminateHost = useCallback((hostId: number) => {
     setSessions((prev) => {
       const next = prev.filter(
@@ -330,7 +338,7 @@ function App() {
   // Mount Settings the first time it's opened, then leave it mounted (below) so
   // re-visits are instant. We deliberately do NOT pre-warm at startup: mounting
   // this large tree is genuinely expensive, and doing it during launch (which
-  // already mounts every other page) made the whole app hitch — worse on slow
+  // already mounts every other page) made the whole app hitch, worse on slow
   // machines. Instead we defer the mount two frames so the branded loader paints
   // first; its spinner is GPU-composited, so it keeps animating smoothly even
   // while the heavy first render blocks the main thread. One-time, per launch.
@@ -351,9 +359,19 @@ function App() {
   }, []);
   const restoreTerminal = useCallback(() => setMaxSessionId(null), []);
 
-  // F11 toggles the maximized terminal — the standard fullscreen key, and
+  // F11 toggles the maximized terminal, the standard fullscreen key, and
   // (unlike Esc) one the shell and TUI apps like vim/less never use, so it's
   // safe to capture. Capture phase fires before xterm consumes the key.
+  //
+  // Esc is deliberately NOT a way out, here or in the fullscreen grid, and this
+  // is the one place to record why, because it looks like an omission. Leaving
+  // fullscreen on Esc means claiming the key from whatever is running in the
+  // terminal, and the program most likely to be running full-screen in a
+  // terminal is vi. There, Esc is not a convenience but the key the editor is
+  // built around: taking one press of it to un-maximize a window is a worse
+  // failure than any amount of hunting for the way back out. So the ways out
+  // are F11 and the restore button in the banner (Ctrl+Shift+G and the strip's
+  // own button, in the grid), and Esc reaches the terminal untouched.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "F11") return;
@@ -399,6 +417,18 @@ function App() {
       });
   }, []);
 
+  // A maximized terminal shows whichever session is active, because it is the
+  // only pane on screen and being active is what makes a pane the visible one.
+  // So the id has to follow the active session rather than remember the one
+  // that was maximized, or Alt+Left/Right in a maximized terminal swaps the
+  // terminal under a banner still naming the session you started from. It also
+  // keeps the drop-back below honest: closing the session you maximized while
+  // working in a different one should not throw you out of fullscreen.
+  useEffect(() => {
+    if (maxSessionId === null || activeSessionId === null) return;
+    if (activeSessionId !== maxSessionId) setMaxSessionId(activeSessionId);
+  }, [maxSessionId, activeSessionId]);
+
   // Drop back to the tabbed view when the maximized terminal is gone (closed
   // or terminated) or we've left the Terminals page.
   useEffect(() => {
@@ -424,7 +454,7 @@ function App() {
     return ids;
   }, [sessions, connectedSessions]);
 
-  // Hosts with at least one open terminal tab (connected or not) — drives the
+  // Hosts with at least one open terminal tab (connected or not), drives the
   // "already open" guard rails on the Hosts page (H7/H8). Local shells excluded.
   const openHostIds = useMemo(() => {
     const ids = new Set<number>();
@@ -434,7 +464,7 @@ function App() {
 
   // SSH-only sessions for MultiTerminal, whose aggregate block view needs the
   // OSC 133 markers only the SSH path emits. PTY Broadcast now takes the full
-  // session list — its local-shell tabs fan out to open PowerShell/cmd/WSL too.
+  // session list, its local-shell tabs fan out to open PowerShell/cmd/WSL too.
   const sshSessions = useMemo(
     () => sessions.filter((s): s is SshTermSession => s.type === "ssh"),
     [sessions],
@@ -523,7 +553,7 @@ function App() {
           onJumpToHostTerminal={jumpToHostTerminal}
         />
       </div>
-      {/* Skills stays mounted so a running skill — and its live per-host panes —
+      {/* Skills stays mounted so a running skill (and its live per-host panes)
           survive tab switches. A run can last as long as an apt upgrade, and
           unmounting would tear down the xterm panes mid-run. */}
       <div className={page === "skills" ? "block h-full" : "hidden"}>

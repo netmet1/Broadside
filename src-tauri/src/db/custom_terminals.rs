@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 
 /// Which shell language a custom terminal speaks. It decides the launcher icon
-/// and, more importantly, which PTY Broadcast family the session joins — a
+/// and, more importantly, which PTY Broadcast family the session joins, a
 /// session belonging to no family would silently vanish from every broadcast
 /// panel.
 pub const FAMILY_POSIX: &str = "posix";

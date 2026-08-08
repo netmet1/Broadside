@@ -189,6 +189,6 @@ fn switching_auth_method_clears_old_secret() {
         },
     )
     .unwrap();
-    // No assert on internal state — the test verifies no errors during the
+    // No assert on internal state; the test verifies no errors during the
     // switch, which exercises the clear-old-then-set-new path.
 }

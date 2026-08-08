@@ -38,6 +38,7 @@ import {
   type AuthInput,
   type Host,
   type HostInput,
+  checkPrivateKey,
   clearHostCredentials,
   createHost,
   errorMessage,
@@ -168,7 +169,7 @@ function normalizeFlavor(f: string | null): string {
 
 /** Initial form values for a host (or a blank form when null). Used as the
  * form's defaultValues so controlled fields (the flavor Select) populate
- * correctly on mount — the panel is remounted per host via a React key. */
+ * correctly on mount: the panel is remounted per host via a React key. */
 function valuesFromHost(host: Host | null, defaultColor: string): FormValues {
   if (!host) return emptyValues(defaultColor);
   return {
@@ -192,7 +193,7 @@ function valuesFromHost(host: Host | null, defaultColor: string): FormValues {
 type Props = {
   host: Host | null;
   defaultColor: string;
-  /** All existing hosts — used to warn when a hostname/IP is already in use. */
+  /** All existing hosts, used to warn when a hostname/IP is already in use. */
   existingHosts: Host[];
   onCancel: () => void;
   onSaved: () => void;
@@ -216,7 +217,7 @@ export function HostFormPanel({
   const [showKeyPassphrase, setShowKeyPassphrase] = useState(false);
   const [showSudoPassword, setShowSudoPassword] = useState(false);
   // Set when the entered hostname is already used by another host; the confirm
-  // dialog lets the user proceed anyway (allowed by design — D-033) or go back.
+  // dialog lets the user proceed anyway (allowed by design, D-033) or go back.
   const [dupConfirm, setDupConfirm] = useState<{
     data: FormValues;
     conflictLabel: string;
@@ -225,6 +226,13 @@ export function HostFormPanel({
   const [sudoAction, setSudoAction] = useState<"keep" | "replace" | "remove">(
     "keep",
   );
+  /** Whether the chosen key file is encrypted, once we have looked. `null`
+   * means we have not (no path yet, or the path is not a readable key), and the
+   * passphrase field keeps its neutral "(optional)" label. A key passphrase is
+   * a local secret that decrypts the file before the handshake starts, so no
+   * server is ever in a position to ask for it: if the form does not, the
+   * failure lands at the first connect instead. */
+  const [keyEncrypted, setKeyEncrypted] = useState<boolean | null>(null);
   /** The host's standing answer for shell integration (D-067). Kept outside the
    * form's own schema because it is saved through its own command, and stored
    * as a plain value rather than null so the radio group always has a choice. */
@@ -256,7 +264,7 @@ export function HostFormPanel({
   // Per-segment tag autocomplete. The field holds a comma-separated list; the
   // dropdown suggests existing tags that match the segment *currently being
   // typed* (after the last comma), excluding ones already in the field. A native
-  // <datalist> can't do this — it only matches the whole value — so this is a
+  // <datalist> can't do this (it only matches the whole value), so this is a
   // small custom popover over the same suggestion list.
   const tagValue = watch("tag") ?? "";
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
@@ -316,6 +324,7 @@ export function HostFormPanel({
     setShowKeyPassphrase(false);
     setShowSudoPassword(false);
     setSudoAction("keep");
+    setKeyEncrypted(null);
     setShellPref(host?.shell_integration ?? "auto");
     reset(valuesFromHost(host, defaultColor));
   }, [host, defaultColor, reset]);
@@ -340,7 +349,7 @@ export function HostFormPanel({
   }, []);
 
   // Escape cancels the form (unless we're mid-submit or the duplicate-hostname
-  // confirm dialog is open — there Escape should just close the dialog).
+  // confirm dialog is open, there Escape should just close the dialog).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !isSubmitting && !dupConfirm) {
@@ -351,6 +360,10 @@ export function HostFormPanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isSubmitting, onCancel, dupConfirm]);
+
+  // Registered here so the field can keep react-hook-form's own onBlur and add
+  // the key probe after it, rather than replacing it.
+  const keyPathReg = register("keyPath");
 
   const selectedColor = watch("color");
   const authMethod = watch("authMethod");
@@ -381,6 +394,33 @@ export function HostFormPanel({
         if (!(await pathIsFile(keyPath))) {
           setError("keyPath", {
             message: "File not found. Check the path or use Browse",
+          });
+          return;
+        }
+        // And then that the key can actually be opened with what has been
+        // entered. This is the one moment a passphrase can be asked for: it
+        // decrypts the file locally before the handshake, so the host has no
+        // say in it and a terminal can never prompt for it.
+        const check = await checkPrivateKey(
+          keyPath,
+          data.keyPassphrase.length === 0 ? null : data.keyPassphrase,
+        );
+        setKeyEncrypted(check.status === "encrypted" || check.status === "wrong_passphrase");
+        if (check.status === "encrypted") {
+          setError("keyPassphrase", {
+            message: "This key is encrypted. Enter its passphrase to save it",
+          });
+          return;
+        }
+        if (check.status === "wrong_passphrase") {
+          setError("keyPassphrase", {
+            message: "That passphrase does not open this key",
+          });
+          return;
+        }
+        if (check.status === "unreadable") {
+          setError("keyPath", {
+            message: `Not a private key Broadside can read (${check.message})`,
           });
           return;
         }
@@ -436,7 +476,7 @@ export function HostFormPanel({
       }
 
       // Credential writes are skipped entirely while admin-locked (the fields
-      // are ghosted, so there's nothing to write) — host metadata still saves.
+      // are ghosted, so there's nothing to write), host metadata still saves.
       if (!adminLocked) {
         if (editingCredentials) {
           if (data.authMethod === "none") {
@@ -475,6 +515,24 @@ export function HostFormPanel({
     }
   };
 
+  /** Looks at the key file as soon as one is settled on, so the passphrase
+   * field can say up front that this key needs one. Silent on anything it
+   * cannot answer: save is where a bad path or an unreadable file is reported,
+   * and nagging about a half-typed path would be noise. */
+  const probeKeyFile = async (path: string) => {
+    const trimmed = path.trim();
+    if (trimmed.length === 0) {
+      setKeyEncrypted(null);
+      return;
+    }
+    try {
+      const check = await checkPrivateKey(trimmed, null);
+      setKeyEncrypted(check.status === "encrypted" ? true : check.status === "ok" ? false : null);
+    } catch {
+      setKeyEncrypted(null);
+    }
+  };
+
   const handleBrowseKey = async () => {
     try {
       const result = await openDialog({
@@ -484,6 +542,7 @@ export function HostFormPanel({
       });
       if (typeof result === "string") {
         setValue("keyPath", result, { shouldValidate: true, shouldDirty: true });
+        void probeKeyFile(result);
       }
     } catch (e) {
       toast.error(errorMessage(e));
@@ -710,7 +769,14 @@ export function HostFormPanel({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setEditingCredentials(true)}
+                onClick={() => {
+                  setEditingCredentials(true);
+                  // The stored path is already in the field, so look at it now
+                  // rather than waiting for a blur the user has no reason to
+                  // give it: for a key host this is the moment the passphrase
+                  // field appears.
+                  if (host?.key_path) void probeKeyFile(host.key_path);
+                }}
               >
                 Replace credentials...
               </Button>
@@ -813,7 +879,11 @@ export function HostFormPanel({
                     <div className="flex gap-2">
                       <Input
                         id="keyPath"
-                        {...register("keyPath")}
+                        {...keyPathReg}
+                        onBlur={(e) => {
+                          void keyPathReg.onBlur(e);
+                          void probeKeyFile(e.target.value);
+                        }}
                         placeholder="C:\Users\you\.ssh\id_ed25519"
                         className={`font-mono text-xs ${errors.keyPath ? "border-destructive" : ""}`}
                       />
@@ -834,8 +904,21 @@ export function HostFormPanel({
                   <div className="grid gap-1">
                     <Label htmlFor="keyPassphrase">
                       Key passphrase{" "}
-                      <span className="text-xs text-muted-foreground">
-                        (optional)
+                      {/* Most keys are not encrypted, so this stays optional
+                          until we have looked at the file and found that this
+                          one is. Saying "optional" over an encrypted key is
+                          what sent the failure to connect time. */}
+                      <span
+                        className={cn(
+                          "text-xs",
+                          keyEncrypted
+                            ? "text-amber-400"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {keyEncrypted
+                          ? "(required, this key is encrypted)"
+                          : "(optional, only if the key is encrypted)"}
                       </span>
                     </Label>
                     <div className="relative">
@@ -843,7 +926,7 @@ export function HostFormPanel({
                         id="keyPassphrase"
                         type={showKeyPassphrase ? "text" : "password"}
                         {...register("keyPassphrase")}
-                        className="pr-9"
+                        className={`pr-9 ${errors.keyPassphrase ? "border-destructive" : ""}`}
                       />
                       <button
                         type="button"
@@ -863,10 +946,12 @@ export function HostFormPanel({
                         )}
                       </button>
                     </div>
-                    {/* Empty error placeholder so this cell matches the Key
-                        file cell's height — otherwise the 2-col grid stretches
-                        this cell and the input drifts down (H13). */}
-                    <p className="min-h-4 text-xs" aria-hidden="true">&nbsp;</p>
+                    {/* Always rendered so this cell matches the Key file
+                        cell's height, otherwise the 2-col grid stretches this
+                        cell and the input drifts down (H13). */}
+                    <p className="min-h-4 text-xs text-destructive">
+                      {errors.keyPassphrase?.message ?? " "}
+                    </p>
                   </div>
                 </div>
               )}
@@ -940,77 +1025,6 @@ export function HostFormPanel({
               Sudo password will be removed on save
             </p>
           )}
-          {/* This card is where sudo auto-fill is explained, so it is where the
-              login-shell caveat belongs (X4, D-067). The verdict is read-only —
-              it is what the last connect saw — but the answer to it is not. */}
-          {host && (
-            <div className="mb-3 grid gap-2 rounded-md border border-border/50 p-3">
-              <p className="text-xs font-medium">Shell integration</p>
-              {host.shell_capability ? (
-                <p
-                  className={cn(
-                    "text-xs",
-                    capabilityIsWarning(host.shell_capability)
-                      ? "text-amber-400"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {shellCapabilityMessage(
-                    host.shell_capability,
-                    host.login_shell,
-                  )}
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  This host has not been connected to yet, so its login shell is
-                  unknown. Test the connection or open a terminal and the answer
-                  appears here.
-                </p>
-              )}
-              <RadioGroup
-                value={shellPref}
-                onValueChange={(v) =>
-                  setShellPref(v as ShellIntegrationPref)
-                }
-                className="gap-1.5"
-              >
-                <label className="flex cursor-pointer items-start gap-2 text-xs">
-                  <RadioGroupItem value="auto" className="mt-0.5" />
-                  <span>
-                    <span className="font-medium">Auto</span>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      — believe what the connection reads. The default.
-                    </span>
-                  </span>
-                </label>
-                <label className="flex cursor-pointer items-start gap-2 text-xs">
-                  <RadioGroupItem value="always" className="mt-0.5" />
-                  <span>
-                    <span className="font-medium">Always</span>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      — this host runs bash or zsh, whatever it reports. Use it
-                      when the shell cannot be read (a forced command, a
-                      restricted account) and command block tracking is worth
-                      having back.
-                    </span>
-                  </span>
-                </label>
-                <label className="flex cursor-pointer items-start gap-2 text-xs">
-                  <RadioGroupItem value="never" className="mt-0.5" />
-                  <span>
-                    <span className="font-medium">Never</span>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      — send this host nothing on connect and leave its login
-                      screen exactly as it draws it.
-                    </span>
-                  </span>
-                </label>
-              </RadioGroup>
-            </div>
-          )}
           {!adminLocked && sudoEditing && (
             <div className="grid max-w-md gap-2">
               <div className="relative">
@@ -1052,6 +1066,96 @@ export function HostFormPanel({
             </div>
           )}
         </div>
+
+        {/* Its own card, below sudo rather than inside it (D-067). It was first
+            put in the sudo card because that is where auto-fill is explained,
+            but it is a setting about what is typed at the shell on connect, not
+            about sudo, and sitting between the sudo status line and the sudo
+            password field it read as part of them. The verdict is read-only
+            (it is what the last connect saw), but the answer to it is not. */}
+        {host && (
+          <div className="mt-6 max-w-4xl rounded-xl border border-border/50 bg-muted/20 p-5">
+            <Label className="mb-3 block text-sm font-semibold">
+              Shell integration{" "}
+              <span className="text-xs font-normal text-muted-foreground">
+                (what Broadside types at this host's shell when a terminal
+                opens)
+              </span>
+            </Label>
+            <div className="grid gap-2">
+              {host.shell_capability ? (
+                <p
+                  className={cn(
+                    "text-xs",
+                    capabilityIsWarning(host.shell_capability)
+                      ? "text-amber-400"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {shellCapabilityMessage(
+                    host.shell_capability,
+                    host.login_shell,
+                  )}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  This host has not been connected to yet, so its login shell is
+                  unknown. Test the connection or open a terminal and the answer
+                  appears here.
+                </p>
+              )}
+              <RadioGroup
+                value={shellPref}
+                onValueChange={(v) =>
+                  setShellPref(v as ShellIntegrationPref)
+                }
+                className="gap-1.5"
+              >
+                <label className="flex cursor-pointer items-start gap-2 text-xs">
+                  <RadioGroupItem value="auto" className="mt-0.5" />
+                  <span>
+                    <span className="font-medium">Auto</span>
+                    <span className="text-muted-foreground">
+                      : believe what the connection reads. The default.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 text-xs">
+                  <RadioGroupItem value="always" className="mt-0.5" />
+                  <span>
+                    <span className="font-medium">Always</span>
+                    <span className="text-muted-foreground">
+                      : this host runs bash or zsh, whatever it reports. Use it
+                      when the shell cannot be read (a forced command, a
+                      restricted account) and command block tracking is worth
+                      having back. It does not clear a mark from a host that
+                      named its shell: sending the line to fish does not make
+                      fish able to use it.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 text-xs">
+                  <RadioGroupItem value="never" className="mt-0.5" />
+                  <span>
+                    <span className="font-medium">Never</span>
+                    <span className="text-muted-foreground">
+                      : send this host nothing on connect and leave its login
+                      screen exactly as it draws it.
+                    </span>
+                  </span>
+                </label>
+              </RadioGroup>
+              {/* The setup line is typed at the shell the moment a terminal
+                  opens, so this setting is read then and cannot be applied to
+                  a session that is already running. Saying so is the whole
+                  fix: without it, changing the setting and watching an open
+                  tab not change looks like the setting being ignored. */}
+              <p className="text-xs text-muted-foreground">
+                Applies to terminals on next new terminal session.
+              </p>
+            </div>
+          </div>
+        )}
       </form>
 
       <footer className="flex justify-end gap-2 px-8 py-4">

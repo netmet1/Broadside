@@ -1,6 +1,6 @@
 //! Hosts → CSV export. The column set mirrors the bulk-import format
 //! (D-025) so an exported file round-trips through "Import hosts…" as-is.
-//! Credentials are never exported (same rule as import — D-025).
+//! Credentials are never exported (same rule as import, D-025).
 
 use std::path::Path;
 

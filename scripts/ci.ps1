@@ -10,7 +10,16 @@
 
   Run this (default/full mode) as the pre-merge gate. Steps:
     Frontend : typecheck, lint, build, npm audit (strict - fails on ANY advisory)
+    Supply   : .npmrc strict-allow-scripts present, npm ci --dry-run
     Rust     : cargo build/test --locked --all-targets, cargo audit, cargo deny
+
+  The supply-chain steps exist because `npm audit` only knows about PUBLISHED
+  advisories. A package compromised an hour ago has no advisory yet, and its
+  payload runs from a preinstall hook at install time. Blocking unreviewed
+  install scripts is what covers that window.
+
+  For a broader, on-demand sweep (secrets, other ecosystems, IOC cross-check
+  against a live compromised-package list), run the /security-sweep skill.
 
   NOTE on `npm ci`: the default run does NOT wipe node_modules - it checks the
   existing install, which is fast and avoids Windows file-lock (EPERM) flakiness
@@ -88,6 +97,39 @@ try {
   Step "build" { npm run build }
   # Strictest gate: no -AuditLevel, so ANY advisory (low/moderate up) fails.
   if (-not $Quick) { Step "npm audit" { npm audit } }
+
+  # ---- Supply chain (npm install scripts) ----
+  # npm audit catches KNOWN-BAD published advisories. It does not stop a freshly
+  # compromised package whose payload is a preinstall hook, because there is no
+  # advisory yet: that is exactly how Shai-Hulud shipped a credential stealer
+  # through 440+ packages on 2026-08-04. These two steps close that window by
+  # refusing to run any install script nobody has reviewed.
+  if (-not $Quick) {
+    Step "npmrc strict-allow-scripts" {
+      $npmrc = Join-Path $repoRoot ".npmrc"
+      if (-not (Test-Path -LiteralPath $npmrc)) {
+        Write-Host "MISSING .npmrc - the CI runner would fall back to npm's warn-and-run default." -ForegroundColor Red
+        Write-Host "Restore it with a line reading: strict-allow-scripts=true" -ForegroundColor Yellow
+        $global:LASTEXITCODE = 1; return
+      }
+      if (-not (Select-String -LiteralPath $npmrc -Pattern '^\s*strict-allow-scripts\s*=\s*true' -Quiet)) {
+        Write-Host ".npmrc exists but does not set strict-allow-scripts=true." -ForegroundColor Red
+        $global:LASTEXITCODE = 1; return
+      }
+      Write-Host "ok: install scripts are default-deny, for this checkout and on CI."
+      $global:LASTEXITCODE = 0
+    }
+
+    # `npm install-scripts ls` is NOT usable as a gate: it exits 0 whether or not
+    # it finds anything (verified). A dry-run install is the real check - it
+    # resolves the whole tree, enforces strict-allow-scripts, and writes nothing.
+    # Non-zero here means a dependency wants to run an install script that is not
+    # in package.json's allowScripts. Do NOT approve it to get unstuck: read the
+    # script text first with `npm install-scripts ls`, then approve if it is
+    # legitimate. As a bonus this also fails if the lockfile drifts from
+    # package.json, which npm ci would hit on the runner anyway.
+    Step "supply chain (npm ci --dry-run)" { npm ci --dry-run --no-audit --no-fund }
+  }
 } finally {
   Pop-Location
 }

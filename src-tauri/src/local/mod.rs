@@ -31,7 +31,7 @@ pub struct LocalShell {
 }
 
 /// Shell detection result, computed once per launch (below). Detection spawns
-/// `wsl.exe`, which can take seconds when the WSL service is cold — so it must
+/// `wsl.exe`, which can take seconds when the WSL service is cold, so it must
 /// only ever run on a blocking thread, never on the main/IPC thread (a sync
 /// command doing this froze every in-flight IPC call AND the event loop, which
 /// was the multi-second Settings-spinner / launch-hitch bug).
@@ -62,7 +62,7 @@ pub fn prewarm_shells() {
 }
 
 /// Detects the local shells: PowerShell (always present on Windows), pwsh if
-/// installed, Command Prompt, and each installed WSL distro. Blocking — spawns
+/// installed, Command Prompt, and each installed WSL distro. Blocking, spawns
 /// wsl.exe; only run via `list_local_shells_cached`.
 fn detect_local_shells() -> Vec<LocalShell> {
     let mut shells = vec![LocalShell {
@@ -92,7 +92,7 @@ fn detect_local_shells() -> Vec<LocalShell> {
     shells
 }
 
-/// Whether `exe` resolves on PATH — searched in-process (no `where.exe` spawn;
+/// Whether `exe` resolves on PATH, searched in-process (no `where.exe` spawn;
 /// process spawns from a GUI app pay conhost startup and AV scanning).
 fn on_path(exe: &str) -> bool {
     let Some(path) = std::env::var_os("PATH") else {
@@ -187,7 +187,7 @@ fn build_command(
     // A profile's working directory wins; a blank/whitespace one counts as unset.
     // For a WSL shell this sets wsl.exe's Windows working directory, which the
     // distro then starts in (translated to its /mnt path). We don't verify the
-    // path exists here — the shell surfaces its own error, and the UI validates
+    // path exists here, the shell surfaces its own error, and the UI validates
     // before saving. Falls back to USERPROFILE so a shell never inherits the
     // app's own working directory.
     let cwd = cwd.map(str::trim).filter(|s| !s.is_empty());
@@ -232,7 +232,7 @@ pub fn open_local<E: PtyEvents>(
         .slave
         .spawn_command(cmd)
         .map_err(|e| AppError::State(format!("spawn local shell: {e}")))?;
-    // Drop the slave in this process so the child holds the only slave handle —
+    // Drop the slave in this process so the child holds the only slave handle:
     // its exit then closes the pty and the reader sees EOF.
     drop(pair.slave);
 

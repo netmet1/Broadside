@@ -23,7 +23,7 @@ use crate::ssh::AuthMethod;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const MAX_TIMEOUT_SECS: u64 = 3600;
 
-/// Event emitted once per host as that host finishes — the frontend renders
+/// Event emitted once per host as that host finishes; the frontend renders
 /// blocks in arrival order (per-host-first-done, D-003).
 pub const RESULT_EVENT: &str = "broadcast:result";
 
@@ -37,7 +37,7 @@ pub struct HostExecReport {
 }
 
 /// Frontend pre-send check for the CONFIRM modal. The same check re-runs
-/// inside `broadcast_command` — this command is UX, that one is the gate.
+/// inside `broadcast_command`: this command is UX, that one is the gate.
 #[tauri::command]
 pub fn check_destructive(
     command: String,
@@ -130,7 +130,7 @@ pub async fn broadcast_command(
         };
         let (cmd, stdin_payload) = match sudo_password {
             Some(pw) => (rewrite.command.clone(), Some(format!("{pw}\n"))),
-            // No stored sudo password: send the original command — sudo's
+            // No stored sudo password: send the original command; sudo's
             // own failure surfaces in this host's output (D-026).
             None => (command.clone(), None),
         };
@@ -210,23 +210,31 @@ pub async fn broadcast_command(
                 result,
             };
             // Per-host failures persist to the error log (D-055); never
-            // blocks the broadcast.
+            // blocks the broadcast. They also mark the host reachable or not,
+            // so a run that finds a machine down leaves the Hosts tab saying so
+            // rather than making the operator go and test it by hand.
+            let db = app.state::<crate::db::DbState>();
             match &report.result {
+                ExecResult::Completed { .. } => {
+                    crate::commands::ssh::note_connect(&db, report.host_id, false);
+                }
                 ExecResult::AuthFailed { message } => {
                     app.state::<crate::errlog::ErrLogState>().log(
                         "broadcast",
                         Some(report.host_id),
                         Some(&report.label),
-                        &format!("authentication failed — {message}"),
+                        &format!("authentication failed: {message}"),
                     );
+                    crate::commands::ssh::note_connect(&db, report.host_id, true);
                 }
                 ExecResult::Unreachable { message } => {
                     app.state::<crate::errlog::ErrLogState>().log(
                         "broadcast",
                         Some(report.host_id),
                         Some(&report.label),
-                        &format!("unreachable — {message}"),
+                        &format!("unreachable: {message}"),
                     );
+                    crate::commands::ssh::note_connect(&db, report.host_id, true);
                 }
                 // D-055 amendment (2026-06-13): a host skipped for missing
                 // credentials is a logged failure, not a silent no-op.
@@ -237,6 +245,7 @@ pub async fn broadcast_command(
                         Some(&report.label),
                         "no credentials stored",
                     );
+                    crate::commands::ssh::note_connect(&db, report.host_id, true);
                 }
                 _ => {}
             }

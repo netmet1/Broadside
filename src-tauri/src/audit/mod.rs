@@ -159,7 +159,7 @@ impl AuditState {
     }
 
     /// Last `max_lines` lines of the current log file (viewer tail). The
-    /// rotated generation is not included — it exists for postmortems, not
+    /// rotated generation is not included; it exists for postmortems, not
     /// the live view.
     pub fn tail(&self, max_lines: usize) -> AppResult<Vec<String>> {
         let path = self.path();

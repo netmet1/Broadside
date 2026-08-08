@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SectionHeading } from "@/pages/settings/shared";
+import { TerminalColorsBlock } from "@/pages/settings/TerminalColorsBlock";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
   createCustomTerminal,
@@ -131,7 +132,7 @@ export function CustomTerminalsSection({ id }: { id: string }) {
     <section id={id} className="space-y-4">
       <SectionHeading
         title="Custom terminals"
-        hint="Add your own terminal application (Git Bash, MSYS2, Cygwin) to the Terminals + launcher, alongside the shells Broadside detects."
+        hint="Add your own terminal application (Git Bash, MSYS2, Cygwin) to the Terminals + launcher, alongside the shells Broadside detects, and choose the colour each kind of local tab wears."
       />
 
       <div className="max-w-2xl space-y-3">
@@ -141,6 +142,8 @@ export function CustomTerminalsSection({ id }: { id: string }) {
           broadcast to like any other local shell. The program must be a full
           path to an <code>.exe</code> that exists.
         </p>
+
+        <TerminalColorsBlock />
 
         {loading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>

@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { errorMessage } from "@/lib/tauri/hosts";
 import { loadHiddenCols, saveHiddenCols } from "@/lib/hostColumns";
+import {
+  GENERIC_MONOSPACE,
+  detectMonospaceFonts,
+  resolveStoredFamily,
+  storedFontValue,
+} from "@/lib/monospaceFonts";
 import {
   reconcileDisabledShells,
   saveDisabledShells,
@@ -59,17 +65,55 @@ export function useAppearance() {
   };
 
   // Fonts
-  const [termFontFamily, setTermFontFamily] = useState("");
+
+  // The monospace fonts this machine can actually render, measured once when
+  // the page mounts (see lib/monospaceFonts). Once per mount is enough and no
+  // more would help: the webview caches the system font list for the life of
+  // the process, so a font installed while Broadside is running cannot be
+  // measured until it restarts, whatever we do here.
+  const [installedFonts] = useState(detectMonospaceFonts);
+
+  // A stored font-family list whose every name is missing from this machine.
+  // Kept as an option of its own rather than discarded, because a dropdown that
+  // quietly drops a setting it does not recognise is a dropdown that changes
+  // your terminal's appearance for you the first time you open Settings.
+  const [unknownFont, setUnknownFont] = useState<string | null>(null);
+
+  // The selected family, NOT a CSS list. `unknownFont`, when there is one, is
+  // the exception and is carried verbatim.
+  const [termFontFamily, setTermFontFamily] = useState(GENERIC_MONOSPACE);
   const [termFontSize, setTermFontSize] = useState("13");
   const [appFontSize, setAppFontSize] = useState("16");
   const [savingUi, setSavingUi] = useState(false);
 
+  /** What the dropdown offers: the detected fonts, plus an unrecognised stored
+   * value if there is one, which sorts last because it is the one entry that is
+   * not known to work. */
+  const fontOptions = useMemo(
+    () => (unknownFont === null ? installedFonts : [...installedFonts, unknownFont]),
+    [installedFonts, unknownFont],
+  );
+
   /** Seed the editable font inputs from a freshly loaded settings object. */
-  const syncFromSettings = useCallback((s: AppSettings) => {
-    setTermFontFamily(s.terminal_font_family);
-    setTermFontSize(String(s.terminal_font_size));
-    setAppFontSize(String(s.app_font_size));
-  }, []);
+  const syncFromSettings = useCallback(
+    (s: AppSettings) => {
+      // A stored value has always been a fallback chain, and has always
+      // resolved to exactly one face: the first name in it that is installed.
+      // Selecting that name shows the operator the font they have been looking
+      // at, rather than appearing to change their setting on upgrade.
+      const resolved = resolveStoredFamily(s.terminal_font_family, installedFonts);
+      if (resolved === null && s.terminal_font_family.trim()) {
+        setUnknownFont(s.terminal_font_family);
+        setTermFontFamily(s.terminal_font_family);
+      } else {
+        setUnknownFont(null);
+        setTermFontFamily(resolved ?? GENERIC_MONOSPACE);
+      }
+      setTermFontSize(String(s.terminal_font_size));
+      setAppFontSize(String(s.app_font_size));
+    },
+    [installedFonts],
+  );
 
   // Ctrl + wheel over a terminal writes the size straight into the prefs (see
   // lib/terminalZoom), and Settings stays mounted, so without this the field
@@ -88,6 +132,45 @@ export function useAppearance() {
     saveTerminalFontStrict(v);
   };
 
+  /** How a family is stored: a detected name gets the generic behind it, and an
+   * unrecognised stored value is written back exactly as it came, so choosing
+   * something else and changing your mind cannot mangle it. */
+  const storedValueFor = useCallback(
+    (family: string) => (family === unknownFont ? family : storedFontValue(family)),
+    [unknownFont],
+  );
+
+  /** The family applies as it is picked, with no Save. Every value the dropdown
+   * can produce has been measured and is a legal font, so unlike the size boxes
+   * below it there is no half-typed state to protect against; and a font you
+   * cannot see until you commit is a font you are guessing at, which is the
+   * same argument the tab-colour swatches already make.
+   *
+   * The sizes deliberately do not ride along. They are free text and may be
+   * mid-edit or outright invalid at this moment, so this writes the sizes that
+   * are currently in force rather than whatever is sitting in the boxes:
+   * picking a font must not commit a number nobody has finished typing.
+   *
+   * The dropdown moves first and rolls back if the write fails, so a font that
+   * did not save cannot be left looking as though it did. */
+  const chooseFontFamily = async (family: string) => {
+    const previous = termFontFamily;
+    if (family === previous) return;
+    setTermFontFamily(family);
+    const fontValue = storedValueFor(family);
+    try {
+      await setUiSettings({
+        terminal_font_family: fontValue,
+        terminal_font_size: prefs.terminalFontSize,
+        app_font_size: prefs.appFontSize,
+      });
+      applyUiPrefs({ ...prefs, terminalFontFamily: fontValue });
+    } catch (e) {
+      setTermFontFamily(previous);
+      toast.error(errorMessage(e));
+    }
+  };
+
   const parsedTermFontSize = (() => {
     const n = Number(termFontSize);
     return Number.isInteger(n) && n >= 8 && n <= 32 ? n : undefined;
@@ -97,23 +180,27 @@ export function useAppearance() {
     return Number.isInteger(n) && n >= 12 && n <= 20 ? n : undefined;
   })();
 
-  const saveAppearance = async () => {
+  /** The two size boxes, and only those. The family is already saved by the
+   * time this runs (see chooseFontFamily), and is re-sent unchanged because the
+   * backend takes the three together. */
+  const saveFontSizes = async () => {
     if (parsedTermFontSize === undefined || parsedAppFontSize === undefined) {
       return;
     }
     setSavingUi(true);
+    const fontValue = storedValueFor(termFontFamily);
     try {
       await setUiSettings({
-        terminal_font_family: termFontFamily.trim(),
+        terminal_font_family: fontValue,
         terminal_font_size: parsedTermFontSize,
         app_font_size: parsedAppFontSize,
       });
       applyUiPrefs({
-        terminalFontFamily: termFontFamily.trim() || prefs.terminalFontFamily,
+        terminalFontFamily: fontValue,
         terminalFontSize: parsedTermFontSize,
         appFontSize: parsedAppFontSize,
       });
-      toast.success("Appearance saved");
+      toast.success("Font sizes saved");
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
@@ -128,7 +215,9 @@ export function useAppearance() {
     disabledShells,
     toggleShell,
     termFontFamily,
-    setTermFontFamily,
+    chooseFontFamily,
+    fontOptions,
+    unknownFont,
     termFontSize,
     setTermFontSize,
     termFontStrict,
@@ -139,6 +228,6 @@ export function useAppearance() {
     parsedTermFontSize,
     parsedAppFontSize,
     syncFromSettings,
-    saveAppearance,
+    saveFontSizes,
   };
 }

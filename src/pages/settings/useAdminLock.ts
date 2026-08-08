@@ -26,7 +26,7 @@ export function useAdminLock() {
   const [recCode, setRecCode] = useState("");
   const [recNewPc, setRecNewPc] = useState("");
 
-  // True when a lock is set but this session hasn't been unlocked yet — the
+  // True when a lock is set but this session hasn't been unlocked yet, the
   // sensitive controls are disabled until the user unlocks.
   const adminLocked = !!lockStatus?.lock_set && !lockStatus.unlocked;
 

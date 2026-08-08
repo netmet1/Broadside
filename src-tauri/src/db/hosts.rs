@@ -50,6 +50,10 @@ pub struct Host {
     /// The operator's standing override (migration 19): `auto` | `always` |
     /// `never`, `None` meaning auto. The one shell field the *form* writes.
     pub shell_integration: Option<String>,
+    /// When the last attempt to reach this host failed (migration 20), RFC3339.
+    /// `None` means the last attempt succeeded, or that nobody has tried.
+    /// Backend-written from every connect path, like `login_shell`.
+    pub connect_failed_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -83,11 +87,12 @@ fn from_row(row: &Row) -> rusqlite::Result<Host> {
         login_shell: row.get(14)?,
         shell_capability: row.get(15)?,
         shell_integration: row.get(16)?,
+        connect_failed_at: row.get(17)?,
     })
 }
 
 const SELECT_COLS: &str =
-    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path, has_sudo_password, tag, login_shell, shell_capability, shell_integration";
+    "id, label, hostname, port, username, color, linux_flavor, notes, created_at, updated_at, auth_method, key_path, has_sudo_password, tag, login_shell, shell_capability, shell_integration, connect_failed_at";
 
 fn validate(input: &HostInput) -> AppResult<()> {
     if input.label.trim().is_empty() {
@@ -177,7 +182,7 @@ pub fn set_has_sudo_password(conn: &Connection, id: i64, value: bool) -> AppResu
 /// `None` clears the column, and callers pass it: the field means "what the
 /// last completed connect could read", so a connect that could not read it has
 /// to erase the old answer rather than let it stand. Without that a wrong value
-/// written once is worn forever — which is what happened to the host that went
+/// written once is worn forever, which is what happened to the host that went
 /// on naming a line of its own rc file long after the probe that misread it was
 /// fixed.
 ///
@@ -207,6 +212,27 @@ pub fn set_login_shell(
     conn.execute(
         "UPDATE hosts SET login_shell = ?1, shell_capability = ?2, updated_at = ?3 WHERE id = ?4",
         params![shell, capability.as_str(), now, id],
+    )?;
+    Ok(())
+}
+
+/// Records whether the last attempt to reach this host failed.
+///
+/// Called from every path that finds out, and from both directions: a failure
+/// marks the host, and the next connection that works anywhere in the app
+/// clears it. That is the whole contract -- "red until it answers" -- and it is
+/// why this is stored rather than held in the page that drew the button.
+///
+/// `updated_at` is deliberately left alone. It means the host *record* was
+/// edited, and a machine being down is not an edit to it.
+///
+/// Like `set_login_shell`, a host that has been deleted mid-flight is not an
+/// error: bookkeeping must never fail the connection it is describing.
+pub fn set_connect_failed(conn: &Connection, id: i64, failed: bool) -> AppResult<()> {
+    let at = failed.then(|| Utc::now().to_rfc3339());
+    conn.execute(
+        "UPDATE hosts SET connect_failed_at = ?1 WHERE id = ?2",
+        params![at, id],
     )?;
     Ok(())
 }
@@ -294,7 +320,7 @@ pub fn delete(conn: &Connection, id: i64) -> AppResult<()> {
 /// Deletes every host row and returns the number removed. Backs the Settings
 /// "Danger Zone" destroy action; stored credentials are cleared separately
 /// (and first) by the command layer because keyring keys are derived from the
-/// host id. Unlike `delete`, an empty table is not an error — wiping zero hosts
+/// host id. Unlike `delete`, an empty table is not an error; wiping zero hosts
 /// is a valid outcome.
 pub fn delete_all(conn: &Connection) -> AppResult<usize> {
     Ok(conn.execute("DELETE FROM hosts", [])?)

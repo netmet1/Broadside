@@ -240,9 +240,12 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     label: "Key passphrase",
     def: (
       <>
-        An optional secret that unlocks an SSH private key file, so that simply
-        copying the file is not enough to use it. Broadside can store the
-        passphrase for you in the same protected place as your other secrets.
+        A secret that unlocks an SSH private key file, so that simply copying
+        the file is not enough to use it. Optional when the key is created, but
+        required to use a key that has one. It never reaches the host: it
+        decrypts the file on your own machine before the connection is made.
+        Broadside stores it for you in the same protected place as your other
+        secrets, and checks it when you pick the key.
       </>
     ),
   },
@@ -326,7 +329,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-overview",
     title: "Overview and getting started",
     keywords:
-      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version",
+      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout three and a half seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key",
     body: (
       <>
         <Lead>
@@ -360,6 +363,22 @@ export const SECTIONS: HelpSection[] = [
               showing red.
             </li>
             <li>
+              When nothing is being hovered, that same left-hand end shows three
+              live numbers instead: the window size, the terminal font size and
+              the app font size. The window size is the drawing area in the
+              units the window is sized in, so dragging the window as small as
+              it goes reads <Nav>1024x700</Nav>. All three follow a change as
+              you make it, which is the point of them: drag an edge, or hold{" "}
+              <Nav>Ctrl</Nav> and turn the wheel over a terminal, and watch the
+              number rather than guessing. Hover any control and they step aside
+              for its hint, then come back when you move off it, or after about
+              three and a half seconds with nobody at the machine. Reading a
+              hint counts as being there, because moving the mouse resets that
+              clock; what it catches is a pointer left resting on a button with
+              the room empty. Turning hints
+              off in <Nav>Settings</Nav> leaves them showing all the time.
+            </li>
+            <li>
               The current app version is shown next to the Broadside name at
               the top of the rail and in the About dialog.
             </li>
@@ -370,7 +389,16 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Press <Nav>F11</Nav> (or the maximize button on a terminal tab) to
               fill the whole window with a single terminal, and <Nav>F11</Nav>{" "}
-              again to return.
+              again to return. <b>Esc does not come back out</b>, in either
+              fullscreen, and that is deliberate: Esc is the key{" "}
+              <code>vi</code> is built around, and the program most likely to be
+              running full-screen in a terminal is an editor. Taking a press of
+              it to resize a window would cost more than it saved, so Esc goes
+              straight through to whatever you are running. Use <Nav>F11</Nav>,
+              or the restore button in the banner along the top. The banner
+              names the terminal you are looking at, and{" "}
+              <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav> still change sessions
+              while you are maximized, so the name changes with them.
             </li>
           </Bullets>
         </Detail>
@@ -403,6 +431,15 @@ export const SECTIONS: HelpSection[] = [
               <Term term="sudo" /> password for administrator commands.
             </li>
             <li>
+              Pick a key file and Broadside opens it there and then, so it can
+              tell you whether it is encrypted before you save. If it is, the
+              passphrase field changes from optional to required and saving
+              without one is refused, as is a passphrase that does not open the
+              key. This is the only place a key passphrase can be asked for: it
+              decrypts a file on your own machine before the connection is made,
+              so the host never sees it and a terminal can never prompt for it.
+            </li>
+            <li>
               For your safety, saved passwords and passphrases are never shown
               again after you save them. You can replace a secret, but the app
               will not display the stored value. See the{" "}
@@ -410,7 +447,7 @@ export const SECTIONS: HelpSection[] = [
               for where these are kept.
             </li>
             <li>
-              A host row can carry a small amber chip — most often the name of a
+              A host row can carry a small amber chip, most often the name of a
               login shell Broadside cannot fully drive.{" "}
               <SectionLink id="help-sec-warnings">
                 Warnings and messages
@@ -419,8 +456,8 @@ export const SECTIONS: HelpSection[] = [
               each one actually means.
             </li>
             <li>
-              <b>Shell integration</b>, in the host's own form beside the sudo
-              settings, is the answer to that chip. When a terminal opens,
+              <b>Shell integration</b>, its own card at the foot of the host's
+              form, is the answer to that chip. When a terminal opens,
               Broadside normally sends one setup line that installs the markers
               command block tracking reads, clears the login banner and reprints
               it, so the tab looks like a fresh login. Whether that line is safe
@@ -429,11 +466,27 @@ export const SECTIONS: HelpSection[] = [
               default. <Nav>Always</Nav> says the host really is bash or zsh
               whatever it reports, which is what to use for a machine that will
               not answer the question (a forced command, a restricted account)
-              and is losing command block tracking because of it.{" "}
+              and is losing command block tracking because of it. It answers a
+              question the connection could not, rather than overruling one it
+              could: a host that named its shell keeps its chip, because sending
+              the line to fish does not make fish able to use it.{" "}
               <Nav>Never</Nav> sends the host nothing at all and leaves its
               login screen exactly as it draws it. Appliances that greet you
               with a console menu rather than a shell are detected and left
-              alone on their own, without needing this set.
+              alone on their own, without needing this set. The setting is read
+              when a terminal opens, so it applies to the next tab you open on
+              that host rather than to one already running.
+            </li>
+            <li>
+              The same mark appears wherever a host is picked: the{" "}
+              <Nav>Broadcast</Nav>, <Nav>PTY Broadcast</Nav>,{" "}
+              <Nav>MultiTerminal</Nav> and <Nav>Skills</Nav> lists, as the
+              amber triangle on its own, with the words on hover. Those lists
+              are narrow and the label is what you are reading there. Nothing is
+              ever hidden from a list for this: broadcasting to a shell
+              Broadside cannot drive works perfectly well, and a host that
+              quietly vanished would be far harder to explain than one that is
+              marked.
             </li>
           </Bullets>
           <H3>Importing many hosts</H3>
@@ -515,7 +568,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width",
     body: (
       <>
         <Lead>
@@ -557,6 +610,62 @@ export const SECTIONS: HelpSection[] = [
               <Nav>PowerShell</Nav>, your own name, and{" "}
               <Nav>PowerShell 03</Nav>: renaming one tab is not a reason to
               relabel a different one under you.
+            </li>
+          </Bullets>
+          <H3>Serial consoles (COM ports)</H3>
+          <Bullets>
+            <li>
+              The <Nav>plus button</Nav> menu also lists the COM ports on this
+              PC, under <Nav>Serial console</Nav>. Picking one opens the console
+              cable as an ordinary terminal tab, so the switch, router or
+              firewall you are plugged into sits beside your SSH sessions
+              instead of in a second program. Where the OS knows what a port is
+              (the product name of a USB serial adapter, say) it is shown under
+              the port name, which is the only way to tell two identical black
+              dongles apart.
+            </li>
+            <li>
+              The box beside each port is the <Nav>line speed</Nav> in baud. It
+              starts at <Nav>9600</Nav>, which is what a console port is set to
+              unless someone changed it; a board that wants{" "}
+              <Nav>115200</Nav> says so in its documentation. Whatever you open
+              a port at is remembered for that port, so the next time is one
+              click. The other line settings are the usual 8 data bits, no
+              parity, one stop bit, no flow control.
+            </li>
+            <li>
+              A serial tab looks empty when it opens, and that is normal: the
+              port is a piece of wire and nothing has spoken yet. Press{" "}
+              <Nav>Enter</Nav> to make the device draw its prompt. The tab's
+              label carries the speed (<Nav>COM3 @ 9600</Nav>), which is the
+              first thing to check if what comes back is garbage rather than
+              text.
+            </li>
+            <li>
+              A COM port belongs to one program at a time. A port you already
+              have a tab on is shown in the menu as{" "}
+              <Nav>already open</Nav> and cannot be picked twice, so the only
+              way to meet this is another program holding it: PuTTY, Tera Term,
+              a script of your own. Then the tab says the port is already open
+              elsewhere and names the fix; close the other one and press{" "}
+              <Nav>Try again</Nav>. Unplugging the adapter mid-session ends the
+              tab with the reason on its banner.
+            </li>
+            <li>
+              Unlike a shell, a serial port has no size and no working
+              directory, so <Nav>How many</Nav> does not apply to it (one cable
+              is one tab) and resizing the pane does not tell the far end
+              anything. Devices that care are told by hand, usually with a{" "}
+              <Nav>terminal width</Nav> command of their own.
+            </li>
+            <li>
+              Serial tabs have their own family in{" "}
+              <SectionLink id="help-sec-ptybroadcast">
+                PTY Broadcast
+              </SectionLink>{" "}
+              and in the <Nav>Broadcast</Nav> rail, so one line can go to a rack
+              of console cables at once. Every serial send asks for confirmation
+              first.
             </li>
           </Bullets>
           <H3>How local shells are detected (important)</H3>
@@ -624,6 +733,45 @@ export const SECTIONS: HelpSection[] = [
               still pointing at it is flagged rather than silently broken.
             </li>
           </Bullets>
+          <H3>Tab colours</H3>
+          <Bullets>
+            <li>
+              A saved host carries a colour, and its tabs and grid tiles wear
+              it. Local tabs do too, set in <Nav>Settings</Nav> under{" "}
+              <Nav>Custom terminals</Nav>. The colour belongs to the{" "}
+              <b>kind of shell</b>, not to the tab: one for PowerShell, one for
+              Command Prompt, one for WSL, one for the Bash-like terminals, one
+              for serial. A custom terminal takes the colour of the command
+              language it declares, so Git Bash and MSYS2 are both Bash-like and
+              wear the same one.
+            </li>
+            <li>
+              Two PowerShell tabs being the same colour is the point rather than
+              a limitation. A host's colour answers <i>which machine</i>; a
+              local tab has no machine to name, so what is worth saying is{" "}
+              <i>which language am I about to type in</i>, which is the thing
+              that stops a Linux command going into a Command Prompt.
+            </li>
+            <li>
+              The defaults are dark blues from the Windows console family,
+              chosen to sit quietly behind text that still has to be readable in
+              both themes; the loud reds and greens of the host palette are
+              spoken for, and a local tab borrowing one would be saying
+              something it does not mean. <Nav>Serial</Nav> starts with no
+              colour at all, because a console cable is the one session that is
+              a piece of hardware rather than a program and leaving it plain is
+              what makes the coloured tabs read as the shells. Any of them can
+              be changed, or set to <Nav>None</Nav>, and{" "}
+              <Nav>Defaults</Nav> puts them all back.
+            </li>
+            <li>
+              A <b>profile</b> can override its shell's colour, picked when you
+              create it. A profile is a purpose rather than a language, which is
+              the same kind of thing a host is, so two profiles on the same pwsh
+              can be told apart the way two hosts can. Left alone, a profile
+              follows its shell.
+            </li>
+          </Bullets>
           <H3>Shell profiles</H3>
           <Bullets>
             <li>
@@ -640,7 +788,9 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Startup command</Nav>. The name becomes the tab label, so a
               profile tab is easy to tell apart from a plain shell tab. Leave the
               working directory empty to start in your home folder, the same as a
-              plain shell.
+              plain shell. <Nav>Tab colour</Nav> is optional and defaults to{" "}
+              <Nav>Shell&apos;s colour</Nav>, whose swatch shows you which colour
+              that is.
             </li>
             <li>
               Launching a profile opens the shell in that folder and, a moment
@@ -681,6 +831,19 @@ export const SECTIONS: HelpSection[] = [
               still do normal line-editing inside the shell.
             </li>
             <li>
+              The tab strip itself is one stop in the tab order: <Nav>Tab</Nav>{" "}
+              into it, then <Nav>Left</Nav> and <Nav>Right</Nav> walk along the
+              tabs (<Nav>Home</Nav> and <Nav>End</Nav> jump to the ends) and{" "}
+              <Nav>Enter</Nav> chooses the one you have reached. Walking is not
+              choosing, deliberately: passing over four sessions on the way to
+              the fifth is not four decisions, and in Grid it would point your
+              typing at each of them in turn. Only the tab you have reached is
+              in the tab order, along with its own rename, hide, maximize and
+              close buttons, which <Nav>Tab</Nav> reaches next. So the strip
+              costs you one stop and the tab you are on, however many sessions
+              are open.
+            </li>
+            <li>
               Opening a second tab for the same host adds a small number to the
               tab so you can tell duplicates apart.
             </li>
@@ -699,20 +862,54 @@ export const SECTIONS: HelpSection[] = [
               with the toggle above the tab strip. <Nav>Tabs</Nav> shows one
               terminal at a time; <Nav>Grid</Nav> tiles every open terminal at
               once so you can watch several together. One terminal fills the
-              area, two split it, and three or more tile two-across and scroll.
+              area, two split it, and three or more tile two-across, sharing the
+              height between them until there are too many to fit, at which
+              point they keep a readable size and the grid scrolls. Two-across
+              needs the room for two readable columns, and the sidebar and the
+              broadcast rail come out of the same space, so on a narrow window
+              with either of those open the tiles stack in one column instead of
+              being squeezed to a width nothing will fit in. Resize the
+              window and they follow it, larger or smaller, unless you have
+              pinned a tile size in <Nav>Settings</Nav> or dragged one out.
               Each grid tile has its own maximize and close buttons, and its
               header shows the same colour as the tab. Your choice is
               remembered between visits and restarts; maximizing a terminal
               always shows it on its own.
             </li>
             <li>
+              <b>Grid wants room, and there is a point past which no window is
+              big enough.</b>{" "}
+              A tile is the pane divided by the number of terminals in it, so
+              five tiles on a small window are the same size as twenty on a
+              large one. Broadside will not shrink a tile past what you can read
+              in: it holds the size and scrolls instead. When you find yourself
+              scrolling, these are the four things that buy space back, roughly
+              in order of how much. <Nav>Ctrl+Shift+G</Nav> gives the grid the
+              whole screen and folds every bar away behind a tab at the top.{" "}
+              <Nav>Grid Titles</Nav> (the eye) takes a title bar off every tile.
+              The grid button on a tab drops that terminal out of the grid
+              without closing it, so a session you only need occasionally stops
+              claiming a tile. And <Nav>F11</Nav> gives one terminal the whole
+              window when you want to stop watching and start working. The
+              status bar shows the window size at the bottom left while you
+              resize, if you want to see what you are working with.
+            </li>
+            <li>
               <b>In Grid, focus follows the mouse.</b> Whichever tile the
-              pointer is over is the active one, outlined in that host's own
-              colour, and it is where everything goes: what you type, what you
-              paste, what <Nav>find</Nav> searches and what a shortcut command
-              runs. Move the mouse to another tile and the outline moves with
-              it. Nothing needs clicking first, and there is no setting for
-              this: one tile is highlighted and it is the one that is listening.
+              pointer comes to rest on is the active one, outlined in that
+              host's own colour, and it is where everything goes: what you type,
+              what you paste, what <Nav>find</Nav> searches and what a shortcut
+              command runs. Move the mouse to another tile, stop, and the outline
+              moves with it. Nothing needs clicking first, and there is no
+              setting for this: one tile is highlighted and it is the one that is
+              listening.
+            </li>
+            <li>
+              Tiles you only <i>cross</i> are left alone. It takes a moment of
+              stillness to hand the grid over, so reaching from a tile at the
+              bottom up to the toolbar does not give your typing, and the
+              shortcut list, to whichever tile happened to be on the way.
+              Clicking a tile takes it at once, without the wait.
             </li>
             <li>
               Choosing a tab, pressing <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav>{" "}
@@ -720,10 +917,31 @@ export const SECTIONS: HelpSection[] = [
               the tile it chose until you move the pointer off whatever tile it
               was resting on. So a terminal you selected deliberately does not
               get taken away by a stray nudge of the mouse. The pointer is also
-              ignored while you are typing anywhere that is not a terminal (the
-              shortcut box, a search field, a dialog), while a tile is being
+              ignored while you are typing anywhere that is not a terminal (a
+              search field, a tab rename, a dialog), while a tile is being
               drag-resized, and while you are dragging out a selection across a
               tile edge.
+            </li>
+            <li>
+              <b>None of this happens while another window has the keyboard.</b>{" "}
+              Windows goes on sending mouse movement to whatever sits under the
+              pointer even when that window is not the one you are typing in, so
+              passing over Broadside on the way somewhere else would otherwise
+              move the outline and leave your next keystrokes aimed at a host
+              you never chose. The grid stops following the mouse until
+              Broadside is the active window, and stops looking active while it
+              is not: the outline goes quiet and tiles no longer raise a scroll
+              bar under the pointer. Scrolling a tile from another window still
+              scrolls it, and does nothing else. One click in a tile brings the
+              window back and selects that tile in the same movement.
+            </li>
+            <li>
+              Anything you press in the toolbar leaves the keyboard there, which
+              is right for a menu and wrong for <Nav>Go</Nav>: a shortcut command
+              runs in a terminal, so the keyboard goes back to that terminal with
+              it and you can answer what it prints. From anywhere else in the
+              toolbar, rest the pointer over the tile you want and it takes the
+              keyboard back.
             </li>
             <li>
               The <Nav>Grid Titles</Nav> button (the eye, next to{" "}
@@ -777,28 +995,49 @@ export const SECTIONS: HelpSection[] = [
             <li>
               <Nav>Fullscreen</Nav> (also <Nav>Ctrl+Shift+G</Nav>) gives the
               grid the whole screen: the toolbar, the tab strip, the sidebar and
-              the status bar all slide away, leaving a thin strip at the very
-              top. Move the mouse to that strip and everything slides back down,
-              so you can pick a tab, close one, or use the dropdown without
-              leaving fullscreen; move away and it hides again.{" "}
-              <Nav>Ctrl+Shift+G</Nav>, <Nav>Esc</Nav>, or the button brings the
-              chrome back. The shortcut is a Ctrl+Shift one on purpose: a
-              terminal cannot tell Ctrl+Shift+G from Ctrl+G, so nothing is taken
-              away from a program running in a tile, which a function key like
-              F10 would have been.
+              the status bar all slide away, leaving one small tab in the middle
+              of the top edge. Put the mouse on that tab and everything slides
+              back down, so you can pick a tab, close one, or use the dropdown
+              without leaving fullscreen. Clicking the tab does the same thing,
+              for when the strip is being stubborn. The tab is the only place
+              that does it, and deliberately so: the rest of the top edge is
+              yours, so reaching for the top row of tiles does not keep pulling
+              the controls down over what you are working in. It is somewhere to
+              go and do one thing, so it hides again the moment you do it:
+              clicking any button, choosing from any menu, or picking a tab sends
+              it away without waiting for you to move the mouse off. Going back
+              to the tab brings it down again, and so does{" "}
+              <Nav>Ctrl+Shift+T</Nav>, which needs no aim at all. The one thing
+              that does not send it away is clicking into a box you are about to
+              type in, such as renaming a tab. Closing the last terminal ends
+              fullscreen as well, whether one tab at a time or with{" "}
+              <Nav>Close all</Nav>: there is nothing left to fill the screen
+              with, and an empty screen with the chrome still hidden gives you
+              nothing to work with.{" "}
+              <Nav>Ctrl+Shift+G</Nav> or the button brings the chrome back. The
+              shortcut is a Ctrl+Shift one on purpose: a terminal cannot tell
+              Ctrl+Shift+G from Ctrl+G, so nothing is taken away from a program
+              running in a tile, which a function key like F10 would have been.
+              For the same reason <b>Esc does not leave fullscreen</b>: a wall
+              of terminals is the worst possible place to claim the key{" "}
+              <code>vi</code> is built around.
             </li>
             <li>
               <Nav>Ctrl+Shift+T</Nav> puts the keyboard into the controls, which
               slides the strip down as it goes, and puts a ring around the
               button that has the focus. <Nav>Tab</Nav> and <Nav>Shift+Tab</Nav>{" "}
-              then move along the toolbar and into the tab strip, where each
-              tab's buttons show themselves as they take the focus instead of
-              waiting for the mouse. Tab wraps round at the last control rather
+              then move along the toolbar and into the tab strip, which is one
+              stop for the strip and one for the tab you are on: that tab's own
+              buttons show themselves as they take the focus instead of waiting
+              for the mouse, and the other tabs stay out of the way until{" "}
+              <Nav>Left</Nav> and <Nav>Right</Nav> take you to them. Tab wraps
+              round at the last control rather
               than walking off into the grid, and <Nav>Esc</Nav> hands the
-              keyboard back to the terminal you came from (a second{" "}
-              <Nav>Esc</Nav> then leaves fullscreen). Tab on its own cannot get
-              you in here: a terminal has the focus in a grid, and Tab there
-              belongs to the shell.
+              keyboard back to the terminal you came from. That is the one thing
+              Esc does here, and it is safe to claim precisely because the
+              keyboard is in the toolbar rather than in a terminal at the time.
+              Tab on its own cannot get you in here: a terminal has the focus in
+              a grid, and Tab there belongs to the shell.
             </li>
             <li>
               Drag the right or bottom edge of any tile (or its bottom-right
@@ -817,7 +1056,7 @@ export const SECTIONS: HelpSection[] = [
               off if you would rather a drag counted: the tile width and height
               you drag out are written into the settings as you go, Settings
               shows the new numbers straight away, and the size is still there
-              after a restart. Nothing else follows the drag either way — the
+              after a restart. Nothing else follows the drag either way, the
               column count, the layout, the tile headers and the side-by-side
               flip are yours to set and are never written by dragging.
             </li>
@@ -827,7 +1066,13 @@ export const SECTIONS: HelpSection[] = [
               tile disappears and the remaining tiles fill the space, while the
               shell keeps running untouched; the button turns amber so you can
               see which tabs are hidden, and clicking it again puts the tile
-              back. Hidden tabs still work normally in <Nav>Tabs</Nav>.
+              back. Hidden tabs still work normally in <Nav>Tabs</Nav>. A hidden
+              session can still be selected in Grid, from <Nav>Sessions</Nav> or
+              with <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav>, and there is then
+              no tile to type into: rather than leave your keystrokes going to
+              the terminal you were last in, the keyboard is set down and typing
+              goes nowhere until you put the tile back or switch to{" "}
+              <Nav>Tabs</Nav>.
             </li>
             <li>
               To pin the grid, open <Nav>Settings</Nav> and the <Nav>Grid</Nav>{" "}
@@ -849,7 +1094,7 @@ export const SECTIONS: HelpSection[] = [
               terminals actually open, so six columns with three terminals up
               lays out three across the window rather than using half of it and
               leaving the rest empty. It follows as you open and close them, and
-              it only ever narrows the count — a tile's pinned width or height
+              it only ever narrows the count, a tile's pinned width or height
               is untouched and stays exactly what you set.
             </li>
             <li>
@@ -895,6 +1140,21 @@ export const SECTIONS: HelpSection[] = [
               paste, press <Nav>Enter</Nav>: it runs where you are looking.
             </li>
             <li>
+              <strong className="font-semibold">Find</strong> in a terminal's
+              scrollback with <Nav>Ctrl+F</Nav>, which opens a bar rather than
+              sending the key to the shell. Every match is highlighted as you
+              type and the bar counts them: <Nav>3 of 17</Nav> tells you which
+              one you are standing on, so the up and down arrows (or{" "}
+              <Nav>Enter</Nav> and <Nav>Shift+Enter</Nav>) are walking a list you
+              can see the length of. The three toggles beside the box are a
+              regular expression, match case and whole word; typing{" "}
+              <code>/pattern/i</code> turns the first one on for you.{" "}
+              <Nav>Esc</Nav> closes the bar and takes the highlighting with it.
+              It searches the terminal that is listening, which in Grid is the
+              tile the pointer is resting on, and moving to another one runs the
+              same search there.
+            </li>
+            <li>
               <strong className="font-semibold">Text too small</strong> is fixed
               from where you are reading it: hold <Nav>Ctrl</Nav> and turn the
               mouse wheel over a terminal to zoom the text in or out. Every open
@@ -936,16 +1196,64 @@ export const SECTIONS: HelpSection[] = [
               to hunt for it.
             </li>
             <li>
+              The same menu is where you deal with a lot of tabs at once instead
+              of one at a time. <Nav>Retry all</Nav> reconnects every pane
+              sitting on a <Nav>Try again</Nav> or <Nav>Reconnect</Nav> button,
+              and <Nav>Close failed</Nav> clears the same set away instead; both
+              carry the count, and the count is the same number because the pane
+              you would retry is the pane you would give up on. Panes still
+              connecting are left alone, and so is any pane waiting on a host
+              key answer, since neither is waiting for a retry.{" "}
+              <Nav>Unhide all</Nav> puts every terminal you have taken out of the
+              grid back into it. Each of the three is in the menu only while
+              there is something for it to do, so a menu with none of them in it
+              is telling you nothing is wrong.
+            </li>
+            <li>
               The controls above the tab strip are grouped so they fit whatever
               window you run Broadside in. <Nav>Tabs</Nav> / <Nav>Grid</Nav>,{" "}
-              <Nav>Broadcast</Nav> and, in Grid, the two icon buttons for
-              fullscreen and tile title bars stay out in the open because they
-              are the ones you reach for. Everything else that shapes the view
-              lives under <Nav>View</Nav>: compact tab labels, flipping two
-              terminals between side-by-side and top/bottom,{" "}
-              <Nav>Reset grid</Nav> and <Nav>Reset display</Nav>. Entries appear
-              there only when they apply, so the menu never offers something
-              that would do nothing.
+              <Nav>Broadcast</Nav>, the fullscreen icon and, in Grid, the icon
+              for tile title bars stay out in the open because they are the ones
+              you reach for. Everything else that shapes the view lives under{" "}
+              <Nav>View</Nav>: fullscreen again (with the key beside it),{" "}
+              <Nav>Full tab labels</Nav>, flipping two terminals between
+              side-by-side and top/bottom, <Nav>Reset grid</Nav> and{" "}
+              <Nav>Reset display</Nav>.
+            </li>
+            <li>
+              <b>Greyed does not mean gone.</b> An entry that has nothing to act
+              on right now stays where it is and goes pale: fullscreen with no
+              terminal open, <Nav>Reset grid</Nav> with nothing pinned,{" "}
+              <Nav>Reset display</Nav> with no active tab. The point is that you
+              can find out an action exists before the moment you need it, and
+              that the menu keeps the same shape from one visit to the next.
+              Hover a pale entry and the status bar says what it is waiting for.
+              The one thing that still comes and goes is the two-terminal flip,
+              which describes an arrangement rather than offering an action, and
+              only exists when exactly two tiles are on screen.
+            </li>
+            <li>
+              If the row still runs out of room, the buttons keep their icons
+              and drop their words rather than letting one fall off the edge.
+              Nothing moves and nothing is removed; each button is in the same
+              place doing the same thing, and hovering one still names it in the
+              status bar. This happens on a narrow window, and sooner if you
+              have raised the app font size in <Nav>Settings</Nav>, since the
+              controls are sized in that font. Widen the window (or collapse the
+              sidebar) and the words come back. The same is true of the row of
+              buttons at the top of <Nav>Hosts</Nav>.
+            </li>
+            <li>
+              <b>Fullscreen means the layout you are in.</b> In Tabs it fills
+              the window with the terminal you are looking at, which is what{" "}
+              <Nav>F11</Nav> has always done; in Grid it fills the screen with
+              the whole wall (<Nav>Ctrl+Shift+G</Nav>) and folds the chrome away
+              behind a tab in the middle of the top edge, which you hover or
+              click to bring it back and which hides again as soon as you click
+              anything on it. The icon and the <Nav>View</Nav>{" "}
+              entry both do whichever one applies, and each names its own key.
+              Neither answers to <Nav>Esc</Nav>, which belongs to whatever is
+              running in the terminal.
             </li>
           </Bullets>
           <H3>Full-screen prompts, and a stuck one</H3>
@@ -999,15 +1307,31 @@ export const SECTIONS: HelpSection[] = [
             <li>
               The <Nav>Shortcut command</Nav> dropdown runs a saved command in the
               active tab. Each shortcut has a scope:{" "}
-              <Nav>SSH / WSL (Linux)</Nav>, <Nav>Command Prompt / PowerShell</Nav>,
-              or <Nav>Both</Nav> for commands that work everywhere (for example
-              whoami).
+              <Nav>SSH / WSL (Linux)</Nav>, <Nav>Command Prompt / PowerShell</Nav>,{" "}
+              <Nav>Both</Nav> for commands that work in either (for example
+              whoami), or <Nav>Serial console (COM port)</Nav>.
             </li>
             <li>
               The dropdown shows only the shortcuts that run in the current tab,
               so a Linux command is never offered in a Windows shell. The icon
               next to each one reflects the active tab: the host icon on SSH and
-              WSL tabs, the terminal icon on Command Prompt and PowerShell tabs.
+              WSL tabs, the terminal icon on Command Prompt and PowerShell tabs,
+              a cable on a serial one.
+            </li>
+            <li>
+              <Nav>Serial console</Nav> stands on its own, and <Nav>Both</Nav>{" "}
+              does not reach it. Both means both shell <i>languages</i>, Linux
+              and Windows, and the far end of a console cable speaks neither: a
+              switch has no use for <code>whoami</code> and no more use for{" "}
+              <code>dir</code>. Broadside ships no serial commands for the same
+              reason, since a console port might be a switch, a firewall, a BIOS
+              menu or a bootloader and nothing sensible is common to all of
+              them. So on a serial tab the picker starts out reading{" "}
+              <Nav>No serial shortcuts</Nav> and <Nav>Go</Nav> is greyed, until
+              you have added commands of your own for your own hardware. The
+              picker still opens: it says the same thing again, greyed, above{" "}
+              <Nav>Manage shortcuts…</Nav>, which is where you add the first
+              one.
             </li>
             <li>
               WSL tabs run Linux, so they use the SSH/Linux shortcuts (and show
@@ -1096,7 +1420,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-ptybroadcast",
     title: "PTY Broadcast",
     keywords:
-      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return",
+      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return serial console com port switches routers several consoles at once fifth tab",
     body: (
       <>
         <Lead>
@@ -1124,15 +1448,23 @@ export const SECTIONS: HelpSection[] = [
               <Nav>PTY Broadcast</Nav> for interactive ones.
             </li>
           </Bullets>
-          <H3>Four tabs, one shell language each</H3>
+          <H3>One tab per shell language</H3>
           <Bullets>
             <li>
-              The page is split into four fixed tabs: <Nav>SSH</Nav>,{" "}
-              <Nav>PowerShell</Nav>, <Nav>Command Prompt</Nav>, and <Nav>WSL</Nav>.
-              Each open terminal shows up under its own tab, so a single command
-              is always valid for the shells it reaches (PowerShell and Command
-              Prompt stay separate because their syntax differs). A small count on
-              each tab shows how many shells of that kind are open.
+              The page is split into fixed tabs: <Nav>SSH</Nav>,{" "}
+              <Nav>PowerShell</Nav>, <Nav>Command Prompt</Nav>, <Nav>WSL</Nav>{" "}
+              and <Nav>Serial consoles</Nav>. Each open terminal shows up under
+              its own tab, so a single command is always valid for the shells it
+              reaches (PowerShell and Command Prompt stay separate because their
+              syntax differs, and a serial console is talking to a device rather
+              than a shell). A small count on each tab shows how many of that
+              kind are open.
+            </li>
+            <li>
+              The <Nav>Serial consoles</Nav> tab is the one to be most careful
+              with, and it is the reason every send outside <Nav>SSH</Nav> asks
+              first. A line typed here goes into several pieces of network
+              hardware at once, and a switch has no undo.
             </li>
             <li>
               The <Nav>SSH</Nav> tab is the host-oriented view: it has the same{" "}
@@ -1677,7 +2009,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it",
     body: (
       <>
         <Lead>
@@ -1703,19 +2035,41 @@ export const SECTIONS: HelpSection[] = [
               dropdown on the Terminals and Broadcast pages. Each one is scoped
               when you add it: <Nav>SSH / WSL (Linux)</Nav> commands run on SSH
               hosts and WSL tabs, <Nav>Command Prompt / PowerShell</Nav> commands
-              run on local Windows shells, and <Nav>Both</Nav> commands run
-              everywhere. See the Terminals section for how the dropdown uses the
+              run on local Windows shells, <Nav>Both</Nav> commands run in either
+              of those, and <Nav>Serial console (COM port)</Nav> commands run
+              only on a console cable, which <Nav>Both</Nav> deliberately does
+              not reach. See the Terminals section for how the dropdown uses the
               scope.
             </li>
             <li>
               <Nav>Appearance</Nav>: light or dark theme, the terminal font and
               its size, the size of the application text, which <Nav>Hosts</Nav>{" "}
               columns to show, and which detected local shells appear in the
-              Terminals <Nav>plus button</Nav> menu. Holding <Nav>Ctrl</Nav> and
+              Terminals <Nav>plus button</Nav> menu. The{" "}
+              <Nav>Terminal font</Nav> list holds only fonts that are installed
+              on this machine and are fixed-width, each drawn in itself so you
+              can see it before you choose it, so there is no way to land on a
+              font that is not there. <b>Fixed-width is the reason a font you
+              have is missing from the list.</b> A proportional font, Segoe UI
+              or Arial, is left out even when it is installed, because a
+              terminal needs every character to occupy the same cell: without
+              that, columns do not line up, box drawing comes apart and the
+              cursor lands somewhere other than where it belongs. Look for a
+              variant with <i>Mono</i> in its name. A font you install while
+              Broadside is running appears in the list once you restart it.{" "}
+              <b>Picking a font applies it straight away</b>, so you can try one
+              against your own terminals rather than commit to it unseen. The
+              two size boxes are the only part of <Nav>Appearance</Nav> behind a{" "}
+              <Nav>Save font sizes</Nav> button, and they are framed together
+              with it: a half-typed number is not a size, and applying one on
+              every keystroke would take the application text through 2 px on
+              the way from 16 to 20. Everything outside that frame takes effect
+              as you touch it. Holding{" "}
+              <Nav>Ctrl</Nav> and
               turning the mouse wheel over any terminal changes the terminal
-              font size from where you are reading and saves it here, unless{" "}
-              <Nav>Strict</Nav> beside that field is ticked, which leaves the
-              wheel alone.
+              font size from where you are reading and saves it here without the
+              button, unless <Nav>Strict</Nav> beside that field is ticked,
+              which leaves the wheel alone.
             </li>
             <li>
               <Nav>Backup &amp; Restore</Nav>: save a copy of your app data, or
@@ -2004,7 +2358,7 @@ export const SECTIONS: HelpSection[] = [
       <>
         <Lead>
           Every key Broadside takes for itself, and what it does. Anything not
-          on this list belongs to whatever has the focus — in a terminal that
+          on this list belongs to whatever has the focus, in a terminal that
           means the shell, which is why the shortcuts here are nearly all{" "}
           <Nav>Ctrl+Shift</Nav> chords: a terminal cannot see the Shift, so{" "}
           <Nav>Ctrl+Shift+G</Nav> costs a program running in a tile nothing at
@@ -2020,7 +2374,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-warnings",
     title: "Warnings and messages",
     keywords:
-      "warning warnings message messages error errors matrix table what does mean unreachable os error 10054 forcibly closed connection reset maxstartups timed out timeout authentication failed no credentials stored host key changed refused unknown key tofu shell chip fish csh unsupported login shell amber chip disconnected banner reconnect every terminal hidden from the grid latency explain meaning troubleshooting no shell chip shell unread no integration console menu printed twice menu reprints pfsense rc.initial checked hosts report no blocks multiterminal silent no output",
+      "warning warnings message messages error errors matrix table what does mean red test button red plug icon unreachable host down still red after restart os error 10054 forcibly closed connection reset maxstartups timed out timeout authentication failed no credentials stored host key changed refused unknown key tofu shell chip fish csh unsupported login shell amber chip disconnected banner reconnect every terminal hidden from the grid latency explain meaning troubleshooting no shell chip shell unread no integration console menu printed twice menu reprints pfsense rc.initial checked hosts report no blocks multiterminal silent no output got it dismiss amber line bottom of the pane strip keeps coming back said again",
     body: (
       <>
         <Lead>

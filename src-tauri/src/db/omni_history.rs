@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
 
-/// Keep the log bounded — oldest blocks drop off the bottom.
+/// Keep the log bounded: oldest blocks drop off the bottom.
 const MAX_BLOCKS: i64 = 1000;
 
 #[derive(Debug, Clone, Deserialize)]

@@ -67,7 +67,7 @@ export function useBackupRestore() {
       toast.success(
         `Restored ${report.host_count} ${
           report.host_count === 1 ? "host" : "hosts"
-        } — reloading…`,
+        }, reloading…`,
       );
       setRestorePath(null);
       setTimeout(() => window.location.reload(), 700);

@@ -26,10 +26,9 @@ import {
 import { ptyOpenLocal } from "@/lib/tauri/local";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
-  capabilityIsWarning,
   dismissShellWarning,
-  loadDismissedShellWarnings,
-  shellCapabilityMessage,
+  shellNotice,
+  shellWarningDismissed,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
@@ -51,7 +50,7 @@ export type ConnectionGate = Extract<
   { status: "unknown_key" } | { status: "key_mismatch" }
 >;
 
-/** Imperative search surface for the Terminals page's Find bar (D-015 —
+/** Imperative search surface for the Terminals page's Find bar (D-015:
  * PTY tabs are Find-only). */
 export type TerminalSearchHandle = {
   findNext: (pattern: string, options: SearchOptions, incremental: boolean) => void;
@@ -74,12 +73,50 @@ function readTerminalTheme() {
   };
 }
 
+/** How Find paints its matches, from the same theme-aware CSS variables the
+ * terminal colours come from.
+ *
+ * These are opaque on purpose. xterm's DOM renderer applies a decoration by
+ * overriding the cell's background colour and drops the alpha channel doing it,
+ * so a translucent value would be silently flattened against black.
+ *
+ * The active match is mostly drawn by the terminal's own selection, which
+ * findNext sets and which paints over a decoration. Its decoration still earns
+ * its place: it is the only handle the addon has on which of the matches is the
+ * active one, so without it there is a count but no `3 of 17`.
+ *
+ * The overview-ruler colours are required by the addon's type but land nowhere:
+ * the ruler is only built when the `overviewRuler` terminal option carries a
+ * width, and nothing here sets one. */
+function readSearchDecorations() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) =>
+    cs.getPropertyValue(name).trim() || fallback;
+  const match = v("--terminal-search-match", "#5c4a00");
+  const activeMatch = v("--terminal-search-active", "#9a7d00");
+  return {
+    matchBackground: match,
+    matchOverviewRuler: match,
+    activeMatchBackground: activeMatch,
+    activeMatchBorder: v("--terminal-search-active-border", "#ffcc33"),
+    activeMatchColorOverviewRuler: activeMatch,
+  };
+}
+
 type Phase =
   | { kind: "connecting" }
   | { kind: "open" }
   | { kind: "gate"; gate: ConnectionGate }
   | { kind: "failed"; message: string }
   | { kind: "closed"; message: string };
+
+/** How far along a pane's connection is, without the message that goes with it.
+ * Reported to the page (see `onPhaseChange`) because "not connected" is four
+ * different situations and only two of them are worth retrying: a pane that is
+ * still `connecting` has a connect in flight that a retry would tear down, and
+ * one at a `gate` is waiting on a host-key dialog the operator has to answer
+ * either way. `failed` and `closed` are the ones showing a Try again button. */
+export type TerminalPhaseKind = Phase["kind"];
 
 /** What backs this terminal: an SSH host, or a local shell over ConPTY. A local
  * source may carry a saved profile's `cwd` (passed to the spawn) and
@@ -93,7 +130,7 @@ type Props = {
   source: TerminalSource;
   /** Whether this terminal's tab AND the Terminals page are visible. */
   visible: boolean;
-  /** Bumps when the user resolves a TOFU gate — triggers a reconnect. */
+  /** Bumps when the user resolves a TOFU gate, triggers a reconnect. */
   retryNonce: number;
   /** Bumped to re-initialize the xterm view, for recovering a display a
    * full-screen program left garbled (alternate screen, a stray scroll region,
@@ -108,13 +145,20 @@ type Props = {
   onReconnect: (sessionId: string) => void;
   /** Ctrl+F pressed while the terminal has focus. */
   onSearchRequest: () => void;
-  /** Alt+Left/Right pressed while the terminal has focus — switch tabs. */
+  /** Alt+Left/Right pressed while the terminal has focus, switch tabs. */
   onTabNav: (dir: "prev" | "next") => void;
-  /** Live match feedback from the search addon. */
+  /** Live match feedback from the search addon. A `resultCount` of -1 is not a
+   * count at all: it says the search threw and there is no answer, which the
+   * Find bar must show as a failure rather than as an empty result. */
   onSearchResults: (resultIndex: number, resultCount: number) => void;
   /** Fires whenever this session's live-connection state flips (used for
    * the Hosts page connected indicators). */
   onConnectionChange?: (sessionId: string, connected: boolean) => void;
+  /** Fires with the same transitions as `onConnectionChange`, but says which of
+   * the not-connected states this is. The page needs the distinction for Retry
+   * all: `connecting` and `gate` are both "red" in the tab strip and neither
+   * wants a retry. */
+  onPhaseChange?: (sessionId: string, phase: TerminalPhaseKind) => void;
   /** Adopt a backend PTY that is already open (a skill run handed its shell
    * over) instead of opening a new one. Skips `pty_open` on the first mount and
    * binds to the existing session id; a later Reconnect opens for real. */
@@ -142,12 +186,18 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       onTabNav,
       onSearchResults,
       onConnectionChange,
+      onPhaseChange,
       adoptExisting,
       adoptSnapshot,
     }: Props,
     searchHandleRef,
   ) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // The whole pane, which is the terminal plus whatever is overlaid on it. The
+  // banners and the connecting overlay are siblings of the terminal container
+  // rather than children, so a listener on the container alone stops at their
+  // edges: Ctrl+wheel over the disconnected banner did nothing.
+  const paneRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
@@ -162,10 +212,13 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // it is drawn. Armed by the reset effect below, disarmed by the first hit.
   // Zero means not armed.
   const swallowEchoUntilRef = useRef(0);
-  // A font change landed while this pane was hidden (display:none has no
-  // measurable box, so the fit had to be skipped). Settled by the visible
-  // effect below with a second-frame fit once the pane is back on screen.
-  const needsRefitRef = useRef(false);
+  // Whether this pane has pixels on screen, per the IntersectionObserver in
+  // the setup effect. It mirrors the private flag xterm keeps for pausing its
+  // renderer, because both observers watch the same box. `fit()` must never
+  // run while this is false: see the observer for what a fit against a paused
+  // renderer does to the viewport. Starts true because the renderer also
+  // starts unpaused, and only ever goes false once an observer says so.
+  const intersectingRef = useRef(true);
   const onSearchRequestRef = useRef(onSearchRequest);
   onSearchRequestRef.current = onSearchRequest;
   const onTabNavRef = useRef(onTabNav);
@@ -174,11 +227,13 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   onSearchResultsRef.current = onSearchResults;
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
+  const onPhaseChangeRef = useRef(onPhaseChange);
+  onPhaseChangeRef.current = onPhaseChange;
   const { prefs } = useUiPrefs();
   // Ctrl + wheel over this pane resizes the terminal text (unless Strict is set
   // in Settings). The size change lands back in `prefs`, so the effect below
   // applies it here and in every other open pane.
-  useTerminalFontZoom(containerRef);
+  useTerminalFontZoom(paneRef);
   const { resolvedTheme } = useTheme();
   // Read once at terminal creation; live changes are applied by the
   // prefs effect below without recreating the terminal.
@@ -189,12 +244,18 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // An unsupported login shell reported by the open (X4), or null. Held apart
   // from `phase` because it survives across the phase transitions of a
   // reconnect and is cleared only by the operator dismissing it.
-  const [shellWarning, setShellWarning] = useState<string | null>(null);
+  const [shellWarning, setShellWarning] = useState<{
+    /** The verdict this strip is for, and what a dismissal is remembered
+     * against, from `shellNotice`. */
+    key: string;
+    message: string;
+  } | null>(null);
   const setPhase = useCallback(
     (p: Phase) => {
       phaseRef.current = p;
       setPhaseState(p);
       onConnectionChangeRef.current?.(sessionId, p.kind === "open");
+      onPhaseChangeRef.current?.(sessionId, p.kind);
     },
     [sessionId],
   );
@@ -206,6 +267,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       fontSize: prefsRef.current.terminalFontSize,
       cursorBlink: true,
       theme: readTerminalTheme(),
+      // Find needs it. `registerDecoration` is still behind xterm's proposed-API
+      // gate, and the search addon calls it for every match it highlights; with
+      // the gate shut the call throws, which is why the Find bar could never say
+      // how many matches there were (see findNext below).
+      allowProposedApi: true,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -225,7 +291,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // Returning false only tells xterm to keep its hands off the key; it does
     // NOT stop the webview acting on it. Every branch here therefore calls
     // preventDefault as well, or the browser's own handling runs on top of
-    // ours — which is exactly what made Ctrl+Shift+V paste twice: we wrote the
+    // ours, which is exactly what made Ctrl+Shift+V paste twice: we wrote the
     // clipboard to the PTY, then Chromium's paste-and-match-style fired a
     // `paste` event at xterm's hidden textarea and xterm wrote it again.
     term.attachCustomKeyEventHandler((e) => {
@@ -240,7 +306,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       }
       // Ctrl+Shift+C copies the current selection; Ctrl+Shift+V pastes. These
       // are the explicit keyboard counterparts to copy-on-select (mouseup) and
-      // right-click-paste — Ctrl+C/Ctrl+V alone stay reserved for the shell
+      // right-click-paste, Ctrl+C/Ctrl+V alone stay reserved for the shell
       // (SIGINT / literal paste-through the shell may want).
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
         e.preventDefault();
@@ -270,7 +336,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       ) {
         e.preventDefault();
         // Stop the event bubbling to the window-level Alt+arrow handler in
-        // TerminalsPage — otherwise both handlers fire for one keypress and the
+        // TerminalsPage, otherwise both handlers fire for one keypress and the
         // tab index advances twice (skips every other tab).
         e.stopPropagation();
         onTabNavRef.current(e.key === "ArrowRight" ? "next" : "prev");
@@ -301,6 +367,9 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       cancelAnimationFrame(refitRaf);
       refitRaf = requestAnimationFrame(() => {
         if (!containerRef.current?.offsetParent) return;
+        // A pane with no pixels on screen waits: the IntersectionObserver
+        // below refits it the moment it has some. Fitting it now is the bug.
+        if (!intersectingRef.current) return;
         const buf = term.buffer.active;
         const pinned = buf.viewportY >= buf.baseY;
         fit.fit();
@@ -308,6 +377,40 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       });
     });
     if (containerRef.current) observer.observe(containerRef.current);
+
+    // The only gate through which a hidden pane comes back: refit it here, in
+    // our own IntersectionObserver, and nowhere earlier.
+    //
+    // xterm pauses its renderer while the pane is off screen, and a paused
+    // renderer defers the renderer half of a resize while its dimensions go on
+    // reporting the pane's OLD box. Any `fit()` in that window plants a mine:
+    // xterm's viewport clamps scroll offsets against the stale height (a
+    // full-window tab, where a grid tile is now), the clamp is reported back
+    // as though the operator had dragged the scrollbar, and the buffer is
+    // hauled to the top of its scrollback. Worse, when the stale height
+    // exceeds the buffer's own pixel height the scrollbar's range collapses to
+    // nothing and the wheel goes dead, and every public scroll call routes
+    // through that same collapsed scrollbar, so nothing can repair it from
+    // out here (smoke 46-3: TG1 at the top of its history, wheel inert, until
+    // an Enter forced output and output forced a fresh measure). The 46-3
+    // build tried to out-wait the pause by counting frames; the pause ends in
+    // xterm's own IntersectionObserver, which frame counting cannot order
+    // against. This observer can: xterm registers its observer inside
+    // `term.open()`, observers fire in creation order, and ours is created
+    // after, so by the time this callback runs xterm has already woken the
+    // renderer and re-measured the char size (which also covers a font change
+    // applied while the pane was hidden). A fit here is a fit against live
+    // dimensions, and every scroll sync that follows agrees with it.
+    const io = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      intersectingRef.current = entry.isIntersecting;
+      if (!entry.isIntersecting) return;
+      const buf = term.buffer.active;
+      const pinned = buf.viewportY >= buf.baseY;
+      fit.fit();
+      if (pinned) term.scrollToBottom();
+    });
+    if (containerRef.current) io.observe(containerRef.current);
 
     // Right-click to paste (Windows Terminal / PuTTY convention): read the
     // clipboard and send it to the shell as if typed. Suppresses the native
@@ -320,7 +423,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           if (text) ptyWrite(sessionId, text).catch(() => {});
         })
         .catch(() => {
-          // Clipboard unreadable (empty or permission denied) — ignore.
+          // Clipboard unreadable (empty or permission denied), ignore.
         });
     };
     const contextMenuEl = containerRef.current;
@@ -345,7 +448,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // chunk that *starts* with the echo, and only in the moment after the
       // button was pressed, so a command that prints a caret and an L of its
       // own keeps them. Seeing it also tells us the form feed is queued rather
-      // than acted on, which is the more important half — see below.
+      // than acted on, which is the more important half, see below.
       if (swallowEchoUntilRef.current) {
         if (performance.now() > swallowEchoUntilRef.current) {
           swallowEchoUntilRef.current = 0;
@@ -374,7 +477,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     dataReadyRef.current = unlistenData;
     const unlistenClosed = onPtyClosed((closed) => {
       if (closed.session_id !== sessionId) return;
-      // Accept the close during "connecting" too — a shell can die in the
+      // Accept the close during "connecting" too, a shell can die in the
       // gap before the open invoke resolves, and swallowing the event here
       // would leave a live-looking but dead terminal.
       if (
@@ -396,6 +499,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       resizeSub.dispose();
       cancelAnimationFrame(refitRaf);
       observer.disconnect();
+      io.disconnect();
       contextMenuEl?.removeEventListener("contextmenu", onContextMenu);
       contextMenuEl?.removeEventListener("mouseup", onMouseUp);
       unlistenData.then((fn) => fn());
@@ -465,21 +569,31 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // the throw white-screened the app). Contain it here so a bad search
       // is a no-op, and log the stack for diagnosis rather than crashing.
       try {
-        // No `decorations` here on purpose: passing them makes the addon
-        // register overview-ruler match decorations, which throw unless the
-        // terminal has a non-zero overview-ruler width — that throw (swallowed
-        // by this catch since PR #20) is why every search said "No matches"
-        // (T2). Without decorations, findNext still scrolls to + selects the
-        // active match and reports the count via onDidChangeResults.
+        // `decorations` is what makes the addon count. It sweeps the whole
+        // buffer for every match only when it has somewhere to paint them, and
+        // onDidChangeResults returns early unless they are on, so a Find bar
+        // without them can say nothing beyond "something was found" (T2, and
+        // A4 on smoke 46-2: no `3 of 17`, so Up and Down were walking blind).
+        //
+        // They were off because they threw. Not the overview ruler, as the note
+        // here used to say: the addon registers a decoration per match, and
+        // `registerDecoration` is proposed API, which throws unless the terminal
+        // was constructed with `allowProposedApi` (it now is). The catch below
+        // swallowed it, so every search reported no matches at all.
         searchRef.current?.findNext(pattern, {
           regex: options.regex,
           caseSensitive: options.caseSensitive,
           wholeWord: options.wholeWord,
           incremental,
+          decorations: readSearchDecorations(),
         });
       } catch (err) {
         console.error("[TerminalView] search findNext failed", err);
-        onSearchResultsRef.current(-1, 0);
+        // A count of -1 means "the search itself failed", not "nothing matched".
+        // Reporting zero here is what hid the proposed-API throw above for as
+        // long as it was hidden: a broken Find is indistinguishable from an
+        // empty one, and every search politely said No matches.
+        onSearchResultsRef.current(-1, -1);
       }
     },
     findPrevious: (pattern, options) => {
@@ -488,17 +602,18 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           regex: options.regex,
           caseSensitive: options.caseSensitive,
           wholeWord: options.wholeWord,
+          decorations: readSearchDecorations(),
         });
       } catch (err) {
         console.error("[TerminalView] search findPrevious failed", err);
-        onSearchResultsRef.current(-1, 0);
+        onSearchResultsRef.current(-1, -1);
       }
     },
     clearSearch: () => {
       try {
         searchRef.current?.clearDecorations();
         // findNext highlights the active match via the terminal SELECTION (no
-        // decorations — they threw), so clearing decorations alone leaves that
+        // decorations, they threw), so clearing decorations alone leaves that
         // selection lit until the user clicks away. Drop it now too.
         termRef.current?.clearSelection();
       } catch (err) {
@@ -527,7 +642,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // Adopted session: a skill run already opened this PTY and handed it over.
       // Opening it again would spin up a second shell and orphan the first, so
       // just bind to the live session (the data/resize/close listeners key on
-      // the id) and mark it open. Only on the first mount — a later Reconnect
+      // the id) and mark it open. Only on the first mount, a later Reconnect
       // (retryNonce > 0) means the original shell is gone, so fall through to a
       // real open.
       if (adoptExisting && retryNonce === 0 && source.type === "ssh") {
@@ -546,7 +661,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         return;
       }
       try {
-        // Local shells have no host-key trust or auth gate — just spawn and open.
+        // Local shells have no host-key trust or auth gate, just spawn and open.
         if (source.type === "local") {
           await ptyOpenLocal({
             sessionId,
@@ -582,24 +697,28 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         });
         if (cancelled) return;
         switch (result.status) {
-          case "opened":
+          case "opened": {
             // Flag a login shell we can't fully drive, unless this host's
-            // warning was already dismissed (X4).
-            if (
-              capabilityIsWarning(result.capability) &&
-              !loadDismissedShellWarnings().has(source.hostId)
-            ) {
-              setShellWarning(
-                shellCapabilityMessage(result.capability, result.login_shell),
-              );
+            // warning was already dismissed for the same verdict (X4). The
+            // verdict is the probe's answer *as the override left it*, so
+            // setting a host to Never is itself news worth a strip, and one
+            // dismissed while the host was on Auto does not silence it.
+            const notice = shellNotice(
+              result.capability,
+              result.integration,
+              result.login_shell,
+            );
+            if (notice && !shellWarningDismissed(source.hostId, notice.key)) {
+              setShellWarning({ key: notice.key, message: notice.message });
             }
             // A pty:closed for this session may have raced ahead of the
-            // open result — don't resurrect a dead session.
+            // open result, don't resurrect a dead session.
             if (phaseRef.current.kind !== "closed") {
               setPhase({ kind: "open" });
               term.focus();
             }
             break;
+          }
           case "unknown_key":
           case "key_mismatch":
             setPhase({ kind: "gate", gate: result });
@@ -639,14 +758,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     ) {
       term.options.fontFamily = prefs.terminalFontFamily;
       term.options.fontSize = prefs.terminalFontSize;
-      if (containerRef.current?.offsetParent) {
+      // Only a pane with pixels on screen refits now. A hidden one is left
+      // over- or under-sized until it returns, when the IntersectionObserver
+      // in the setup effect refits it, against the char size xterm re-measures
+      // on waking (a hidden pane measures the new font as nothing).
+      if (intersectingRef.current && containerRef.current?.offsetParent) {
         fitRef.current?.fit();
-      } else {
-        // Hidden pane (another tab/page is active): xterm still re-measures the
-        // font and restyles .xterm-screen to OLD rows x NEW cell height right
-        // away, leaving the pane over- or under-sized until a real fit can run.
-        // Mark it so the visible effect refits when the pane returns.
-        needsRefitRef.current = true;
       }
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
@@ -665,46 +782,40 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     return () => cancelAnimationFrame(raf);
   }, [resolvedTheme]);
 
-  // Refit + focus when this pane becomes visible. Same bottom-pin rule as the
-  // ResizeObserver refit: a pane re-shown after being hidden from the grid was
-  // resized while display:none (where fit is a no-op), so snap the viewport
-  // back to the prompt unless it was scrolled up into history.
+  // Hand the keyboard to this pane when it becomes visible. The refit that
+  // used to happen here (and the frame-counting that tried to re-pin the
+  // viewport after it) moved to the IntersectionObserver in the setup effect,
+  // which is the only place a fit is safe: this effect runs before xterm's
+  // renderer has woken up, and a fit that early is what dragged returning grid
+  // tiles to the top of their scrollback and killed their scroll wheel
+  // (smoke 46-3, and the banner-instead-of-prompt bug before it).
   useEffect(() => {
     if (!visible) return;
-    let raf2 = 0;
     const raf = requestAnimationFrame(() => {
-      const term = termRef.current;
-      const buf = term?.buffer.active;
-      const pinned = buf ? buf.viewportY >= buf.baseY : false;
-      fitRef.current?.fit();
-      if (pinned) term?.scrollToBottom();
-      if (phaseRef.current.kind === "open") term?.focus();
-      // A font change applied while this pane was hidden needs one more fit a
-      // frame later: xterm pauses its renderer for off-screen terminals and
-      // only unpauses via its own IntersectionObserver, which fires AFTER this
-      // frame's rAF callbacks — so the fit above can run against a still-paused
-      // renderer whose deferred resize never lands (the "whole panel scrolls /
-      // blank terminal after a Settings font change" bug). By the second frame
-      // the renderer is live, so this fit applies synchronously and sticks.
-      raf2 = requestAnimationFrame(() => {
-        if (!needsRefitRef.current) return;
-        needsRefitRef.current = false;
-        fitRef.current?.fit();
-        // `pinned` is deliberately the reading from before the first fit: the
-        // question is where the viewport sat when the pane came back, and the
-        // fit above may already have moved it.
-        if (pinned) term?.scrollToBottom();
-      });
+      if (phaseRef.current.kind === "open") termRef.current?.focus();
     });
-    return () => {
-      cancelAnimationFrame(raf);
-      cancelAnimationFrame(raf2);
-    };
+    return () => cancelAnimationFrame(raf);
   }, [visible]);
 
   return (
-    <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
+    <div ref={paneRef} className="relative h-full w-full">
+      {/* A hair of gutter so the first column is not printed against the wall.
+          In a grid tile the terminal fills the tile's content box exactly, so
+          without this the leftmost character sits on the border line and a
+          full-width line reads as if it has been trimmed.
+
+          On the container rather than on `.xterm`: the fit addon measures this
+          element's computed width, which is its content box, so the padding is
+          already discounted and the column count stays right; and everything
+          xterm measures for itself (selection, mouse reporting, the cursor)
+          keeps working against its own box, which has simply moved. The strip
+          it uncovers is the pane's `--terminal-bg`, the same colour the
+          terminal paints, so it reads as margin and not as a gap.
+
+          A literal 2px, not `pl-0.5`: rem follows the app font size and a
+          terminal cell does not, so a rem gutter would grow against text that
+          had not moved. */}
+      <div ref={containerRef} className="h-full w-full pl-[2px]" />
       {(phase.kind === "connecting" ||
         phase.kind === "gate" ||
         phase.kind === "failed") && (
@@ -735,7 +846,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
                     common one), and the alternative was closing the tab, going
                     back to Hosts and opening it again for something a second
                     attempt fixes. Same path as the disconnected banner's
-                    Reconnect — it bumps the retry nonce and re-runs connect. */}
+                    Reconnect; it bumps the retry nonce and re-runs connect. */}
                 <div className="flex items-center justify-center gap-2">
                   <Button
                     variant="outline"
@@ -764,14 +875,16 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       {shellWarning && phase.kind === "open" && (
         <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 border-t border-amber-500/30 bg-background/95 px-3 py-2">
           <span className="min-w-0 text-xs text-amber-700 dark:text-amber-300">
-            {shellWarning}
+            {shellWarning.message}
           </span>
           <Button
             variant="outline"
             size="sm"
             className="shrink-0"
             onClick={() => {
-              if (source.type === "ssh") dismissShellWarning(source.hostId);
+              if (source.type === "ssh") {
+                dismissShellWarning(source.hostId, shellWarning.key);
+              }
               setShellWarning(null);
             }}
           >

@@ -828,7 +828,7 @@ pub fn validate_sequence(cfg: &SequenceConfig) -> AppResult<()> {
 /// Every outgoing edge of a step, so validation can reject a branch that points
 /// nowhere. A `Goto` timeout target counts: it is a real edge the engine will
 /// follow, and a dangling one must be caught at save time like any other.
-/// The target is only an edge when the action is actually `Goto` — a stale
+/// The target is only an edge when the action is actually `Goto`, a stale
 /// value left behind by switching back to `pause` is inert and must not fail
 /// validation.
 fn timeout_edge<'a>(action: &TimeoutAction, target: &'a Option<String>) -> Option<&'a str> {

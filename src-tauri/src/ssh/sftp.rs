@@ -10,7 +10,7 @@
 //! Unlike probe/exec (which open, act, disconnect), a file *browser* issues many
 //! rapid listings, so a fresh SSH handshake per click would be painfully slow.
 //! [`SftpState`] therefore keeps sessions alive between operations, keyed by a
-//! frontend-supplied `session_id` — the same registry shape as
+//! frontend-supplied `session_id`, the same registry shape as
 //! [`super::pty::PtyState`].
 
 use std::collections::HashMap;
@@ -43,7 +43,7 @@ pub struct SftpEntry {
     pub permissions: Option<u32>,
 }
 
-/// File count + total bytes for a directory — returned by the pre-flight scan
+/// File count + total bytes for a directory, returned by the pre-flight scan
 /// (to decide whether to warn) and by a recursive transfer (for the toast).
 /// `cancelled` is true when a transfer stopped early at the user's request
 /// (the counts are then whatever completed before the stop). `files`/`bytes`
@@ -125,7 +125,7 @@ struct SftpConn {
 ///
 /// `cancels` holds a per-session cancellation flag while a recursive transfer is
 /// running: a transfer task keeps its own `Arc<SftpConn>`, so removing the
-/// session from `conns` does NOT stop an in-flight walk — the loop instead polls
+/// session from `conns` does NOT stop an in-flight walk, the loop instead polls
 /// this flag each file and stops cooperatively when it's set (by an explicit
 /// cancel or by disconnect).
 #[derive(Default, Clone)]
@@ -447,7 +447,7 @@ struct LocalWalkEntry {
     rel: String,
     is_dir: bool,
     abs: PathBuf,
-    /// File size (0 for dirs) and mtime — used for the clash mode + progress.
+    /// File size (0 for dirs) and mtime, used for the clash mode + progress.
     size: u64,
     mtime: Option<i64>,
 }
@@ -551,7 +551,7 @@ pub async fn upload_dir(
                 .await
                 .unwrap_or(false),
             TransferMode::NewerOnly => match conn.sftp.metadata(remote_path.clone()).await {
-                // Destination exists — overwrite only if the source is strictly newer.
+                // Destination exists, overwrite only if the source is strictly newer.
                 Ok(attrs) => match (item.mtime, attrs.mtime) {
                     (Some(src), Some(dst)) => src > dst as i64,
                     _ => true, // unknown timestamps → overwrite to be safe

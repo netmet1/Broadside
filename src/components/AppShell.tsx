@@ -35,6 +35,11 @@ export type Page =
   | "settings"
   | "help";
 
+/** The Hosts hint, exported because the Hosts page puts it on its own heading
+ * as well. One string in one place: a heading and a nav button that describe
+ * the same page in two slightly different ways is worse than either alone. */
+export const HOSTS_NAV_HINT = "Manage SSH connection targets and credentials";
+
 const NAV_ITEMS: {
   page: Page;
   label: string;
@@ -45,7 +50,7 @@ const NAV_ITEMS: {
     page: "hosts",
     label: "Hosts",
     icon: ServerIcon,
-    hint: "Manage SSH connection targets and credentials",
+    hint: HOSTS_NAV_HINT,
   },
   {
     page: "terminals",
@@ -103,7 +108,7 @@ const COLLAPSE_BREAKPOINT = 1280;
 const SIDEBAR_PREF_KEY = "sidebar-collapsed";
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 
-/** The full-label width (was the fixed `w-56`) — the maximum; can't grow past
+/** The full-label width (was the fixed `w-56`), the maximum; can't grow past
  * it. The icon-only strip is `w-14`. Dragging narrower than the snap width
  * collapses to icons. */
 const SIDEBAR_MAX_WIDTH = 224;
@@ -182,7 +187,7 @@ export function AppShell({
   }, []);
 
   // A hint can be left dangling when the hovered control disappears on click
-  // (e.g. navigation swaps the page) — clear it on page change.
+  // (e.g. navigation swaps the page), clear it on page change.
   useEffect(() => {
     clearHint();
   }, [active, clearHint]);
@@ -227,7 +232,7 @@ export function AppShell({
   }, [dragging, collapsed]);
 
   // Maximized terminal: keep the SAME tree (so the terminal's TerminalView is
-  // never remounted — that would kill and reopen the PTY) but hide the sidebar,
+  // never remounted, that would kill and reopen the PTY) but hide the sidebar,
   // separator and status bar via CSS and show a slim banner above the terminal.
   // Both fullscreen modes hide the same chrome; only the banner differs.
   const chromeHidden = maximized || gridFullscreen;
@@ -409,6 +414,7 @@ export function AppShell({
             localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_MAX_WIDTH));
           }}
           title="Drag to resize · double-click to reset"
+          data-resize-handle=""
           className={cn(
             "w-1 shrink-0 cursor-col-resize hover:bg-primary/40",
             dragging && "bg-primary/50",

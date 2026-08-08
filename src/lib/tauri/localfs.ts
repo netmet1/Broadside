@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { TransferStats } from "@/lib/tauri/sftp";
 
-/** One local directory entry — same shape as the remote `SftpEntry` so both
+/** One local directory entry, same shape as the remote `SftpEntry` so both
  *  Commander panes render identically. */
 export type LocalEntry = {
   name: string;

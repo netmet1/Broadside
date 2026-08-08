@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -64,9 +65,12 @@ import {
 import { HIDEABLE_COLUMNS } from "@/lib/hostColumns";
 import { parseTags } from "@/lib/hostTags";
 import { ShellChip } from "@/components/ShellChip";
+import { HOSTS_NAV_HINT } from "@/components/AppShell";
 import type { ShellCapability } from "@/lib/shells";
 import { nextColor } from "@/lib/palette";
 import { useHint, usePageStatus } from "@/lib/status";
+import { useRailCompact } from "@/lib/useRailCompact";
+import { useUiPrefs } from "@/lib/uiPrefs";
 import {
   COLS,
   UNTAGGED_KEY,
@@ -125,17 +129,24 @@ export function HostsPage({
     [],
   );
 
+  // Same idea for the reachability mark the backend just wrote. The button goes
+  // red (or stops being red) with the toast, and the timestamp here is only ever
+  // read as "set or not", so being milliseconds out from the stored one is of no
+  // consequence: the next load takes the database's value anyway.
+  const applyReachability = useCallback((hostId: number, failed: boolean) => {
+    const at = failed ? new Date().toISOString() : null;
+    setHosts((prev) =>
+      prev.map((h) =>
+        h.id === hostId && (h.connect_failed_at === null) === failed
+          ? { ...h, connect_failed_at: at }
+          : h,
+      ),
+    );
+  }, []);
+
   // Per-host connection test + the TOFU / key-mismatch dialogs it can surface.
-  const {
-    testingId,
-    failedIds,
-    clearFailed,
-    tofu,
-    setTofu,
-    mismatch,
-    setMismatch,
-    runTest,
-  } = useHostConnTest(applyLoginShell);
+  const { testingId, tofu, setTofu, mismatch, setMismatch, runTest } =
+    useHostConnTest(applyLoginShell, applyReachability);
 
   const defaultColor = useMemo(
     () => nextColor(hosts.map((h) => h.color)),
@@ -180,6 +191,18 @@ export function HostsPage({
 
   // Multi-select for the "Multi-terminal" action.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  // Out of room: the words go and the icons stay. Every width in this row is a
+  // rem and the window's minimum is in pixels, so a row that fits at a 16px app
+  // font runs off the edge above it (see lib/useRailCompact). The selection
+  // count is in the key because the Multi-terminal label changes width with it.
+  const railRef = useRef<HTMLDivElement>(null);
+  const { prefs } = useUiPrefs();
+  const compact = useRailCompact(
+    railRef,
+    [prefs.appFontSize, selectedIds.size > 0].join("|"),
+  );
+
   const toggleSelected = (id: number) =>
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -271,9 +294,10 @@ export function HostsPage({
   };
 
   const openEdit = (host: Host) => {
-    // Editing the host is the operator's chance to fix bad details/credentials,
-    // so drop any stale failed-test mark on its Test button.
-    clearFailed(host.id);
+    // Opening the form used to clear the failed mark, on the theory that the
+    // operator was about to fix whatever was wrong. It no longer does: the mark
+    // now means "the last attempt to reach this host failed", and editing the
+    // row is not an attempt. It clears when the host answers.
     setEditing(host);
     setFormOpen(true);
   };
@@ -361,17 +385,28 @@ export function HostsPage({
 
   return (
     <div className="flex h-full flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-heading text-xl font-semibold tracking-tight">Hosts</h1>
-          <p className="text-sm text-muted-foreground">
-            SSH connection targets. Credentials are managed separately.
-          </p>
-        </div>
-        <div className="flex gap-2">
+      <div ref={railRef} className="flex items-center justify-between gap-4">
+        {/* No subtitle under the heading. What it said reaches the status bar
+            instead, from this heading and from the sidebar's Hosts button,
+            which is where every other page's description already lives. The
+            room it gave back is what keeps the buttons on the right labelled
+            for longer at a narrow window.
+
+            The heading is not a control, so it takes the hint on hover only;
+            the sidebar button is the one that answers to Tab. */}
+        <h1
+          className="min-w-0 truncate font-heading text-xl font-semibold tracking-tight"
+          {...hint(HOSTS_NAV_HINT)}
+        >
+          Hosts
+        </h1>
+        <div className="flex shrink-0 gap-2">
           {/* Ctrl-f style label search over the table, mirroring the broadcast
               rails' "Find by label…" box. Narrows the table with the tag filter. */}
-          <div className="relative w-52 self-center">
+          {/* min-w-0 so this is what gives up room first when the row is
+              tight: a search box that has narrowed still takes what you type,
+              which is more than can be said for a button off the edge. */}
+          <div className="relative w-52 min-w-0 self-center">
             <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
@@ -397,32 +432,48 @@ export function HostsPage({
             variant="outline"
             onClick={openSelectedTerminals}
             disabled={selectedIds.size === 0}
+            aria-label="Multi-terminal"
             {...hint("Open a terminal tab for every selected host at once")}
           >
             <TerminalIcon />
-            Multi-terminal{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+            {/* The count survives losing the label: it is the live number of
+                ticked hosts and the whole reason to glance at this button. */}
+            {compact ? "" : "Multi-terminal"}
+            {selectedIds.size > 0
+              ? compact
+                ? selectedIds.size
+                : ` (${selectedIds.size})`
+              : ""}
           </Button>
           {/* Import and export are one menu, not two buttons. At the app's own
               1024px minimum window this rail had nothing left to give: Button
               is shrink-0 whitespace-nowrap, so the row simply ran off the edge
               into the page's horizontal scrollbar. These two are also the least
-              used things here, which makes them the right pair to fold. */}
+              used things here, which makes them the right pair to fold.
+              Folding was measured at a 16px app font, though, and every width
+              in the row is a rem, so above that the labels go too (see
+              lib/useRailCompact). */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
+                aria-label="Import / Export"
                 {...hint("Move hosts in or out of Broadside as a CSV or Excel file")}
               >
                 <ArrowUpDownIcon />
-                Import / Export
-                <ChevronDownIcon className="-mr-1 opacity-60" />
+                {!compact && (
+                  <>
+                    Import / Export
+                    <ChevronDownIcon className="-mr-1 opacity-60" />
+                  </>
+                )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
                 onSelect={() => void runExport()}
                 disabled={loading || hosts.length === 0}
-                {...hint("Export all hosts to a CSV or Excel (.xlsx) file (re-importable). No credentials are included; it's safe to hand to a restricted operator to import under their own login.")}
+                {...hint("Export all hosts to a CSV or Excel (.xlsx) file, re-importable. No credentials are included.")}
               >
                 <DownloadIcon />
                 Export hosts…
@@ -436,15 +487,19 @@ export function HostsPage({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button onClick={openAdd} {...hint("Add a single host through the form")}>
+          <Button
+            onClick={openAdd}
+            aria-label="Add host"
+            {...hint("Add a single host through the form")}
+          >
             <PlusIcon />
-            Add host
+            {!compact && "Add host"}
           </Button>
         </div>
       </div>
 
       {/* Neutralize the shadcn Table's own overflow wrapper so THIS div is the
-          single scroll container for both axes — gives a viewport-pinned
+          single scroll container for both axes, gives a viewport-pinned
           horizontal scrollbar and lets the header stick on vertical scroll. */}
       <div
         ref={tableScrollRef}
@@ -549,7 +604,7 @@ export function HostsPage({
                       }`}
                       {...hint(
                         tagFilterActive
-                          ? "Tag filter active — click to change (this session only)"
+                          ? "Tag filter active, click to change (this session only)"
                           : "Filter which hosts show by tag (this session only)",
                       )}
                     >
@@ -791,7 +846,7 @@ export function HostsPage({
                       <TerminalIcon />
                     </Button>
                     {/* Wrapped in a span so the help tip (and native title)
-                        still fire on hover when the button is disabled —
+                        still fire on hover when the button is disabled:
                         disabled buttons don't emit mouse events. */}
                     <span
                       className="inline-flex"
@@ -823,8 +878,8 @@ export function HostsPage({
                       disabled={testingId !== null}
                       aria-label="Test connection"
                       {...hint(
-                        failedIds.has(h.id)
-                          ? `Last connection test for ${h.label} failed — retry, or edit the host to fix it`
+                        h.connect_failed_at !== null
+                          ? `The last attempt to reach ${h.label} failed. Retry, or edit the host.`
                           : `Test SSH connectivity and host key for ${h.label}`,
                       )}
                     >
@@ -832,7 +887,11 @@ export function HostsPage({
                         <Loader2Icon className="animate-spin" />
                       ) : (
                         <PlugZapIcon
-                          className={failedIds.has(h.id) ? "text-red-500" : undefined}
+                          className={
+                            h.connect_failed_at !== null
+                              ? "text-red-500"
+                              : undefined
+                          }
                         />
                       )}
                     </Button>
@@ -956,7 +1015,7 @@ export function HostsPage({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* H8: Multi-terminal — pick which already-open hosts to duplicate. */}
+      {/* H8: Multi-terminal, pick which already-open hosts to duplicate. */}
       <AlertDialog
         open={multiDup !== null}
         onOpenChange={(o) => !o && setMultiDup(null)}

@@ -1,6 +1,6 @@
 //! Opt-in **admin lock** (policy-grade): an admin can set a passcode that gates
 //! the sensitive controls (sudo auto-fill toggle, credential editing, reset).
-//! It is an *authorization* check, NOT an encryption key — it hashes the
+//! It is an *authorization* check, NOT an encryption key; it hashes the
 //! passcode (argon2) and verifies on demand, so losing it never loses any data
 //! (worst case the admin resets the lock with the one-time recovery code, or
 //! clears the settings keys). Unlock state is per-session and re-locks on every

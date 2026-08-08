@@ -15,7 +15,7 @@ export type SftpEntry = {
   permissions: number | null;
 };
 
-/** Outcome of opening a session — mirrors the connection-test `ProbeResult`. */
+/** Outcome of opening a session, mirrors the connection-test `ProbeResult`. */
 export type SftpConnectResult =
   | { status: "ok"; session_id: string; cwd: string }
   | { status: "unknown_key"; key: PresentedKey }

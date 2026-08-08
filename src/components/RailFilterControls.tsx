@@ -5,14 +5,14 @@ import { RAIL_UNTAGGED, type RailFilter } from "@/lib/useRailFilter";
 /**
  * The filter controls that sit at the top of a broadcast host rail: a ctrl-f
  * style label search box and a tag include/exclude dropdown (mirroring the Hosts
- * table's tag-column filter). Purely presentational — all state lives in the
+ * table's tag-column filter). Purely presentational: all state lives in the
  * shared {@link RailFilter} the caller passes in. Render only when the rail is
  * expanded; it's hidden when collapsed to dots.
  */
 export function RailFilterControls({ f }: { f: RailFilter }) {
   return (
     <div className="shrink-0 space-y-1.5 px-3 pb-2">
-      {/* Label search — filters the rail like ctrl-f (case-insensitive). */}
+      {/* Label search, filters the rail like ctrl-f (case-insensitive). */}
       <div className="relative">
         <SearchIcon className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -36,7 +36,7 @@ export function RailFilterControls({ f }: { f: RailFilter }) {
         )}
       </div>
 
-      {/* Tag filter — same include/exclude semantics as the Hosts table. */}
+      {/* Tag filter, same include/exclude semantics as the Hosts table. */}
       <div ref={f.tagMenuRef} className="relative">
         <button
           type="button"

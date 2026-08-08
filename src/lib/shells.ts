@@ -52,13 +52,23 @@ export function capabilityIsWarning(cap: ShellCapability | null | undefined): bo
  * what actually happens on connect. `always` and `never` are answers in their
  * own right, so a row shows what the host will really do rather than what the
  * probe would have decided on its own.
+ *
+ * `never` overrules everything: nothing is written, whatever the host runs.
+ *
+ * `always` is narrower, and deliberately so. It answers a question the probe
+ * could not: "it really is bash, I promise", for a host behind a forced command
+ * or a restricted account. It does **not** overrule a positive reading. A host
+ * that answered `fish` is still fish, and sending it the setup line does not
+ * make it install markers it cannot parse. Letting it overrule the answer is
+ * how a host row came to say nothing at all about a shell that Test connection
+ * had just named in a toast.
  */
 export function effectiveCapability(
   cap: ShellCapability | null | undefined,
   pref: ShellIntegrationPref | null | undefined,
 ): ShellCapability | null {
-  if (pref === "always") return "full";
   if (pref === "never") return "unsupported";
+  if (pref === "always") return cap == null || cap === "unreadable" ? "full" : cap;
   return cap ?? null;
 }
 
@@ -77,15 +87,15 @@ export function shellCapabilityMessage(
     case "full":
       return `This host's login shell is ${named ?? "bash or zsh"}. Everything works: command block tracking, skills, broadcast and file transfer.`;
     case "parse_safe":
-      return `This host's login shell is ${named ?? "a POSIX shell"}. Command block tracking is limited, because only bash and zsh install the markers Broadside reads. Skills, broadcast, file transfer and sudo auto-fill all work.`;
+      return `This host's login shell is ${named ?? "a POSIX shell"}. Command blocks are not tracked: only bash and zsh install the markers. All else works.`;
     case "tail_only":
-      return `This host's login shell is ${named ?? "not a Bourne shell"}. Command block tracking is unavailable and skills cannot run here, because that shell cannot read what Broadside sends. Sudo password auto-fill still works, and everything else (terminals, broadcast, file transfer) is unaffected.`;
+      return `This host's login shell is ${named ?? "not a Bourne shell"}. No command blocks and no skills. Terminals, broadcast and transfers all work.`;
     case "unsupported":
       return named
-        ? `This host's login shell is ${named}, which is not a shell Broadside can drive, so nothing is sent to it and the login screen is left exactly as the host drew it. Command block tracking and skills are unavailable. Terminals, broadcast, file transfer and sudo auto-fill all work.`
-        : `This host's login shell is not one Broadside can drive, so nothing is sent to it and the login screen is left exactly as the host drew it. Command block tracking and skills are unavailable. Terminals, broadcast, file transfer and sudo auto-fill all work.`;
+        ? `This host's login shell is ${named}, which Broadside cannot drive, so it sends nothing at all. No command blocks and no skills.`
+        : `This host's login shell is not one Broadside can drive, so it sends nothing at all. No command blocks and no skills.`;
     case "unreadable":
-      return `Broadside could not read this host's login shell, so it sent nothing rather than guess. Command block tracking and skills are unavailable. If you know this host runs bash or zsh, set Shell integration to Always in the host's settings and both come back.`;
+      return `Broadside could not read this host's login shell, so it sent nothing. Set Shell integration to Always if it runs bash or zsh.`;
   }
 }
 
@@ -99,25 +109,89 @@ export function capabilityChipLabel(
   return cap === "unreadable" ? "shell unread" : "no shell";
 }
 
-/* Which hosts have had the terminal-pane warning dismissed. A UI pref, stored
- * the same way as the hidden host columns (see `hostColumns.ts`), so opening a
- * fifth tab on a known fish host doesn't nag a fifth time. Cleared by the
- * Settings reset along with the rest of the UI prefs. */
-
-const DISMISSED_KEY = "shell-warning-dismissed";
-
-export function loadDismissedShellWarnings(): Set<number> {
-  try {
-    const raw = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]");
-    if (Array.isArray(raw)) return new Set(raw.filter((x) => typeof x === "number"));
-  } catch {
-    // Fall through to an empty set: worst case the operator sees it once more.
+/**
+ * What to say about a flagged host, in one place, from the pair that decides
+ * it: the probe's verdict and the operator's override. `null` means there is
+ * nothing to say.
+ *
+ * The chip on a Hosts row and the strip at the foot of a terminal pane are the
+ * same statement in two sizes, so they resolve the override the same way. The
+ * strip used to work from the probe's verdict alone, which meant the setting
+ * could be changed from Auto to Never and back with the pane saying nothing
+ * either time: on a bash host there was no warning to change, and on a fish
+ * host the verdict it had been dismissed for never moved.
+ *
+ * `key` is what a dismissal is remembered against. It is the verdict as the
+ * reader met it, so `never` is its own key rather than the `unsupported` it
+ * resolves to: those two are different sentences, and dismissing one must not
+ * silence the other.
+ */
+export function shellNotice(
+  capability: ShellCapability | null | undefined,
+  pref: ShellIntegrationPref | null | undefined,
+  loginShell: string | null | undefined,
+): { key: string; label: string; message: string } | null {
+  const effective = effectiveCapability(capability, pref);
+  if (!capabilityIsWarning(effective)) return null;
+  // `effective` is a warning, so it is not null, narrowed for the helpers.
+  const cap = effective as ShellCapability;
+  if (pref === "never") {
+    return {
+      key: "never",
+      label: "no integration",
+      message:
+        "Shell integration is set to Never here, so nothing is sent to its shell. No command blocks and no skills. Change it in Hosts.",
+    };
   }
-  return new Set();
+  // Reaching here with `always` set means the probe read a shell it can name
+  // and the override did not change the answer, which is worth saying: the
+  // setup line is being sent to something that cannot use it.
+  const message =
+    pref === "always"
+      ? `${shellCapabilityMessage(cap, loginShell)} Shell integration is set to Always, so the setup line is sent anyway, and this shell may object to it.`
+      : shellCapabilityMessage(cap, loginShell);
+  return {
+    key: pref === "always" ? `always:${cap}` : cap,
+    label: capabilityChipLabel(cap, loginShell),
+    message,
+  };
 }
 
-export function dismissShellWarning(hostId: number): void {
-  const next = loadDismissedShellWarnings();
-  next.add(hostId);
-  localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]));
+/* Which hosts have had the terminal-pane warning dismissed, and for *which
+ * verdict*. A UI pref, stored the same way as the hidden host columns (see
+ * `hostColumns.ts`), so opening a fifth tab on a known fish host doesn't nag a
+ * fifth time. Cleared by the Settings reset along with the rest of the UI prefs.
+ *
+ * Keyed by capability as well as host because the verdict can change and the
+ * new one is news: a host that was bash and is now behind a console menu, or
+ * one just set to Never, has something to say that was never dismissed. Storing
+ * the host alone made "dismissed" permanent and unreachable: there was no way
+ * back short of resetting every preference in the app. The key is versioned
+ * rather than migrated: the old shape said nothing about which verdict was
+ * dismissed, so there is nothing in it to carry forward. */
+
+const DISMISSED_KEY = "shell-warning-dismissed-v2";
+
+function loadDismissed(): Record<string, string> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "{}");
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      return raw as Record<string, string>;
+    }
+  } catch {
+    // Fall through to empty: worst case the operator sees it once more.
+  }
+  return {};
+}
+
+/** Whether this host's warning has already been dismissed *for this verdict*.
+ * `key` comes from [`shellNotice`]. */
+export function shellWarningDismissed(hostId: number, key: string): boolean {
+  return loadDismissed()[String(hostId)] === key;
+}
+
+export function dismissShellWarning(hostId: number, key: string): void {
+  const next = loadDismissed();
+  next[String(hostId)] = key;
+  localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
 }

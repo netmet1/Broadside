@@ -56,7 +56,7 @@ export function useHostSort(hosts: Host[], connectedHostIds: Set<number>) {
     };
     return [...hosts].sort((a, b) => {
       // Tag sort: by FIRST tag (multi-tag hosts). Untagged hosts always rank
-      // after tagged ones, then `factor` flips that — so they sink to the
+      // after tagged ones, then `factor` flips that, so they sink to the
       // bottom for A-Z and rise to the top for Z-A (user request) rather than
       // clumping with the empty string.
       if (sort.key === "tag") {

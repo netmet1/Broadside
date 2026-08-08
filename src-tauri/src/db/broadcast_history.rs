@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::error::AppResult;
 
-/// Keep the table bounded — cap by number of RUNS (not rows) so a run is never
+/// Keep the table bounded: cap by number of RUNS (not rows) so a run is never
 /// split. Older runs drop off the bottom.
 const MAX_RUNS: i64 = 200;
 

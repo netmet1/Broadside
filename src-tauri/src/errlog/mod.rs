@@ -1,6 +1,6 @@
 //! Rolling error log (D-055): connection/operation failures that surface as
 //! toasts also persist here so they can be reviewed after the toast is gone.
-//! Always on (no toggle — errors are low-volume), 10MB cap with one rotation
+//! Always on (no toggle, errors are low-volume), 10MB cap with one rotation
 //! generation, clearable from the Logs viewer.
 //!
 //! Deliberately separate from the audit log: audit records what the operator
@@ -61,7 +61,7 @@ impl ErrLogState {
     }
 
     /// Appends one failure. Write errors are returned but callers ignore
-    /// them — error logging must never break the operation that failed.
+    /// them; error logging must never break the operation that failed.
     pub fn append(&self, event: &ErrorEvent) -> AppResult<()> {
         let record = ErrorRecord {
             ts: Utc::now().to_rfc3339(),
@@ -145,7 +145,7 @@ mod tests {
             "test_connection",
             Some(1),
             Some("web-01"),
-            "unreachable — timed out",
+            "unreachable: timed out",
         );
         let lines = log.tail(10).unwrap();
         assert_eq!(lines.len(), 1);

@@ -40,7 +40,7 @@ export function useGuardRules(
     tip: string;
   } | null>(null);
 
-  /** Wholesale-replace persistence — the backend validates each rule.
+  /** Wholesale-replace persistence; the backend validates each rule.
    * Returns whether the save succeeded; the caller decides what to do with a
    * failure (the add-rule form keeps itself open so input isn't lost). */
   const persistRules = async (rules: UserRule[]): Promise<string | null> => {
@@ -64,7 +64,7 @@ export function useGuardRules(
   const addRule = async () => {
     if (!settings) return;
     // Invalid input keeps the form open with everything intact and the
-    // offending field(s) highlighted — no reset, no disappearing form.
+    // offending field(s) highlighted, no reset, no disappearing form.
     if (ruleDescMissing || ruleCommandsInvalid) {
       setRuleSubmitAttempted(true);
       setRuleError(null);
@@ -83,7 +83,7 @@ export function useGuardRules(
     };
     const err = await persistRules([...settings.user_rules, rule]);
     if (err) {
-      // Backend rejected it — keep the form open so the user can fix it.
+      // Backend rejected it, keep the form open so the user can fix it.
       setRuleError(err);
       setRuleSubmitAttempted(true);
       return;

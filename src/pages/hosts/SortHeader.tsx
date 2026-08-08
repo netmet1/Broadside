@@ -18,14 +18,14 @@ export function SortHeader({
   headHint,
 }: {
   label: string;
-  /** Visible header text when it should differ from the accessible label —
+  /** Visible header text when it should differ from the accessible label,
    * e.g. the narrow Status column shows just "S" but stays "Status" for
    * screen readers and the sort aria-label. */
   display?: string;
   sortKey: SortKey;
   sort: { key: SortKey; dir: "asc" | "desc" } | null;
   onSort: (key: SortKey) => void;
-  /** Status-bar help props (from useHint) — explains the column on hover. */
+  /** Status-bar help props (from useHint), explains the column on hover. */
   headHint?: ComponentProps<"button">;
 }) {
   const active = sort?.key === sortKey;

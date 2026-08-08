@@ -36,7 +36,7 @@ export type RunGroup = {
   pending: Set<number>;
 };
 
-/** Stable per-block key — a host can appear in many runs, so host_id alone is
+/** Stable per-block key, a host can appear in many runs, so host_id alone is
  * not unique across the appended history. */
 export const blockKeyOf = (runId: string, hostId: number) =>
   `${runId}:${hostId}`;

@@ -44,6 +44,10 @@ export type LocalTermSession = {
   cwd?: string;
   startupCommand?: string;
   profileLabel?: string;
+  /** The launching profile's own colour, `#rrggbb`, when it set one. Overrides
+   * the colour the shell's kind would give this tab; empty or absent means the
+   * kind's colour applies. See {@link sessionColor}. */
+  profileColor?: string;
   /** Operator-set tab name, replacing the derived profile/shell label for the
    * rest of this session. Deliberately not persisted: session ids are fresh
    * UUIDs every run, so a stored name would have nothing to reattach to. */
@@ -57,6 +61,7 @@ export type LocalShellOpenOpts = {
   cwd?: string;
   startupCommand?: string;
   profileLabel?: string;
+  profileColor?: string;
 };
 
 /** Display label for a tab, regardless of session kind. A renamed local tab
@@ -69,10 +74,39 @@ export function sessionLabel(s: TermSession): string {
 
 /** Which shortcut scope a tab belongs to. SSH hosts, local WSL tabs and custom
  * POSIX terminals (Git Bash and the like) run Linux commands (ssh); local
- * Command Prompt / PowerShell run Windows ones (local). */
+ * Command Prompt / PowerShell run Windows ones (local); a serial console has
+ * its own scope.
+ *
+ * Serial used to borrow the `ssh` scope, on the grounds that of two wrong
+ * answers the one that never offers a Windows command down a console cable is
+ * the better wrong answer. It was still a wrong answer: `ls -la` is no more use
+ * to a switch than `dir` is. A cable gets its own scope, no built-in commands,
+ * and a picker that greys out until the operator has said what belongs there. */
 export function sessionScope(s: TermSession): ShortcutScope {
   if (s.type === "ssh") return "ssh";
-  return s.shell.kind === "wsl" || s.shell.kind === "posix" ? "ssh" : "local";
+  const k = s.shell.kind;
+  if (k === "serial") return "serial";
+  return k === "wsl" || k === "posix" ? "ssh" : "local";
+}
+
+/** The colour a tab wears, or null for the theme's own.
+ *
+ * One function for both kinds of session so the tab strip, the grid tile header
+ * and anything else that tints never have to ask what sort of tab this is. An
+ * SSH tab wears its host's colour, which names a machine; a local tab wears its
+ * shell's, which names a language; a profile-launched one wears the profile's,
+ * because a profile is a purpose and wants telling apart from another profile on
+ * the same shell.
+ *
+ * The colours map is passed in rather than read here: it lives in localStorage
+ * and is watched by a hook, and a function the render path calls per tab has no
+ * business touching storage. */
+export function sessionColor(
+  s: TermSession,
+  shellColors: Record<string, string | null | undefined>,
+): string | null {
+  if (s.type === "ssh") return s.host.color;
+  return s.profileColor || shellColors[s.shell.kind] || null;
 }
 
 /** Most initials we ever show. Camel/word splitting can produce a long run

@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { RadioTowerIcon, SquareTerminalIcon, TerminalIcon } from "lucide-react";
+import {
+  CableIcon,
+  RadioTowerIcon,
+  SquareTerminalIcon,
+  TerminalIcon,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -10,21 +15,23 @@ import type {
 import { SshBroadcastPanel } from "@/pages/ptyBroadcast/SshBroadcastPanel";
 import { LocalBroadcastPanel } from "@/pages/ptyBroadcast/LocalBroadcastPanel";
 
-/** The four fixed broadcast families. Always shown, even when no shell of that
- * kind is open (each panel renders its own empty state). */
-type PtyTab = "ssh" | "powershell" | "cmd" | "wsl";
+/** The fixed broadcast families. Always shown, even when no shell of that kind
+ * is open (each panel renders its own empty state). */
+type PtyTab = "ssh" | "powershell" | "cmd" | "wsl" | "serial";
 
 /** Persisted last-open tab (restored across restarts; defaults to SSH). */
 const TAB_KEY = "pty-broadcast-tab";
 
 function readTab(): PtyTab {
   const v = localStorage.getItem(TAB_KEY);
-  return v === "powershell" || v === "cmd" || v === "wsl" ? v : "ssh";
+  return v === "powershell" || v === "cmd" || v === "wsl" || v === "serial"
+    ? v
+    : "ssh";
 }
 
 /**
  * PTY Broadcast page. A command typed here is sent, as if keyed in, into every
- * checked open terminal — SSH sessions or local shells. The four fixed tabs keep
+ * checked open terminal: SSH sessions or local shells. The four fixed tabs keep
  * each broadcast within one shell language (SSH hosts, PowerShell, Command
  * Prompt, WSL) so a single command is always valid for its targets.
  *
@@ -39,7 +46,7 @@ export function PtyBroadcastPage({
 }: {
   visible: boolean;
   sessions: TermSession[];
-  /** Session ids with a live connection — only these can receive input. */
+  /** Session ids with a live connection, only these can receive input. */
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
 }) {
@@ -82,10 +89,24 @@ export function PtyBroadcastPage({
       ),
     [sessions],
   );
+  // Serial consoles get a family of their own rather than joining one, for the
+  // reason above: what answers on a console cable is a switch or a firewall,
+  // not a shell, so a command valid for the POSIX panel is not valid here. It
+  // is also the family with the strongest case for existing, since a rack of
+  // console cables is precisely where typing one line once beats typing it
+  // five times.
+  const serialSessions = useMemo(
+    () =>
+      sessions.filter(
+        (s): s is LocalTermSession =>
+          s.type === "local" && s.shell.kind === "serial",
+      ),
+    [sessions],
+  );
 
   return (
     <div className="flex h-full flex-col">
-      {/* Tab switcher — fixed set, always shown. */}
+      {/* Tab switcher, fixed set, always shown. */}
       <div className="flex shrink-0 items-center gap-1 border-b border-border/50 px-2 py-1.5">
         <TabButton
           active={tab === "ssh"}
@@ -114,6 +135,13 @@ export function PtyBroadcastPage({
           icon={<TerminalIcon className="h-4 w-4" />}
           label="WSL / POSIX"
           count={wslSessions.length}
+        />
+        <TabButton
+          active={tab === "serial"}
+          onClick={() => setTab("serial")}
+          icon={<CableIcon className="h-4 w-4" />}
+          label="Serial consoles"
+          count={serialSessions.length}
         />
       </div>
 
@@ -158,6 +186,21 @@ export function PtyBroadcastPage({
             scope="ssh"
             onManageShortcuts={onManageShortcuts}
             storagePrefix="pty-broadcast-wsl"
+          />
+        </div>
+        <div className={tab === "serial" ? "h-full" : "hidden"}>
+          <LocalBroadcastPanel
+            visible={visible && tab === "serial"}
+            family="Serial consoles"
+            sessions={serialSessions}
+            connectedSessions={connectedSessions}
+            // Its own scope, same as `sessionScope` gives a serial tab. The
+            // picker here is empty until the operator has written commands for
+            // their own hardware, which is the honest state: nothing Broadside
+            // ships knows what is on the other end of a console cable.
+            scope="serial"
+            onManageShortcuts={onManageShortcuts}
+            storagePrefix="pty-broadcast-serial"
           />
         </div>
       </div>

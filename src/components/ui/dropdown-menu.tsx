@@ -67,10 +67,18 @@ function DropdownMenuItem({
 /**
  * A menu item that carries an on/off state.
  *
- * The check sits in a fixed-width slot on the left rather than being inserted
+ * The box sits in a fixed-width slot on the left rather than being inserted
  * only when set, so the labels stay on one vertical line whether or not a given
  * item is on. A rail control moved into a menu has to read at a glance, and a
  * column of labels that shifts sideways as you toggle them does not.
+ *
+ * An *empty* box when it is off, not an empty slot. Blank space says nothing:
+ * beside a column of items that each lead with an icon, an off checkbox looked
+ * like a label that had been pushed out of line for no reason, and there was
+ * nothing on screen to say the entry could be switched on at all. The box makes
+ * the state legible in both positions and lands the label in the same column as
+ * every icon beside it, which is why these entries take no icon of their own:
+ * the box is the icon.
  */
 function DropdownMenuCheckboxItem({
   className,
@@ -88,9 +96,13 @@ function DropdownMenuCheckboxItem({
       )}
       {...props}
     >
-      <span className="pointer-events-none flex size-4 shrink-0 items-center justify-center">
+      {/* The frame is always drawn and the tick is what comes and goes, so the
+          two states differ by the tick alone and nothing moves under the
+          pointer. `border-input` is the same edge the rail's own outline
+          buttons use, so an off box reads as a control rather than as a smudge. */}
+      <span className="pointer-events-none flex size-4 shrink-0 items-center justify-center rounded-[3px] border border-input">
         <DropdownMenuPrimitive.ItemIndicator>
-          <CheckIcon className="size-3.5" />
+          <CheckIcon className="size-3" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
       {children}
@@ -106,6 +118,29 @@ function DropdownMenuLabel({
     <DropdownMenuPrimitive.Label
       data-slot="dropdown-menu-label"
       className={cn("px-1.5 py-1 text-xs text-muted-foreground", className)}
+      {...props}
+    />
+  )
+}
+
+/**
+ * The keyboard shortcut for an item, pushed to the right-hand edge.
+ *
+ * An entry that also answers to a key has to say so where it is read, or the
+ * key is discoverable only from Help. `ml-auto` rather than a fixed column: the
+ * menus here are narrow and only a few items carry one.
+ */
+function DropdownMenuShortcut({
+  className,
+  ...props
+}: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="dropdown-menu-shortcut"
+      className={cn(
+        "ml-auto pl-4 text-xs tracking-wide text-muted-foreground",
+        className
+      )}
       {...props}
     />
   )
@@ -133,4 +168,5 @@ export {
   DropdownMenuCheckboxItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
 }

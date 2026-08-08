@@ -42,7 +42,7 @@ impl FileStore {
             let encrypted = fs::read(&self.path)?;
             match decrypt(&encrypted, passphrase) {
                 Ok(plaintext) => serde_json::from_slice::<HashMap<String, String>>(&plaintext)?,
-                // Wrong passphrase (or corrupt file) — not an internal error.
+                // Wrong passphrase (or corrupt file), not an internal error.
                 Err(AppError::Crypto(_)) => return Ok(false),
                 Err(e) => return Err(e),
             }

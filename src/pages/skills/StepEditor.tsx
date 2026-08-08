@@ -318,7 +318,7 @@ export function StepEditor({
           <label
             className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
             {...hint(
-              "For a command that never returns to the prompt on its own. sudo -i opens a nested shell, an interactive program stops on a question. A sudo password prompt is answered automatically from the host's stored sudo password. The step advances once output settles; drive the rest with Wait-for-output steps.",
+              "For a command that never returns to the prompt, like sudo -i or one that stops on a question. Advances once output settles.",
             )}
           >
             <input
@@ -347,7 +347,7 @@ export function StepEditor({
             <label
               className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
               {...hint(
-                "Branch on what the command prints instead of its exit code. The test wins over the exit code when it's on, so the 'if it works' and 'if it fails' branches are replaced. Matched against the command's output only, not its echoed command line.",
+                "Branch on what the command prints rather than its exit code. When on, this replaces the 'if it works' and 'if it fails' tests.",
               )}
             >
               <input
@@ -586,7 +586,7 @@ export function StepEditor({
           <label
             className="flex flex-wrap items-center gap-1.5 text-xs"
             {...hint(
-              "Hold on the current screen for this long, sending nothing, then move on. Good for letting a redrawing status screen keep running before the skill finishes. An hour is the ceiling.",
+              "Hold on the current screen for this long, sending nothing, then move on. An hour is the ceiling.",
             )}
           >
             <span className="shrink-0 text-muted-foreground">Wait</span>
@@ -637,7 +637,7 @@ export function StepEditor({
             <label
               className="flex items-center gap-1.5 text-xs"
               {...hint(
-                "How loud this line is in the run log. An Error whose Then is 'stop' also ends the host as a failure, carrying this message, so a skill can refuse a host in its own words instead of finishing with a green tick.",
+                "How loud this line is in the run log. An Error whose Then is 'stop' ends the host as a failure, carrying this message.",
               )}
             >
               <span className="shrink-0 text-muted-foreground">Log type</span>

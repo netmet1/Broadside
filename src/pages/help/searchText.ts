@@ -22,7 +22,7 @@ import { isValidElement, type ReactNode } from "react";
  * the two cannot drift apart. */
 export type Searchable = { searchText: string };
 
-/** A component that renders one of its own props as text — `<Term term="SSH" />`
+/** A component that renders one of its own props as text, `<Term term="SSH" />`
  * puts "SSH" on the page while having no children at all. Naming the props here
  * is how a walk of the tree sees those words. */
 export type PropSearchable = { searchProps: readonly string[] };

@@ -84,11 +84,16 @@
     --sidebar-ring: oklch(0.708 0 0);
     /* Status bar sits a shade off the main background so it reads as chrome. */
     --statusbar: oklch(0.97 0 0);
-    /* Terminal pane colours (xterm + the pane container) — light theme. */
+    /* Terminal pane colours (xterm + the pane container), light theme. */
     --terminal-bg: #ffffff;
     --terminal-fg: #1f2328;
     --terminal-cursor: #1f2328;
     --terminal-selection: #3b82f640;
+    /* Find match highlighting inside a terminal. Opaque, because xterm paints a
+       match by overriding the cell background and throws the alpha away. */
+    --terminal-search-match: #ffe9a3;
+    --terminal-search-active: #ffc046;
+    --terminal-search-active-border: #b45309;
     /* Scrollbar thumb (theme-aware). */
     --scrollbar-thumb: oklch(0 0 0 / 22%);
     --scrollbar-thumb-hover: oklch(0 0 0 / 35%);
@@ -128,11 +133,14 @@
     --sidebar-ring: oklch(0.556 0 0);
     /* A tiny bit lighter than the 0.145 background (user-requested). */
     --statusbar: oklch(0.185 0 0);
-    /* Terminal pane colours — dark theme (the original look). */
+    /* Terminal pane colours, dark theme (the original look). */
     --terminal-bg: #0a0a0a;
     --terminal-fg: #e5e5e5;
     --terminal-cursor: #e5e5e5;
     --terminal-selection: #3b82f680;
+    --terminal-search-match: #4a3a00;
+    --terminal-search-active: #7a5f00;
+    --terminal-search-active-border: #fbbf24;
     --scrollbar-thumb: oklch(1 0 0 / 18%);
     --scrollbar-thumb-hover: oklch(1 0 0 / 30%);
 }
@@ -153,7 +161,7 @@
  *
  * Ctrl+Shift+T is the only route into this strip from a terminal (Tab there
  * belongs to the shell), and in grid fullscreen the strip is hidden until
- * something in it takes focus — so if you cannot see what took focus, the
+ * something in it takes focus, so if you cannot see what took focus, the
  * shortcut has told you nothing and Tab from there is walking blind. The
  * default ring is `--ring` at half opacity, a neutral grey, sitting on a
  * neutral grey strip. This is the same idea, said out loud: a solid ring in
@@ -165,7 +173,7 @@
  * same button looks exactly as it always did.
  *
  * The second selector is the same ring on plain `:focus`, and only while the
- * strip carries `data-chrome-keyboard` — set by Ctrl+Shift+T, cleared by a
+ * strip carries `data-chrome-keyboard`: set by Ctrl+Shift+T, cleared by a
  * click in the strip or by focus leaving it. :focus-visible alone was not
  * enough: it is the browser's guess at whether the keyboard is driving, and a
  * programmatic focus() out of a terminal does not always satisfy it, so the
@@ -177,6 +185,57 @@
   :is(button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
+}
+
+/* The window is not the one the operating system is sending keys to.
+ *
+ * An unfocused window still receives every mouse event that happens over it, so
+ * without these rules the app goes on looking exactly as alive as it does when
+ * it is listening: hover states light up, and xterm's scrollbar fades in under
+ * the pointer as if the pane were yours to scroll. It reads as "this window has
+ * the keyboard", and the first thing typed goes to whatever actually does.
+ *
+ * Behaviour is not defended here (see `useGridFocus`, which stops following the
+ * mouse for the same reason). This is only the app being honest about being
+ * asleep. `data-window-blurred` is set on the root element by
+ * `useWindowBlurredAttr`.
+ *
+ * Unlayered on purpose: `xterm.css` arrives unlayered too, and an unlayered
+ * rule beats a layered one whatever the specificity, so putting this in
+ * `@layer base` would lose to the very rule it exists to override. */
+[data-window-blurred] .xterm .xterm-scrollable-element > .scrollbar {
+  /* xterm fades this in on mouseover with no notion of window focus. Four
+     class selectors deep so it outranks the `.visible` xterm sets there. */
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The app's own scrollbars darken under the pointer. Same small lie, so it
+   holds still too. */
+[data-window-blurred] *::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb);
+}
+
+/* The live tile keeps its outline, so coming back still shows where the
+   keyboard was left, but loses the host colour and the glow that say the keys
+   are landing there now. `!important` because the host-coloured version is an
+   inline style, computed from a colour only the session knows. */
+[data-window-blurred] [data-tile-active] {
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
+/* Drag-to-resize handles (tile edges, the sidebar edge, table columns, the
+   SFTP splitters) light up under the pointer and switch it to the resize
+   arrows, the exact invitation everything above is busy retracting. One
+   property retires all of it: with no pointer events there is no :hover to
+   light, no cursor to change and no tooltip, whatever each handle's resting
+   style happens to be. A deliberate press is not lost, it lands on whatever
+   is under the handle, and a press into an unfocused window claims the window
+   (and, on a tile, that tile) rather than starting a drag nobody could see
+   coming. The handles wake with the window, when the attribute goes. */
+[data-window-blurred] [data-resize-handle] {
+  pointer-events: none;
 }
 
 /* The Help filter's match colour lives in useHelpHighlight.ts, not here: its

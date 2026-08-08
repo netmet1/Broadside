@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import {
+  CableIcon,
   SquareAsteriskIcon,
   SquareTerminalIcon,
   TerminalIcon,
@@ -24,13 +25,16 @@ export function SectionHeading({
 
 /** Leading icon for a shortcut's scope, shown on the Settings page: SSH/WSL use
  * the host/terminal icon, Command Prompt / PowerShell use the square terminal,
- * and a command that runs in both uses the square-asterisk (any shell). */
+ * a command that runs in both uses the square-asterisk (any shell), and a
+ * serial one takes the cable, the same icon its tabs carry. */
 export function ScopeIcon({ scope }: { scope: ShortcutScope }) {
   const Icon =
     scope === "both"
       ? SquareAsteriskIcon
       : scope === "local"
         ? SquareTerminalIcon
-        : TerminalIcon;
+        : scope === "serial"
+          ? CableIcon
+          : TerminalIcon;
   return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
 }

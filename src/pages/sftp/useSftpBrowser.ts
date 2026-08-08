@@ -75,7 +75,7 @@ export function useSftpBrowser(visible: boolean) {
   // A monotonically-increasing id keyed per host so a stale in-flight connect
   // can't clobber a newer session.
   const connectSeq = useRef(0);
-  // The live session id (or null) — lets an async transfer tell whether its
+  // The live session id (or null), lets an async transfer tell whether its
   // session is still current before refreshing (it may have been disconnected).
   const currentSessionId = useRef<string | null>(null);
   useEffect(() => {
@@ -114,7 +114,7 @@ export function useSftpBrowser(visible: boolean) {
     } catch (e) {
       const msg = errorMessage(e);
       toast.error(msg);
-      // A dropped/restarted backend session can't be recovered here — reset so
+      // A dropped/restarted backend session can't be recovered here, reset so
       // the user reconnects rather than staring at a dead listing.
       if (isSessionGone(msg)) {
         setSession(null);
@@ -298,14 +298,14 @@ export function useSftpBrowser(visible: boolean) {
           const skip = stats.skipped > 0 ? `, ${stats.skipped} skipped` : "";
           if (stats.cancelled) {
             toast.warning(
-              `Upload cancelled — ${stats.files} files (${formatSize(stats.bytes)}) transferred${skip} before stopping`,
+              `Upload cancelled: ${stats.files} files (${formatSize(stats.bytes)}) transferred${skip} before stopping`,
             );
           } else {
             toast.success(
               `Uploaded folder ${name} (${stats.files} files, ${formatSize(stats.bytes)}${skip})`,
             );
           }
-          // Refresh so partial/complete results show — unless the session is
+          // Refresh so partial/complete results show, unless the session is
           // already gone (e.g. cancelled via Disconnect).
           if (currentSessionId.current === session.sessionId)
             await list(session.sessionId, session.cwd);
@@ -354,7 +354,7 @@ export function useSftpBrowser(visible: boolean) {
           const skip = stats.skipped > 0 ? `, ${stats.skipped} skipped` : "";
           if (stats.cancelled) {
             toast.warning(
-              `Download cancelled — ${stats.files} files (${formatSize(stats.bytes)}) transferred${skip} before stopping`,
+              `Download cancelled: ${stats.files} files (${formatSize(stats.bytes)}) transferred${skip} before stopping`,
             );
           } else {
             toast.success(

@@ -2,7 +2,7 @@
 //! (hosts, settings, host keys, command history) into a user-chosen folder,
 //! optionally alongside a re-importable hosts CSV (reuses the export module).
 //!
-//! Credentials are deliberately NOT included — they live in Windows
+//! Credentials are deliberately NOT included; they live in Windows
 //! Credential Manager / the age-encrypted store (D-008), and copying secrets
 //! into ad-hoc backup folders would undo that protection.
 
@@ -29,7 +29,7 @@ pub struct RestoreReport {
     pub host_count: usize,
 }
 
-/// Online snapshot of the live database via `VACUUM INTO` — safe while the
+/// Online snapshot of the live database via `VACUUM INTO`, safe while the
 /// app holds the connection, and the output is a compacted, consistent copy.
 pub(crate) fn snapshot_db(conn: &rusqlite::Connection, dest: &Path) -> AppResult<()> {
     if dest.exists() {
@@ -85,13 +85,13 @@ pub fn backup_app_data(
 
 /// Restores a backup `.db` over the live database using SQLite's online backup
 /// API. This OVERWRITES all current data (hosts, settings, trusted host keys,
-/// command history) with the snapshot's contents. Credentials are untouched —
+/// command history) with the snapshot's contents. Credentials are untouched:
 /// they live in Windows Credential Manager, not the DB, so a restored host may
 /// need its password re-entered (same as after the rename).
 ///
 /// The online backup API copies into the live `main` database while we hold the
 /// connection lock, so there is no file swap and no Windows file-lock problem
-/// with the open connection — and no app restart is required.
+/// with the open connection, and no app restart is required.
 #[tauri::command]
 pub fn restore_app_data(path: String, state: State<'_, DbState>) -> AppResult<RestoreReport> {
     let src_path = PathBuf::from(&path);

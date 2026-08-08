@@ -47,7 +47,7 @@ const byTag = (a: HostLike, b: HostLike, factor: 1 | -1) => {
 /** Returns a new array of `items` sorted per `sort`. `get` pulls the sortable
  * host fields out of each item (identity for a Host, `s => s.host` for a
  * session). `isOnline` (optional) reports whether an item has a live
- * connection — required for the "online"/"offline" sorts. */
+ * connection: required for the "online"/"offline" sorts. */
 export function sortForRail<T>(
   items: T[],
   get: (item: T) => HostLike,

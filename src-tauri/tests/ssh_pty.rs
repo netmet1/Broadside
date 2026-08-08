@@ -1,5 +1,5 @@
 //! Integration tests for interactive PTY sessions against a real OpenSSH
-//! server in docker. Ignored by default — local pre-merge gate (D-035).
+//! server in docker. Ignored by default, local pre-merge gate (D-035).
 //!
 //!     cargo test --test ssh_pty -- --ignored --test-threads=1
 
@@ -163,7 +163,7 @@ async fn pty_shell_round_trip_and_close() {
 
 /// Two opens with the same session id (the React StrictMode double-mount
 /// shape). The second open replaces the first; the replaced task must die
-/// silently — no closed event, and crucially it must NOT deregister its
+/// silently, no closed event, and crucially it must NOT deregister its
 /// successor (the original bug: remove-by-id tore down the live session,
 /// leaving a dead-looking terminal).
 #[tokio::test]
@@ -319,7 +319,7 @@ async fn pty_omni_blocks_from_bash() {
 
     // 3) A full-screen app (alternate-screen) is flagged interactive with no
     // mirrored output. The alt-screen block has empty lines, so we can't find
-    // it by output text — drain blocks until a sentinel command, capturing the
+    // it by output text, drain blocks until a sentinel command, capturing the
     // alt-screen block by its command text along the way.
     state
         .write("omni-session", b"printf '\\033[?1049hPAINT\\033[?1049l'\n")

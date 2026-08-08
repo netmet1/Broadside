@@ -35,7 +35,7 @@ import { useSessionBroadcast } from "@/pages/ptyBroadcast/useSessionBroadcast";
 const LOCAL_COLOR = "#6b7280";
 
 /**
- * PTY Broadcast — one local-shell family tab (PowerShell / Command Prompt / WSL).
+ * PTY Broadcast: one local-shell family tab (PowerShell / Command Prompt / WSL).
  * Fans a command out to every checked open shell of that family on THIS machine.
  * Unlike the SSH panel this is shell-oriented (icon + label, no host colours,
  * tags, or persisted history) and is deliberately guarded: a persistent yellow
@@ -53,7 +53,7 @@ export function LocalBroadcastPanel({
   storagePrefix,
 }: {
   visible: boolean;
-  /** Human name of the shell family, e.g. "PowerShell" — used in copy. */
+  /** Human name of the shell family, e.g. "PowerShell", used in copy. */
   family: string;
   sessions: LocalTermSession[];
   connectedSessions: Set<string>;
@@ -131,7 +131,7 @@ export function LocalBroadcastPanel({
   }, [railKey]);
 
   // The command awaiting the "run on N shells?" confirmation. Every local send
-  // is gated by this dialog — the fan-out runs immediately with no undo, so the
+  // is gated by this dialog, the fan-out runs immediately with no undo, so the
   // operator confirms each time (this is the safety story for local shells).
   const [pending, setPending] = useState<string | null>(null);
 
@@ -161,7 +161,7 @@ export function LocalBroadcastPanel({
     );
   };
 
-  // Ask before sending — never dispatch straight from the composer.
+  // Ask before sending, never dispatch straight from the composer.
   const requestSend = useCallback(
     (cmdOverride?: string) => {
       const cmd = (cmdOverride ?? command).trim();
@@ -198,7 +198,7 @@ export function LocalBroadcastPanel({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Persistent danger banner — this types into real local shells. */}
+      {/* Persistent danger banner, this types into real local shells. */}
       <div className="flex shrink-0 items-center gap-2 border-b border-yellow-400/70 bg-yellow-50 px-4 py-1.5 text-xs text-yellow-800 dark:border-yellow-500/30 dark:bg-yellow-500/10 dark:text-yellow-300/90">
         <AlertTriangleIcon className="h-3.5 w-3.5 shrink-0" />
         <span>

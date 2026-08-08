@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArchiveIcon,
+  CableIcon,
   CircleHelpIcon,
   Loader2Icon,
   LockIcon,
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { HIDEABLE_COLUMNS } from "@/lib/hostColumns";
+import { GENERIC_MONOSPACE, cssFontFamily } from "@/lib/monospaceFonts";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
 import { useHint, useStatus } from "@/lib/status";
 import { useTheme } from "next-themes";
@@ -95,7 +97,7 @@ export function SettingsPage({
    * "Manage shortcuts…" entry on Broadcast/Terminals). */
   focusSection?: string | null;
   onFocusConsumed?: () => void;
-  /** Called once the initial settings load has settled — clears the branded
+  /** Called once the initial settings load has settled, clears the branded
    * loader the shell shows while this (large) page warms up. */
   onReady?: () => void;
 }) {
@@ -112,7 +114,9 @@ export function SettingsPage({
     disabledShells,
     toggleShell,
     termFontFamily,
-    setTermFontFamily,
+    chooseFontFamily,
+    fontOptions,
+    unknownFont,
     termFontSize,
     setTermFontSize,
     termFontStrict,
@@ -123,7 +127,7 @@ export function SettingsPage({
     parsedTermFontSize,
     parsedAppFontSize,
     syncFromSettings: syncAppearanceFromSettings,
-    saveAppearance,
+    saveFontSizes,
   } = useAppearance();
 
   // Opt-in admin lock (gates the sudo toggle, credential editing and Reset).
@@ -171,7 +175,7 @@ export function SettingsPage({
       return;
     }
     // localStorage/sessionStorage hold only UI prefs in this app (theme, tab
-    // order, sort, column widths, rail/header toggles) — clearing them resets
+    // order, sort, column widths, rail/header toggles), clearing them resets
     // every persisted preference. Reload so all providers re-init from defaults.
     try {
       localStorage.clear();
@@ -206,7 +210,7 @@ export function SettingsPage({
     }
   };
 
-  // Section search — filters which settings sections are shown. Restored from
+  // Section search, filters which settings sections are shown. Restored from
   // sessionStorage so it survives leaving and returning to the Settings tab.
   const [query, setQuery] = useState(
     () => sessionStorage.getItem(SEARCH_STORAGE_KEY) ?? "",
@@ -299,7 +303,7 @@ export function SettingsPage({
     };
   }, []);
 
-  // Restore the last-viewed section when returning to the tab — once per mount,
+  // Restore the last-viewed section when returning to the tab, once per mount,
   // and never when a deep-link (focusSection) is steering the scroll instead.
   const didRestoreScroll = useRef(false);
   useEffect(() => {
@@ -311,7 +315,7 @@ export function SettingsPage({
       return;
     }
     if (didRestoreScroll.current) return;
-    // A deep-link (focusSection) owns the scroll — let it win, don't restore.
+    // A deep-link (focusSection) owns the scroll, let it win, don't restore.
     if (focusSection) {
       didRestoreScroll.current = true;
       saveEnabled.current = true;
@@ -346,7 +350,7 @@ export function SettingsPage({
   }, [visible, settings, focusSection]);
 
   // Jump-to-section dropdown: picking a section clears any search filter (so
-  // the target is mounted) and smooth-scrolls to it — no button needed.
+  // the target is mounted) and smooth-scrolls to it, no button needed.
   const [pendingScroll, setPendingScroll] = useState<string | null>(null);
   const goToSection = useCallback((title: string) => {
     setQuery("");
@@ -460,7 +464,7 @@ export function SettingsPage({
     } catch {
       // Audit info is non-critical for this page.
     }
-    // Data has settled (or failed non-fatally) — the page is now usable, so let
+    // Data has settled (or failed non-fatally), the page is now usable, so let
     // the shell drop the branded loader.
     onReady?.();
   }, [syncPerfFromSettings, syncAppearanceFromSettings, onReady]);
@@ -1050,12 +1054,22 @@ export function SettingsPage({
                       {SCOPE_LABELS.both}
                     </span>
                   </SelectItem>
+                  <SelectItem value="serial">
+                    <span className="flex items-center gap-2">
+                      <CableIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      {SCOPE_LABELS.serial}
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
                 SSH / WSL commands run on SSH hosts and WSL tabs; Command Prompt /
                 PowerShell commands run on local Windows shells; Both runs in
-                every terminal (for example whoami).
+                either of those (for example whoami). Serial console stands on
+                its own, and Both does not reach it: the far end of a console
+                cable is a switch or a firewall rather than a shell, so
+                Broadside ships no commands for it and the picker on a serial
+                tab stays empty until you add some here.
               </p>
             </div>
             <div className="flex gap-2 pt-1">
@@ -1133,70 +1147,129 @@ export function SettingsPage({
               instantly; no Save needed.
             </p>
           </div>
+          {/* Only the monospace fonts this machine actually has. It used to be a
+              free-text CSS list, which meant a typo or an absent font fell
+              through to the next name silently and the only symptom was a
+              terminal that looked slightly off. Every entry here has been
+              measured (see lib/monospaceFonts) and is drawn in itself, so the
+              list doubles as the preview. */}
           <div className="grid gap-1">
             <Label htmlFor="term-font">Terminal font</Label>
-            <Input
-              id="term-font"
-              value={termFontFamily}
-              onChange={(e) => setTermFontFamily(e.target.value)}
-              placeholder="Consolas, 'Cascadia Mono', monospace"
-              className="font-mono text-sm"
-              autoComplete="off"
-            />
+            <Select value={termFontFamily} onValueChange={chooseFontFamily}>
+              <SelectTrigger id="term-font" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {fontOptions.map((f) => (
+                  <SelectItem key={f} value={f}>
+                    <span
+                      className="text-sm"
+                      // The generic has no face of its own to show, and the
+                      // unrecognised stored value is by definition not
+                      // installed, so neither can preview; both are plain.
+                      style={
+                        f === GENERIC_MONOSPACE || f === unknownFont
+                          ? undefined
+                          : { fontFamily: cssFontFamily(f) }
+                      }
+                    >
+                      {f === GENERIC_MONOSPACE ? "System monospace" : f}
+                    </span>
+                    {f === unknownFont && (
+                      <span className="text-xs text-muted-foreground">
+                        (not installed)
+                      </span>
+                    )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* "My font is missing" is nearly always a proportional font, and
+                nearly always Segoe UI, so the list says what it holds
+                rather than only what it excludes. A terminal needs every
+                character the same width or nothing lines up: no columns, no
+                box drawing, no cursor where the cursor should be. */}
             <p className="text-xs text-muted-foreground">
-              CSS font-family list; the font must be installed on this machine.
+              {unknownFont !== null
+                ? "Your saved font isn't installed on this machine, so it is listed as it was stored and left alone until you pick another."
+                : "Fixed-width fonts installed on this machine only. A proportional font (Inter, Segoe UI, Arial) is not offered even when installed, because a terminal needs every character the same width. A font installed while Broadside is running appears after a restart."}{" "}
+              Applies as you pick it; no Save needed.
             </p>
           </div>
-          <div className="grid gap-1">
-            <Label htmlFor="term-font-size">Terminal font size</Label>
-            <div className="flex items-center gap-3">
+          {/* The two size boxes are the only things in Appearance that need a
+              Save, and they are boxed with it so it is obvious which controls it
+              is for. Everything outside this frame writes as you touch it.
+              They need one because they are free text: a numeric field has no
+              valid intermediate state, and applying per keystroke would take the
+              app font through 2px on the way from 16 to 20, which collapses the
+              UI you are typing into. The font dropdown above has no such state,
+              which is why it left. */}
+          <div className="grid max-w-md gap-4 rounded-md border border-border/40 p-4">
+            <div className="grid gap-1">
+              <Label htmlFor="term-font-size">Terminal font size</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="term-font-size"
+                  value={termFontSize}
+                  onChange={(e) => setTermFontSize(e.target.value)}
+                  className={`w-40 font-mono text-sm ${parsedTermFontSize === undefined ? "border-destructive" : ""}`}
+                  autoComplete="off"
+                />
+                {/* Strict sits with the field it protects, not in a list of
+                    toggles somewhere else: it is only about this number. */}
+                <label
+                  className="flex cursor-pointer items-center gap-1.5 text-sm"
+                  {...hint(
+                    termFontStrict
+                      ? "Strict: only this field changes the size. Ctrl and the wheel are left to the terminal, so mouse reporting works as before."
+                      : "Not strict: Ctrl and the mouse wheel over a terminal resize the text, and the new size is saved here as you go.",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={termFontStrict}
+                    onChange={(e) => toggleTermFontStrict(e.target.checked)}
+                  />
+                  <span className="font-medium">Strict</span>
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                8-32 px. Hold <span className="font-medium">Ctrl</span> and turn
+                the mouse wheel over a terminal to change it from there; the size
+                you land on is saved, no Save needed. Tick{" "}
+                <span className="font-medium">Strict</span> to make this field
+                the only way to set it, which also hands Ctrl and the wheel back
+                to the terminal for anything that wants them itself.
+              </p>
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="app-font-size">Application font size</Label>
               <Input
-                id="term-font-size"
-                value={termFontSize}
-                onChange={(e) => setTermFontSize(e.target.value)}
-                className={`w-40 font-mono text-sm ${parsedTermFontSize === undefined ? "border-destructive" : ""}`}
+                id="app-font-size"
+                value={appFontSize}
+                onChange={(e) => setAppFontSize(e.target.value)}
+                className={`w-40 font-mono text-sm ${parsedAppFontSize === undefined ? "border-destructive" : ""}`}
                 autoComplete="off"
               />
-              {/* Strict sits with the field it protects, not in a list of
-                  toggles somewhere else: it is only about this number. */}
-              <label
-                className="flex cursor-pointer items-center gap-1.5 text-sm"
-                {...hint(
-                  termFontStrict
-                    ? "Strict: only this field changes the size. Ctrl and the mouse wheel are left to the terminal, so a program with mouse reporting on receives them again and the scrollback fast-scrolls as it used to."
-                    : "Not strict: Ctrl and the mouse wheel over a terminal resize the text, and the new size is saved here as you go.",
-                )}
-              >
-                <input
-                  type="checkbox"
-                  className="accent-primary"
-                  checked={termFontStrict}
-                  onChange={(e) => toggleTermFontStrict(e.target.checked)}
-                />
-                <span className="font-medium">Strict</span>
-              </label>
+              <p className="text-xs text-muted-foreground">
+                12-20 px. Scales the whole UI except terminal panes.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              8-32 px. Hold <span className="font-medium">Ctrl</span> and turn
-              the mouse wheel over a terminal to change it from there; the size
-              you land on is saved. Tick <span className="font-medium">Strict</span>{" "}
-              to make this field the only way to set it, which also hands Ctrl
-              and the wheel back to the terminal for anything that wants them
-              itself.
-            </p>
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="app-font-size">Application font size</Label>
-            <Input
-              id="app-font-size"
-              value={appFontSize}
-              onChange={(e) => setAppFontSize(e.target.value)}
-              className={`w-40 font-mono text-sm ${parsedAppFontSize === undefined ? "border-destructive" : ""}`}
-              autoComplete="off"
-            />
-            <p className="text-xs text-muted-foreground">
-              12-20 px. Scales the whole UI except terminal panes.
-            </p>
+            <div>
+              <Button
+                size="sm"
+                onClick={saveFontSizes}
+                disabled={
+                  savingUi ||
+                  parsedTermFontSize === undefined ||
+                  parsedAppFontSize === undefined
+                }
+              >
+                {savingUi && <Loader2Icon className="animate-spin" />}
+                Save font sizes
+              </Button>
+            </div>
           </div>
           <div className="grid gap-1.5">
             <Label>Host table columns</Label>
@@ -1251,31 +1324,17 @@ export function SettingsPage({
               </div>
             )}
           </div>
-          <div>
-            <Button
-              size="sm"
-              onClick={saveAppearance}
-              disabled={
-                savingUi ||
-                parsedTermFontSize === undefined ||
-                parsedAppFontSize === undefined
-              }
-            >
-              {savingUi && <Loader2Icon className="animate-spin" />}
-              Save
-            </Button>
-          </div>
         </div>
       </section>
       )}
 
-      {/* Custom terminals — user-defined terminal apps (DB-backed). */}
+      {/* Custom terminals: user-defined terminal apps (DB-backed). */}
       {sectionVisible("Custom terminals") &&
         sectionReady("Custom terminals") && (
           <CustomTerminalsSection id={sectionDomId("Custom terminals")} />
         )}
 
-      {/* Grid — Terminals grid layout (localStorage, applies on next visit). */}
+      {/* Grid: Terminals grid layout (localStorage, applies on next visit). */}
       {sectionVisible("Grid") && sectionReady("Grid") && (
         <GridSection id={sectionDomId("Grid")} />
       )}
@@ -1340,8 +1399,8 @@ export function SettingsPage({
           <AlertDialogHeader>
             <AlertDialogTitle>Restore from this backup?</AlertDialogTitle>
             <AlertDialogDescription>
-              This replaces <strong>all current data</strong> — hosts, settings,
-              trusted host keys and command history — with the contents of{" "}
+              This replaces <strong>all current data</strong> (hosts, settings,
+              trusted host keys and command history) with the contents of{" "}
               <span className="font-mono">{restoreFileName}</span>. Your current
               data will be lost. Saved passwords aren't included in a backup, so
               restored hosts may need their password re-entered. Broadside will
@@ -1459,7 +1518,7 @@ export function SettingsPage({
           does not delete stored passwords.
         </p>
 
-        {/* Admin lock (opt-in) — gates the toggle above, credential editing and
+        {/* Admin lock (opt-in), gates the toggle above, credential editing and
             Reset. Authorization only: it stores no key, so a lost passcode never
             loses data (use the recovery code, or remove the lock). */}
         <div className="max-w-xl space-y-3 rounded-md border border-border/40 p-4">
@@ -1579,7 +1638,7 @@ export function SettingsPage({
       </section>
       )}
 
-      {/* Reset everything to defaults (S) — guard-railed. */}
+      {/* Reset everything to defaults (S), guard-railed. */}
       {sectionVisible("Reset") && sectionReady("Reset") && (
       <section id={sectionDomId("Reset")} className="space-y-3">
         <SectionHeading
@@ -1616,7 +1675,7 @@ export function SettingsPage({
       </section>
       )}
 
-      {/* Danger Zone — wipe every host + its stored credentials. */}
+      {/* Danger Zone: wipe every host + its stored credentials. */}
       {sectionVisible("Danger Zone") && sectionReady("Danger Zone") && (
       <section id={sectionDomId("Danger Zone")} className="space-y-3">
         <SectionHeading
@@ -1760,7 +1819,7 @@ export function SettingsPage({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Rule help-tip modal — the Dialog overlay blurs the window behind it. */}
+      {/* Rule help-tip modal, the Dialog overlay blurs the window behind it. */}
       <Dialog
         open={helpRule !== null}
         onOpenChange={(open) => !open && setHelpRule(null)}

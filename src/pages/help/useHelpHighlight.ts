@@ -2,7 +2,7 @@
  * Marking what you searched for, inside the section the search kept.
  *
  * The Help filter matches a section's title and its keyword blob, so a search
- * for `ctrl shift g` correctly leaves you looking at **Terminals** — and then
+ * for `ctrl shift g` correctly leaves you looking at **Terminals**, and then
  * you are on your own, scrolling a long section hunting for the sentence that
  * earned the match. (The report was someone reaching for Ctrl+F to search the
  * page they had just searched.) This puts a mark on the words themselves and
@@ -23,7 +23,7 @@ const HIGHLIGHT_NAME = "help-search";
 /**
  * The colour a match is painted in, installed the first time it is needed.
  *
- * In a stylesheet this would be four lines in `index.css`, and it was — but
+ * In a stylesheet this would be four lines in `index.css`, and it was, but
  * `::highlight()` is newer than the CSS parser the production build runs
  * through, which passes the rule along and warns about it on every build. A
  * rule added at runtime skips that parser entirely, and it belongs here anyway:
@@ -68,7 +68,7 @@ function escapeRegExp(s: string): string {
  * dropped while holding the words asked for.
  *
  * `flags` is `"gi"` for a scan that walks every match and `"i"` for a plain
- * yes/no test — a `g` pattern carries `lastIndex` between calls and would skip
+ * yes/no test, a `g` pattern carries `lastIndex` between calls and would skip
  * every other section. `floor` is the shortest single term worth matching, and
  * the filter sets it to 1: keeping a section is cheap, painting the page amber
  * is not.
@@ -147,7 +147,7 @@ function highlightsSupported(): boolean {
 
 export type HelpHighlight = {
   /** How many matches are on screen. Zero means the query matched a section's
-   * keywords but none of its visible words — a real and unremarkable case. */
+   * keywords but none of its visible words, a real and unremarkable case. */
   count: number;
   /** Which match is current, 0-based. */
   index: number;

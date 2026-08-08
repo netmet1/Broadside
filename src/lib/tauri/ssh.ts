@@ -10,7 +10,7 @@ export type PresentedKey = {
 
 export type ProbeResult =
   // `capability` is decided from the raw probe answer, before `login_shell` is
-  // filtered to the shell alphabet — so a console menu reads as "unsupported"
+  // filtered to the shell alphabet, so a console menu reads as "unsupported"
   // here even though its name is dropped from the field beside it.
   | {
       status: "ok";

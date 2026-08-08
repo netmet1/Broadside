@@ -5,7 +5,7 @@
  *
  * This is a self-contained DOM measurement (a hidden monospace span), not a read
  * of xterm's internals: it is deterministic, needs no mounted terminal, and
- * matches xterm's own char measurement within a fraction of a pixel — well
+ * matches xterm's own char measurement within a fraction of a pixel, well
  * inside the plan's "lands within ~1 col/row" tolerance (fit rounds container
  * pixels to whole cells anyway). */
 
@@ -54,7 +54,7 @@ export function measureTerminalCell(
       result = { cellW: rect.width / SAMPLE, cellH: rect.height };
     }
   } catch {
-    // Non-browser / detached document — keep the fallback.
+    // Non-browser / detached document, keep the fallback.
   }
 
   cache.set(key, result);

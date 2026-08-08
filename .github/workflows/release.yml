@@ -74,7 +74,7 @@ jobs:
 
       # Authenticode signing via Azure Trusted Signing (now "Azure Artifact
       # Signing"). Windows Defender quarantined an unsigned build as
-      # Trojan:Win32/Bearfoos.A!ml — the textbook false positive for a new,
+      # Trojan:Win32/Bearfoos.A!ml, the textbook false positive for a new,
       # unsigned, low-prevalence binary that spawns PTYs. Signing is the actual
       # fix; a signed identity accrues reputation and stops most ML heuristics.
       #

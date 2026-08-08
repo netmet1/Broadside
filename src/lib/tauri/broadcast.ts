@@ -64,7 +64,7 @@ export function onBroadcastResult(
   );
 }
 
-/** One persisted broadcast run (D-059) — results in completion order. */
+/** One persisted broadcast run (D-059), results in completion order. */
 export type StoredRun = {
   run_id: string;
   ts: string;

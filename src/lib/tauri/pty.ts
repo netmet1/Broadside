@@ -1,18 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type { ShellCapability } from "@/lib/shells";
+import type { ShellCapability, ShellIntegrationPref } from "@/lib/shells";
 import type { PresentedKey } from "@/lib/tauri/ssh";
 
 export type PtyOpenResult =
   // `login_shell` is what the connect-time probe read, or null when it could
-  // not tell. Null is "unknown", never "unsupported" — `capability` is what
+  // not tell. Null is "unknown", never "unsupported"; `capability` is what
   // says which, and it is the probe's own verdict, before the per-host override
   // is applied.
+  // `integration` is the override that was in force for this open, so the pane
+  // can say what actually happened rather than what the probe would have
+  // decided on its own. Same pair the Hosts and rail chips resolve.
   | {
       status: "opened";
       login_shell: string | null;
       capability: ShellCapability;
+      integration: ShellIntegrationPref;
     }
   | { status: "unknown_key"; key: PresentedKey }
   | {
@@ -77,7 +81,7 @@ export function onPtyClosed(
 }
 
 /** The stored sudo password was auto-filled at a prompt for this session
- * (D-065). Carries no secret — just enough to surface a transparency toast. */
+ * (D-065). Carries no secret: just enough to surface a transparency toast. */
 export type PtySudo = {
   session_id: string;
   host_label: string;

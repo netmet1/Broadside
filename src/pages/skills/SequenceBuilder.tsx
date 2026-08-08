@@ -209,7 +209,7 @@ export function SequenceBuilder({
           <label
             className="flex items-center gap-2 text-sm"
             {...hint(
-              "Keep each host's shell open after the run so you can send it to a terminal tab with its root state, working directory and scrollback intact.",
+              "Keep each host's shell open after the run, with its root state, working directory and scrollback intact.",
             )}
           >
             <input
@@ -246,7 +246,7 @@ export function SequenceBuilder({
             f.unlimitedStepRepeats ? "opacity-50" : ""
           }`}
           {...hint(
-            "How many times any one step may run before the host stops with a 'branches loop without finishing' message. Counted per step, so this is the retry budget for a step that loops back on itself, not a limit on how long the skill can be.",
+            "How many times any one step may run before the host stops. A retry budget per step, not a limit on the skill's length.",
           )}
         >
           <span className="text-muted-foreground">Stop a host after a step runs</span>
@@ -294,7 +294,7 @@ export function SequenceBuilder({
         <label
           className="flex items-start gap-2 text-sm"
           {...hint(
-            "Remove the repeat cap entirely. A skill that loops then runs until you stop the host yourself. Dangerous: only use it if you truly know what you are doing.",
+            "Remove the repeat cap. A skill that loops then runs until you stop the host yourself. Dangerous.",
           )}
         >
           <input
@@ -491,7 +491,7 @@ export function SequenceBuilder({
               onClick={renumber}
               disabled={f.steps.length < 2}
               {...hint(
-                "Renames the step ids to s1, s2, ... in their current order and updates every branch to match, so the flow is unchanged. Tidies ids after reordering.",
+                "Renames the step ids to s1, s2, ... in their current order and updates every branch to match.",
               )}
             >
               <ListOrderedIcon className="mr-1 h-3 w-3" />

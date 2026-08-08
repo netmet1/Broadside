@@ -66,7 +66,7 @@ export function BroadcastPage({
   onManageShortcuts,
 }: {
   visible: boolean;
-  /** Host ids with at least one connected terminal — drives the status dot. */
+  /** Host ids with at least one connected terminal, drives the status dot. */
   connectedHostIds: Set<number>;
   onManageShortcuts: () => void;
 }) {
@@ -75,7 +75,7 @@ export function BroadcastPage({
   const [command, setCommand] = useState("");
   const [timeoutSecs, setTimeoutSecs] = useState(String(DEFAULT_TIMEOUT_SECS));
   const [running, setRunning] = useState(false);
-  // Seconds left on the current run's timeout (null when idle) — drives the
+  // Seconds left on the current run's timeout (null when idle), drives the
   // live countdown shown in place of the timeout field while a run is in flight.
   const [remaining, setRemaining] = useState<number | null>(null);
   // All runs, oldest first (newest appended at the bottom).
@@ -126,7 +126,7 @@ export function BroadcastPage({
   const lastCommandRef = useRef<string>("");
   const lastConfirmedRef = useRef<boolean>(false);
   const outputRef = useRef<HTMLDivElement>(null);
-  // Inner content wrapper — observed so the view follows output to the true
+  // Inner content wrapper, observed so the view follows output to the true
   // bottom as blocks stream in (the scroll height grows after each result).
   const outputContentRef = useRef<HTMLDivElement>(null);
   // Whether the output is scrolled to (near) the bottom. Starts true so output
@@ -134,7 +134,7 @@ export function BroadcastPage({
   // again when they return to the bottom or dispatch a new command.
   const atBottomRef = useRef(true);
   // Timestamp (ms) until which scroll events are treated as our own auto-scroll
-  // and ignored — a programmatic scroll fires a *deferred* scroll event, and if
+  // and ignored, a programmatic scroll fires a *deferred* scroll event, and if
   // the content grew taller in between, reading scrollTop back would wrongly
   // mark us "not at bottom" and freeze the follow (prompts21: a late timed-out
   // block landed below the fold).
@@ -157,7 +157,7 @@ export function BroadcastPage({
     listHosts()
       .then((all) => {
         setHosts(all);
-        // Nothing is pre-selected — the user opts into each broadcast. Only
+        // Nothing is pre-selected, the user opts into each broadcast. Only
         // drop selected ids whose host no longer exists.
         setSelected((prev) => {
           const live = new Set(all.map((h) => h.id));
@@ -171,7 +171,7 @@ export function BroadcastPage({
   // Re-sync the default timeout from Settings whenever the page is shown again
   // (Option A). The page stays mounted in the background, so a default changed
   // on the Settings tab would otherwise leave a stale value here (prompts21 C2).
-  // Only overwrite the field when it still shows the previously-synced default —
+  // Only overwrite the field when it still shows the previously-synced default:
   // a per-run override the user typed but hasn't sent yet is preserved.
   useEffect(() => {
     if (!visible) return;
@@ -275,7 +275,7 @@ export function BroadcastPage({
   // Keep the output pinned to the bottom as results stream in. A ResizeObserver
   // on the content catches every height change (each host's block arrives
   // separately and the last one used to land below the fold), so the newest
-  // output is always in view — unless the user scrolled up or is searching.
+  // output is always in view, unless the user scrolled up or is searching.
   useEffect(() => {
     const scroller = outputRef.current;
     const content = outputContentRef.current;
@@ -348,7 +348,7 @@ export function BroadcastPage({
 
   // Tick the countdown down once a second while a run is in flight (C2). The
   // run itself resolves when every host finishes or the timeout elapses, which
-  // clears `remaining` — this only drives the visual.
+  // clears `remaining`, this only drives the visual.
   useEffect(() => {
     if (!running || remaining === null || remaining <= 0) return;
     const t = window.setTimeout(
@@ -423,7 +423,7 @@ export function BroadcastPage({
       } finally {
         setRunning(false);
         setRemaining(null);
-        // Option A: the field is a per-run override — snap it back to the
+        // Option A: the field is a per-run override, snap it back to the
         // Settings default once the run finishes (or times out).
         setTimeoutSecs(String(savedTimeoutRef.current ?? DEFAULT_TIMEOUT_SECS));
       }
@@ -455,7 +455,7 @@ export function BroadcastPage({
   );
 
   /** Shortcut Go: show the command in the composer and send it through the
-   * normal path — guard check included. */
+   * normal path: guard check included. */
   const runShortcut = useCallback(
     (cmd: string) => {
       setCommand(cmd);
@@ -473,7 +473,7 @@ export function BroadcastPage({
 
   /** Re-run a single host from a specific run's failed block (the per-block
    * Retry button). Uses that run's own command so retrying an older run is
-   * correct, and passes confirmed=true — the command already cleared the guard
+   * correct, and passes confirmed=true: the command already cleared the guard
    * when it was first dispatched. Lands as a fresh one-host run. */
   const retryHostInRun = useCallback(
     (command: string, hostId: number) => {
@@ -539,7 +539,7 @@ export function BroadcastPage({
         terminal for more complex interaction.
       </div>
       <div className="flex min-h-0 flex-1">
-      {/* Host selection rail (collapsible — mirrors MultiTerminal). */}
+      {/* Host selection rail (collapsible, mirrors MultiTerminal). */}
       <div
         className={`flex shrink-0 flex-col border-r border-border/50 ${
           railCollapsed ? "w-14" : "w-60"
@@ -650,6 +650,7 @@ export function BroadcastPage({
                     channel and works perfectly well on fish, so the host stays
                     selectable and simply says what it is. */}
                 <ShellChip
+                  compact
                   capability={h.shell_capability}
                   loginShell={h.login_shell}
                   pref={h.shell_integration}
@@ -659,7 +660,7 @@ export function BroadcastPage({
                     className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
                     title={h.tag ? `Tag: ${h.tag}` : "No tag"}
                   >
-                    {h.tag ?? "—"}
+                    {h.tag ?? "-"}
                   </span>
                 )}
                 {/* Live terminal-connection dot (user request): green when this
@@ -691,7 +692,7 @@ export function BroadcastPage({
               </p>
             )}
         </div>
-        {/* Bottom-pinned clear actions — stay visible while the host list
+        {/* Bottom-pinned clear actions, stay visible while the host list
             above scrolls (work queue 2026-06-13). Hidden when collapsed. */}
         {!railCollapsed && (
           <div className="shrink-0 space-y-1 border-t border-border/50 p-2">
@@ -885,7 +886,7 @@ export function BroadcastPage({
               {...hint(
                 running
                   ? "Time left before this run times out."
-                  : "Per-command timeout in seconds (1-3600). Overrides this run only; resets to the Settings → Performance default afterward. Partial output is kept if it elapses.",
+                  : "Per-command timeout in seconds (1-3600). This run only; partial output is kept if it elapses.",
               )}
             />
             <span className="text-xs text-muted-foreground">s</span>

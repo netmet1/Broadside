@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
+import { ShellChip } from "@/components/ShellChip";
 import { capabilityTracksBlocks, effectiveCapability } from "@/lib/shells";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
@@ -83,10 +84,10 @@ type DisplayBlock = {
 };
 
 /**
- * MultiTerminal (D-061) — the namesake aggregate view. A command typed here runs
+ * MultiTerminal (D-061): the namesake aggregate view. A command typed here runs
  * through the selected terminals' live shells; each host's whole output drops in
  * as one colour-tinted block in completion order. Full-screen/redrawing apps
- * show an "interactive — not mirrored" notice. The block log persists across
+ * show an "interactive, not mirrored" notice. The block log persists across
  * restarts. Inert until 2+ terminals are open.
  */
 export function MultiTerminalPage({
@@ -133,7 +134,7 @@ export function MultiTerminalPage({
     return m;
   }, [sessions]);
 
-  // Host ids with an open terminal session — drives whether a block shows the
+  // Host ids with an open terminal session, drives whether a block shows the
   // "jump to this host's terminal" icon (hidden for deleted/closed hosts).
   const openHostIds = useMemo(
     () => new Set(sessions.map((s) => s.host.id)),
@@ -194,7 +195,7 @@ export function MultiTerminalPage({
     visible,
   );
 
-  // Nothing is pre-selected — the user opts in. Selection only ever contains
+  // Nothing is pre-selected, the user opts in. Selection only ever contains
   // CONNECTED, open sessions: a disconnect or close removes a session from the
   // selection (disconnected ones are ghosted in the rail and can't be a dispatch
   // target). The user's checks are otherwise preserved.
@@ -228,9 +229,9 @@ export function MultiTerminalPage({
   useEffect(() => {
     const un = onPtyBlock((blk) => {
       const sess = sessionsByIdRef.current.get(blk.session_id);
-      if (!sess) return; // a session we no longer track (closed) — ignore.
+      if (!sess) return; // a session we no longer track (closed), ignore.
       // A block from a session we dispatched to is "dispatched" (always shown).
-      // Pop FIFO rather than matching exact command text — some shells capture
+      // Pop FIFO rather than matching exact command text, some shells capture
       // the command slightly differently, which previously dropped the block
       // when the mirror toggle was off (O5).
       const queue = pendingDispatched.current.get(blk.session_id);
@@ -248,7 +249,7 @@ export function MultiTerminalPage({
       // blocks are unaffected, since we only ever dispatch to checked hosts.
       if (!dispatched && (!mirrorRef.current || !selectedRef.current.has(blk.session_id)))
         return;
-      // For blocks WE dispatched, trust the command we sent — the parsed echo
+      // For blocks WE dispatched, trust the command we sent, the parsed echo
       // (blk.command) can be corrupted by recalled/edited input still sitting at
       // the prompt (e.g. an Up-arrow recall of the setup line before dispatch).
       // Hand-typed (mirrored) blocks keep the parsed echo; it's all we have.
@@ -410,7 +411,7 @@ export function MultiTerminalPage({
         (s) => selected.has(s.id) && connectedSessions.has(s.id),
       );
       // Log to the shared command history as `MultiTerminal <hosts> <command>`,
-      // tinted live by host (D-061 sub-4). Best-effort — never blocks dispatch.
+      // tinted live by host (D-061 sub-4). Best-effort, never blocks dispatch.
       omniLogCommand(
         cmd,
         targets.map((s) => ({ id: s.host.id, label: s.host.label })),
@@ -424,7 +425,7 @@ export function MultiTerminalPage({
         try {
           await ptyWrite(s.id, cmd + "\n");
         } catch (e) {
-          queue.pop(); // never landed — don't wait for a block that won't come
+          queue.pop(); // never landed, don't wait for a block that won't come
           toast.error(`${s.host.label}: ${errorMessage(e)}`);
         }
       }
@@ -483,7 +484,7 @@ export function MultiTerminalPage({
     toast.success("Command history cleared here");
   }, []);
 
-  // "Close all terminals" rail action — OK/Cancel guard (no typed confirmation).
+  // "Close all terminals" rail action, OK/Cancel guard (no typed confirmation).
   const [closeAllOpen, setCloseAllOpen] = useState(false);
   const confirmCloseAll = useCallback(() => {
     onCloseAllTerminals();
@@ -514,7 +515,7 @@ export function MultiTerminalPage({
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        {/* Session selection rail (collapsible — O1). */}
+        {/* Session selection rail (collapsible, O1). */}
         <div
           className={`flex shrink-0 flex-col border-r border-border/50 ${
             railCollapsed ? "w-14" : "w-60"
@@ -620,6 +621,22 @@ export function MultiTerminalPage({
                   >
                     {label}
                   </span>
+                  {/* The same mark the other rails carry. This page has the
+                      most to lose from a shell it cannot follow -- a checked
+                      host takes every command and never reports a block -- and
+                      the toolbar line below counts them, but until now nothing
+                      said *which* row it meant. Icon only: the label is what
+                      you are reading, and the words are on hover. */}
+                  <ShellChip
+                    compact
+                    capability={
+                      (hostsById.get(s.host.id) ?? s.host).shell_capability
+                    }
+                    loginShell={(hostsById.get(s.host.id) ?? s.host).login_shell}
+                    pref={
+                      (hostsById.get(s.host.id) ?? s.host).shell_integration
+                    }
+                  />
                   <span
                     className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
                       isConnected ? "bg-emerald-500" : "bg-red-500/70"
@@ -644,7 +661,7 @@ export function MultiTerminalPage({
                 </p>
               )}
           </div>
-          {/* Bottom-pinned actions — stay visible while the host list above
+          {/* Bottom-pinned actions, stay visible while the host list above
               scrolls. When the rail is collapsed they shrink to icon-only
               buttons (E1.6); hover each for its label. */}
           {railCollapsed && (
@@ -730,7 +747,7 @@ export function MultiTerminalPage({
             <label
               className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
               {...hint(
-                "When on, commands you type by hand inside a terminal tab also appear here, for the hosts you have checked on the left. Off = only commands sent from MultiTerminal.",
+                "When on, commands typed by hand in a terminal tab also appear here, for the hosts checked on the left.",
               )}
             >
               <input
@@ -763,10 +780,12 @@ export function MultiTerminalPage({
                 className="flex min-w-0 shrink items-center gap-1 truncate text-xs text-amber-700 dark:text-amber-300"
                 {...hint(
                   [
+                    // Kept short because the host labels are inside them: the
+                    // bar truncates, and the names are the part worth reading.
                     untrackedHosts.cannot.length > 0 &&
-                      `No command blocks from ${untrackedHosts.cannot.join(", ")}: only bash and zsh install the markers this page reads. Commands still run there, and the output is in the terminal tab.`,
+                      `No blocks from ${untrackedHosts.cannot.join(", ")}: only bash and zsh install the markers. Output is in the terminal tab.`,
                     untrackedHosts.unread.length > 0 &&
-                      `No command blocks from ${untrackedHosts.unread.join(", ")}: their login shell could not be read, so nothing was sent to set the markers up. If you know they run bash or zsh, set Shell integration to Always on the host.`,
+                      `No blocks from ${untrackedHosts.unread.join(", ")}: shell unread, so no markers were sent. Set Shell integration to Always.`,
                   ]
                     .filter(Boolean)
                     .join(" "),
@@ -964,7 +983,7 @@ function OmniBlock({
         borderLeftWidth: 3,
         // Off-screen blocks skip layout/paint so revealing the tab (or scrolling
         // a long log) only lays out the blocks actually in view. Without this,
-        // showing the tab re-lays-out the whole persisted log every time — the
+        // showing the tab re-lays-out the whole persisted log every time, the
         // multi-second MultiTerminal switch lag. `auto <len>` gives an estimated
         // height so the scrollbar stays stable; the browser remembers the real
         // size once a block has been rendered.

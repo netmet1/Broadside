@@ -35,7 +35,7 @@ pub struct RawRow {
 pub enum RowStatus {
     /// Valid and importable.
     Ready,
-    /// Label already exists (in the DB or earlier in this file) — skipped.
+    /// Label already exists (in the DB or earlier in this file), skipped.
     Duplicate,
     /// Failed validation; `message` says why.
     Error,
@@ -126,7 +126,7 @@ pub fn parse_file(path: &Path) -> AppResult<Vec<RawRow>> {
         "csv" => parse_csv(path),
         "xlsx" | "xls" => parse_xlsx(path),
         other => Err(AppError::InvalidInput(format!(
-            "unsupported file type \".{other}\" — use .csv or .xlsx"
+            "unsupported file type \".{other}\"; use .csv or .xlsx"
         ))),
     }
 }
@@ -199,8 +199,8 @@ fn parse_xlsx(path: &Path) -> AppResult<Vec<RawRow>> {
 }
 
 /// Composite endpoint key for duplicate detection: a host is "the same" only
-/// when hostname (case-insensitive), port AND username all match (H5, 2026-06-15
-/// — supersedes the hostname-only dedup). Username is case-sensitive (Linux
+/// when hostname (case-insensitive), port AND username all match (H5, 2026-06-15,
+/// supersedes the hostname-only dedup). Username is case-sensitive (Linux
 /// usernames are). Callers build this for existing DB hosts; the importer builds
 /// the same key per row.
 pub fn endpoint_key(hostname: &str, port: u16, username: &str) -> String {
@@ -214,7 +214,7 @@ pub fn validate_rows(existing_labels: &HashSet<String>, rows: Vec<RawRow>) -> Ve
 }
 
 /// Like `validate_rows`, but also rejects rows whose (hostname, port, username)
-/// endpoint already belongs to another host — in the DB (`existing_endpoints`,
+/// endpoint already belongs to another host: in the DB (`existing_endpoints`,
 /// keyed via [`endpoint_key`]) or earlier in the same file. Used by import so
 /// the same connection can't be added twice; differing port or username is a
 /// distinct host and imports normally (H5).
@@ -250,7 +250,7 @@ fn validate_inner(
                     return RowPreview {
                         status: RowStatus::Duplicate,
                         message: Some(format!(
-                            "skipped — {}@{}:{} already exists",
+                            "skipped, {}@{}:{} already exists",
                             preview.username, preview.hostname, preview.port
                         )),
                         ..preview
@@ -266,7 +266,7 @@ fn validate_inner(
                 {
                     let unique = unique_label(&preview.label, existing_labels, &seen_labels);
                     preview.message =
-                        Some(format!("label \"{}\" in use — imported as \"{unique}\"", preview.label));
+                        Some(format!("label \"{}\" in use, imported as \"{unique}\"", preview.label));
                     preview.label = unique;
                 }
                 seen_labels.insert(preview.label.clone());
@@ -277,7 +277,7 @@ fn validate_inner(
             if existing_labels.contains(&preview.label) || seen_labels.contains(&preview.label) {
                 return RowPreview {
                     status: RowStatus::Duplicate,
-                    message: Some("skipped — duplicate label".into()),
+                    message: Some("skipped, duplicate label".into()),
                     ..preview
                 };
             }

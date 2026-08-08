@@ -1,6 +1,6 @@
 use tauri::{AppHandle, State};
 
-use super::ssh::{auth_for_host, with_db};
+use super::ssh::{auth_for_host, note_connect, with_db};
 use crate::audit::{AuditEvent, AuditState};
 use crate::credentials::CredentialState;
 use crate::db::host_keys;
@@ -49,13 +49,14 @@ pub async fn pty_open(
                 Some(&host.label),
                 "no credentials stored",
             );
+            note_connect(&state, host.id, true);
             return Ok(PtyOpenResult::NoCredentials);
         }
     };
     let fingerprints = keys.iter().map(|k| k.fingerprint_sha256.clone()).collect();
     // Sudo password auto-fill (D-065): armed only for a non-root host that has
     // one stored AND when the global toggle is on (off = operator opted out, e.g.
-    // a shared/restricted machine). A locked credential store yields None — never
+    // a shared/restricted machine). A locked credential store yields None, never
     // block opening the terminal over it.
     let sudo_password = if should_autofill_sudo(
         sudo_autofill_enabled,
@@ -66,7 +67,9 @@ pub async fn pty_open(
     } else {
         None
     };
-    let result = pty::open(
+    // As in `test_connection`: an error out of the open is a failed attempt, and
+    // `?` alone would leave it unlogged and the host unmarked.
+    let result = match pty::open(
         app,
         &pty_state,
         session_id,
@@ -81,11 +84,27 @@ pub async fn pty_open(
         cols.clamp(2, 1000),
         rows.clamp(2, 1000),
     )
-    .await?;
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            errlog.log(
+                "pty_open",
+                Some(host.id),
+                Some(&host.label),
+                &format!("connection failed: {e}"),
+            );
+            note_connect(&state, host.id, true);
+            return Err(e);
+        }
+    };
     match &result {
         PtyOpenResult::Opened {
             login_shell,
             capability,
+            // Not stored: the override is already this host's own column, and
+            // it is the probe's answer that this connect is news about.
+            integration: _,
         } => {
             // Remember what we saw so the Hosts table can flag an unsupported
             // shell without anyone having to open a terminal first (X4). Purely
@@ -96,7 +115,10 @@ pub async fn pty_open(
             // replaces whatever the last one stored. A stale value would go on
             // flagging a shell nobody can confirm.
             let _ = with_db(&state, |conn| {
-                host_repo::set_login_shell(conn, host.id, login_shell.as_deref(), *capability)
+                host_repo::set_login_shell(conn, host.id, login_shell.as_deref(), *capability)?;
+                // Opening a terminal is the most convincing proof there is that
+                // a host is reachable, so it clears the failure mark too.
+                host_repo::set_connect_failed(conn, host.id, false)
             });
             let _ = audit.append(&AuditEvent::PtyOpened {
                 host_label: host.label,
@@ -104,24 +126,31 @@ pub async fn pty_open(
                 port: host.port,
             });
         }
-        // Failures that toast also persist to the error log (D-055).
-        PtyOpenResult::AuthFailed { message } => errlog.log(
-            "pty_open",
-            Some(host.id),
-            Some(&host.label),
-            &format!("authentication failed — {message}"),
-        ),
-        PtyOpenResult::Unreachable { message } => errlog.log(
-            "pty_open",
-            Some(host.id),
-            Some(&host.label),
-            &format!("unreachable — {message}"),
-        ),
+        // Failures that toast also persist to the error log (D-055), and mark
+        // the host so the red Test button on the Hosts tab outlives this run.
+        PtyOpenResult::AuthFailed { message } => {
+            errlog.log(
+                "pty_open",
+                Some(host.id),
+                Some(&host.label),
+                &format!("authentication failed: {message}"),
+            );
+            note_connect(&state, host.id, true);
+        }
+        PtyOpenResult::Unreachable { message } => {
+            errlog.log(
+                "pty_open",
+                Some(host.id),
+                Some(&host.label),
+                &format!("unreachable: {message}"),
+            );
+            note_connect(&state, host.id, true);
+        }
         PtyOpenResult::KeyMismatch { .. } => errlog.log(
             "pty_open",
             Some(host.id),
             Some(&host.label),
-            "host key mismatch — connection refused",
+            "host key mismatch: connection refused",
         ),
         _ => {}
     }
@@ -150,16 +179,43 @@ pub fn pty_resize(
 /// Lists the local shells available on this machine (PowerShell / pwsh / Command
 /// Prompt / installed WSL distros) for the "New local shell" launcher. Async and
 /// cached: detection spawns wsl.exe (seconds when the WSL service is cold), and
-/// running that inside a sync command blocked the main thread — freezing every
+/// running that inside a sync command blocked the main thread, freezing every
 /// other IPC call (the Settings-spinner stall) and the event loop itself.
 #[tauri::command]
 pub async fn list_local_shells() -> Vec<crate::local::LocalShell> {
     crate::local::list_local_shells_cached().await
 }
 
+/// The COM ports on this machine, for the "New local shell" launcher's serial
+/// section. Not cached, unlike the shell list: a USB serial adapter is meant to
+/// be unplugged, and the enumeration is only a registry read.
+#[tauri::command]
+pub fn list_serial_ports() -> Vec<crate::serial::SerialPort> {
+    crate::serial::list_ports()
+}
+
+/// A serial console shell id: `serial:<port>@<baud>`, e.g. `serial:COM3@115200`.
+/// Split into its two halves, with nothing validated here; `open_serial` is the
+/// gate, and it has to be, since it is what turns a name into a `CreateFile`.
+fn parse_serial_id(rest: &str) -> AppResult<(&str, u32)> {
+    let (port, baud) = rest
+        .split_once('@')
+        .ok_or_else(|| AppError::InvalidInput(format!("bad serial target: {rest}")))?;
+    let baud: u32 = baud
+        .parse()
+        .map_err(|_| AppError::InvalidInput(format!("bad line speed: {baud}")))?;
+    Ok((port, baud))
+}
+
 /// Opens a local shell tab over ConPTY. Mirrors `pty_open` but the source is a
 /// local process rather than an SSH host; the same session id then flows through
 /// `pty_write`/`pty_resize`/`pty_close`.
+///
+/// Also the way in for serial consoles (`serial:<port>@<baud>`), which are not a
+/// local process at all. They ride this command rather than getting one of their
+/// own because everything either side of the open is identical: the same session
+/// id, the same write/resize/close, the same Reconnect. Encoding the target in
+/// the shell id is the convention `wsl:<distro>` and `custom:<id>` already set.
 #[tauri::command]
 pub fn pty_open_local(
     session_id: String,
@@ -171,9 +227,13 @@ pub fn pty_open_local(
     pty_state: State<'_, PtyState>,
     state: State<'_, DbState>,
 ) -> AppResult<()> {
+    if let Some(rest) = shell_id.strip_prefix("serial:") {
+        let (port, baud) = parse_serial_id(rest)?;
+        return crate::serial::open_serial(app, &pty_state, session_id, port, baud);
+    }
     // A `custom:<id>` shell names a row in custom_terminals, never a path. The
     // program and its arguments are read here, from the database, so the only
-    // thing the frontend can influence is WHICH stored terminal to launch — an
+    // thing the frontend can influence is WHICH stored terminal to launch, an
     // arbitrary executable path can't cross the IPC boundary. An id that no
     // longer exists fails with "no such custom terminal" rather than launching
     // anything.
