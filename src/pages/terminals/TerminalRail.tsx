@@ -243,6 +243,10 @@ export function TerminalRail({
   // than the pane's width that changes how wide this row wants to be, so a
   // font change or a control appearing re-asks the question from scratch.
   const railRef = useRef<HTMLDivElement>(null);
+  // Whether the Sessions menu is closing because a session was chosen from it,
+  // as opposed to being dismissed. Read once by `onCloseAutoFocus` below, which
+  // is the only thing that needs to tell those two apart.
+  const pickedSession = useRef(false);
   const { prefs } = useUiPrefs();
   const compact = useRailCompact(
     railRef,
@@ -547,7 +551,29 @@ export function TerminalRail({
                 )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-w-72">
+            <DropdownMenuContent
+              align="end"
+              className="max-w-72"
+              // Picking a session hands the keyboard to that session's
+              // terminal, and Radix's own closing behaviour is to put it back
+              // on this button. Whichever of the two runs last wins, and the
+              // order is not ours to decide: `activateDeliberately` waits a
+              // frame for the menu to go before it focuses anything, while
+              // Radix restores focus from its own teardown. When Radix went
+              // second the keyboard sat on this button while the ring was on a
+              // tile, and typing went nowhere until the tile was clicked.
+              //
+              // So do not race it: when the close came from choosing a
+              // session, say plainly that focus is already spoken for. Only
+              // then, because dismissing the menu with Escape or a click
+              // outside has chosen nothing, and returning the keyboard to the
+              // button it came from is exactly right there.
+              onCloseAutoFocus={(e) => {
+                if (!pickedSession.current) return;
+                pickedSession.current = false;
+                e.preventDefault();
+              }}
+            >
               {sessions.map((s) => {
                 // Same colour the tab wears, for the same reason: this list is
                 // how you find a session when there are too many tabs to read,
@@ -556,7 +582,10 @@ export function TerminalRail({
                 return (
                 <DropdownMenuItem
                   key={s.id}
-                  onSelect={() => onActivate(s.id)}
+                  onSelect={() => {
+                    pickedSession.current = true;
+                    onActivate(s.id);
+                  }}
                   className={cn(s.id === activeId && "bg-accent/50")}
                 >
                   {s.type === "ssh" ? (

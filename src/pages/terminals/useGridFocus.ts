@@ -367,7 +367,6 @@ export function useGridFocus({
         // window (Alt+Tab, a notification stealing the foreground) sends no
         // further moves to catch it with.
         if (!isWindowFocused()) return;
-        if (suppressed.current) return;
         // Ctrl+Shift+T deliberately parks focus in the chrome strip, and Tab
         // wraps around inside it. Sweeping the mouse across the grid must not
         // yank that away.
@@ -387,9 +386,24 @@ export function useGridFocus({
           // back to rest over the grid is asking for it back. Without this the
           // only way home was to click, which is what made a strip button feel
           // like a trap.
+          //
+          // Deliberately ABOVE the suppression check, which is the one place
+          // that ordering matters. What suppression protects is a deliberate
+          // choice being overruled by an idle cursor, and that can only happen
+          // when the tile under the pointer is a *different* one; when it is
+          // the chosen tile itself there is nothing left to protect and the
+          // trap above is all that is left. The Sessions menu is the case that
+          // proved it: it opens `align="end"`, so it is drawn over the
+          // top-right tile, and picking a session from it leaves the pointer
+          // resting on that tile with no way to reach the only line that
+          // clears the flag, which is the pointer *leaving* a tile. Every
+          // other tile worked, because walking to it crossed the top-right one
+          // on the way out. The top-right tile alone stayed dead until it was
+          // clicked.
           focusTerminalRef.current(sessionId);
           return;
         }
+        if (suppressed.current) return;
         take(sessionId, true);
       }, SETTLE_MS);
     },
