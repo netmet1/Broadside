@@ -891,13 +891,26 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           </Button>
         </div>
       )}
-      {/* Disconnected: keep scrollback readable, show a slim banner. */}
+      {/* Disconnected: keep scrollback readable, show a slim banner.
+
+          The bar itself is mostly transparent, because the line it covers is
+          the one that matters: the last thing the shell said before it went is
+          usually why it went, and a solid bar put it out of reach at exactly
+          the moment it was worth reading. Its own text is dropped to a whisper
+          to match, since the message is short and the buttons say the same
+          thing in more useful words.
+
+          The buttons do not follow it down. They sit on their own opaque plate,
+          because what is behind them is arbitrary terminal output at arbitrary
+          ANSI colours, and a translucent control over a wall of bright green is
+          not a control anyone can read. Legibility of the thing you click is
+          not the part to trade away for a glimpse of the thing you don't. */}
       {phase.kind === "closed" && (
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 border-t border-border/50 bg-background/95 px-3 py-2">
-          <span className="text-xs text-muted-foreground">
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 border-t border-border/40 bg-background/40 px-3 py-2">
+          <span className="truncate text-xs text-muted-foreground/70">
             {phase.message}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 rounded-md bg-background p-1">
             <Button
               variant="outline"
               size="sm"
