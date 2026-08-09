@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useHint } from "@/lib/status";
 import { parseSequence, type Skill } from "@/lib/tauri/skills";
 
@@ -20,7 +21,7 @@ export function SkillList({
   skills,
   loading,
   selectedId,
-  runningSkillId,
+  runState,
   watching,
   canRun,
   onRun,
@@ -37,8 +38,20 @@ export function SkillList({
   skills: Skill[];
   loading: boolean;
   selectedId: number | null;
-  /** The skill with a live run, if any. Gets an eye button to go watch it. */
-  runningSkillId: number | null;
+  /**
+   * The skill this page has a run for, and how that run is doing. Null once the
+   * run is cleared and the page is back at the picker.
+   *
+   * The skill id and the status travel together on purpose. They were a bare
+   * `runningSkillId` derived from "is there a run id", which is true from the
+   * moment a run starts until the operator clears it, so the rail went on
+   * saying `running` in green long after every host had finished or failed. A
+   * run id says a run exists; it says nothing about whether it is still going.
+   */
+  runState: {
+    skillId: number;
+    status: "running" | "done" | "failed";
+  } | null;
   /** Whether the run panel is the thing currently on screen. */
   watching: boolean;
   /** False when no host is checked, or a run is already going. */
@@ -102,7 +115,14 @@ export function SkillList({
         ) : (
           skills.map((s, i) => {
             const steps = parseSequence(s.config_json).steps.length;
-            const running = runningSkillId === s.id;
+            // This skill's run, if the run on this page is this skill's. Null
+            // for every other row.
+            const status = runState?.skillId === s.id ? runState.status : null;
+            // A run that still has somewhere to go. The eye stays available
+            // after that, because the panes and their transcripts are still
+            // there until the run is cleared, and going back to read why a host
+            // failed is the first thing anyone does.
+            const running = status === "running";
             return (
               <div
                 key={s.id}
@@ -123,9 +143,20 @@ export function SkillList({
                   <span className="shrink-0">
                     {steps} {steps === 1 ? "step" : "steps"}
                   </span>
-                  {running && (
-                    <span className="shrink-0 font-medium text-emerald-500">
-                      running
+                  {status !== null && (
+                    <span
+                      className={cn(
+                        "shrink-0 font-medium",
+                        status === "running" && "text-emerald-500",
+                        status === "done" && "text-muted-foreground",
+                        status === "failed" && "text-red-500",
+                      )}
+                    >
+                      {status === "running"
+                        ? "running"
+                        : status === "done"
+                          ? "finished"
+                          : "failed"}
                     </span>
                   )}
                   {s.kind === "ai" && (
@@ -164,19 +195,32 @@ export function SkillList({
                     <ChevronDownIcon className="h-3.5 w-3.5" />
                   </Button>
                   <span className="flex-1" />
-                  {running ? (
+                  {status !== null ? (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className={`h-6 w-6 shrink-0 p-0 ${
-                        watching ? "text-primary" : "text-emerald-500"
-                      }`}
-                      onClick={onWatch}
-                      aria-label={`Watch ${s.name} running`}
-                      {...hint(
+                      className={cn(
+                        "h-6 w-6 shrink-0 p-0",
                         watching
-                          ? `"${s.name}" is running; you are watching it`
-                          : `"${s.name}" is running. Go back to its live terminals.`,
+                          ? "text-primary"
+                          : running
+                            ? "text-emerald-500"
+                            : "text-muted-foreground",
+                      )}
+                      onClick={onWatch}
+                      aria-label={
+                        running
+                          ? `Watch ${s.name} running`
+                          : `Go back to ${s.name}'s run`
+                      }
+                      {...hint(
+                        running
+                          ? watching
+                            ? `"${s.name}" is running; you are watching it`
+                            : `"${s.name}" is running. Go back to its live terminals.`
+                          : watching
+                            ? `"${s.name}" has finished; you are looking at its run`
+                            : `"${s.name}" has finished. Go back to what each host reported.`,
                       )}
                     >
                       <EyeIcon className="h-3.5 w-3.5" />
