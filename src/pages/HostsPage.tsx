@@ -346,6 +346,59 @@ export function HostsPage({
     }
   }, []);
 
+  /** A hidden column's value as plain text, for the Label cell's tooltip. A
+   * `title` attribute takes a string and nothing else, so the chips and colours
+   * the popup can afford are not available here. */
+  const hiddenValueText = (colId: string, h: Host): string => {
+    switch (colId) {
+      case "status":
+        return connectedHostIds.has(h.id) ? "Connected" : "Not connected";
+      case "port":
+        return String(h.port);
+      case "username":
+        return h.username || "-";
+      case "tag": {
+        const tags = parseTags(h.tag);
+        return tags.length === 0 ? "-" : tags.join(", ");
+      }
+      case "flavor":
+        return h.linux_flavor ?? "-";
+      default:
+        return "-";
+    }
+  };
+
+  /**
+   * The Label cell's tooltip: the things this row is not showing you.
+   *
+   * It used to be `title={h.label}`, which repeated a word already on screen
+   * and taught you to ignore it. What is worth surfacing on hover is what the
+   * table cannot fit: the host's notes, and any column hidden from Settings →
+   * Appearance, one per line.
+   *
+   * The label leads, because `truncate` can clip it and a tooltip that exists
+   * anyway may as well finish the sentence. But only when there is something
+   * else to say: with no notes and no hidden columns there is no tooltip at
+   * all, rather than the echo this replaces.
+   *
+   * Newlines are real line breaks in a native tooltip, which is the whole
+   * reason this is a `title` and not a component. It also survives the row
+   * being scrolled, re-sorted or re-rendered under the cursor, which a
+   * hover-card anchored to a cell in a virtualised-feeling table does not.
+   */
+  const labelTooltip = (h: Host): string | undefined => {
+    const notes = h.notes?.trim();
+    const hidden = HIDEABLE_COLUMNS.filter((c) => hiddenCols.has(c.id));
+    if (!notes && hidden.length === 0) return undefined;
+    const lines = [h.label];
+    if (notes) lines.push("", notes);
+    if (hidden.length > 0) {
+      lines.push("");
+      for (const c of hidden) lines.push(`${c.label}: ${hiddenValueText(c.id, h)}`);
+    }
+    return lines.join("\n");
+  };
+
   // Renders a hidden column's value for the per-host "missing fields" popup (#9).
   const renderHiddenValue = (colId: string, h: Host): ReactNode => {
     switch (colId) {
@@ -758,7 +811,7 @@ export function HostsPage({
                       aria-label={h.color}
                     />
                   </TableCell>
-                  <TableCell className="truncate font-medium" title={h.label}>
+                  <TableCell className="truncate font-medium" title={labelTooltip(h)}>
                     <span className="flex min-w-0 items-center gap-1.5">
                       <span className="truncate">{h.label}</span>
                       {/* A login shell we can't fully drive (fish, csh), one we
