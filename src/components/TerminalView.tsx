@@ -413,6 +413,31 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // renderer and re-measured the char size (which also covers a font change
     // applied while the pane was hidden). A fit here is a fit against live
     // dimensions, and every scroll sync that follows agrees with it.
+    //
+    // Smoke 52-3 section H reported a pane that "started to scroll to the
+    // bottom by itself" on the way back, after an `ls -R` had been writing to
+    // it for minutes while it was hidden, and was fine once it got there. Not
+    // reproduced on a second attempt, and not diagnosed. What it is *not*, read
+    // out of the xterm 6 sources we actually ship rather than guessed at:
+    //
+    //   - Not an animation. `smoothScrollDuration` defaults to 0 and we never
+    //     set it, so every scroll xterm performs is a single assignment. The
+    //     public `scrollToBottom()` takes no argument, so there is nothing to
+    //     pass here to make that more true than it already is.
+    //   - Not the renderer waking up. A paused RenderService records one
+    //     `_needsFullRefresh` and repaints once on resume. One repaint.
+    //   - Not a parse backlog. `WriteBuffer` reschedules itself with
+    //     `setTimeout`, never a frame callback, so a hidden pane goes on
+    //     parsing at the same rate a visible one does and cannot bank minutes
+    //     of output.
+    //   - Not our own batching. The DataPump's window is 4ms with a 256KB cap
+    //     (ssh/pty.rs), so it cannot hold anything either.
+    //
+    // Both conditions it was seen under have since changed: that pane was
+    // capped at xterm's 1000 lines and was trimming its buffer on every line,
+    // and local shells now start in UTF-8. Worth re-running before looking
+    // further, and worth capturing what the pane shows on arrival rather than
+    // only that it moved.
     const io = new IntersectionObserver((entries) => {
       const entry = entries[entries.length - 1];
       intersectingRef.current = entry.isIntersecting;
