@@ -139,6 +139,56 @@ pub struct CustomLaunch {
     pub args: Vec<String>,
 }
 
+/// Put the console into UTF-8 before anything is typed into it, quietly.
+///
+/// A ConPTY does **not** come up in UTF-8. Measured, on this machine and every
+/// other Windows box: `CreatePseudoConsole` starts at the system OEM code page,
+/// 437 on a US install, and it does not inherit ours, so there is nothing we
+/// can set on our side of the pipe to change it. Everything a program writes is
+/// then decoded as 437 and re-encoded as UTF-8 on the way out, which turns the
+/// four characters a rounded box is drawn with, `╭─╮`, into `Γò¡ΓöÇΓò«`. That
+/// is the "mangled logo": `claude` is a node program writing raw UTF-8, and so
+/// is most of what an operator runs.
+///
+/// The code page has to be in force *before* the writing program starts, not
+/// merely before it prints: a console program caches its encoding when it
+/// launches. Running this at shell startup is exactly right for that, because
+/// every command typed afterwards is a fresh child of a console that is already
+/// UTF-8. Running it any later would fix nothing already on screen and nothing
+/// already running.
+///
+/// Only the three shells we launch ourselves get this. `wsl.exe` puts the
+/// console into UTF-8 on its own account, and a custom terminal is the
+/// operator's own program: wrapping it would mean building a command *string*
+/// out of a path and arguments they supplied, which is the one thing
+/// [`build_command`] is careful never to do.
+const CHCP_UTF8_CMD: &str = "chcp 65001 >nul";
+
+/// The same thing in PowerShell's language. `>nul` is cmd's null device and
+/// PowerShell would take it for a file of that name, so the redirect differs
+/// even though the command does not.
+const CHCP_UTF8_PS: &str = "chcp 65001 > $null";
+
+/// PowerShell, with the console *and* PowerShell's own encoder in UTF-8.
+///
+/// The `chcp` alone is not enough here, because PowerShell caches
+/// `[Console]::OutputEncoding` at startup exactly as cmd does, so its own
+/// output would go on being encoded at 437 while its children were fine. Both
+/// lines are needed and neither prints anything.
+///
+/// `-Command` runs after the profile, so an operator's own `$PROFILE` still
+/// loads first; `-NoExit` is what keeps the shell interactive afterwards, which
+/// is the whole point of a terminal tab.
+fn utf8_powershell(exe: &str) -> CommandBuilder {
+    let mut c = CommandBuilder::new(exe);
+    c.arg("-NoExit");
+    c.arg("-Command");
+    c.arg(format!(
+        "{CHCP_UTF8_PS}; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)"
+    ));
+    c
+}
+
 /// Map a shell id to the process to launch. `cwd` is the directory to start the
 /// shell in (a saved profile's working directory); when absent the shell opens
 /// in the user's home directory rather than the app's working dir.
@@ -146,6 +196,10 @@ pub struct CustomLaunch {
 /// `custom` must be supplied for a `custom:<id>` shell id and is ignored
 /// otherwise. Its arguments are passed as argv, one `.arg()` each, so nothing
 /// is handed to a shell to re-parse and there is no quoting to get wrong.
+///
+/// The three shells we launch ourselves are also put into UTF-8 on the way up;
+/// see [`CHCP_UTF8_CMD`] for why that is necessary and why WSL and custom
+/// terminals are left alone.
 fn build_command(
     shell_id: &str,
     cwd: Option<&str>,
@@ -172,9 +226,14 @@ fn build_command(
         c
     } else {
         match shell_id {
-            "powershell" => CommandBuilder::new("powershell.exe"),
-            "pwsh" => CommandBuilder::new("pwsh.exe"),
-            "cmd" => CommandBuilder::new("cmd.exe"),
+            "powershell" => utf8_powershell("powershell.exe"),
+            "pwsh" => utf8_powershell("pwsh.exe"),
+            "cmd" => {
+                let mut c = CommandBuilder::new("cmd.exe");
+                c.arg("/k");
+                c.arg(CHCP_UTF8_CMD);
+                c
+            }
             other => {
                 return Err(AppError::InvalidInput(format!(
                     "unknown local shell: {other}"
@@ -349,4 +408,69 @@ pub fn open_local<E: PtyEvents>(
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The arguments a `CommandBuilder` was given, as plain strings. `get_argv`
+    /// includes the program itself at index 0.
+    fn args_of(cmd: &CommandBuilder) -> Vec<String> {
+        cmd.get_argv()
+            .iter()
+            .skip(1)
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn cmd_starts_in_utf8() {
+        let cmd = build_command("cmd", None, None).unwrap();
+        assert_eq!(args_of(&cmd), vec!["/k", "chcp 65001 >nul"]);
+    }
+
+    #[test]
+    fn powershell_starts_in_utf8_and_stays_interactive() {
+        for id in ["powershell", "pwsh"] {
+            let cmd = build_command(id, None, None).unwrap();
+            let args = args_of(&cmd);
+            assert_eq!(args[0], "-NoExit", "{id} must stay interactive");
+            assert_eq!(args[1], "-Command");
+            // PowerShell's null device, not cmd's: `>nul` would be taken for a
+            // file of that name and leave one in the operator's home directory.
+            assert!(
+                args[2].starts_with("chcp 65001 > $null;"),
+                "{id}: {}",
+                args[2]
+            );
+            // The console alone is not enough. PowerShell caches its own
+            // encoder at startup exactly as cmd does, so without this its
+            // output would go on being written at 437 while its children were
+            // already fine.
+            assert!(
+                args[2].contains("[Console]::OutputEncoding"),
+                "{id}: {}",
+                args[2]
+            );
+        }
+    }
+
+    /// WSL and custom terminals are deliberately left alone. WSL puts the
+    /// console into UTF-8 itself, and a custom terminal is the operator's own
+    /// program: the only way to prepend a command to it would be to build a
+    /// shell *string* out of the path and arguments they gave us, which is the
+    /// one thing `build_command` is careful never to do.
+    #[test]
+    fn wsl_and_custom_are_launched_untouched() {
+        let cmd = build_command("wsl:Ubuntu", None, None).unwrap();
+        assert_eq!(args_of(&cmd), vec!["-d", "Ubuntu"]);
+
+        let custom = CustomLaunch {
+            exe_path: r"C:\Program Files\Git\bin\bash.exe".into(),
+            args: vec!["--login".into(), "-i".into()],
+        };
+        let cmd = build_command("custom:7", None, Some(&custom)).unwrap();
+        assert_eq!(args_of(&cmd), vec!["--login", "-i"]);
+    }
 }
