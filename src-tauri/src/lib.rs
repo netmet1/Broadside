@@ -116,6 +116,12 @@ pub fn run() {
 
             app.manage(ssh::pty::PtyState::default());
 
+            // Batches terminal output on its way to the UI. Idle sessions are
+            // unaffected (the first chunk after a quiet moment goes straight
+            // out); it exists so a session dumping a large file doesn't cost
+            // one WebView2 script compile per read.
+            app.manage(ssh::pty::DataPump::default());
+
             // In-flight skill runs. Empty on launch: a run is attended and
             // lives only as long as the app does (v1 keeps transcripts in
             // frontend memory; a skill_run_history table is the follow-up).

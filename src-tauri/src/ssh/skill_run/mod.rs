@@ -1163,11 +1163,11 @@ struct SkillTap {
 
 impl crate::ssh::pty::PtyEvents for SkillTap {
     fn data(&self, payload: crate::ssh::pty::PtyData) {
-        use base64::Engine as _;
-        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&payload.data_b64) {
-            let _ = self.tx.send(TapMsg::Data(bytes));
-        }
+        let _ = self.tx.send(TapMsg::Data(payload.data.clone()));
         self.app.data(payload);
+    }
+    fn flush(&self, session_id: &str) {
+        self.app.flush(session_id);
     }
     fn closed(&self, payload: crate::ssh::pty::PtyClosed) {
         let _ = self.tx.send(TapMsg::Closed);

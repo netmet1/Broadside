@@ -59,17 +59,29 @@ export function ptyClose(sessionId: string): Promise<void> {
   return invoke<void>("pty_close", { sessionId });
 }
 
-/** Base64-decoded terminal output for one session. */
+/** Base64-decoded terminal output for one session.
+ *
+ * The session is named here rather than checked by the caller, and the filter
+ * runs *before* the decode. That ordering is the whole reason the id is an
+ * argument: `pty:data` is a broadcast, so every mounted pane's listener runs
+ * for every chunk of every session. Decoding first and discarding afterwards
+ * meant N panes each ran an `atob` and a per-byte copy over bytes that N-1 of
+ * them were about to throw away, which made the cost of one chunk scale with
+ * how many terminals happened to be open. A string comparison first makes it
+ * O(1) in the pane count.
+ */
 export function onPtyData(
-  handler: (sessionId: string, bytes: Uint8Array) => void,
+  sessionId: string,
+  handler: (bytes: Uint8Array) => void,
 ): Promise<UnlistenFn> {
   return listen<{ session_id: string; data_b64: string }>(
     "pty:data",
     (event) => {
+      if (event.payload.session_id !== sessionId) return;
       const raw = atob(event.payload.data_b64);
       const bytes = new Uint8Array(raw.length);
       for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      handler(event.payload.session_id, bytes);
+      handler(bytes);
     },
   );
 }

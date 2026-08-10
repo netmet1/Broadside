@@ -177,8 +177,7 @@ export function SkillTerminalPane({
     });
     if (el) observer.observe(el);
 
-    const unlistenData = onPtyData((id, bytes) => {
-      if (id !== sessionId) return;
+    const unlistenData = onPtyData(sessionId, (bytes) => {
       term.write(bytes);
       // First proof the session is live on the backend: deliver the size the
       // pre-connect attempt lost. Marked synced up front so a burst of output
