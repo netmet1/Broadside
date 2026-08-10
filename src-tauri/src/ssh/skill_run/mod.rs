@@ -137,6 +137,23 @@ pub struct SkillPaused {
     pub session_id: String,
     pub step_id: String,
     pub reason: String,
+    pub kind: PauseKind,
+}
+
+/// Why a host is parked. Both pauses offer the operator the same shell and the
+/// same keyboard; they differ in what `step_id` means, and so in which exits
+/// make sense.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PauseKind {
+    /// A `wait` step timed out and its on-timeout action is `pause`. `step_id`
+    /// is the step that is half-done: Resume retries its pattern, and Skip step
+    /// declares it satisfied.
+    Timeout,
+    /// The operator asked for the keyboard (`Ctl::TakeOver`). `step_id` is the
+    /// step that has **not** run yet, so Resume runs it and there is nothing for
+    /// Skip step to skip.
+    TakeOver,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -298,6 +315,11 @@ pub struct Engine<E: SkillEvents> {
     /// already known to be undrivable be refused before the `$0` probe is even
     /// sent, instead of after it times out.
     known_capability: Option<ShellCapability>,
+    /// A [`Ctl::TakeOver`] that arrived mid-step and is waiting for the gap
+    /// before the next one. Kept here rather than acted on where it is read,
+    /// because the two places that read the control channel are both inside a
+    /// step, and a step is not a safe place to hand the keyboard over.
+    take_over: bool,
 }
 
 impl<E: SkillEvents> Engine<E> {
@@ -316,6 +338,7 @@ impl<E: SkillEvents> Engine<E> {
             is_root: None,
             known_shell: None,
             known_capability: None,
+            take_over: false,
         }
     }
 
@@ -401,6 +424,7 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.screen,
             &mut self.link.rx,
             &mut self.ctl,
+            &mut self.take_over,
             &re,
             Duration::from_secs(SHELL_DETECT_SECS),
             Duration::ZERO,
@@ -457,6 +481,7 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.screen,
             &mut self.link.rx,
             &mut self.ctl,
+            &mut self.take_over,
             &re,
             Duration::from_secs(UID_PROBE_SECS),
             Duration::ZERO,
@@ -479,6 +504,7 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.screen,
             &mut self.link.rx,
             &mut self.ctl,
+            &mut self.take_over,
             LINGER_QUIET,
             LINGER_MAX,
         )
@@ -527,6 +553,7 @@ impl<E: SkillEvents> Engine<E> {
                         is_root: None,
                     }
                 }
+                Ok(Ctl::TakeOver) => self.take_over = true,
                 Ok(Ctl::Resume { .. }) | Ok(Ctl::SkipStep) => {}
                 Err(mpsc::error::TryRecvError::Empty) => {}
             }
@@ -536,6 +563,16 @@ impl<E: SkillEvents> Engine<E> {
             let Some(step) = cfg.step(&current) else {
                 return HostOutcome::finished(false, format!("step not found: {current}"));
             };
+            // The one moment nothing is in flight, and so the only safe place to
+            // hand the keyboard over: the previous step has settled and the next
+            // has not been typed. A request that arrived at any point during the
+            // last step lands here.
+            if std::mem::take(&mut self.take_over) {
+                match self.park_for_take_over(step.id()).await {
+                    Ok(()) => {}
+                    Err(outcome) => return outcome,
+                }
+            }
             let count = runs.entry(step.id()).or_insert(0);
             // Saturating, because with no cap this counts for as long as the
             // operator lets the skill run, and an overflow panic would take the
@@ -619,6 +656,69 @@ impl<E: SkillEvents> Engine<E> {
         }
     }
 
+    /// Park before `next_step_id` because the operator asked for the keyboard.
+    ///
+    /// The same park a timed-out `wait` step uses, and deliberately so: the
+    /// operator gets the identical set of exits, the panel already knows how to
+    /// draw them, and there is one pause concept in this engine rather than two.
+    /// What differs is only what it is a pause *before*: a timeout parks with a
+    /// step half-done and something to retry, this parks with the next step not
+    /// yet typed. `kind` on the event is how the panel tells them apart, and it
+    /// is why the panel does not offer **Skip step** here: there is nothing yet
+    /// to skip.
+    ///
+    /// `Ok(())` means carry on and run the step. `Err` carries the outcome the
+    /// host ended on.
+    async fn park_for_take_over(&mut self, next_step_id: &str) -> Result<(), HostOutcome> {
+        let reason = "you have the keyboard. Automation is stopped until you resume.".to_string();
+        self.emit("info", Some(next_step_id), "paused for takeover");
+        self.events.paused(SkillPaused {
+            run_id: self.meta.run_id.clone(),
+            host_id: self.meta.host_id,
+            label: self.meta.label.clone(),
+            session_id: self.meta.session_id.clone(),
+            step_id: next_step_id.to_string(),
+            reason,
+            kind: PauseKind::TakeOver,
+        });
+        match park(&mut self.screen, &mut self.link.rx, &mut self.ctl).await {
+            // Same rule as the timeout pause: only what the operator typed has
+            // to be forgotten, so the step that follows cannot match against
+            // their keystrokes. If they only read, the buffer is left alone.
+            Park::Resume { clear } => {
+                if clear {
+                    self.screen.clear();
+                }
+                self.emit("info", Some(next_step_id), "resumed by the operator");
+                Ok(())
+            }
+            // Skip is treated as a resume. The panel does not offer it in this
+            // state, since the step it would skip has not run, so this is only
+            // reachable from a stale click; running the step the operator was
+            // about to watch is the harmless reading of an ambiguous request.
+            Park::Skip => {
+                self.emit("info", Some(next_step_id), "resumed by the operator");
+                Ok(())
+            }
+            Park::Abort => Err(HostOutcome {
+                ok: false,
+                message: "stopped by the operator".into(),
+                disposition: Disposition::Aborted,
+                is_root: None,
+            }),
+            Park::Detach => Err(HostOutcome {
+                ok: true,
+                message: "handed off to a terminal tab".into(),
+                disposition: Disposition::Detached,
+                is_root: None,
+            }),
+            Park::Closed => Err(HostOutcome::finished(
+                false,
+                "the shell closed unexpectedly",
+            )),
+        }
+    }
+
     async fn exec_step(&mut self, step: &SeqStep) -> StepOutcome {
         match step {
             SeqStep::Send { input, next, .. } => match self.send_bytes(input) {
@@ -658,6 +758,7 @@ impl<E: SkillEvents> Engine<E> {
                     &mut self.screen,
                     &mut self.link.rx,
                     &mut self.ctl,
+                    &mut self.take_over,
                     duration,
                 )
                 .await
@@ -764,6 +865,7 @@ impl<E: SkillEvents> Engine<E> {
                 &mut self.screen,
                 &mut self.link.rx,
                 &mut self.ctl,
+                &mut self.take_over,
                 INTERACTIVE_QUIET,
                 Duration::from_secs(step.timeout_secs()),
             )
@@ -889,6 +991,7 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.screen,
             &mut self.link.rx,
             &mut self.ctl,
+            &mut self.take_over,
             INTERRUPT_QUIET,
             INTERRUPT_MAX,
         )
@@ -915,6 +1018,7 @@ impl<E: SkillEvents> Engine<E> {
                 &mut self.screen,
                 &mut self.link.rx,
                 &mut self.ctl,
+                &mut self.take_over,
                 re,
                 timeout,
                 settle,
@@ -938,6 +1042,7 @@ impl<E: SkillEvents> Engine<E> {
                 session_id: self.meta.session_id.clone(),
                 step_id: step.id().to_string(),
                 reason,
+                kind: PauseKind::Timeout,
             });
             match park(&mut self.screen, &mut self.link.rx, &mut self.ctl).await {
                 Park::Resume { clear } => {
@@ -1000,6 +1105,10 @@ async fn wait_for(
     screen: &mut Screen,
     rx: &mut mpsc::UnboundedReceiver<TapMsg>,
     ctl: &mut mpsc::UnboundedReceiver<Ctl>,
+    // `take_over` is set if a Ctl::TakeOver arrives while this wait is running.
+    // Read by the caller's caller in the gap between steps, which is where the
+    // request is acted on.
+    take_over: &mut bool,
     re: &Regex,
     timeout: Duration,
     settle: Duration,
@@ -1035,6 +1144,11 @@ async fn wait_for(
                 Some(Ctl::Abort) | None => return Wait::Aborted,
                 // Stop driving, but hand the shell off rather than close it.
                 Some(Ctl::Detach) => return Wait::Detached,
+                // Remembered, not obeyed: the operator asked for the keyboard
+                // while this step is mid-flight, and it is handed over in the
+                // gap after it rather than into the middle of it. Carrying it
+                // out of here is the whole reason this takes a flag.
+                Some(Ctl::TakeOver) => *take_over = true,
                 // Resume with nothing to resume from: ignore.
                 Some(Ctl::Resume { .. }) => {}
             },
@@ -1065,6 +1179,7 @@ async fn wait_quiet(
     screen: &mut Screen,
     rx: &mut mpsc::UnboundedReceiver<TapMsg>,
     ctl: &mut mpsc::UnboundedReceiver<Ctl>,
+    take_over: &mut bool,
     quiet: Duration,
     timeout: Duration,
 ) -> Wait {
@@ -1086,6 +1201,8 @@ async fn wait_quiet(
                 Some(Ctl::Abort) | None => return Wait::Aborted,
                 // Stop driving, but hand the shell off rather than close it.
                 Some(Ctl::Detach) => return Wait::Detached,
+                // Remembered for the gap after this step; see wait_for.
+                Some(Ctl::TakeOver) => *take_over = true,
                 Some(Ctl::Resume { .. }) => {}
             },
         }
@@ -1099,6 +1216,7 @@ async fn wait_fixed(
     screen: &mut Screen,
     rx: &mut mpsc::UnboundedReceiver<TapMsg>,
     ctl: &mut mpsc::UnboundedReceiver<Ctl>,
+    take_over: &mut bool,
     duration: Duration,
 ) -> Wait {
     let deadline = Instant::now() + duration;
@@ -1114,6 +1232,8 @@ async fn wait_fixed(
                 Some(Ctl::Abort) | None => return Wait::Aborted,
                 // Stop driving, but hand the shell off rather than close it.
                 Some(Ctl::Detach) => return Wait::Detached,
+                // Remembered for the gap after this step; see wait_for.
+                Some(Ctl::TakeOver) => *take_over = true,
                 // A resume during a plain wait has nothing to resume.
                 Some(Ctl::Resume { .. }) => {}
             },
@@ -1138,6 +1258,10 @@ async fn park(
                 Some(Ctl::SkipStep) => Park::Skip,
                 Some(Ctl::Abort) | None => Park::Abort,
                 Some(Ctl::Detach) => Park::Detach,
+                // Already parked, so the request is already granted: the
+                // operator has the keyboard. Nothing to do but keep waiting
+                // for the instruction that ends the pause.
+                Some(Ctl::TakeOver) => continue,
             },
             msg = rx.recv() => match msg {
                 Some(TapMsg::Data(bytes)) => screen.feed(&bytes),

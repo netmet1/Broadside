@@ -505,6 +505,7 @@ export function SkillsPage({
               allowTransfer={runAllowsTransfer}
               uncapped={runUncapped}
               setTakenOver={run.setTakenOver}
+              requestTakeOver={run.requestTakeOver}
               finishHost={run.finishHost}
               onSendToTerminal={requestHandoff}
               onDone={requestCloseRun}

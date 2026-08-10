@@ -261,6 +261,7 @@ pub fn run() {
             commands::skills::skill_cancel,
             commands::skills::skill_resume,
             commands::skills::skill_skip_step,
+            commands::skills::skill_take_over,
             commands::skills::skill_abort,
             commands::skills::skill_send_input,
             commands::skills::skill_detach,

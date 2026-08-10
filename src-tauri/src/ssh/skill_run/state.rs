@@ -30,6 +30,18 @@ pub enum Ctl {
     Resume { clear: bool },
     /// Treat the current step as satisfied and take its success branch.
     SkipStep,
+    /// The operator wants the keyboard on this host, from the next gap between
+    /// steps.
+    ///
+    /// Deliberately **not** acted on where it is received. Every other control
+    /// here answers a host that is already parked and waiting to be told what to
+    /// do; this one arrives while the engine is mid-step, and a step is not a
+    /// safe place to stop. A `run` step has typed a command that is still
+    /// executing, and cutting in there would leave the operator sharing a
+    /// keyboard with a command whose output the engine is still matching
+    /// against. So the engine remembers the request and parks in the gap before
+    /// the next step, which is the one moment nothing is in flight.
+    TakeOver,
     /// Stop this host after the current step.
     Abort,
     /// Stop driving this host but leave its shell open, so it can be adopted by

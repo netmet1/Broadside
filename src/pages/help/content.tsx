@@ -1616,7 +1616,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting",
     body: (
       <>
         <Lead>
@@ -1805,8 +1805,30 @@ export const SECTIONS: HelpSection[] = [
               rail ends all of them at once, which can leave a host mid-upgrade.
             </li>
             <li>
-              You can type into any host's pane while it runs. That takes the host
-              over: the skill stops driving it and it is yours.
+              <b>Taking a host over.</b> While the skill is driving a pane the
+              keyboard is not yours, and typing into it does nothing; the pane
+              says so rather than leaving you wondering.{" "}
+              <Nav>Take over</Nav> in the pane's header is how you get it. It
+              does not interrupt anything: the skill finishes the step it is on
+              and stops in the gap before the next one, so a command that is
+              still running is left to finish rather than being cut in half. The
+              button says <Nav>After this step…</Nav> while it waits, which on a
+              long step can be a while. The other hosts carry on throughout.
+            </li>
+            <li>
+              Once it stops, the shell is yours to type in and the pane offers{" "}
+              <Nav>Resume</Nav> to hand it back and carry on with the next step,
+              or <Nav>Stop host</Nav> to end this one for good. Anything you
+              typed stays on screen but is not matched against, so your own
+              keystrokes cannot satisfy a step the skill is about to run.
+            </li>
+            <li>
+              A host that pauses <em>on its own</em>, because a step waited for
+              something that never arrived, offers the same shell plus{" "}
+              <Nav>Skip step</Nav>, which declares the half-finished step
+              satisfied and takes its success branch. That one is missing from a
+              pause you asked for, because the step it would skip has not run
+              yet.
             </li>
             <li>
               Each pane's header names the step it is on and where that sits in

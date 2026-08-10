@@ -39,6 +39,7 @@ export function RunPanel({
   allowTransfer,
   uncapped,
   setTakenOver,
+  requestTakeOver,
   finishHost,
   onSendToTerminal,
   onDone,
@@ -60,6 +61,9 @@ export function RunPanel({
   /** The running skill has no repeat cap: if it loops, nothing here ends it. */
   uncapped: boolean;
   setTakenOver: (hostId: number, takenOver: boolean) => void;
+  /** Ask for the keyboard on a host that is still running. Granted in the gap
+   * after its current step, not at once. */
+  requestTakeOver: (hostId: number) => void;
   /** Settle a host the backend has already forgotten about. */
   finishHost: (hostId: number, message: string) => void;
   /** Send one host's shell to a terminal tab (confirms first if it is root). */
@@ -167,6 +171,7 @@ export function RunPanel({
             onFocus={() => setFocused(h.pane.hostId)}
             onFinished={(m) => finishHost(h.pane.hostId, m)}
             setTakenOver={setTakenOver}
+            requestTakeOver={requestTakeOver}
             onSendToTerminal={onSendToTerminal}
           />
         ))}
@@ -186,6 +191,7 @@ function HostPane({
   onFocus,
   onFinished,
   setTakenOver,
+  requestTakeOver,
   onSendToTerminal,
 }: {
   runId: string;
@@ -205,6 +211,8 @@ function HostPane({
   /** Settle this pane when the backend says its run is already over. */
   onFinished: (message: string) => void;
   setTakenOver: (hostId: number, takenOver: boolean) => void;
+  /** Ask for the keyboard while this host is still running. */
+  requestTakeOver: (hostId: number) => void;
   onSendToTerminal: (pane: HostRunState["pane"], isRoot: boolean) => void;
 }) {
   const hint = useHint();
@@ -369,24 +377,31 @@ function HostPane({
               control(() => skillResume(runId, pane.hostId), "Resume failed")
             }
             {...hint(
-              "Check the screen again and keep waiting for this step, with a fresh timeout. Does not re-run the command.",
+              host.pauseKind === "takeOver"
+                ? "Hand the shell back and carry on with the next step. Anything you typed stays on screen but is not matched against."
+                : "Check the screen again and keep waiting for this step, with a fresh timeout. Does not re-run the command.",
             )}
           >
             <PlayIcon className="mr-1 h-3 w-3" />
             Resume
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 px-2 text-xs"
-            onClick={() =>
-              control(() => skillSkipStep(runId, pane.hostId), "Skip failed")
-            }
-            {...hint("Treat this step as done and move to its success branch")}
-          >
-            <SkipForwardIcon className="mr-1 h-3 w-3" />
-            Skip step
-          </Button>
+          {/* Not offered when the pause is one the operator asked for: that
+              parks *before* a step rather than part-way through one, so there
+              is nothing yet to declare satisfied. Resume runs it. */}
+          {host.pauseKind !== "takeOver" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-xs"
+              onClick={() =>
+                control(() => skillSkipStep(runId, pane.hostId), "Skip failed")
+              }
+              {...hint("Treat this step as done and move to its success branch")}
+            >
+              <SkipForwardIcon className="mr-1 h-3 w-3" />
+              Skip step
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -433,12 +448,37 @@ function HostPane({
               Continue now
             </Button>
           )}
+          {/* The answer to the sentence beside it. Until now the only way to
+              get the keyboard on a host mid-run was to stop it, which is a
+              coarse trade for "let me just look at something".
+
+              It does not interrupt. The engine finishes the step it is on and
+              parks in the gap before the next, because a `run` step has a
+              command executing whose output the engine is still matching
+              against, and cutting in there would put two typists on one shell.
+              That gap can be a while on a long step, so the button says it is
+              waiting rather than looking unpressed. */}
+          <Button
+            size="sm"
+            variant="outline"
+            className={`h-5 shrink-0 px-1.5 text-[11px] ${
+              host.stepKind === "wait" ? "" : "ml-auto"
+            }`}
+            disabled={host.takeOverPending}
+            onClick={() => requestTakeOver(pane.hostId)}
+            {...hint(
+              host.takeOverPending
+                ? "Waiting for the current step to finish. The shell is yours as soon as it does, and nothing is interrupted."
+                : "Take the keyboard on this host. The skill finishes the step it is on, then stops and hands the shell to you; the other hosts keep running.",
+            )}
+          >
+            <KeyboardIcon className="mr-1 h-3 w-3" />
+            {host.takeOverPending ? "After this step…" : "Take over"}
+          </Button>
           <Button
             size="sm"
             variant="ghost"
-            className={`h-5 shrink-0 px-1.5 text-[11px] text-muted-foreground ${
-              host.stepKind === "wait" ? "" : "ml-auto"
-            }`}
+            className="h-5 shrink-0 px-1.5 text-[11px] text-muted-foreground"
             onClick={() =>
               control(() => skillAbort(runId, pane.hostId), "Stop failed")
             }

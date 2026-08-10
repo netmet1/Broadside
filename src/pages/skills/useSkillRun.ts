@@ -8,7 +8,9 @@ import {
   onSkillProgress,
   runSkill,
   skillCancel,
+  skillTakeOver,
   type SkillPane,
+  type SkillPaused,
   type SkillProgress,
 } from "@/lib/tauri/skills";
 
@@ -31,8 +33,15 @@ export type HostRunState = {
   stepStartedAt: number;
   /** Set while paused: why the engine stopped and handed over. */
   pausedReason: string | null;
+  /** Set while paused: which of the two pauses this is. A `takeOver` pause is
+   * before a step that has not run, so the panel does not offer Skip step. */
+  pauseKind: SkillPaused["kind"] | null;
   /** Whether the operator has taken the keyboard for this pane. */
   takenOver: boolean;
+  /** A take-over asked for and not yet granted. The engine finishes the step it
+   * is on first, so there is a gap between the click and the pause, and a
+   * button that looked unpressed through it would get pressed again. */
+  takeOverPending: boolean;
   /** The host's shell is running as root (uid 0), once probed; null until
    * known. Drives the warning before a shell is handed off or left open. */
   isRoot: boolean | null;
@@ -114,6 +123,8 @@ export function useSkillRun() {
           status: prev.status === "paused" ? "running" : prev.status,
           pausedReason: null,
           takenOver: false,
+          pauseKind: null,
+          takeOverPending: false,
           step: announcesStep ? p.detail : prev.step,
           stepId: announcesStep ? p.stepId : prev.stepId,
           stepKind: announcesStep ? p.stepKind : prev.stepKind,
@@ -131,6 +142,13 @@ export function useSkillRun() {
           ...prev,
           status: "paused",
           pausedReason: p.reason,
+          pauseKind: p.kind,
+          // A take-over pause is one the operator asked for, so the keyboard is
+          // handed to them on arrival rather than making them press a second
+          // button for the thing they already pressed one for. A timeout pause
+          // is not: nobody asked to type there, so it still starts read-only.
+          takenOver: p.kind === "takeOver" ? true : prev.takenOver,
+          takeOverPending: false,
         }));
       }),
       onSkillDone((p) => {
@@ -202,6 +220,8 @@ export function useSkillRun() {
               stepStartedAt: Date.now(),
               pausedReason: null,
               takenOver: false,
+              pauseKind: null,
+              takeOverPending: false,
               isRoot: null,
               // A running host has a shell by definition; `done` corrects this.
               shellOpen: true,
@@ -248,6 +268,8 @@ export function useSkillRun() {
             status: "failed",
             pausedReason: null,
             takenOver: false,
+            pauseKind: null,
+            takeOverPending: false,
             // The emergency stop kills each host by closing its PTY.
             shellOpen: false,
             message,
@@ -266,6 +288,8 @@ export function useSkillRun() {
         status: "failed",
         pausedReason: null,
         takenOver: false,
+        pauseKind: null,
+        takeOverPending: false,
         // The backend has no record of this host, so nothing is left to adopt.
         shellOpen: false,
         message,
@@ -293,6 +317,25 @@ export function useSkillRun() {
   const setTakenOver = useCallback(
     (hostId: number, takenOver: boolean) =>
       patch(hostId, (prev) => ({ ...prev, takenOver })),
+    [patch],
+  );
+
+  /** Ask for the keyboard on a host that is still running.
+   *
+   * The button goes into its waiting state before the invoke resolves, because
+   * what the operator is waiting for is not the call but the engine finishing
+   * the step it is on, which can be a while. Cleared by the pause arriving, or
+   * put back if the request could not be delivered at all. */
+  const requestTakeOver = useCallback(
+    (hostId: number) => {
+      const id = runIdRef.current;
+      if (!id) return;
+      patch(hostId, (prev) => ({ ...prev, takeOverPending: true }));
+      skillTakeOver(id, hostId).catch((e) => {
+        patch(hostId, (prev) => ({ ...prev, takeOverPending: false }));
+        toast.error(errorMessage(e));
+      });
+    },
     [patch],
   );
 
@@ -332,6 +375,7 @@ export function useSkillRun() {
     cancelAll,
     finishHost,
     setTakenOver,
+    requestTakeOver,
     removeHost,
     reset,
   };

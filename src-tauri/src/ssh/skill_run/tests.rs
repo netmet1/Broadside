@@ -1318,3 +1318,110 @@ fn parse_sequence_rejects_a_malformed_config() {
     assert!(parse_sequence("{ not json").is_err());
     assert!(parse_sequence(r#"{"startStepId":"a","steps":[]}"#).is_ok());
 }
+
+#[tokio::test(start_paused = true)]
+async fn take_over_waits_for_the_step_to_finish() {
+    // The whole point of the deferral: a request that arrives while a command
+    // is running must not park the engine in the middle of it. The engine
+    // finishes step a, and only then parks before step b.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        run_step("b", "echo two", STOP, STOP),
+    ]);
+
+    let events = host.events.clone();
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        // Step a is in flight, waiting for its completion marker.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        ctl.send(Ctl::TakeOver).unwrap();
+        // Still mid-step a beat later: nothing has parked.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(
+            events.0.lock().unwrap().paused.is_empty(),
+            "parked in the middle of a running step"
+        );
+        // Now let step a finish.
+        let _ = data.send(TapMsg::Data(echo_of("echo one").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"one
+__bsdone_0__
+".to_vec()));
+        // It should park before step b rather than run it.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(
+            events.0.lock().unwrap().paused.len(),
+            1,
+            "should be parked before the second step"
+        );
+        let _ = ctl.send(Ctl::Resume { clear: false });
+        let _ = data.send(TapMsg::Data(echo_of("echo two").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"two
+__bsdone_0__
+".to_vec()));
+    });
+
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    // Both steps ran: the first before the pause, the second after the resume.
+    assert!(host.typed().contains("echo one"));
+    assert!(host.typed().contains("echo two"));
+
+    let paused = &host.events.0.lock().unwrap().paused;
+    assert_eq!(paused.len(), 1);
+    // Parked before the step that has not run, which is what tells the panel
+    // there is nothing here for Skip step to skip.
+    assert_eq!(paused[0].step_id, "b");
+    assert_eq!(paused[0].kind, PauseKind::TakeOver);
+}
+
+#[tokio::test(start_paused = true)]
+async fn take_over_is_spent_once_and_does_not_park_again() {
+    // One request, one pause. A flag that was not cleared would park before
+    // every remaining step, which is the obvious way to get this wrong.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        run_step("b", "echo two", STOP, STOP),
+    ]);
+    host.ctl.send(Ctl::TakeOver).unwrap();
+    host.say(&echo_of("echo one"));
+    host.say("one\r\n__bsdone_0__\r\n");
+
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+        let _ = data.send(TapMsg::Data(echo_of("echo two").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"two\r\n__bsdone_0__\r\n".to_vec()));
+    });
+
+    assert!(engine.run_sequence(&c).await.ok);
+    assert_eq!(host.events.0.lock().unwrap().paused.len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_taken_over_host_can_be_stopped_from_the_pause() {
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        run_step("b", "echo two", STOP, STOP),
+    ]);
+    host.ctl.send(Ctl::TakeOver).unwrap();
+    host.say(&echo_of("echo one"));
+    host.say("one\r\n__bsdone_0__\r\n");
+
+    let ctl = host.ctl.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = ctl.send(Ctl::Abort);
+    });
+
+    let outcome = engine.run_sequence(&c).await;
+    assert!(!outcome.ok);
+    assert_eq!(outcome.disposition, Disposition::Aborted);
+    // The second step never ran.
+    assert!(!host.typed().contains("echo two"));
+}

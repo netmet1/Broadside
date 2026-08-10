@@ -253,6 +253,17 @@ export function skillSkipStep(runId: string, hostId: number): Promise<void> {
   return invoke<void>("skill_skip_step", { runId, hostId });
 }
 
+/** Ask for the keyboard on a host that is still running.
+ *
+ * Takes effect at the next gap between steps, not immediately: the engine
+ * finishes what it is on first. A `run` step has a command executing whose
+ * output the engine is still matching, and stopping there would put two typists
+ * on one shell. Resolving says the request was delivered, never that the host
+ * has parked; the `skill:paused` event with kind `takeOver` says that. */
+export function skillTakeOver(runId: string, hostId: number): Promise<void> {
+  return invoke<void>("skill_take_over", { runId, hostId });
+}
+
 /** Stop one host, leaving the others running. */
 export function skillAbort(runId: string, hostId: number): Promise<void> {
   return invoke<void>("skill_abort", { runId, hostId });
@@ -315,6 +326,12 @@ export type SkillPaused = {
   sessionId: string;
   stepId: string;
   reason: string;
+  /** Why the host parked, which decides what `stepId` means and so which exits
+   * are offered. `timeout`: a wait step is half-done, so Resume retries it and
+   * Skip step declares it satisfied. `takeOver`: the operator asked for the
+   * keyboard and `stepId` has not run yet, so Resume runs it and there is
+   * nothing for Skip step to skip. */
+  kind: "timeout" | "takeOver";
 };
 
 export type SkillDone = {
