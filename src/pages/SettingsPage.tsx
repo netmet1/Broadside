@@ -40,6 +40,7 @@ import {
 import { errorMessage } from "@/lib/tauri/hosts";
 import { HIDEABLE_COLUMNS } from "@/lib/hostColumns";
 import { GENERIC_MONOSPACE, cssFontFamily } from "@/lib/monospaceFonts";
+import { DEFAULT_UI_PREFS, MAX_TERMINAL_SCROLLBACK } from "@/lib/uiPrefs";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
 import { useHint, useStatus } from "@/lib/status";
 import { useTheme } from "next-themes";
@@ -123,9 +124,14 @@ export function SettingsPage({
     toggleTermFontStrict,
     appFontSize,
     setAppFontSize,
+    scrollback,
+    setScrollback,
+    scrollbackShrinks,
+    currentScrollback,
     savingUi,
     parsedTermFontSize,
     parsedAppFontSize,
+    parsedScrollback,
     syncFromSettings: syncAppearanceFromSettings,
     saveFontSizes,
   } = useAppearance();
@@ -1224,14 +1230,20 @@ export function SettingsPage({
               Applies as you pick it; no Save needed.
             </p>
           </div>
-          {/* The two size boxes are the only things in Appearance that need a
-              Save, and they are boxed with it so it is obvious which controls it
-              is for. Everything outside this frame writes as you touch it.
+          {/* The three number boxes are the only things in Appearance that need
+              a Save, and they are boxed with it so it is obvious which controls
+              it is for. Everything outside this frame writes as you touch it.
               They need one because they are free text: a numeric field has no
               valid intermediate state, and applying per keystroke would take the
               app font through 2px on the way from 16 to 20, which collapses the
               UI you are typing into. The font dropdown above has no such state,
-              which is why it left. */}
+              which is why it left.
+
+              Scrollback makes the same argument in its strongest form. The
+              journey from 1000 to 5000 passes through 5, 50 and 500, and each of
+              those, applied, would trim every open pane to that many lines and
+              throw the rest away. A font size applied too early is ugly for a
+              keystroke; a scrollback applied too early destroys output. */}
           <div className="grid max-w-md gap-4 rounded-md border border-border/40 p-4">
             <div className="grid gap-1">
               <Label htmlFor="term-font-size">Terminal font size</Label>
@@ -1284,6 +1296,39 @@ export function SettingsPage({
                 12-20 px. Scales the whole UI except terminal panes.
               </p>
             </div>
+            {/* Why this is in Appearance rather than Performance, where its cost
+                lives: it is a property of a terminal, and the terminal settings
+                are here. The memory is said out loud instead. */}
+            <div className="grid gap-1">
+              <Label htmlFor="term-scrollback">Terminal scrollback</Label>
+              <Input
+                id="term-scrollback"
+                value={scrollback}
+                onChange={(e) => setScrollback(e.target.value)}
+                className={`w-40 font-mono text-sm ${parsedScrollback === undefined ? "border-destructive" : ""}`}
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                0-{MAX_TERMINAL_SCROLLBACK.toLocaleString()} lines kept above the
+                top of the screen, per pane. The default is{" "}
+                {DEFAULT_UI_PREFS.terminalScrollback.toLocaleString()}; anything
+                older is dropped as new output arrives, so a command that prints
+                more than this cannot be scrolled back to in full. Costs roughly
+                2KB a line at 200 columns, so 5,000 lines is about 12MB{" "}
+                <span className="font-medium">for every open pane</span>. 0 keeps
+                nothing at all. Applies to terminal tabs and skill panes alike.
+              </p>
+              {/* Only when it would actually take something away. A warning that
+                  is always on the screen is a warning nobody reads by the third
+                  visit, and raising the limit loses nothing. */}
+              {scrollbackShrinks && (
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  Lower than the current {currentScrollback.toLocaleString()}.
+                  Saving trims every open pane to the new limit straight away, and
+                  the lines above it are gone.
+                </p>
+              )}
+            </div>
             <div>
               <Button
                 size="sm"
@@ -1291,11 +1336,12 @@ export function SettingsPage({
                 disabled={
                   savingUi ||
                   parsedTermFontSize === undefined ||
-                  parsedAppFontSize === undefined
+                  parsedAppFontSize === undefined ||
+                  parsedScrollback === undefined
                 }
               >
                 {savingUi && <Loader2Icon className="animate-spin" />}
-                Save font sizes
+                Save
               </Button>
             </div>
           </div>

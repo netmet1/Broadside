@@ -272,6 +272,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       fontSize: prefsRef.current.terminalFontSize,
       cursorBlink: true,
       theme: readTerminalTheme(),
+      scrollback: prefsRef.current.terminalScrollback,
       // Find needs it. `registerDecoration` is still behind xterm's proposed-API
       // gate, and the search addon calls it for every match it highlights; with
       // the gate shut the call throws, which is why the Find bar could never say
@@ -779,6 +780,21 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       }
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
+
+  // Scrollback, on its own and deliberately not folded into the block above.
+  // Nothing about the geometry changes, so there is nothing to refit: xterm
+  // resizes the buffer off the back of the option and the pane keeps its rows
+  // and columns. It applies to a hidden pane as readily as a visible one for the
+  // same reason. Raising it is free and keeps everything already held; lowering
+  // it discards the oldest lines there and then, which is why the field that
+  // sets it is behind a Save rather than applying as it is typed.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    if (term.options.scrollback !== prefs.terminalScrollback) {
+      term.options.scrollback = prefs.terminalScrollback;
+    }
+  }, [prefs.terminalScrollback]);
 
   // Re-theme the live terminal when the app theme changes (S1). The CSS vars
   // recompute from the html class, so re-reading them gives the new colours.

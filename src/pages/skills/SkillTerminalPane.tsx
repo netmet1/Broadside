@@ -93,6 +93,7 @@ export function SkillTerminalPane({
       fontSize: prefsRef.current.terminalFontSize,
       cursorBlink: true,
       theme: readTerminalTheme(),
+      scrollback: prefsRef.current.terminalScrollback,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -225,6 +226,18 @@ export function SkillTerminalPane({
       }
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
+
+  // Scrollback. Separate from the fonts because no geometry changes, so there
+  // is nothing to refit and a hidden pane can take it just as well as a visible
+  // one. This pane holds a skill's output, which is the output most likely to
+  // be long, so it gets the same allowance a terminal tab does.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    if (term.options.scrollback !== prefs.terminalScrollback) {
+      term.options.scrollback = prefs.terminalScrollback;
+    }
+  }, [prefs.terminalScrollback]);
 
   // Re-theme on theme flip. Deferred a frame: next-themes flips the <html>
   // class in its own effect, which runs after this child's, so reading the
