@@ -86,6 +86,7 @@ import {
   Rows2Icon,
   SlidersHorizontalIcon,
   UndoIcon,
+  UnplugIcon,
   XIcon,
 } from "lucide-react";
 
@@ -143,6 +144,8 @@ export function TerminalRail({
   sessions,
   tabSuffix,
   onActivate,
+  openIds,
+  onEndSession,
   onCloseAll,
   retryableCount,
   onRetryAll,
@@ -179,6 +182,11 @@ export function TerminalRail({
   sessions: TermSession[];
   tabSuffix: Map<string, string>;
   onActivate: (id: string) => void;
+  /** Which sessions have a live shell behind them. Everything else in the list
+   * is connecting, waiting on a host-key answer, or already gone. */
+  openIds: Set<string>;
+  /** End a session's shell and leave its tab where it is. */
+  onEndSession: (id: string) => void;
   onCloseAll: () => void;
   /** How many panes are sitting on a Try again / Reconnect button. One number
    * for both repairs: whatever Retry all would bring back is exactly what Close
@@ -235,7 +243,7 @@ export function TerminalRail({
   if (gridMode && hiddenCount > 0) {
     sessionsExtras.push("put hidden ones back in the grid");
   }
-  const sessionsHint = `Jump to an open terminal session, ${sessionsExtras
+  const sessionsHint = `Jump to an open terminal session, end one without closing its tab, ${sessionsExtras
     .map((e) => `${e}, `)
     .join("")}or close them all.`;
 
@@ -607,6 +615,43 @@ export function TerminalRail({
                     {sessionLabel(s)}
                     {tabSuffix.get(s.id)}
                   </span>
+                  {/* End the session, keep the tab.
+
+                      Here rather than on the tab itself because the tab already
+                      has an x, and two buttons a few pixels apart that both look
+                      like "get rid of this" is how you close the wrong thing.
+                      The distance is the point: this is the deliberate one, and
+                      it is worth a menu.
+
+                      Greyed rather than removed once the shell is gone, per this
+                      file's rule, so the row keeps its shape and the column of
+                      icons does not shuffle as sessions die.
+
+                      Both the pointer-down and the click are stopped, or the row
+                      underneath takes them as "go to this session" and the menu
+                      closes on the way to somewhere nobody asked to be. */}
+                  <button
+                    type="button"
+                    disabled={!openIds.has(s.id)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onEndSession(s.id);
+                    }}
+                    className={cn(
+                      "ml-auto shrink-0 rounded-sm p-1 text-muted-foreground",
+                      "hover:bg-destructive/10 hover:text-destructive",
+                      "disabled:pointer-events-none disabled:opacity-30",
+                    )}
+                    {...hint(
+                      openIds.has(s.id)
+                        ? `End the shell on "${sessionLabel(s)}" and keep the tab. Everything it printed stays on screen, and the pane offers Reconnect when you want it back.`
+                        : "Nothing to end: this session has no shell running. It is connecting, waiting on a host-key answer, or already closed.",
+                    )}
+                  >
+                    <UnplugIcon className="h-3.5 w-3.5" />
+                  </button>
                 </DropdownMenuItem>
                 );
               })}

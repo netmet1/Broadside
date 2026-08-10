@@ -1070,6 +1070,13 @@ export function TerminalsPage({
     [sessions],
   );
 
+  /** Per-session counter for "end this session, keep the tab". The pane does the
+   * work (see TerminalView's end effect); this only says which one and when. */
+  const [endNonces, setEndNonces] = useState<Map<string, number>>(new Map());
+  const endSession = useCallback((id: string) => {
+    setEndNonces((prev) => new Map(prev).set(id, (prev.get(id) ?? 0) + 1));
+  }, []);
+
   // PTY Find (D-015, Find only; filtering live interactive output is
   // incoherent).
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1228,6 +1235,18 @@ export function TerminalsPage({
   // panes mid-connect, which a retry would abort and start over, and panes
   // holding a host-key dialog, which are not waiting on a retry but on an
   // answer. Both would look like the button had done nothing, or worse.
+  // The sessions with a shell actually behind them right now, which is the only
+  // set "end this session" applies to. Not the complement of `retryableIds`:
+  // that leaves out panes mid-connect and panes holding a host-key dialog, and
+  // neither has a shell to end yet.
+  const openIds = useMemo(
+    () =>
+      new Set(
+        sessions.filter((s) => phases.get(s.id) === "open").map((s) => s.id),
+      ),
+    [sessions, phases],
+  );
+
   const retryableIds = useMemo(
     () =>
       sessions
@@ -1510,6 +1529,8 @@ export function TerminalsPage({
         // Picking from the Sessions menu is as deliberate as clicking a tab,
         // and as much a request to work there.
         onActivate={gridFocus.activateDeliberately}
+        openIds={openIds}
+        onEndSession={endSession}
         onCloseAll={() => setCloseAllOpen(true)}
         retryableCount={retryableIds.length}
         onRetryAll={retryAll}
@@ -2434,6 +2455,7 @@ export function TerminalsPage({
                   visible={visible && (gridMode ? !excluded : isActive)}
                   retryNonce={retryNonces.get(s.id) ?? 0}
                   resetNonce={resetNonces.get(s.id) ?? 0}
+                  endNonce={endNonces.get(s.id) ?? 0}
                   onGate={handleGate}
                   onClosed={closeSession}
                   onReconnect={reconnectSession}

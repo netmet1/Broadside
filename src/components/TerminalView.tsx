@@ -143,6 +143,11 @@ type Props = {
    * clears this pane's buffer and scrollback, the remote is untouched and keeps
    * running. */
   resetNonce: number;
+  /** Bumped to end this session on purpose while keeping the tab (the unplug
+   * button in the Sessions menu). Closes the shell and drops the pane into its
+   * closed phase, which is the same place typing `exit` leaves it: the buffer
+   * stays readable and the banner offers Reconnect or Close tab. */
+  endNonce: number;
   onGate: (sessionId: string, gate: ConnectionGate) => void;
   onClosed: (sessionId: string) => void;
   /** Re-open the PTY on this same session id (Reconnect button on the closed
@@ -184,6 +189,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       visible,
       retryNonce,
       resetNonce,
+      endNonce,
       onGate,
       onClosed,
       onReconnect,
@@ -575,6 +581,27 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     }, 350);
     return () => clearTimeout(sweep);
   }, [resetNonce]);
+
+  // End this session on purpose, and keep the pane.
+  //
+  // The phase has to be set here rather than waited for, because a close asked
+  // for through `pty_close` is a *deliberate* one and the backend deliberately
+  // does not emit `pty:closed` for those (see ssh/pty.rs, local/mod.rs,
+  // serial/mod.rs: a stray event there would fire on every tab close, after the
+  // pane listening for it has gone). Every other caller of `ptyClose` is also
+  // throwing the tab away, so nobody has needed the event; this one keeps the
+  // tab, so it announces the close itself.
+  //
+  // Skips nonce 0 so mounting never kills the shell it just opened. Anything
+  // not currently `open` is left alone: a pane mid-connect has an invoke in
+  // flight that would race this, and one already closed or failed has nothing
+  // to end and must keep the message it has, which says how it actually died.
+  useEffect(() => {
+    if (endNonce === 0) return;
+    if (phaseRef.current.kind !== "open") return;
+    ptyClose(sessionId).catch(() => {});
+    setPhase({ kind: "closed", message: "session ended from the Sessions menu" });
+  }, [endNonce, sessionId, setPhase]);
 
   useImperativeHandle(searchHandleRef, () => ({
     findNext: (pattern, options, incremental) => {
