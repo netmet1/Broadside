@@ -83,8 +83,16 @@ type PaneEntry = {
   mtime: number | null;
 };
 
-/** One file/folder being dragged. */
-type DragItem = { path: string; name: string; kind: string };
+/** One file/folder being dragged. `size` comes along so a single-file transfer
+ *  can show a percentage: both panes already know it from their listing, and
+ *  asking the far end again for a number we are holding would be a round trip
+ *  for nothing. Null for a folder, whose real size needs the pre-flight scan. */
+type DragItem = {
+  path: string;
+  name: string;
+  kind: string;
+  size?: number | null;
+};
 /** A drag carries every selected item from the originating pane (Windows-style
  *  Ctrl/Shift multi-select), so one drag can transfer many files at once. */
 type DragPayload = { side: PaneSide; items: DragItem[] };
@@ -191,24 +199,29 @@ export function CommanderTab({
 
   // --- Transfers ---
   const putToRemote = useCallback(
-    async (localPath: string) => {
+    async (localPath: string, size?: number | null) => {
       if (!remote.session) {
         toast.error("Connect to a host first");
         return;
       }
-      await remote.upload(localPath); // uploads into the remote cwd + refreshes it
+      // Uploads into the remote cwd + refreshes it. The size only feeds the
+      // progress bar, so a null one costs a percentage and nothing else.
+      await remote.upload(localPath, size ?? undefined);
     },
     [remote],
   );
 
   const getToLocal = useCallback(
-    async (entry: { path: string; name: string }) => {
+    async (entry: { path: string; name: string; size?: number | null }) => {
       if (!remote.session) return;
       if (local.cwd === null) {
         toast.error("Open a local folder first (you're at the drive list)");
         return;
       }
-      await remote.download(entry, winJoin(local.cwd, entry.name));
+      await remote.download(
+        { ...entry, size: entry.size ?? undefined },
+        winJoin(local.cwd, entry.name),
+      );
       local.refresh();
     },
     [remote, local],
@@ -288,9 +301,13 @@ export function CommanderTab({
         if (item.kind === "dir") {
           await handleDirDrop(direction, item.path, item.name);
         } else if (side === "remote") {
-          await putToRemote(item.path);
+          await putToRemote(item.path, item.size);
         } else {
-          await getToLocal({ path: item.path, name: item.name });
+          await getToLocal({
+            path: item.path,
+            name: item.name,
+            size: item.size,
+          });
         }
       }
     },
@@ -414,7 +431,10 @@ export function CommanderTab({
         </div>
       </div>
 
-      {/* Live progress for a recursive folder transfer */}
+      {/* Live progress for a transfer, folder or single file. Cancel reaches
+          both: sftp_upload and sftp_download take the same per-session cancel
+          flag the recursive walk does, so a large single file is as stoppable
+          as a folder is. */}
       {remote.transfer && (
         <TransferBar transfer={remote.transfer} onCancel={remote.cancelTransfer} />
       )}
@@ -801,10 +821,22 @@ function FilePane({
                   if (isSelected && selected.size > 1) {
                     items = entries
                       .filter((en) => selected.has(en.path))
-                      .map((en) => ({ path: en.path, name: en.name, kind: en.kind }));
+                      .map((en) => ({
+                        path: en.path,
+                        name: en.name,
+                        kind: en.kind,
+                        size: en.size,
+                      }));
                   } else {
                     setSelected(new Set([entry.path]));
-                    items = [{ path: entry.path, name: entry.name, kind: entry.kind }];
+                    items = [
+                      {
+                        path: entry.path,
+                        name: entry.name,
+                        kind: entry.kind,
+                        size: entry.size,
+                      },
+                    ];
                   }
                   const payload: DragPayload = { side, items };
                   e.dataTransfer.setData(DND_MIME, JSON.stringify(payload));
@@ -876,7 +908,9 @@ function FilePane({
   );
 }
 
-/** Bottom bar showing live progress of a recursive folder transfer + Cancel. */
+/** Bottom bar showing live progress of a transfer + Cancel. Covers both a
+ *  recursive folder and a single file; the file counter is what tells them
+ *  apart on screen. */
 function TransferBar({
   transfer,
   onCancel,
@@ -891,6 +925,11 @@ function TransferBar({
       : transfer.filesTotal > 0
         ? Math.min(100, (transfer.filesDone / transfer.filesTotal) * 100)
         : null;
+  // One file has no file count worth showing. The backend reports files_done: 0
+  // for the whole of a single-file transfer, since nothing has finished until
+  // everything has, so the counter would read `0/1 files` from start to end and
+  // then vanish. The bytes are the story here; let them have the room.
+  const single = transfer.filesTotal === 1;
   return (
     <div className="shrink-0 border-t border-border/50 px-3 py-2">
       <div className="mb-1 flex items-center gap-2 text-xs">
@@ -900,8 +939,12 @@ function TransferBar({
           <span className="font-mono">{transfer.name}</span>
         </span>
         <span className="tabular-nums text-muted-foreground">
-          {transfer.filesDone}
-          {transfer.filesTotal ? `/${transfer.filesTotal}` : ""} files ·{" "}
+          {!single && (
+            <>
+              {transfer.filesDone}
+              {transfer.filesTotal ? `/${transfer.filesTotal}` : ""} files ·{" "}
+            </>
+          )}
           {formatSize(transfer.bytesDone)}
           {transfer.bytesTotal ? ` / ${formatSize(transfer.bytesTotal)}` : ""}
           {pct !== null ? ` · ${Math.round(pct)}%` : ""}
