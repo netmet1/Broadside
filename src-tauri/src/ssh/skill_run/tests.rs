@@ -1403,6 +1403,83 @@ async fn take_over_is_spent_once_and_does_not_park_again() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_redraw_after_the_handback_cannot_satisfy_the_next_step() {
+    // Smoke 55 B3, and the reason clearing the buffer once is not enough.
+    //
+    // The operator takes the host over before an expect step, types the very
+    // text that step is waiting for, and resumes. Emptying the buffer takes
+    // their echo out of it, but it does not take the half-typed line off the
+    // host: the shell still has it, and reprints it the moment anything asks
+    // for a redraw. Handing back is one of those things, because the pane
+    // changes height and the new size goes to the host as a resize.
+    //
+    // So the redraw here lands a beat *after* the resume, which is exactly the
+    // shape that used to slip through, and the step must still not match it.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        on_timeout(expect_step("b", "lnop", None, STOP), TimeoutAction::Fail),
+    ]);
+
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        // Asked for while step a is in flight, so the engine parks in the gap
+        // before step b, which is the step this is about.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        ctl.send(Ctl::TakeOver).unwrap();
+        let _ = data.send(TapMsg::Data(echo_of("echo one").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"one\r\n__bsdone_0__\r\n".to_vec()));
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Parked. The operator types, and the host echoes it back.
+        let _ = data.send(TapMsg::Data(b"lnop".to_vec()));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _ = ctl.send(Ctl::Resume { clear: true });
+        // The resize the hand-back caused reaches the host, and the shell
+        // repaints its prompt with what is still sitting on it.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let _ = data.send(TapMsg::Data(b"\r$ lnop".to_vec()));
+    });
+
+    let outcome = engine.run_sequence(&c).await;
+    // The step timed out on a pattern only the operator ever produced, which is
+    // the honest answer. Matching it would report a check as passed that the
+    // host never answered.
+    assert!(!outcome.ok, "the redraw satisfied the step: {outcome:?}");
+    assert_eq!(host.events.0.lock().unwrap().paused.len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_handback_with_nothing_typed_still_sees_what_the_host_said() {
+    // The other half, and what keeps the settle from being a blunt instrument:
+    // the operator only watched, so there is nothing of theirs to forget and
+    // the buffer must survive the resume intact. A value that landed while
+    // parked satisfies the step it was parked before, immediately.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        on_timeout(expect_step("b", "READY", None, STOP), TimeoutAction::Fail),
+    ]);
+
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        ctl.send(Ctl::TakeOver).unwrap();
+        let _ = data.send(TapMsg::Data(echo_of("echo one").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"one\r\n__bsdone_0__\r\n".to_vec()));
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        // The host catches up on its own while parked. Nobody typed.
+        let _ = data.send(TapMsg::Data(b"READY\r\n".to_vec()));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+    });
+
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_taken_over_host_can_be_stopped_from_the_pause() {
     let (mut engine, host) = harness();
     let c = cfg(vec![

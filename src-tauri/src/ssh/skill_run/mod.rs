@@ -94,6 +94,17 @@ const SHELL_DETECT_SECS: u64 = 15;
 /// waiting longer.
 const INTERRUPT_QUIET: Duration = Duration::from_millis(400);
 const INTERRUPT_MAX: Duration = Duration::from_secs(5);
+/// How long the shell has to go quiet after the operator hands it back, and the
+/// ceiling on waiting for that. See [`Engine::settle_handback`], which is where
+/// the reasoning for needing this at all lives.
+///
+/// The quiet window has to outlast a round trip plus a redraw, since that is
+/// the thing being absorbed, and the ceiling has to be short enough that a host
+/// which never goes quiet (a `tail -f` the operator left running) does not hold
+/// the run up. Everything in between is a shell repainting a prompt, which is
+/// one small write.
+const HANDBACK_QUIET: Duration = Duration::from_millis(500);
+const HANDBACK_MAX: Duration = Duration::from_secs(3);
 
 /// Shells whose `$?` and `printf` behave identically, which is all the engine's
 /// completion marker relies on. Worded as "currently" everywhere it surfaces:
@@ -686,8 +697,11 @@ impl<E: SkillEvents> Engine<E> {
             // to be forgotten, so the step that follows cannot match against
             // their keystrokes. If they only read, the buffer is left alone.
             Park::Resume { clear } => {
-                if clear {
-                    self.screen.clear();
+                if clear && !self.settle_handback().await {
+                    return Err(HostOutcome::finished(
+                        false,
+                        "the shell closed unexpectedly",
+                    ));
                 }
                 self.emit("info", Some(next_step_id), "resumed by the operator");
                 Ok(())
@@ -717,6 +731,62 @@ impl<E: SkillEvents> Engine<E> {
                 "the shell closed unexpectedly",
             )),
         }
+    }
+
+    /// The operator has typed into this host and handed it back. Forget all of
+    /// it, including the part that has not arrived yet.
+    ///
+    /// Emptying the match buffer once is the obvious move and it is not enough,
+    /// which is what smoke 55 B3 caught: the operator typed the very text the
+    /// next step was waiting for, resumed, and the step matched it.
+    ///
+    /// The clear did work. What it cannot do is un-type anything. Those
+    /// keystrokes are still sitting on the host's command line, unentered, and
+    /// a shell reprints that line whenever something asks it to redraw. Resuming
+    /// asks: the amber bar this pane wears while parked is taller than the strip
+    /// it wears while running, so handing back changes the pane's height, the
+    /// pane refits, the new size goes to the host, and the shell redraws its
+    /// prompt with the operator's half-typed text on it a few milliseconds after
+    /// the buffer was emptied. The step that followed then matched their typing,
+    /// which is precisely what the clear exists to prevent.
+    ///
+    /// So the buffer is emptied, whatever the shell says while it settles is
+    /// swallowed, and it is emptied again. Bounded at both ends: a host printing
+    /// continuously never falls quiet, and waiting for it to would hold the run
+    /// up for as long as it kept talking.
+    ///
+    /// Control messages are deliberately *not* read here. A Stop host pressed
+    /// during this half-second stays queued and is honoured by the next wait,
+    /// which is where every other control is handled; reading them here would
+    /// mean re-implementing all of them for the sake of answering half a second
+    /// sooner.
+    ///
+    /// Returns false if the shell closed while settling, which the caller owns:
+    /// this one is deep enough in the middle of things to have no opinion about
+    /// how a host should end.
+    async fn settle_handback(&mut self) -> bool {
+        self.screen.clear();
+        let deadline = Instant::now() + HANDBACK_MAX;
+        let mut quiet_at = Instant::now() + HANDBACK_QUIET;
+        let mut alive = true;
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep_until(quiet_at) => break,
+                _ = tokio::time::sleep_until(deadline) => break,
+                msg = self.link.rx.recv() => match msg {
+                    // Something is still being repainted. Push the quiet window
+                    // ahead of it rather than counting from the resume, so a
+                    // redraw that arrives late is still inside the window.
+                    Some(TapMsg::Data(_)) => quiet_at = Instant::now() + HANDBACK_QUIET,
+                    Some(TapMsg::Closed) | None => {
+                        alive = false;
+                        break;
+                    }
+                },
+            }
+        }
+        self.screen.clear();
+        alive
     }
 
     async fn exec_step(&mut self, step: &SeqStep) -> StepOutcome {
@@ -1052,8 +1122,12 @@ impl<E: SkillEvents> Engine<E> {
                     // they only watched, the buffer keeps what the host printed
                     // while parked, so a value that arrived late matches the
                     // retried wait immediately instead of timing out again.
-                    if clear {
-                        self.screen.clear();
+                    //
+                    // Clearing is not the whole of forgetting, and the pattern
+                    // this is about to wait for again is exactly the kind a
+                    // redraw can satisfy by accident. See `settle_handback`.
+                    if clear && !self.settle_handback().await {
+                        return Err(StepOutcome::Closed);
                     }
                     self.emit("info", Some(step.id()), "resumed by the operator");
                 }

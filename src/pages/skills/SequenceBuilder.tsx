@@ -510,8 +510,9 @@ export function SequenceBuilder({
         </div>
       </div>
 
-      {/* Scrolling area: the guidance and the step cards. */}
-      <div className="space-y-5 px-6 pb-6 pt-4">
+      {/* Scrolling area: the guidance and the step cards. No bottom padding of
+          its own; the pinned bar below supplies the gap under the last card. */}
+      <div className="space-y-5 px-6 pt-4">
         {/* Guidance, collapsed by default (it's a lot, and mostly learn-once). */}
         <div className="rounded-md border border-border/60 bg-muted/20 text-xs text-muted-foreground">
           <button
@@ -603,18 +604,15 @@ export function SequenceBuilder({
           <div ref={listEndRef} />
         </section>
 
-        {/* Blocking problems: Create/Save is disabled until these clear. */}
-        {f.problems.length > 0 && (
-          <ul className="space-y-0.5 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive">
-            {f.problems.map((p) => (
-              <li key={p}>· {p}</li>
-            ))}
-          </ul>
-        )}
-
         {/* Soft warnings: worth flagging, but they don't block saving. Said out
             loud, because an amber box next to a Save button otherwise reads as
-            "you have done something wrong and cannot continue". */}
+            "you have done something wrong and cannot continue".
+
+            Left in the flow rather than pinned with the buttons below. Nothing
+            here stops you saving, so there is no moment where you press Save,
+            nothing happens, and the reason is off screen; and pinning it would
+            spend the one thing the pinned bar has to be careful with, which is
+            height. */}
         {f.warnings.length > 0 && (
           <div className="space-y-1 rounded-md border border-amber-300/70 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
             <p className="font-medium">
@@ -623,6 +621,34 @@ export function SequenceBuilder({
             <ul className="space-y-0.5">
               {f.warnings.map((w) => (
                 <li key={w}>· {w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Save and Cancel, pinned to the bottom of the scroll area, the way the
+          name and the Steps toolbar are pinned to the top. A long sequence put
+          them a long way down: the way to save an edit to step 2 was to scroll
+          past step 20 to find the button.
+
+          The blocking problems come with them, and only those. They are the
+          answer to "why is Save greyed out", and leaving them in the flow meant
+          the disabled button and the reason for it could not be on screen at
+          the same time. They are capped and scroll inside their own box, so a
+          skill with a dozen of them cannot take the pane over; the count in the
+          heading says how many there are when the box cannot show them all. */}
+      <div className="sticky bottom-0 z-10 space-y-2 border-t border-border/50 bg-background px-6 pb-4 pt-3">
+        {f.problems.length > 0 && (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive">
+            <p className="pb-1 font-medium">
+              {f.problems.length === 1
+                ? "One thing to fix before this can be saved:"
+                : `${f.problems.length} things to fix before this can be saved:`}
+            </p>
+            <ul className="max-h-16 space-y-0.5 overflow-y-auto pr-1">
+              {f.problems.map((p) => (
+                <li key={p}>· {p}</li>
               ))}
             </ul>
           </div>
