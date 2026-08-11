@@ -33,6 +33,7 @@ import {
 import type { SearchOptions } from "@/lib/search";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
+import { cn } from "@/lib/utils";
 
 /** Copy `sel` to the clipboard and flash a short confirmation toast. Nothing
  * on-screen otherwise signals that copy-on-select fired, so the toast is the
@@ -108,7 +109,11 @@ type Phase =
   | { kind: "open" }
   | { kind: "gate"; gate: ConnectionGate }
   | { kind: "failed"; message: string }
-  | { kind: "closed"; message: string };
+  /** `clean` is how the session ended, not whether it ended: a shell that was
+   * asked to go and went is clean, and a shell that died on its own or came
+   * back non-zero is not. It only tints the message on the banner, so a wrong
+   * guess costs a colour rather than a behaviour. */
+  | { kind: "closed"; message: string; clean: boolean };
 
 /** How far along a pane's connection is, without the message that goes with it.
  * Reported to the page (see `onPhaseChange`) because "not connected" is four
@@ -488,7 +493,15 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           (closed.exit_code !== null
             ? `shell exited with code ${closed.exit_code}`
             : "connection closed");
-        setPhase({ kind: "closed", message: detail });
+        // A zero exit is the only thing here that went to plan. A message from
+        // the backend is always a reason it should not have ended, and a close
+        // with no exit code at all is a connection that went away rather than a
+        // shell that left.
+        setPhase({
+          kind: "closed",
+          message: detail,
+          clean: closed.message == null && closed.exit_code === 0,
+        });
       }
     });
 
@@ -896,18 +909,31 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           The bar itself is mostly transparent, because the line it covers is
           the one that matters: the last thing the shell said before it went is
           usually why it went, and a solid bar put it out of reach at exactly
-          the moment it was worth reading. Its own text is dropped to a whisper
-          to match, since the message is short and the buttons say the same
-          thing in more useful words.
+          the moment it was worth reading.
 
-          The buttons do not follow it down. They sit on their own opaque plate,
-          because what is behind them is arbitrary terminal output at arbitrary
-          ANSI colours, and a translucent control over a wall of bright green is
-          not a control anyone can read. Legibility of the thing you click is
-          not the part to trade away for a glimpse of the thing you don't. */}
+          The two things drawn on it do not follow it down, and for the same
+          reason: what is behind them is arbitrary terminal output at arbitrary
+          ANSI colours, and neither a control nor a sentence is readable
+          floating over a wall of bright green. Legibility of what you have to
+          read is not the part to trade away for a glimpse of what you don't.
+
+          So each gets its own opaque plate and the gap between them stays
+          clear, which is where the last line shows through. The message was
+          dropped to a whisper instead, and against uncoloured output it came
+          out very close to the text behind it, so the two read as one smear.
+          Its plate is tinted by how the session ended, which is worth saying
+          anyway: `exit 0` and a shell that died are the same slim bar
+          otherwise. */}
       {phase.kind === "closed" && (
         <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 border-t border-border/40 bg-background/40 px-3 py-2">
-          <span className="truncate text-xs text-muted-foreground/70">
+          <span
+            className={cn(
+              "min-w-0 truncate rounded-md border bg-background/90 px-2 py-0.5 text-xs",
+              phase.clean
+                ? "border-border/60 text-muted-foreground"
+                : "border-amber-500/40 text-amber-700 dark:text-amber-300",
+            )}
+          >
             {phase.message}
           </span>
           <div className="flex shrink-0 items-center gap-2 rounded-md bg-background p-1">
