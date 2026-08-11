@@ -10,6 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
+import { ArrowDownIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
@@ -31,6 +32,7 @@ import {
   shellWarningDismissed,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
+import { useHint } from "@/lib/status";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
@@ -270,6 +272,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     },
     [sessionId],
   );
+  // Whether this pane is parked above the live end of its output, which is the
+  // only time the jump-to-bottom button is drawn. The ref is the one the
+  // terminal's own events compare against; the state is only what renders.
+  const scrolledUpRef = useRef(false);
+  const [scrolledUp, setScrolledUp] = useState(false);
+  const hint = useHint();
 
   // Create the terminal once.
   useEffect(() => {
@@ -297,6 +305,32 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const resultsSub = search.onDidChangeResults(({ resultIndex, resultCount }) => {
       onSearchResultsRef.current(resultIndex, resultCount);
     });
+
+    // Scrolled-up detection, for the jump-to-bottom button below.
+    //
+    // Deliberately not the shared ScrollToBottom component, which the Broadcast
+    // pages use. That one watches a real scrolling element with a
+    // MutationObserver over its whole subtree, which is exactly right for a log
+    // built out of DOM nodes and exactly wrong here: xterm rewrites its rows on
+    // every frame of output, so a subtree observer on a wall of live terminals
+    // would be re-measuring all of them continuously. xterm knows the answer
+    // already, so ask it.
+    //
+    // Two events, because either alone leaves a case out: `onScroll` covers the
+    // viewport moving, and `onWriteParsed` covers output arriving while it sits
+    // still, which grows the distance to the bottom without any scrolling at
+    // all. The ref is what keeps this from being a setState per frame.
+    const updateScrolledUp = () => {
+      const b = term.buffer.active;
+      // A couple of rows of slack, so the button does not blink in and out at
+      // the boundary while output is arriving.
+      const next = b.baseY - b.viewportY > 2;
+      if (next === scrolledUpRef.current) return;
+      scrolledUpRef.current = next;
+      setScrolledUp(next);
+    };
+    const scrollSub = term.onScroll(updateScrolledUp);
+    const writeSub = term.onWriteParsed(updateScrolledUp);
 
     // Ctrl+F opens the Find bar instead of sending ^F to the remote shell.
     //
@@ -541,6 +575,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       dataSub.dispose();
       resultsSub.dispose();
       resizeSub.dispose();
+      scrollSub.dispose();
+      writeSub.dispose();
       cancelAnimationFrame(refitRaf);
       observer.disconnect();
       io.disconnect();
@@ -567,6 +603,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const clear = () => {
       termRef.current?.reset();
       if (containerRef.current?.offsetParent) fitRef.current?.fit();
+      // Nothing left to be above: reset throws the scrollback away, so the
+      // jump-to-bottom button would otherwise sit there over an empty pane
+      // until the next write happened to fire its listener.
+      scrolledUpRef.current = false;
+      setScrolledUp(false);
     };
     clear();
     // The echoed ^L: hidden, and the form feed behind it taken back.
@@ -625,7 +666,13 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     if (endNonce === 0) return;
     if (phaseRef.current.kind !== "open") return;
     ptyClose(sessionId).catch(() => {});
-    setPhase({ kind: "closed", message: "session ended from the Sessions menu" });
+    // Clean by definition: this is the one close that was asked for from
+    // inside the app, so there is nothing here for the banner to warn about.
+    setPhase({
+      kind: "closed",
+      message: "session ended from the Sessions menu",
+      clean: true,
+    });
   }, [endNonce, sessionId, setPhase]);
 
   useImperativeHandle(searchHandleRef, () => ({
@@ -896,6 +943,30 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           terminal cell does not, so a rem gutter would grow against text that
           had not moved. */}
       <div ref={containerRef} className="h-full w-full pl-[2px]" />
+      {/* Back to the live end, for a pane you have scrolled up in.
+          Ctrl+End does it and so does typing anything, but neither is
+          discoverable, and reading something a thousand lines back and then
+          hunting for the bottom with a wheel is the whole complaint.
+
+          Drawn only while the pane is genuinely up in its scrollback, and only
+          while a shell is actually there: a closed pane already has a banner
+          along its bottom edge and does not need a second thing floating over
+          it. Sits above that edge and inside the right margin, clear of both
+          the banner and xterm's own scrollbar. */}
+      {scrolledUp && phase.kind === "open" && (
+        <button
+          type="button"
+          className="absolute bottom-4 right-6 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/80 text-muted-foreground shadow-md transition-colors hover:bg-accent hover:text-foreground"
+          onClick={() => {
+            termRef.current?.scrollToBottom();
+            termRef.current?.focus();
+          }}
+          aria-label="Scroll to the newest output"
+          {...hint("Jump to the newest output in this pane.")}
+        >
+          <ArrowDownIcon className="h-4 w-4" />
+        </button>
+      )}
       {(phase.kind === "connecting" ||
         phase.kind === "gate" ||
         phase.kind === "failed") && (

@@ -627,13 +627,26 @@ export function TerminalRail({
                       file's rule, so the row keeps its shape and the column of
                       icons does not shuffle as sessions die.
 
-                      Both the pointer-down and the click are stopped, or the row
+                      All three pointer events are stopped, or the row
                       underneath takes them as "go to this session" and the menu
-                      closes on the way to somewhere nobody asked to be. */}
+                      closes on the way to somewhere nobody asked to be.
+
+                      Pointer-UP is the one that is easy to miss, and stopping
+                      only the other two is worse than stopping none: the menu
+                      item watches pointerdown to know the press started on
+                      itself, and on pointerup it *synthesises a click* on the
+                      row whenever it did not see one, so that a press which
+                      began elsewhere and finished here still selects. Swallow
+                      the pointerdown alone and that flag never gets set, so the
+                      row manufactures the very click this button is trying not
+                      to make: smoke 54 B7 (the unplug jumped you to the session
+                      you had just ended) and B3 (and closed the menu doing it)
+                      were both this, one event apart. */}
                   <button
                     type="button"
                     disabled={!openIds.has(s.id)}
                     onPointerDown={(e) => e.stopPropagation()}
+                    onPointerUp={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();

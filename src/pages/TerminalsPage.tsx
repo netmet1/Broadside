@@ -446,26 +446,6 @@ export function TerminalsPage({
   // Per-kind tab colours, live: Settings and this page are mounted at the same
   // time, so a colour changed there has to arrive here without a restart.
   const shellColors = useShellColors();
-  // How many of the open tabs are actually up. Same rule the tab strip paints
-  // red with: an SSH tab that is connecting, dropped or failed is not
-  // connected, and a local shell never is anything else. Twenty tabs of which
-  // four are red is not twenty sessions, and a count that says it is hides the
-  // only number worth reading in a wall of terminals.
-  const liveCount = useMemo(
-    () =>
-      sessions.filter((s) => s.type !== "ssh" || connectedSessions.has(s.id))
-        .length,
-    [sessions, connectedSessions],
-  );
-  usePageStatus(
-    liveCount === sessions.length
-      ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`
-      : // Only when they differ, so the ordinary case still reads as a plain
-        // count and the slash is a signal that something is down.
-        `${liveCount}/${sessions.length} sessions connected`,
-    visible,
-  );
-
   // Suffix for duplicate terminals to the same target: the 2nd+ get " 02", " 03",
   // … so the tabs are distinguishable (T3). The first stays unsuffixed. Dedup key
   // is the host (SSH) or the shell id (local), so two PowerShell tabs also count.
@@ -1008,6 +988,48 @@ export function TerminalsPage({
     return next.size === phases.size ? phases : next;
   })();
   if (livePhases !== phases) setPhases(livePhases);
+
+  /**
+   * Whether a session's tab and tile read as down, which is the red.
+   *
+   * A remote tab is down whenever it is not connected. Connecting, dropped and
+   * failed are all "the host is not there", and all three are worth the colour.
+   *
+   * A local shell used to be excluded outright, on the reasoning that a local
+   * tab is either running or gone. The unplug button made that untrue: a
+   * PowerShell tab can now sit on a Reconnect banner with nothing behind it,
+   * and it wore exactly the same colour as the live ones beside it (smoke 54
+   * B9). So it is down too, but read from the phase rather than from the
+   * connected set, because those are not the same question for a local shell:
+   * `connecting` is a real state a remote sits in for seconds and a local
+   * passes through in a frame, and asking the connected set would paint every
+   * local tab red for that frame on the way up.
+   */
+  const isDown = useCallback(
+    (s: TermSession) => {
+      if (s.type === "ssh") return !connectedSessions.has(s.id);
+      const phase = livePhases.get(s.id);
+      return phase === "closed" || phase === "failed";
+    },
+    [connectedSessions, livePhases],
+  );
+
+  // How many of the open tabs are actually up. Same rule the tab strip paints
+  // red with, for the same reason: twenty tabs of which four are red is not
+  // twenty sessions, and a count that says it is hides the only number worth
+  // reading in a wall of terminals.
+  const liveCount = useMemo(
+    () => sessions.filter((s) => !isDown(s)).length,
+    [sessions, isDown],
+  );
+  usePageStatus(
+    liveCount === sessions.length
+      ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`
+      : // Only when they differ, so the ordinary case still reads as a plain
+        // count and the slash is a signal that something is down.
+        `${liveCount}/${sessions.length} sessions connected`,
+    visible,
+  );
 
   // COM ports this app already has a live tab on.
   //
@@ -1562,10 +1584,7 @@ export function TerminalsPage({
           // the little buttons inside it.
           const isTabStop = s.id === rovingTabId;
           const stopIndex = isTabStop ? 0 : -1;
-          // A remote tab that's open but not connected (connecting, dropped or
-          // failed) reads as disconnected; local shells never are.
-          const disconnected =
-            s.type === "ssh" && !connectedSessions.has(s.id);
+          const disconnected = isDown(s);
           // The colour this tab wears: a host's, a shell kind's, or a profile's.
           // Local tabs used to have none of these and were all the same grey,
           // which is fine with two open and no help at all with ten.
@@ -2269,7 +2288,7 @@ export function TerminalsPage({
           // Taken out of the grid from its tab. The pane stays mounted (and its
           // shell alive); it is simply not laid out.
           const excluded = gridMode && excludedFromGrid.has(s.id);
-          const disconnected = s.type === "ssh" && !connectedSessions.has(s.id);
+          const disconnected = isDown(s);
           // The active tile's header mirrors the tab tint: a ~20% fill in the
           // tab's colour and a top bar in it, falling back to the theme accent
           // (with a foreground top bar) for tiles with no usable hue, which now
