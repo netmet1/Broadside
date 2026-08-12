@@ -378,7 +378,7 @@ function HostPane({
             }
             {...hint(
               host.pauseKind === "takeOver"
-                ? "Hand the shell back and carry on with the next step. Anything you typed stays on screen but is not matched against."
+                ? "Hand the shell back and carry on with the next step. A command you ran counts as the host talking; a line left half-typed is taken back off the shell."
                 : "Check the screen again and keep waiting for this step, with a fresh timeout. Does not re-run the command.",
             )}
           >

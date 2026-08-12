@@ -1820,9 +1820,12 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Once it stops, the shell is yours to type in and the pane offers{" "}
               <Nav>Resume</Nav> to hand it back and carry on with the next step,
-              or <Nav>Stop host</Nav> to end this one for good. Anything you
-              typed stays on screen but is not matched against, so your own
-              keystrokes cannot satisfy a step the skill is about to run.
+              or <Nav>Stop host</Nav> to end this one for good. A command you
+              actually ran counts as the host talking, so the next step is
+              entitled to match what it printed. A line you left half-typed does
+              not: it is taken back off the shell and forgotten on the way out,
+              so your own keystrokes cannot satisfy a step the skill is about to
+              run.
             </li>
             <li>
               A host that pauses <em>on its own</em>, because a step waited for
