@@ -1062,9 +1062,15 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           out very close to the text behind it, so the two read as one smear.
           Its plate is tinted by how the session ended, which is worth saying
           anyway: `exit 0` and a shell that died are the same slim bar
-          otherwise. */}
+          otherwise.
+
+          Both plates sit at the right, the message against the buttons, so the
+          clear gap is one span at the left rather than a slot in the middle.
+          A message pinned to the far corner had the whole bar's width between
+          it and the button it is the reason for, and the eye had to cross the
+          output to join them up. */}
       {phase.kind === "closed" && (
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 border-t border-border/40 bg-background/40 px-3 py-2">
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-end gap-2 border-t border-border/40 bg-background/40 px-3 py-2">
           <span
             className={cn(
               "min-w-0 truncate rounded-md border bg-background/90 px-2 py-0.5 text-xs",

@@ -1210,13 +1210,15 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               The same menu is where you deal with a lot of tabs at once instead
-              of one at a time. <Nav>Retry all</Nav> reconnects every pane
+              of one at a time. <Nav>Reconnect all</Nav> reconnects every pane
               sitting on a <Nav>Try again</Nav> or <Nav>Reconnect</Nav> button,
               and <Nav>Close failed</Nav> clears the same set away instead; both
               carry the count, and the count is the same number because the pane
-              you would retry is the pane you would give up on. Panes still
-              connecting are left alone, and so is any pane waiting on a host
-              key answer, since neither is waiting for a retry.{" "}
+              you would reconnect is the pane you would give up on. Past a
+              handful it asks first, since a large batch means a burst of
+              connections going out at once. Panes still connecting are left
+              alone, and so is any pane waiting on a host key answer, since
+              neither is waiting to be reconnected.{" "}
               <Nav>Unhide all</Nav> puts every terminal you have taken out of the
               grid back into it. Each of the three is in the menu only while
               there is something for it to do, so a menu with none of them in it

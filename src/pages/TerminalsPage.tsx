@@ -87,7 +87,12 @@ const BROADCAST_RAIL_KEY = "terminal-broadcast-rail";
 
 /** Opening more than this many local shells at once first asks for confirmation:
  * a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
- * the common "a handful at once" case (up to 7) stays friction-free. */
+ * the common "a handful at once" case (up to 7) stays friction-free.
+ *
+ * Shared with the Sessions menu's **Reconnect all**, which is the other action
+ * on this page that can start a lot of things from one click. Deliberately one
+ * number: an operator who has learned where "that's a lot" sits should not have
+ * to learn it twice. */
 const BULK_SHELL_WARN = 7;
 /** A profile with a startup command gets a far stricter threshold: every copy
  * runs that command again, and two accidental runs of a deploy script are a
@@ -1279,11 +1284,25 @@ export function TerminalsPage({
         .map((s) => s.id),
     [sessions, phases],
   );
+  // Past a handful, Reconnect all asks first, at the same threshold and for the
+  // same reason as opening that many local shells: this is the one bulk repair
+  // that *starts* something. Close failed touches only shells that are already
+  // gone, but a full grid that dropped when a VPN did is a lot of tabs wearing a
+  // Reconnect button, and one click on the wrong row would put that many
+  // handshakes on the wire at once. The threshold is shared with the launcher
+  // deliberately, so "how many is a lot" is one answer on this page rather than
+  // two that can drift apart.
+  const [reconnectAllOpen, setReconnectAllOpen] = useState(false);
   // One pass, no stagger. Each retry is a state bump that React batches, and the
   // connects that follow are no heavier than the launcher's own "open N at
   // once", which the same operator can already fire from the + menu.
-  const retryAll = () => {
+  const reconnectAll = () => {
     for (const id of retryableIds) reconnectSession(id);
+    setReconnectAllOpen(false);
+  };
+  const requestReconnectAll = () => {
+    if (retryableIds.length > BULK_SHELL_WARN) setReconnectAllOpen(true);
+    else reconnectAll();
   };
   // The other answer to the same set. Close all asks first because it can take
   // away work in progress; this cannot, since every tab it touches has already
@@ -1555,7 +1574,7 @@ export function TerminalsPage({
         onEndSession={endSession}
         onCloseAll={() => setCloseAllOpen(true)}
         retryableCount={retryableIds.length}
-        onRetryAll={retryAll}
+        onReconnectAll={requestReconnectAll}
         onCloseFailed={closeFailed}
         hiddenCount={excludedFromGrid.size}
         onUnhideAll={clearGridExcluded}
@@ -2554,6 +2573,33 @@ export function TerminalsPage({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={closeAll}>
               Close all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Not destructive, unlike the two dialogs either side of it: nothing is
+          lost by saying yes, the cost is the size of the burst. So it is worded
+          as a question about the number and its action button carries that
+          number, which is the thing the operator is really agreeing to. */}
+      <AlertDialog open={reconnectAllOpen} onOpenChange={setReconnectAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reconnect that many sessions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This reconnects{" "}
+              <span className="font-semibold text-foreground">
+                all {retryableIds.length}
+              </span>{" "}
+              sessions that dropped or were refused, and every one of them opens
+              a connection at once. A host that is refusing connections may
+              refuse a burst this size again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={reconnectAll}>
+              Reconnect {retryableIds.length}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

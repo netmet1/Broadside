@@ -48,17 +48,17 @@
  * that only exists at exactly two tiles; the entry itself is meaningless
  * elsewhere, so it goes.
  *
- * The Sessions menu's bulk repairs, **Retry all**, **Close failed** and
+ * The Sessions menu's bulk repairs, **Reconnect all**, **Close failed** and
  * **Unhide all**, are the other exception, and they are worth naming because
  * they look at first like a breach of the rule rather than a limit on it. What
  * greying buys is a reader learning that an action exists before the day they
  * want it, and that is worth a permanently dead row when the action is the only
  * clue to something non-obvious: Reset grid greyed is how anyone finds out a
- * tile edge can be dragged at all. None of these three teaches anything. "Retry
- * all" and "Close failed" arrive already understood the moment a pane goes red,
- * and "Unhide all" the moment one is hidden, so carrying them through every
- * other moment buys nothing and costs length in the one menu that is already as
- * long as the session list.
+ * tile edge can be dragged at all. None of these three teaches anything.
+ * "Reconnect all" and "Close failed" arrive already understood the moment a
+ * pane goes red, and "Unhide all" the moment one is hidden, so carrying them
+ * through every other moment buys nothing and costs length in the one menu that
+ * is already as long as the session list.
  *
  * Each of the three says what it is waiting for, in the status bar, while it is
  * greyed, which takes a little work: the browser will not dispatch a mouse
@@ -148,7 +148,7 @@ export function TerminalRail({
   onEndSession,
   onCloseAll,
   retryableCount,
-  onRetryAll,
+  onReconnectAll,
   onCloseFailed,
   hiddenCount,
   onUnhideAll,
@@ -189,10 +189,10 @@ export function TerminalRail({
   onEndSession: (id: string) => void;
   onCloseAll: () => void;
   /** How many panes are sitting on a Try again / Reconnect button. One number
-   * for both repairs: whatever Retry all would bring back is exactly what Close
-   * failed would clear away, which is what makes the pair readable. */
+   * for both repairs: whatever Reconnect all would bring back is exactly what
+   * Close failed would clear away, which is what makes the pair readable. */
   retryableCount: number;
-  onRetryAll: () => void;
+  onReconnectAll: () => void;
   onCloseFailed: () => void;
   /** How many open terminals are currently taken out of the grid. */
   hiddenCount: number;
@@ -238,7 +238,7 @@ export function TerminalRail({
   // naming it at all.
   const sessionsExtras: string[] = [];
   if (retryableCount > 0) {
-    sessionsExtras.push("retry or clear away the ones that dropped");
+    sessionsExtras.push("reconnect or clear away the ones that dropped");
   }
   if (gridMode && hiddenCount > 0) {
     sessionsExtras.push("put hidden ones back in the grid");
@@ -392,8 +392,13 @@ export function TerminalRail({
       )}
 
       {/* Everything else that shapes the view. All of it is occasional, and
-          together it is what used to push this rail off a 1024px window. */}
-      <DropdownMenu>
+          together it is what used to push this rail off a 1024px window.
+
+          Non-modal for the same reason as the Sessions menu below, and mostly
+          so the two behave alike: two menus side by side in one rail that
+          answer an outside click differently is the kind of difference nobody
+          can name and everybody feels. */}
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
             size={compact ? "icon-sm" : "sm"}
@@ -537,9 +542,21 @@ export function TerminalRail({
         />
         {/* The jump list and Close all are one menu. Both are about the set of
             open sessions, and a Select that was really a command menu plus a
-            button beside it was two controls saying one thing. */}
+            button beside it was two controls saying one thing.
+
+            Not modal, which is the default and was wrong here. A modal menu
+            puts `pointer-events: none` on the whole body for as long as it is
+            open, so the first click anywhere outside is spent dismissing it and
+            never reaches what was clicked; the terminal you were aiming at
+            needs a second click. That is a fair trade for a menu you are
+            expected to leave the moment you pick something, and a bad one for
+            this menu, which stays open on purpose after the unplug button so
+            you can end several sessions in a row. The cost of staying open
+            should not be a wasted click on the way out. Non-modal also drops
+            the focus trap and the scroll lock, neither of which this list
+            wants. */}
         {sessions.length > 0 && (
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
                 size="sm"
@@ -683,10 +700,20 @@ export function TerminalRail({
                   dead row for something like Reset grid, where the action is
                   the only clue that tile edges can be dragged at all. These
                   three teach nothing you don't already know the moment they
-                  appear, so a menu that stays short is worth more. */}
+                  appear, so a menu that stays short is worth more.
+
+                  "Reconnect all" over "Retry all", which is what this said
+                  first. The set is mixed: some of these panes connected and
+                  dropped, some were refused and never connected at all, and the
+                  buttons they wear differ for exactly that reason (Reconnect
+                  and Try again). One word has to cover both. Reconnect is a
+                  slight stretch for a session that never got up, and retry was
+                  a stretch for one that ran for an hour, but reconnect is the
+                  one an operator reads as the thing they want, which is the
+                  test that matters in a menu. */}
               {retryableCount > 0 && (
                 <DropdownMenuItem
-                  onSelect={onRetryAll}
+                  onSelect={onReconnectAll}
                   {...hint(
                     retryableCount === 1
                       ? "Reconnect the one session that dropped or was refused. Sessions still connecting, and any waiting on a host-key answer, are left alone."
@@ -694,19 +721,20 @@ export function TerminalRail({
                   )}
                 >
                   <RefreshCwIcon />
-                  Retry all
+                  Reconnect all
                   <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
                     {retryableCount}
                   </span>
                 </DropdownMenuItem>
               )}
 
-              {/* The other answer to the same tabs, and it shares Retry all's
-                  count on purpose: the pane you would retry is the pane you
-                  would give up on, so a reader who has understood one entry has
-                  understood both. No confirmation, unlike Close all, because
-                  every tab this touches is already dead, its shell already
-                  gone; there is nothing here to interrupt or lose. */}
+              {/* The other answer to the same tabs, and it shares Reconnect
+                  all's count on purpose: the pane you would reconnect is the
+                  pane you would give up on, so a reader who has understood one
+                  entry has understood both. No confirmation, unlike Close all
+                  and unlike its own twin above, because every tab this touches
+                  is already dead, its shell already gone; there is nothing here
+                  to interrupt, and nothing it starts. */}
               {retryableCount > 0 && (
                 <DropdownMenuItem
                   onSelect={onCloseFailed}
