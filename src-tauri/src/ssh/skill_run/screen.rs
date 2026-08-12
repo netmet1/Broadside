@@ -34,6 +34,11 @@
 //!
 //! Marks are *taken*, not matched: a completion that has already been banked
 //! must never answer the next command, so the engine arms them before it types.
+//! Arming is necessary and not sufficient, because it happens when the engine
+//! types and the shell's answer to the *previous* line is still crossing the
+//! wire at that moment. What settles it is the shell's own ordering: it says
+//! where a command's output starts before it says how the command ended, so a
+//! completion with no start in front of it is somebody else's.
 
 use vte::{Params, Parser, Perform};
 
@@ -48,9 +53,15 @@ pub const BS_OSC: &str = "6273";
 /// What the shell has told us about itself since the marks were last armed.
 #[derive(Default)]
 struct Marks {
-    /// `OSC 133 ; A`: the shell printed a prompt. Proof that its integration
-    /// hooks are installed *and* firing in whatever shell is in front of us,
-    /// which is the one thing a nested shell (`sudo -i`) takes away.
+    /// `OSC 133 ; A`: the shell printed a prompt.
+    ///
+    /// Read once, at the start of a run, where it means "the login is over and
+    /// the shell is listening" and there is no older shell it could have come
+    /// from. It is deliberately **not** used as proof that the hooks are live
+    /// later on: marks arrive a round trip late, so the marker of a shell an
+    /// `sudo -i` has already replaced lands after the engine has typed at the
+    /// new one. That proof is an answer to a question, not a sighting; it lives
+    /// in `Engine::install_hooks`.
     prompt: bool,
     /// `OSC 133 ; C`: where in the view the command's output began, which is
     /// everything after the shell's echo of the command line.
@@ -230,7 +241,15 @@ impl Perform for Interp {
         if *id == b"133".as_slice() {
             match params.get(1).and_then(|kind| kind.first()) {
                 Some(b'A') => self.marks.prompt = true,
-                Some(b'C') => self.marks.output_at = Some(self.view_len()),
+                Some(b'C') => {
+                    self.marks.output_at = Some(self.view_len());
+                    // A new command has started, so any completion banked before
+                    // it belongs to the one before. Arming cannot catch this on
+                    // its own: it happens when we type, and the previous line's
+                    // completion is still crossing the wire at that moment. The
+                    // shell's own ordering is the thing that can, and this is it.
+                    self.marks.done = None;
+                }
                 Some(b'D') => {
                     self.marks.done = Some(
                         params
@@ -378,15 +397,34 @@ impl Screen {
         self.interp.marks.prompt
     }
 
-    /// Whether the shell has reported a command finishing.
+    /// Whether the shell has reported a command finishing **and** started one
+    /// since the marks were armed.
+    ///
+    /// Both halves, because a completion on its own says nothing about *which*
+    /// command it is about. The shell emits the output mark when a command
+    /// starts and the completion when it ends, always in that order, so a
+    /// completion with no start in front of it is the previous line's, arriving
+    /// a round trip late. Reading it as this command's is how a step could
+    /// finish before its command had run.
     pub fn saw_done(&self) -> bool {
-        self.interp.marks.done.is_some()
+        self.interp.marks.done.is_some() && self.interp.marks.output_at.is_some()
     }
 
     /// Takes the reported completion: `Some(code)` when the shell named an exit
     /// status, `Some(None)` when it reported a finish without one.
     pub fn take_done(&mut self) -> Option<Option<i32>> {
         self.interp.marks.done.take()
+    }
+
+    /// A completion with no command in front of it, still sitting there.
+    ///
+    /// In the ordinary run of things this is the previous line's answer arriving
+    /// late and being correctly ignored. It matters in one place: if it is what
+    /// a step gave up waiting on, then this shell reports completions in an
+    /// order the engine cannot read, and the run is better off spending the rest
+    /// of itself on the visible marker than timing out on every step.
+    pub fn stray_done(&self) -> bool {
+        self.interp.marks.done.is_some() && self.interp.marks.output_at.is_none()
     }
 }
 
@@ -493,14 +531,44 @@ mod tests {
     #[test]
     fn a_completion_without_a_code_still_counts_as_one() {
         let mut s = Screen::new();
-        s.feed(b"\x1b]133;D\x07");
+        s.feed(b"\x1b]133;C\x07\x1b]133;D\x07");
         assert_eq!(s.take_done(), Some(None));
+    }
+
+    #[test]
+    fn a_completion_with_no_command_in_front_of_it_is_the_previous_one() {
+        // The hang smoke test 56 found, in miniature. The engine arms the marks
+        // when it types, but the shell it typed over is a round trip behind: the
+        // completion of the *last* line lands first and would answer this
+        // command before it had run. The shell says where output starts before
+        // it says how the command ended, and that order is the tell.
+        let mut s = Screen::new();
+        s.feed(b"\x1b]133;D;0\x07\x1b]133;A\x07");
+        assert!(!s.saw_done(), "nothing has started");
+        s.feed(b" whoami\r\n\x1b]133;C\x07root\r\n");
+        assert!(!s.saw_done(), "started, not finished");
+        s.feed(b"\x1b]133;D;0\x07");
+        assert!(s.saw_done());
+        let (consumed, at) = s.take_view();
+        assert_eq!(&consumed[at.unwrap()..], "root\n");
+    }
+
+    #[test]
+    fn a_started_command_forgets_the_one_before_it() {
+        // The stale completion must not simply wait to be paired with the next
+        // command's start: it has to go when that command starts, or its exit
+        // code would be read as the new command's.
+        let mut s = Screen::new();
+        s.feed(b"\x1b]133;D;7\x07");
+        s.feed(b"\x1b]133;C\x07ok\r\n\x1b]133;D;0\x07");
+        assert_eq!(s.take_done(), Some(Some(0)));
     }
 
     #[test]
     fn arming_forgets_what_the_shell_said_but_keeps_what_it_printed() {
         let mut s = Screen::new();
-        s.feed(b"output\r\n\x1b]133;D;0\x07\x1b]133;A\x07");
+        s.feed(b"\x1b]133;C\x07output\r\n\x1b]133;D;0\x07\x1b]133;A\x07");
+        assert!(s.saw_done());
         s.arm_marks();
         assert!(!s.saw_done());
         assert!(!s.saw_prompt());

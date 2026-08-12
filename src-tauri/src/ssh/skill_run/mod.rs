@@ -43,6 +43,13 @@
 //! nested one that lost them and would not take them back) gets the visible
 //! `; printf '__bsdone_%s__\n' "$?"` wrapper that every host used to get, and a
 //! shell that ignores `stty` shows the probe exactly as it always did.
+//!
+//! Both also have to reckon with the same awkward fact, which is that everything
+//! the shell says arrives a round trip after the engine typed. Its answer to the
+//! previous line is still on the wire when the next one goes out, so nothing the
+//! shell *volunteers* can be taken as being about the shell in front of us now.
+//! Every question the engine's decisions rest on is therefore asked and waited
+//! for by name.
 
 pub mod config;
 pub mod screen;
@@ -83,6 +90,15 @@ const SHELL_MARKER: &str = "__bsshell_";
 /// Same marker trick again for the root probe: `__bsuid_0__` means the shell's
 /// effective uid is 0, and `(\d+)` never matches the `%s` echo.
 const UID_MARKER: &str = "__bsuid_";
+/// The shell's answer to `stty -echo`: its exit status, so `__bsecho_0__` means
+/// the terminal has stopped echoing and the next line can be typed unseen. The
+/// `%s` trick matters more here than anywhere: this answer is read off a line
+/// that *was* echoed, so a marker without a digit in it would match its own echo
+/// and prove nothing.
+const ECHO_MARKER: &str = "__bsecho_";
+/// Whether the OSC 133 hooks are in the shell in front of us, `y` or `n`, asked
+/// and answered in the same hidden line that offers them.
+const HOOK_MARKER: &str = "__bshook_";
 /// Bound on the `id -u` root probe. It answers instantly at a live prompt; this
 /// is only a floor against a wedged shell so a probe can never hang the run.
 const UID_PROBE_SECS: u64 = 5;
@@ -125,24 +141,41 @@ const INTERRUPT_MAX: Duration = Duration::from_secs(5);
 const HANDBACK_QUIET: Duration = Duration::from_millis(500);
 const HANDBACK_MAX: Duration = Duration::from_secs(3);
 
-/// How long a hidden line waits for `stty -echo` to actually be in force before
-/// the line it is hiding is typed (see [`Engine::send_hidden`]). Quiet, not
-/// fixed, so a host across an ocean is given its round trip and a local one is
-/// not made to sit through it; capped, because losing this race costs nothing
-/// but a visible line.
-const HIDE_QUIET: Duration = Duration::from_millis(80);
-const HIDE_MAX: Duration = Duration::from_millis(600);
-/// How long to wait for the shell's own prompt marker before concluding the
-/// integration hooks are not in the shell in front of us. Only ever paid when
-/// the marker has not already arrived, which after a normal step it has.
-const PROMPT_MARK_QUIET: Duration = Duration::from_millis(400);
-/// The same, after asking for the hooks to be installed: a shell's own startup
-/// is in this one.
-const PROMPT_MARK_INSTALL: Duration = Duration::from_secs(3);
-/// How many times one run will try to get the hooks back. A shell that refuses
-/// them twice is not going to take them, and every attempt is a line typed at
-/// the host, so the run stops asking and uses the visible wrapper instead.
+/// How long a hidden line waits for the shell to confirm the terminal's echo is
+/// off before the line it is hiding is typed (see [`Engine::send_hidden`]).
+///
+/// Waiting for the confirmation, rather than for a pause, is the whole point.
+/// A fixed quiet window was the bug smoke test 56 found: the window opened on
+/// the login banner, expired while the shell was still working through its
+/// startup, and the line meant to be hidden went out to a terminal that was
+/// still echoing. The operator watched Broadside's plumbing go past, and the
+/// erase behind it took the wrong two rows.
+const HIDE_ECHO_MAX: Duration = Duration::from_secs(3);
+/// How long to wait for the shell to say whether the integration hooks are in
+/// it. A whole shell startup can be inside this one, since offering the hooks to
+/// a nested shell means running a line of shell in it.
+const HOOK_ANSWER_MAX: Duration = Duration::from_secs(5);
+/// How many times one run will go on offering the hooks to a shell that will not
+/// take them. Counted against refusals only: a long skill may legitimately open
+/// a nested shell many times, and each one that takes them costs nothing. Two
+/// refusals is enough to conclude, and every attempt is a line typed at a host.
 const MAX_HOOK_INSTALLS: u8 = 2;
+/// How long the engine waits at the start of a run for the login to be over
+/// before it types anything.
+///
+/// It cannot simply start. The connect-time setup line
+/// ([`crate::omni::shell_setup_command`]) is written from inside the PTY session
+/// task once the login banner has streamed, so the engine is handed a live
+/// session a long way before the shell behind it is at a prompt. A line typed
+/// into a login that is still running sits in the terminal's input queue with
+/// the echo on, which is exactly what `stty -echo` cannot help with.
+///
+/// A shell with the integration announces its first prompt, and that is the
+/// signal. A shell without one is waited out instead: quiet for `LOGIN_QUIET`,
+/// capped at `LOGIN_MAX`.
+const LOGIN_MARK_MAX: Duration = Duration::from_secs(4);
+const LOGIN_QUIET: Duration = Duration::from_millis(400);
+const LOGIN_MAX: Duration = Duration::from_secs(3);
 
 /// Shells whose `$?` and `printf` behave identically, which is all the engine's
 /// completion marker relies on. Worded as "currently" everywhere it surfaces:
@@ -384,9 +417,13 @@ pub struct Engine<E: SkillEvents> {
     /// Whether this host's shell could be reporting its own completions, which
     /// is what lets a command go out with nothing appended to it. Set once the
     /// shell has identified itself; it says the hooks are *possible* here, never
-    /// that they are in place, which only a prompt marker can say.
+    /// that they are in place.
     hooks_possible: bool,
-    /// How many times this run has asked for the hooks to be installed, against
+    /// Whether the shell in front of us has been *proved* to have the hooks
+    /// since the last thing that could have changed which shell that is. See
+    /// [`Engine::forget_shell`].
+    hooks_proven: bool,
+    /// How many times this run has been refused the hooks, against
     /// [`MAX_HOOK_INSTALLS`].
     hook_installs: u8,
 }
@@ -410,6 +447,7 @@ impl<E: SkillEvents> Engine<E> {
             integration_sent: false,
             take_over: false,
             hooks_possible: false,
+            hooks_proven: false,
             hook_installs: 0,
         }
     }
@@ -475,18 +513,34 @@ impl<E: SkillEvents> Engine<E> {
 
     /// Types at the host.
     ///
-    /// Submitting a line forgets everything the shell had told us about itself.
-    /// Anything typed can start a new shell, and the marks are the engine's
-    /// proof about the shell *in front of it*: a prompt marker from the shell an
-    /// `sudo -i` replaced would be read as proof about root's shell, which has
-    /// none of our hooks, and the next command would then be sent expecting a
-    /// completion that could never arrive. A bare control character (Ctrl-U,
-    /// Ctrl-C) submits nothing and starts nothing, so it leaves them alone.
+    /// Submitting a line forgets everything the shell had told us about itself,
+    /// because anything typed can start a new shell. A bare control character
+    /// (Ctrl-U, Ctrl-C) submits nothing and starts nothing, so it leaves that
+    /// knowledge alone.
     fn send_bytes(&mut self, text: &str) -> AppResult<()> {
         if text.contains('\n') {
-            self.screen.arm_marks();
+            self.forget_shell();
         }
         (self.link.write)(text.as_bytes())
+    }
+
+    /// Forgets which shell we were talking to.
+    ///
+    /// Two things go, and they are different in kind. The marks are facts the
+    /// shell stated, and a completion left lying about would answer the next
+    /// command the instant it went out. The proof that the hooks are live is an
+    /// answer about a *shell*, and `sudo -i` is not an edge case here, it is the
+    /// first step of most skills: the nested shell it opens has none of them.
+    ///
+    /// Note what this does **not** try to be: a guarantee about bytes still on
+    /// the wire. Arming happens when we type, and the shell we typed over may
+    /// still have things to say; its last prompt marker can arrive afterwards
+    /// and look for all the world like the new shell's. That is the bug smoke
+    /// test 56 hit, and the reason nothing here is trusted as proof any more:
+    /// see [`Engine::quiet_ready`].
+    fn forget_shell(&mut self) {
+        self.screen.arm_marks();
+        self.hooks_proven = false;
     }
 
     /// Types a line of Broadside's own plumbing without the operator watching it
@@ -506,15 +560,34 @@ impl<E: SkillEvents> Engine<E> {
     /// wrapped leaves a fragment of itself behind, which is why what is hidden
     /// this way is kept short.
     ///
-    /// Best effort throughout. `stty` that isn't there, a shell whose line
-    /// editor echoes for itself, a race lost to a slow host: every one of them
-    /// costs a visible line and nothing else, because the payload still runs and
-    /// its answer still arrives.
-    async fn send_hidden(&mut self, payload: &str) -> bool {
-        if self.send_bytes(" stty -echo\n").is_err() {
+    /// That row arithmetic is only right while the second line really is unseen,
+    /// so the first line does not just turn the echo off, it **says when it
+    /// has** and is waited for. Losing that race does not cost one visible line,
+    /// it costs a visible line *and* an erase that takes the wrong rows, which
+    /// is what smoke test 56 saw.
+    ///
+    /// `needs_quiet` is for a payload too long to be worth showing: the hook
+    /// offer is most of a screenful of shell, so it is not typed at all unless
+    /// the shell has confirmed nobody will see it. The short probes are sent
+    /// either way, since a shell with no `stty` (or a line editor that echoes
+    /// for itself regardless) should still answer them, visibly, as it always
+    /// did.
+    async fn send_hidden(&mut self, payload: &str, needs_quiet: bool) -> bool {
+        // `$?` is `stty`'s own exit status, so the answer says whether the echo
+        // is off as well as that the shell got this far.
+        let quieten = format!(" stty -echo; {}\n", probe_line(ECHO_MARKER, "\"$?\""));
+        if self.send_bytes(&quieten).is_err() {
             return false;
         }
-        self.settle_after(HIDE_QUIET, HIDE_MAX).await;
+        let re = Regex::new(&format!(r"{ECHO_MARKER}(\d+)__")).expect("static regex");
+        let quiet = matches!(
+            self.hidden_answer(&re, HIDE_ECHO_MAX).await.as_deref(),
+            Some("0")
+        );
+        if needs_quiet && !quiet {
+            let _ = self.send_bytes(" stty echo\n");
+            return false;
+        }
         let line = format!(" {payload}; printf '\\033[1A\\r\\033[0J'; stty echo\n");
         if self.send_bytes(&line).is_err() {
             // The hidden line never landed, so nothing on the far side is going
@@ -523,6 +596,40 @@ impl<E: SkillEvents> Engine<E> {
             return false;
         }
         true
+    }
+
+    /// Reads the host until one of the engine's own probes answers, and takes
+    /// the answer out of the match view on the way past so a later step cannot
+    /// match Broadside's bookkeeping.
+    ///
+    /// Controls are deliberately not read, for the reason given on
+    /// [`Engine::discard_unsubmitted`]: these windows bracket a shell with its
+    /// echo turned off, and a Detach honoured in the middle of one would hand
+    /// the operator a shell that types nothing back at them.
+    async fn hidden_answer(&mut self, re: &Regex, max: Duration) -> Option<String> {
+        let deadline = Instant::now() + max;
+        loop {
+            let hit = {
+                let view = self.screen.view();
+                re.captures(view).map(|c| {
+                    (
+                        c.get(0).expect("group 0 always exists").end(),
+                        c.get(1).map(|m| m.as_str().to_string()).unwrap_or_default(),
+                    )
+                })
+            };
+            if let Some((end, answer)) = hit {
+                self.screen.consume_through(end);
+                return Some(answer);
+            }
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => return None,
+                msg = self.link.rx.recv() => match msg {
+                    Some(TapMsg::Data(bytes)) => self.screen.feed(&bytes),
+                    Some(TapMsg::Closed) | None => return None,
+                },
+            }
+        }
     }
 
     /// Reads the host until it has been quiet for `quiet`, bounded by `max`,
@@ -574,25 +681,34 @@ impl<E: SkillEvents> Engine<E> {
     /// Whether the shell in front of us will report this command's completion on
     /// its own, so it can be typed plain.
     ///
-    /// The proof is a prompt marker, and it has to be a *fresh* one: the hooks
-    /// live in a shell, not in a host, and the ones installed on connect are
-    /// gone the moment a step opens a nested shell. `sudo -i` is not an edge
-    /// case here, it is the first step of most skills. So every submitted line
-    /// forgets the proof ([`Engine::send_bytes`]) and this asks the shell to
-    /// prove it again, which after an ordinary step it already has: the marker
-    /// rides in with the completion of the step before.
+    /// The hooks live in a shell, not in a host: the ones installed on connect
+    /// are gone the moment a step opens a nested one. So the question has to be
+    /// asked again after anything that could have changed shells, and the answer
+    /// cannot be a mark the shell happened to emit. Marks arrive a round trip
+    /// late, so the *old* shell's last prompt marker lands after we have typed
+    /// at the new one and reads as proof about it. That is what hung smoke test
+    /// 56: `sudo -i`, a marker from the shell it replaced, and then a command
+    /// typed plain at a root shell that had no way to answer it.
     ///
-    /// When the proof does not come, the hooks are offered to the new shell,
-    /// hidden. If that does not take either, the run falls back to the visible
-    /// completion marker, which is what every host did before any of this and
-    /// still works everywhere.
+    /// So the proof is an answer, not a sighting, and there are only two of
+    /// them:
+    ///
+    /// - the shell answered [`Engine::install_hooks`] with "the hooks are here",
+    ///   in a line we typed and waited on, or
+    /// - it reported the *previous* command's completion, which only a hooked
+    ///   shell can do and which nothing has been typed over since.
+    ///
+    /// When neither holds, the hooks are offered to the shell, hidden. If it
+    /// will not take them the run falls back to the visible completion marker,
+    /// which is what every host did before any of this and still works
+    /// everywhere.
     async fn quiet_ready(&mut self) -> bool {
         if !self.hooks_possible {
             return false;
         }
-        // Nearly always already true, and free when it is: the shell's prompt
-        // marker arrives with the previous command's completion.
-        if self.wait_for_prompt_mark(PROMPT_MARK_QUIET).await {
+        // Free in the steady state: a run step that read a completion off the
+        // shell proved the shell that emitted it, and typed nothing since.
+        if self.hooks_proven {
             return true;
         }
         if self.hook_installs >= MAX_HOOK_INSTALLS {
@@ -602,26 +718,62 @@ impl<E: SkillEvents> Engine<E> {
             return false;
         }
         self.hook_installs += 1;
-        self.install_hooks().await
+        self.hooks_proven = self.install_hooks().await;
+        if self.hooks_proven {
+            // A shell that took them is not evidence against the next one, and
+            // a long skill may open nested shells all day.
+            self.hook_installs = 0;
+        }
+        self.hooks_proven
     }
 
-    /// Offers the OSC 133 hooks to the shell in front of us, and waits for it to
-    /// prove they took.
+    /// Offers the OSC 133 hooks to the shell in front of us, and has it say
+    /// whether they are there, in the same line.
     ///
     /// The same integration [`crate::omni`] sends on connect, guarded so that
     /// running it twice in one shell is a no-op: without the guard a second
     /// install would prepend `__omni_precmd` to `PROMPT_COMMAND` again and the
     /// shell would report every command finishing twice, which is a stale
     /// completion waiting to answer the *next* command.
+    ///
+    /// The report on the end is what makes this an answer rather than a hope. It
+    /// is printed by the same line that installs them, so it cannot be about
+    /// some earlier shell, and it says `y` from a shell that already had them as
+    /// readily as from one that has just taken them.
     async fn install_hooks(&mut self) -> bool {
+        let report = probe_line(
+            HOOK_MARKER,
+            "\"$(command -v __omni_precmd >/dev/null 2>&1 && echo y || echo n)\"",
+        );
         let line = format!(
-            "command -v __omni_precmd >/dev/null 2>&1 || {{ {}; }}",
+            "command -v __omni_precmd >/dev/null 2>&1 || {{ {}; }}; {report}",
             crate::omni::SHELL_INTEGRATION
         );
-        if !self.send_hidden(&line).await {
+        if !self.send_hidden(&line, true).await {
             return false;
         }
-        self.wait_for_prompt_mark(PROMPT_MARK_INSTALL).await
+        let re = Regex::new(&format!("{HOOK_MARKER}([a-z]+)__")).expect("static regex");
+        matches!(
+            self.hidden_answer(&re, HOOK_ANSWER_MAX).await.as_deref(),
+            Some("y")
+        )
+    }
+
+    /// Waits for the login to be over before anything is typed at it.
+    ///
+    /// See [`LOGIN_MARK_MAX`] for why a live session is not the same thing as a
+    /// shell that is ready to be typed at.
+    async fn wait_for_login(&mut self) {
+        // A shell that was given the integration announces its first prompt,
+        // which is the exact moment it is listening. Nothing has been typed yet,
+        // so there is no older shell whose marker this could be.
+        if self.integration_sent
+            && self.known_capability == Some(ShellCapability::Full)
+            && self.wait_for_prompt_mark(LOGIN_MARK_MAX).await
+        {
+            return;
+        }
+        self.settle_after(LOGIN_QUIET, LOGIN_MAX).await;
     }
 
     /// Identifies the running shell before any step runs, so an unsupported one
@@ -645,8 +797,9 @@ impl<E: SkillEvents> Engine<E> {
                 });
             }
         }
+        self.wait_for_login().await;
         let probe = probe_line(SHELL_MARKER, "\"$0\"");
-        if !self.send_hidden(&probe).await {
+        if !self.send_hidden(&probe, false).await {
             return Err("could not write to the shell".into());
         }
         let re = Regex::new(&format!("{SHELL_MARKER}([A-Za-z0-9._/-]*)__")).expect("static regex");
@@ -719,7 +872,7 @@ impl<E: SkillEvents> Engine<E> {
     /// failure yields `None` (unknown), never an error that ends the run.
     async fn probe_uid(&mut self) -> Option<bool> {
         let probe = probe_line(UID_MARKER, "\"$(id -u)\"");
-        if !self.send_hidden(&probe).await {
+        if !self.send_hidden(&probe, false).await {
             return None;
         }
         let re = Regex::new(&format!(r"{UID_MARKER}(\d+)__")).expect("static regex");
@@ -949,7 +1102,7 @@ impl<E: SkillEvents> Engine<E> {
                 // last told us about itself was about the shell they were handed,
                 // and they may not be handing back the same one. Forget it and
                 // make the next command ask again.
-                self.screen.arm_marks();
+                self.forget_shell();
                 self.emit("info", Some(next_step_id), resumed_line(clear));
                 Ok(())
             }
@@ -1256,6 +1409,10 @@ impl<E: SkillEvents> Engine<E> {
                 group1,
                 output_at,
             }) => {
+                // The shell accounted for a command of its own accord, which
+                // only a hooked one can do, and nothing has been typed over it
+                // since. That is the proof the next step runs on.
+                self.hooks_proven = quiet;
                 let code: u32 = group1.and_then(|g| g.parse().ok()).unwrap_or(1);
                 // Where the command's own output starts, so a `match` test
                 // cannot match the command that produced it: a step running
@@ -1298,6 +1455,20 @@ impl<E: SkillEvents> Engine<E> {
             // Skipping a run step takes its success branch.
             Ok(Wait::Skipped) => StepOutcome::Goto(on_success.to_string()),
             Ok(Wait::Timeout) => {
+                // A completion arrived, and was refused for having no command in
+                // front of it, and then nothing else came. Waiting on this
+                // shell's marks is not going to start working, and every
+                // remaining step would time out the same way, so take the rest
+                // of the run back to the marker that works everywhere.
+                if quiet && self.screen.stray_done() {
+                    self.hooks_possible = false;
+                    self.hooks_proven = false;
+                    self.emit(
+                        "info",
+                        Some(step.id()),
+                        "this shell reports completions out of order; using the visible marker from here",
+                    );
+                }
                 // onTimeout: "fail" on a run step takes the failure branch
                 // rather than ending the host: the skill author gets to
                 // handle it. "goto" takes the timeout target instead, so a
@@ -1436,7 +1607,7 @@ impl<E: SkillEvents> Engine<E> {
                     }
                     // See the same line in `park_for_take_over`: the shell they
                     // hand back may not be the one they were given.
-                    self.screen.arm_marks();
+                    self.forget_shell();
                     self.emit("info", Some(step.id()), resumed_line(clear));
                     // Re-announce the step, because the wait genuinely restarts
                     // here with a full fresh timeout and the panel's countdown

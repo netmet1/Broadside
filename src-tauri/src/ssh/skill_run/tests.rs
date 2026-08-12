@@ -244,6 +244,15 @@ struct Script {
     /// Whether being offered the hooks installs them. False for the shell that
     /// simply will not take them, which is the case the fallback exists for.
     takes_hooks: bool,
+    /// Whether it confirms that the terminal's echo is off. False for a shell
+    /// with no `stty`, one whose line editor echoes for itself, or one still
+    /// busy with its login: all of them mean a hidden line would not be hidden.
+    answers_echo: bool,
+    /// Whether it says where a command's output starts as well as how the
+    /// command ended. False for a shell that has somehow kept the completion
+    /// hook and lost the one in front of it, which leaves the engine with
+    /// completions it cannot tell apart from the previous line's.
+    reports_start: bool,
 }
 
 impl Script {
@@ -255,18 +264,26 @@ impl Script {
         let line = typed.trim();
         // Whatever it turns out to be, the shell echoes what was typed at it.
         let out = format!("{line}\r\n");
-        if line.contains("stty -echo") {
-            // The line worth hiding is the next one; this one does nothing else.
-            return out;
-        }
         if line.contains("sudo -i") {
             self.hooked = false;
             return out;
         }
-        if line.contains("__omni_precmd") && self.takes_hooks {
-            self.hooked = true;
-        }
-        let printed = if line.contains(SHELL_MARKER) {
+        // Order matters below: the hidden lines all end in `stty echo`, so the
+        // bare-`stty` arm has to come last or it would swallow them.
+        let printed = if line.contains(ECHO_MARKER) {
+            // The line that turns the echo off says when it has. Answering this
+            // is the whole of what stops the next line being seen.
+            if !self.answers_echo {
+                return out;
+            }
+            format!("\x1b]{};{ECHO_MARKER}0__\x07", screen::BS_OSC)
+        } else if line.contains("__omni_precmd") {
+            if self.takes_hooks {
+                self.hooked = true;
+            }
+            let answer = if self.hooked { "y" } else { "n" };
+            format!("\x1b]{};{HOOK_MARKER}{answer}__\x07", screen::BS_OSC)
+        } else if line.contains(SHELL_MARKER) {
             format!("\x1b]{};{SHELL_MARKER}-bash__\x07", screen::BS_OSC)
         } else if line.contains(UID_MARKER) {
             format!("\x1b]{};{UID_MARKER}0__\x07", screen::BS_OSC)
@@ -274,28 +291,28 @@ impl Script {
             String::new()
         } else {
             let (code, text) = self.replies.pop_front().unwrap_or((0, String::new()));
-            return finish(out, &text, code, self.hooked, line);
+            return self.finish(out, &text, code, line);
         };
-        finish(out, &printed, 0, self.hooked, line)
+        self.finish(out, &printed, 0, line)
     }
-}
 
-/// The tail of one command: what it printed, then how the shell accounts for
-/// it. A hooked one says so out of band; an unhooked one says nothing about
-/// itself at all beyond running the marker the engine appended, which is the
-/// whole of why the fallback wrapper exists.
-fn finish(mut out: String, printed: &str, code: i32, hooked: bool, line: &str) -> String {
-    if !hooked {
+    /// The tail of one command: what it printed, then how the shell accounts for
+    /// it. A hooked one says so out of band; an unhooked one says nothing about
+    /// itself at all. Either kind still runs the marker the engine appended,
+    /// which is the whole of why the fallback wrapper works everywhere.
+    fn finish(&self, mut out: String, printed: &str, code: i32, line: &str) -> String {
+        if self.hooked && self.reports_start {
+            out.push_str("\x1b]133;C\x07");
+        }
         out.push_str(printed);
         if line.contains(DONE_MARKER) {
             out.push_str(&format!("{DONE_MARKER}{code}__\r\n"));
         }
-        return out;
+        if self.hooked {
+            out.push_str(&format!("\x1b]133;D;{code}\x07\x1b]133;A\x07"));
+        }
+        out
     }
-    out.push_str("\x1b]133;C\x07");
-    out.push_str(printed);
-    out.push_str(&format!("\x1b]133;D;{code}\x07\x1b]133;A\x07"));
-    out
 }
 
 /// An engine talking to a shell that reports its own completions, set up the
@@ -309,6 +326,8 @@ fn hooked_harness() -> (Engine<CollectEvents>, Host, Arc<Mutex<Script>>) {
         replies: VecDeque::new(),
         hooked: true,
         takes_hooks: true,
+        answers_echo: true,
+        reports_start: true,
     }));
     let sink = writes.clone();
     let shell = script.clone();
@@ -1570,9 +1589,81 @@ async fn a_shell_that_will_not_take_the_hooks_falls_back_to_the_visible_marker()
         host.typed()
     );
     assert_eq!(
-        host.typed().matches("command -v __omni_precmd").count(),
+        host.typed().matches(HOOK_MARKER).count(),
         MAX_HOOK_INSTALLS as usize,
         "and stopped asking"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_shell_that_keeps_taking_the_hooks_is_never_given_up_on() {
+    // The cap counts refusals, not offers. A skill that opens a nested shell
+    // between every pair of steps is doing something legitimate, and each one
+    // that takes them costs nothing; counting those against the cap would have
+    // put a long run back on the visible marker for no reason.
+    let (engine, host, script) = hooked_harness();
+    {
+        let mut s = script.lock().unwrap();
+        for _ in 0..3 {
+            s.replies.push_back((0, String::new()));
+        }
+    }
+    let c = cfg(vec![
+        interactive(run_step("a", "sudo -i", "b", "fail")),
+        run_step("b", "whoami", "c", "fail"),
+        interactive(run_step("c", "bash", "d", "fail")),
+        run_step("d", "whoami", "e", "fail"),
+        interactive(run_step("e", "bash", "f", "fail")),
+        run_step("f", "whoami", STOP, "fail"),
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert_eq!(host.typed().matches(HOOK_MARKER).count(), 3);
+    assert!(
+        !host.typed().contains(DONE_MARKER),
+        "every one of them stayed on the quiet path: {:?}",
+        host.typed()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_hooks_are_offered_again_after_the_operator_has_had_the_keyboard() {
+    // They may have run `sudo -i` themselves. Nothing the shell said before they
+    // were handed the keyboard is proof about the shell they hand back, so the
+    // step after a takeover asks again where the step after an ordinary one
+    // would not have needed to.
+    let (engine, host, script) = hooked_harness();
+    {
+        let mut s = script.lock().unwrap();
+        s.replies.push_back((0, String::new()));
+        s.replies.push_back((0, String::new()));
+    }
+    let c = cfg(vec![
+        run_step("a", "whoami", "w", "fail"),
+        SeqStep::Wait {
+            id: "w".into(),
+            seconds: 60,
+            next: "b".into(),
+        },
+        run_step("b", "whoami", STOP, "fail"),
+    ]);
+    let ctl = host.ctl.clone();
+    tokio::spawn(async move {
+        // Land the request inside the wait, well clear of the opening probes, so
+        // it is honoured in the gap before the second run step rather than
+        // before the first.
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        let _ = ctl.send(Ctl::TakeOver);
+        tokio::time::sleep(Duration::from_secs(90)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+    });
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert_eq!(
+        host.typed().matches(HOOK_MARKER).count(),
+        2,
+        "once at the start of the run, once after the keyboard came back: {:?}",
+        host.typed()
     );
 }
 
@@ -1603,10 +1694,69 @@ async fn the_probes_answer_without_anything_being_printed() {
     let outcome = run_host(engine, &c).await;
     assert_eq!(outcome.is_root, Some(true), "{outcome:?}");
     let typed = host.typed();
-    assert!(typed.contains(" stty -echo\n"), "{typed:?}");
+    assert!(typed.contains(" stty -echo;"), "{typed:?}");
     assert!(typed.contains("stty echo\n"), "echo is always put back");
     // The erase that takes the one visible line back off the screen.
     assert!(typed.contains(r"\033[1A\r\033[0J"), "{typed:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_hidden_line_is_not_typed_until_the_echo_is_confirmed_off() {
+    // Smoke test 56's bug. The shell was still working through its login when
+    // the pause the engine used to take expired, so the line meant to be unseen
+    // went out to a terminal that was still echoing. The confirmation is what
+    // replaces the pause, and the long payloads are not sent without it.
+    let (engine, host, script) = hooked_harness();
+    // A shell that never answers the echo probe: `stty` missing, a line editor
+    // of its own, or simply too busy.
+    script.lock().unwrap().answers_echo = false;
+    script.lock().unwrap().replies.push_back((0, String::new()));
+    let c = cfg(vec![
+        interactive(run_step("a", "sudo -i", "b", "fail")),
+        run_step("b", "whoami", STOP, "fail"),
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    // The screenful of shell that offers the hooks was never typed.
+    assert!(
+        !host.typed().contains("__omni_precmd"),
+        "{:?}",
+        host.typed()
+    );
+    // And the step ran anyway, the way every host used to.
+    assert!(host.typed().contains(DONE_MARKER));
+    // Echo is put back even on the path that gives up.
+    assert!(host.typed().contains(" stty echo\n"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_shell_that_reports_a_completion_out_of_order_stops_being_trusted() {
+    // The engine reads a completion as this command's only when the shell said
+    // this command had started. A shell that reports the one and not the other
+    // would otherwise time out every single step for the rest of the run, so the
+    // first step to notice takes the whole run back to the visible marker.
+    let (engine, host, script) = hooked_harness();
+    {
+        let mut s = script.lock().unwrap();
+        s.reports_start = false;
+        s.replies.push_back((0, String::new()));
+        s.replies.push_back((0, String::new()));
+    }
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", "b"),
+        run_step("b", "echo two", STOP, "fail"),
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(
+        host.events.phases().contains(&"timeout".to_string()),
+        "the first step is the one that pays for finding out"
+    );
+    assert!(
+        host.typed().contains(DONE_MARKER),
+        "and the rest of the run is wrapped: {:?}",
+        host.typed()
+    );
 }
 
 // ------------------------------------------------------------- persistence
