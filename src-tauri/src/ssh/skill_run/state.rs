@@ -24,11 +24,13 @@ pub enum Ctl {
     /// the question it answers is narrower than "did the operator type": it is
     /// **is there unsubmitted text sitting on the command line**.
     ///
-    /// That is the only thing a hand-back has to forget. Half-typed text is
-    /// still on the host's line editor, unentered, and the shell reprints it on
-    /// the next redraw, which is how the operator's keystrokes ended up
-    /// satisfying the next step's pattern (smoke 55 B3). So that case clears,
-    /// and swallows the redraw as well (see `Engine::settle_handback`).
+    /// That is the only thing a hand-back has to forget, and the only thing it
+    /// has to undo. Half-typed text is still on the host's line editor,
+    /// unentered: the shell reprints it on the next redraw, which is how the
+    /// operator's keystrokes ended up satisfying the next step's pattern (smoke
+    /// 55 B3, and again in 55-3 B1), and the next command the engine types
+    /// lands on the end of it. So that case kills the line, clears, and swallows
+    /// what the kill repaints (see `Engine::discard_unsubmitted`).
     ///
     /// Everything else is kept, and both halves of that matter:
     ///

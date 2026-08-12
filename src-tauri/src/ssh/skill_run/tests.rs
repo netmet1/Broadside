@@ -1492,6 +1492,73 @@ async fn a_redraw_after_the_handback_cannot_satisfy_the_next_step() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_handback_takes_the_operators_half_typed_line_off_the_shell() {
+    // Smoke 55-3 B1, and why swallowing the redraw was treating a symptom.
+    //
+    // The operator's `lmnop` is still on the host's command line when the run
+    // carries on, so the next thing the engine types lands on the end of it:
+    // `lmnop printf '__bsuid_%s__\n' "$(id -u)"` went out as one line and the
+    // shell ran it. Kill the line first and the next command starts its own.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        run_step("b", "echo two", STOP, STOP),
+    ]);
+
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        ctl.send(Ctl::TakeOver).unwrap();
+        let _ = data.send(TapMsg::Data(echo_of("echo one").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"one\r\n__bsdone_0__\r\n".to_vec()));
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Parked. The operator types without pressing Enter.
+        let _ = data.send(TapMsg::Data(b"lmnop".to_vec()));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _ = ctl.send(Ctl::Resume { clear: true });
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let _ = data.send(TapMsg::Data(echo_of("echo two").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"two\r\n__bsdone_0__\r\n".to_vec()));
+    });
+
+    assert!(engine.run_sequence(&c).await.ok);
+    let typed = host.typed();
+    let kill = typed.find('\u{15}').expect("the line was never killed");
+    let next = typed.find("echo two").expect("step b never ran");
+    assert!(kill < next, "the kill has to precede the next command: {typed:?}");
+    // And only the one, from the one resume that asked for it.
+    assert_eq!(typed.matches('\u{15}').count(), 1, "{typed:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_handback_with_nothing_typed_leaves_the_line_alone() {
+    // The counterpart. Nothing was left unsubmitted, so there is nothing to
+    // take back, and killing a line the operator did not dirty would be the
+    // engine reaching into a shell it has no reason to touch.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        run_step("b", "echo two", STOP, STOP),
+    ]);
+    host.ctl.send(Ctl::TakeOver).unwrap();
+    host.say(&echo_of("echo one"));
+    host.say("one\r\n__bsdone_0__\r\n");
+
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+        let _ = data.send(TapMsg::Data(echo_of("echo two").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"two\r\n__bsdone_0__\r\n".to_vec()));
+    });
+
+    assert!(engine.run_sequence(&c).await.ok);
+    assert!(!host.typed().contains('\u{15}'), "{:?}", host.typed());
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_handback_with_nothing_typed_still_sees_what_the_host_said() {
     // The other half, and what keeps the settle from being a blunt instrument:
     // the operator only watched, so there is nothing of theirs to forget and

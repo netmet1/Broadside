@@ -95,8 +95,8 @@ const SHELL_DETECT_SECS: u64 = 15;
 const INTERRUPT_QUIET: Duration = Duration::from_millis(400);
 const INTERRUPT_MAX: Duration = Duration::from_secs(5);
 /// How long the shell has to go quiet after the operator hands it back, and the
-/// ceiling on waiting for that. See [`Engine::settle_handback`], which is where
-/// the reasoning for needing this at all lives.
+/// ceiling on waiting for that. See [`Engine::discard_unsubmitted`], which is
+/// where the reasoning for needing this at all lives.
 ///
 /// The quiet window has to outlast a round trip plus a redraw, since that is
 /// the thing being absorbed, and the ceiling has to be short enough that a host
@@ -694,17 +694,18 @@ impl<E: SkillEvents> Engine<E> {
         });
         match park(&mut self.screen, &mut self.link.rx, &mut self.ctl).await {
             // Same rule as the timeout pause: only text the operator left
-            // unsubmitted has to be forgotten, so the step that follows cannot
-            // match against their keystrokes. If they only read, or ran
-            // something and pressed Enter, the buffer is left alone.
+            // unsubmitted has to be taken back off the line and forgotten, so
+            // the step that follows cannot match against their keystrokes. If
+            // they only read, or ran something and pressed Enter, the line is
+            // already clear and the buffer is left alone.
             Park::Resume { clear } => {
-                if clear && !self.settle_handback().await {
+                if clear && !self.discard_unsubmitted().await {
                     return Err(HostOutcome::finished(
                         false,
                         "the shell closed unexpectedly",
                     ));
                 }
-                self.emit("info", Some(next_step_id), "resumed by the operator");
+                self.emit("info", Some(next_step_id), resumed_line(clear));
                 Ok(())
             }
             // Skip is treated as a resume. The panel does not offer it in this
@@ -735,32 +736,51 @@ impl<E: SkillEvents> Engine<E> {
     }
 
     /// The operator has left half-typed text on this host's command line and
-    /// handed it back. Forget it, including the part that has not arrived yet.
+    /// handed it back. Take it off the line, then forget it.
     ///
     /// Only reached when the resume says so (see [`Ctl::Resume`]'s `clear`), and
     /// the condition is narrow on purpose: unsubmitted text, not typing in
     /// general. A command the operator actually ran is the host talking and its
     /// output is kept, which is the whole of smoke 55-2 D2.
     ///
-    /// For the unsubmitted case, emptying the match buffer once is the obvious
-    /// move and it is not enough, which is what smoke 55 B3 caught: the operator
-    /// typed the very text the next step was waiting for, resumed, and the step
-    /// matched it.
+    /// For the unsubmitted case, emptying the match buffer is the obvious move
+    /// and it is not enough, which is what smoke 55 B3 caught and smoke 55-3 B1
+    /// caught again: the operator typed the very text the next step was waiting
+    /// for, resumed, and the step matched it.
     ///
-    /// The clear did work. What it cannot do is un-type anything. Those
-    /// keystrokes are still sitting on the host's command line, unentered, and
-    /// a shell reprints that line whenever something asks it to redraw. Resuming
-    /// asks: the amber bar this pane wears while parked is taller than the strip
-    /// it wears while running, so handing back changes the pane's height, the
-    /// pane refits, the new size goes to the host, and the shell redraws its
-    /// prompt with the operator's half-typed text on it a few milliseconds after
-    /// the buffer was emptied. The step that followed then matched their typing,
-    /// which is precisely what the clear exists to prevent.
+    /// The clear does work. What it cannot do is un-type anything, and that is
+    /// the actual problem. Those keystrokes are still sitting on the host's
+    /// command line, unentered, and they cause two separate failures:
     ///
-    /// So the buffer is emptied, whatever the shell says while it settles is
-    /// swallowed, and it is emptied again. Bounded at both ends: a host printing
-    /// continuously never falls quiet, and waiting for it to would hold the run
-    /// up for as long as it kept talking.
+    /// - **A shell reprints that line whenever something asks it to redraw**,
+    ///   and handing back asks. The amber bar this pane wears while parked is
+    ///   taller than the strip it wears while running, so the pane changes
+    ///   height, refits, the new size goes to the host, and the shell repaints
+    ///   its prompt with the operator's half-typed text on it. That repaint
+    ///   arrives *after* the settle below, not during it, because the pane does
+    ///   not shrink until it hears the resume acknowledged, and this function is
+    ///   what runs before the acknowledgement. So it always lands in the next
+    ///   step's wait, where it matches. No settle window can close that.
+    /// - **The next thing the engine types lands on the same line**, because
+    ///   commands go out with a leading space and no line kill in front of them.
+    ///   The operator's `lmnop` plus the closing uid probe became one line,
+    ///   `lmnop printf '__bsuid_%s__\n' "$(id -u)"`, which the shell then ran.
+    ///
+    /// So the line is killed first (Ctrl-U, the POSIX `kill` character: readline
+    /// binds it to `unix-line-discard` in both emacs and vi-insert modes, and a
+    /// shell with no line editing at all, like dash, gets the same behaviour
+    /// from the tty driver). Not Ctrl-C, which would signal whatever the
+    /// operator left running, for the same reason `interrupt_running` is only
+    /// ever aimed at a `run` step's own command. The one case it does not cover
+    /// is an operator who moved the cursor back into the middle of their text,
+    /// since Ctrl-U kills leftwards from the cursor; anything right of it
+    /// survives, and that is worth the narrower blast radius.
+    ///
+    /// Then the buffer is emptied, whatever the shell says while it settles is
+    /// swallowed (the kill's own repaint, and any echo still in flight), and it
+    /// is emptied again. Bounded at both ends: a host printing continuously
+    /// never falls quiet, and waiting for it to would hold the run up for as
+    /// long as it kept talking.
     ///
     /// Control messages are deliberately *not* read here. A Stop host pressed
     /// during this half-second stays queued and is honoured by the next wait,
@@ -771,7 +791,10 @@ impl<E: SkillEvents> Engine<E> {
     /// Returns false if the shell closed while settling, which the caller owns:
     /// this one is deep enough in the middle of things to have no opinion about
     /// how a host should end.
-    async fn settle_handback(&mut self) -> bool {
+    async fn discard_unsubmitted(&mut self) -> bool {
+        if self.send_bytes("\x15").is_err() {
+            return false;
+        }
         self.screen.clear();
         let deadline = Instant::now() + HANDBACK_MAX;
         let mut quiet_at = Instant::now() + HANDBACK_QUIET;
@@ -1133,11 +1156,11 @@ impl<E: SkillEvents> Engine<E> {
                     //
                     // Clearing is not the whole of forgetting, and the pattern
                     // this is about to wait for again is exactly the kind a
-                    // redraw can satisfy by accident. See `settle_handback`.
-                    if clear && !self.settle_handback().await {
+                    // redraw can satisfy by accident. See `discard_unsubmitted`.
+                    if clear && !self.discard_unsubmitted().await {
                         return Err(StepOutcome::Closed);
                     }
-                    self.emit("info", Some(step.id()), "resumed by the operator");
+                    self.emit("info", Some(step.id()), resumed_line(clear));
                     // Re-announce the step, because the wait genuinely restarts
                     // here with a full fresh timeout and the panel's countdown
                     // is keyed off the announcement. Without this it kept
@@ -1159,6 +1182,19 @@ impl<E: SkillEvents> Engine<E> {
                 Park::Closed => return Err(StepOutcome::Closed),
             }
         }
+    }
+}
+
+/// What the step log says about a resume.
+///
+/// When the operator left text unsubmitted, the engine takes it back off the
+/// command line, and a line disappearing out of their shell should be accounted
+/// for in the log rather than left looking like a glitch.
+fn resumed_line(cleared: bool) -> &'static str {
+    if cleared {
+        "resumed by the operator; the half-typed line was cleared"
+    } else {
+        "resumed by the operator"
     }
 }
 
