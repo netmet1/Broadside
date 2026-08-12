@@ -1618,7 +1618,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane",
     body: (
       <>
         <Lead>
@@ -1930,6 +1930,26 @@ export const SECTIONS: HelpSection[] = [
             thirty-nine that can take it. Where the shell was already known at
             connect time the refusal is immediate rather than waiting out a
             probe.
+          </p>
+          <H3>What you see in the pane</H3>
+          <p>
+            The pane shows your commands, not Broadside's bookkeeping. A step's
+            command goes to the shell exactly as you wrote it, and the shell
+            reports back what it exited with over the same invisible channel that
+            drives <SectionLink id="help-sec-multiterminal">
+              MultiTerminal
+            </SectionLink>{" "}
+            command blocks. The probes a run opens with are typed with the
+            terminal's echo off and answer the same silent way.
+          </p>
+          <p>
+            On a host that cannot do that, you will see a{" "}
+            <code>printf</code> appended to each command and a line like{" "}
+            <code>__bsdone_0__</code> under it. That is the fallback, it is
+            harmless, and it means one of three things: the shell is not bash or
+            zsh, this host is set to <Nav>never</Nav> under shell integration, or
+            a step opened a nested shell that would not take the hooks back.
+            Commands still run and branch exactly the same either way.
           </p>
         </Detail>
       </>
