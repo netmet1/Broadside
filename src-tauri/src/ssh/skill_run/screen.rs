@@ -17,8 +17,54 @@
 //! The current line is part of the match view: an interactive prompt
 //! (`Do you want to continue? [Y/n] `) never sends a newline, so a matcher that
 //! only saw completed lines could never answer one.
+//!
+//! ## Marks: the things in the stream that are addressed to us
+//!
+//! Two kinds of escape sequence carry meaning rather than appearance, and both
+//! are invisible to the operator because no terminal draws an OSC:
+//!
+//! - **OSC 133**, the shell integration [`crate::omni`] installs on connect.
+//!   The shell announces its own prompts, where a command's output starts, and
+//!   what a command exited with. That is what lets a skill run a command
+//!   *plain*, with no completion marker appended for the operator to read.
+//! - **OSC 6273**, Broadside's own. The engine's probes print their answer
+//!   inside one so the pane never shows it. The payload is put into the match
+//!   view as a line of text, so the same pattern matches whether the shell
+//!   understood the escape or printed it literally.
+//!
+//! Marks are *taken*, not matched: a completion that has already been banked
+//! must never answer the next command, so the engine arms them before it types.
 
 use vte::{Params, Parser, Perform};
+
+/// Broadside's private OSC number, used for the engine's own probe answers.
+///
+/// Arbitrary, and picked not to collide with any published one (0-2, 4, 7-9,
+/// 10-19, 52, 99, 104, 110-119, 133, 633, 777, 1337). A terminal that does not
+/// know an OSC identifier drops the whole sequence, which is exactly what is
+/// wanted: the answer reaches the engine and never reaches the glass.
+pub const BS_OSC: &str = "6273";
+
+/// What the shell has told us about itself since the marks were last armed.
+#[derive(Default)]
+struct Marks {
+    /// `OSC 133 ; A`: the shell printed a prompt. Proof that its integration
+    /// hooks are installed *and* firing in whatever shell is in front of us,
+    /// which is the one thing a nested shell (`sudo -i`) takes away.
+    prompt: bool,
+    /// `OSC 133 ; C`: where in the view the command's output began, which is
+    /// everything after the shell's echo of the command line.
+    ///
+    /// A position rather than a flag, because it cannot be acted on when it
+    /// arrives: a command quick enough to finish inside one round trip sends
+    /// its echo, this mark, its output and its completion in a single chunk, so
+    /// by the time anything looks, the output it is meant to delimit is already
+    /// in the buffer behind it. Kept as an offset and applied at the end.
+    output_at: Option<usize>,
+    /// `OSC 133 ; D ; <code>`: the command finished. The inner `Option` is the
+    /// exit status, absent when the shell reported none.
+    done: Option<Option<i32>>,
+}
 
 /// Frozen-line budget. Long enough to span a verbose step's output, bounded so
 /// a run that produces gigabytes can't grow the buffer without limit.
@@ -40,9 +86,17 @@ struct Interp {
     line: Vec<char>,
     /// Cursor column within `line`.
     col: usize,
+    /// What the shell has said about itself, out of band.
+    marks: Marks,
 }
 
 impl Interp {
+    /// How long the match view is right now, in bytes: what a mark's position
+    /// is measured against.
+    fn view_len(&self) -> usize {
+        self.pending.len() + self.line.iter().map(|c| c.len_utf8()).sum::<usize>()
+    }
+
     fn freeze_line(&mut self) {
         if self.pending.len() + self.line.len() > MAX_PENDING {
             self.trim_pending();
@@ -72,6 +126,15 @@ impl Interp {
             cut += nl + 1;
         }
         self.pending.drain(..cut);
+        self.shift_marks(cut);
+    }
+
+    /// Moves a mark's position back by the `cut` bytes that just left the front
+    /// of the view, and drops it if it was inside them. A command noisy enough
+    /// to be trimmed has lost the boundary between its echo and its output,
+    /// which is a `match` test reading one extra line, not a wrong answer.
+    fn shift_marks(&mut self, cut: usize) {
+        self.marks.output_at = self.marks.output_at.and_then(|at| at.checked_sub(cut));
     }
 
     fn write_char(&mut self, c: char) {
@@ -157,10 +220,52 @@ impl Perform for Interp {
         }
     }
 
-    // Colour, OSC (including the OSC 133 shell-integration markers pty.rs
-    // injects), DCS and charset selection carry no text, so dropping them *is*
-    // the strip.
-    fn osc_dispatch(&mut self, _params: &[&[u8]], _bell: bool) {}
+    /// Colour, DCS and charset selection carry no text, so dropping them *is*
+    /// the strip. An OSC carries no text either, but two of them carry
+    /// *meaning*, and this is where it is read off. See the module docs.
+    fn osc_dispatch(&mut self, params: &[&[u8]], _bell: bool) {
+        let Some(id) = params.first() else {
+            return;
+        };
+        if *id == b"133".as_slice() {
+            match params.get(1).and_then(|kind| kind.first()) {
+                Some(b'A') => self.marks.prompt = true,
+                Some(b'C') => self.marks.output_at = Some(self.view_len()),
+                Some(b'D') => {
+                    self.marks.done = Some(
+                        params
+                            .get(2)
+                            .and_then(|code| std::str::from_utf8(code).ok())
+                            .and_then(|code| code.trim().parse().ok()),
+                    );
+                    // The same hook prints the next prompt's marker immediately
+                    // after this one, but a caller checking for a live shell
+                    // between the two would read "no hooks" for as long as the
+                    // second printf takes to arrive. A completion could only
+                    // have come from the hooks, so it counts as the same proof.
+                    self.marks.prompt = true;
+                }
+                _ => {}
+            }
+            return;
+        }
+        if *id == BS_OSC.as_bytes() {
+            // Ours: the payload is an answer to a probe, so it belongs in the
+            // text the engine matches on rather than being dropped. Written as
+            // its own line, because a `printf` cannot put a newline inside an
+            // OSC (the parser ignores one) and a probe's answer reads as a line.
+            for (i, part) in params[1..].iter().enumerate() {
+                if i > 0 {
+                    // vte splits the payload on `;`, so put it back.
+                    self.write_char(';');
+                }
+                for c in String::from_utf8_lossy(part).chars() {
+                    self.write_char(c);
+                }
+            }
+            self.freeze_line();
+        }
+    }
     fn hook(&mut self, _p: &Params, _i: &[u8], _ig: bool, _a: char) {}
     fn put(&mut self, _byte: u8) {}
     fn unhook(&mut self) {}
@@ -207,6 +312,7 @@ impl Screen {
     /// the pane, was never reprinted, and the next expect timed out on text
     /// the operator could see.
     pub fn consume_through(&mut self, end: usize) -> String {
+        self.interp.shift_marks(end);
         if end <= self.interp.pending.len() {
             let tail = self.interp.pending.split_off(end);
             return std::mem::replace(&mut self.interp.pending, tail);
@@ -239,6 +345,48 @@ impl Screen {
         self.interp.pending.clear();
         self.interp.line.clear();
         self.interp.col = 0;
+        self.arm_marks();
+    }
+
+    /// Takes everything buffered, leaving the view empty, with the offset into
+    /// it where the shell said the command's output began.
+    ///
+    /// A completion has no position in the text the way a pattern match does:
+    /// it is the last thing the shell says about a command, so everything up to
+    /// it belongs to that command and goes with it.
+    pub fn take_view(&mut self) -> (String, Option<usize>) {
+        let mut out = std::mem::take(&mut self.interp.pending);
+        out.extend(self.interp.line.drain(..));
+        self.interp.col = 0;
+        let len = out.len();
+        let at = self.interp.marks.output_at.take();
+        (out, at.filter(|at| *at <= len))
+    }
+
+    /// Forgets everything the shell has said about itself, so a completion that
+    /// has already been banked cannot answer the command about to be typed.
+    /// Armed on every line the engine submits: anything it types invalidates
+    /// what it knew, including which shell it was talking to.
+    pub fn arm_marks(&mut self) {
+        self.interp.marks = Marks::default();
+    }
+
+    /// Whether the shell has announced a prompt since the marks were armed.
+    /// The engine's proof that the integration hooks are live in the shell in
+    /// front of it *now*, rather than in the one it started with.
+    pub fn saw_prompt(&self) -> bool {
+        self.interp.marks.prompt
+    }
+
+    /// Whether the shell has reported a command finishing.
+    pub fn saw_done(&self) -> bool {
+        self.interp.marks.done.is_some()
+    }
+
+    /// Takes the reported completion: `Some(code)` when the shell named an exit
+    /// status, `Some(None)` when it reported a finish without one.
+    pub fn take_done(&mut self) -> Option<Option<i32>> {
+        self.interp.marks.done.take()
     }
 }
 
@@ -309,6 +457,72 @@ mod tests {
             view_of(&[b"\x1b]133;A\x07uptime\x1b]133;C\x07ok\r\n"]),
             "uptimeok\n"
         );
+    }
+
+    #[test]
+    fn osc_133_reports_a_completion_with_its_exit_code() {
+        // The whole point of the quiet path: the shell says how the command
+        // ended, and nothing about it is drawn for the operator.
+        let mut s = Screen::new();
+        s.feed(b" uptime\r\n\x1b]133;C\x07oops\r\n\x1b]133;D;3\x07\x1b]133;A\x07");
+        assert_eq!(s.take_done(), Some(Some(3)));
+        assert!(s.saw_prompt());
+        // Taken once. A banked completion answering the *next* command is the
+        // failure this guards against.
+        assert_eq!(s.take_done(), None);
+        // The whole command comes out, with the boundary between the shell's
+        // echo of it and what it printed.
+        let (consumed, at) = s.take_view();
+        assert_eq!(consumed, " uptime\noops\n");
+        assert_eq!(&consumed[at.unwrap()..], "oops\n");
+        assert_eq!(s.view(), "");
+    }
+
+    #[test]
+    fn the_output_boundary_survives_a_command_arriving_all_at_once() {
+        // A command quick enough to finish inside one round trip sends its echo,
+        // its output and both marks in a single chunk. Acting on the boundary
+        // when it arrived would consume the output it is there to delimit; it is
+        // a position for exactly this reason.
+        let mut s = Screen::new();
+        s.feed(b" grep error log\r\n\x1b]133;C\x07nothing here\r\n\x1b]133;D;1\x07");
+        let (consumed, at) = s.take_view();
+        assert_eq!(&consumed[at.unwrap()..], "nothing here\n");
+    }
+
+    #[test]
+    fn a_completion_without_a_code_still_counts_as_one() {
+        let mut s = Screen::new();
+        s.feed(b"\x1b]133;D\x07");
+        assert_eq!(s.take_done(), Some(None));
+    }
+
+    #[test]
+    fn arming_forgets_what_the_shell_said_but_keeps_what_it_printed() {
+        let mut s = Screen::new();
+        s.feed(b"output\r\n\x1b]133;D;0\x07\x1b]133;A\x07");
+        s.arm_marks();
+        assert!(!s.saw_done());
+        assert!(!s.saw_prompt());
+        assert_eq!(s.view(), "output\n", "text is not a mark");
+    }
+
+    #[test]
+    fn our_own_osc_answers_a_probe_without_printing_it() {
+        // The probe's answer is matchable text, and the pane never sees it.
+        let mut s = Screen::new();
+        s.feed(b"\x1b]6273;__bsuid_0__\x07");
+        assert_eq!(s.view(), "__bsuid_0__\n");
+    }
+
+    #[test]
+    fn a_probe_a_shell_printed_literally_still_matches() {
+        // A shell whose printf left the escape alone prints the payload as
+        // plain text. Same answer, same pattern, just visible: the probes carry
+        // their own marker text so this degrades instead of breaking.
+        let mut s = Screen::new();
+        s.feed(b"\\033]6273;__bsuid_0__\\007\r\n");
+        assert!(s.view().contains("__bsuid_0__"));
     }
 
     #[test]

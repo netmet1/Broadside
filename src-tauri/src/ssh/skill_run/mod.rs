@@ -26,6 +26,23 @@
 //! Expect automation is brittle: prompts drift, programs repaint, hosts are
 //! slow. A step whose pattern never arrives **pauses for the operator** by
 //! default rather than failing silently halfway through an upgrade.
+//!
+//! ## Out of the operator's way
+//!
+//! The operator is watching a real terminal, so what the engine types is theirs
+//! to read, and Broadside's own bookkeeping is not. Two things keep it off the
+//! glass:
+//!
+//! - A `run` step's command goes out **plain**, with nothing appended, wherever
+//!   the shell can report its own completions through the OSC 133 integration
+//!   [`crate::omni`] installs on connect. See [`Engine::quiet_ready`].
+//! - The engine's probes are typed with the terminal's echo off and answer
+//!   inside an escape sequence no terminal draws. See [`Engine::send_hidden`].
+//!
+//! Both degrade rather than break. A shell that never installed the hooks (or a
+//! nested one that lost them and would not take them back) gets the visible
+//! `; printf '__bsdone_%s__\n' "$?"` wrapper that every host used to get, and a
+//! shell that ignores `stty` shows the probe exactly as it always did.
 
 pub mod config;
 pub mod screen;
@@ -50,7 +67,9 @@ pub const PROGRESS_EVENT: &str = "skill:progress";
 pub const PAUSED_EVENT: &str = "skill:paused";
 pub const DONE_EVENT: &str = "skill:done";
 
-/// Completion marker for a non-interactive `run` step.
+/// Completion marker for a non-interactive `run` step **on a shell that cannot
+/// report its own completions**. The fallback, not the usual path: see
+/// [`Engine::quiet_ready`].
 ///
 /// The `%s` is load-bearing. The shell echoes the command line back over the
 /// PTY, so the marker text appears twice: once in the echo (as the literal
@@ -105,6 +124,25 @@ const INTERRUPT_MAX: Duration = Duration::from_secs(5);
 /// one small write.
 const HANDBACK_QUIET: Duration = Duration::from_millis(500);
 const HANDBACK_MAX: Duration = Duration::from_secs(3);
+
+/// How long a hidden line waits for `stty -echo` to actually be in force before
+/// the line it is hiding is typed (see [`Engine::send_hidden`]). Quiet, not
+/// fixed, so a host across an ocean is given its round trip and a local one is
+/// not made to sit through it; capped, because losing this race costs nothing
+/// but a visible line.
+const HIDE_QUIET: Duration = Duration::from_millis(80);
+const HIDE_MAX: Duration = Duration::from_millis(600);
+/// How long to wait for the shell's own prompt marker before concluding the
+/// integration hooks are not in the shell in front of us. Only ever paid when
+/// the marker has not already arrived, which after a normal step it has.
+const PROMPT_MARK_QUIET: Duration = Duration::from_millis(400);
+/// The same, after asking for the hooks to be installed: a shell's own startup
+/// is in this one.
+const PROMPT_MARK_INSTALL: Duration = Duration::from_secs(3);
+/// How many times one run will try to get the hooks back. A shell that refuses
+/// them twice is not going to take them, and every attempt is a line typed at
+/// the host, so the run stops asking and uses the visible wrapper instead.
+const MAX_HOOK_INSTALLS: u8 = 2;
 
 /// Shells whose `$?` and `printf` behave identically, which is all the engine's
 /// completion marker relies on. Worded as "currently" everywhere it surfaces:
@@ -246,7 +284,15 @@ pub struct HostMeta {
 }
 
 enum Wait {
-    Matched { consumed: String, group1: Option<String> },
+    Matched {
+        consumed: String,
+        group1: Option<String>,
+        /// Where in `consumed` the command's own output began, when the shell
+        /// marked it. Only a completion carries one: a pattern match has no
+        /// notion of a command, and the fallback wrapper finds the boundary in
+        /// the text instead (see [`command_output`]).
+        output_at: Option<usize>,
+    },
     Timeout,
     Closed,
     Aborted,
@@ -326,11 +372,23 @@ pub struct Engine<E: SkillEvents> {
     /// already known to be undrivable be refused before the `$0` probe is even
     /// sent, instead of after it times out.
     known_capability: Option<ShellCapability>,
+    /// Whether this session was given the OSC 133 integration when it opened.
+    /// The *resolved* answer, so a host the operator has told Broadside never to
+    /// write to is one this engine never offers the hooks to either.
+    integration_sent: bool,
     /// A [`Ctl::TakeOver`] that arrived mid-step and is waiting for the gap
     /// before the next one. Kept here rather than acted on where it is read,
     /// because the two places that read the control channel are both inside a
     /// step, and a step is not a safe place to hand the keyboard over.
     take_over: bool,
+    /// Whether this host's shell could be reporting its own completions, which
+    /// is what lets a command go out with nothing appended to it. Set once the
+    /// shell has identified itself; it says the hooks are *possible* here, never
+    /// that they are in place, which only a prompt marker can say.
+    hooks_possible: bool,
+    /// How many times this run has asked for the hooks to be installed, against
+    /// [`MAX_HOOK_INSTALLS`].
+    hook_installs: u8,
 }
 
 impl<E: SkillEvents> Engine<E> {
@@ -349,7 +407,10 @@ impl<E: SkillEvents> Engine<E> {
             is_root: None,
             known_shell: None,
             known_capability: None,
+            integration_sent: false,
             take_over: false,
+            hooks_possible: false,
+            hook_installs: 0,
         }
     }
 
@@ -369,6 +430,20 @@ impl<E: SkillEvents> Engine<E> {
     /// and the login shell is not necessarily the shell that answers.
     pub fn with_known_capability(mut self, capability: ShellCapability) -> Self {
         self.known_capability = Some(capability);
+        self
+    }
+
+    /// Tells the engine whether this session was given the OSC 133 integration
+    /// on connect, which is what decides whether a command can be typed plain.
+    ///
+    /// Separate from [`with_known_capability`](Self::with_known_capability), and
+    /// deliberately: that one is the probe's own reading, which is what may
+    /// refuse a host, while this one is the resolved answer, which is what was
+    /// actually written to it. They differ exactly where the operator has
+    /// overridden the probe, and the override is the authority on what may be
+    /// typed at their host.
+    pub fn with_integration_sent(mut self, sent: bool) -> Self {
+        self.integration_sent = sent;
         self
     }
 
@@ -398,8 +473,155 @@ impl<E: SkillEvents> Engine<E> {
         });
     }
 
-    fn send_bytes(&self, text: &str) -> AppResult<()> {
+    /// Types at the host.
+    ///
+    /// Submitting a line forgets everything the shell had told us about itself.
+    /// Anything typed can start a new shell, and the marks are the engine's
+    /// proof about the shell *in front of it*: a prompt marker from the shell an
+    /// `sudo -i` replaced would be read as proof about root's shell, which has
+    /// none of our hooks, and the next command would then be sent expecting a
+    /// completion that could never arrive. A bare control character (Ctrl-U,
+    /// Ctrl-C) submits nothing and starts nothing, so it leaves them alone.
+    fn send_bytes(&mut self, text: &str) -> AppResult<()> {
+        if text.contains('\n') {
+            self.screen.arm_marks();
+        }
         (self.link.write)(text.as_bytes())
+    }
+
+    /// Types a line of Broadside's own plumbing without the operator watching it
+    /// go by.
+    ///
+    /// `stty -echo` first, so the line itself is never echoed back, then the
+    /// line with two things chained onto it: an erase that takes the visible
+    /// `stty -echo` and the bare prompt under it back off the screen, and the
+    /// restore. Both ride on the hidden line rather than being sent separately,
+    /// so echo comes back even if the engine stops reading (a Stop host pressed
+    /// mid-line must not leave the operator a shell that types nothing).
+    ///
+    /// The erase is `cursor up, column 0, erase to end of display`, and it is
+    /// exact rather than hopeful: with echo off the shell prints its next prompt
+    /// where the last one left the cursor, so the two rows to take back are the
+    /// one the cursor is on and the one above it. A line long enough to have
+    /// wrapped leaves a fragment of itself behind, which is why what is hidden
+    /// this way is kept short.
+    ///
+    /// Best effort throughout. `stty` that isn't there, a shell whose line
+    /// editor echoes for itself, a race lost to a slow host: every one of them
+    /// costs a visible line and nothing else, because the payload still runs and
+    /// its answer still arrives.
+    async fn send_hidden(&mut self, payload: &str) -> bool {
+        if self.send_bytes(" stty -echo\n").is_err() {
+            return false;
+        }
+        self.settle_after(HIDE_QUIET, HIDE_MAX).await;
+        let line = format!(" {payload}; printf '\\033[1A\\r\\033[0J'; stty echo\n");
+        if self.send_bytes(&line).is_err() {
+            // The hidden line never landed, so nothing on the far side is going
+            // to turn echo back on. This is the one path that has to.
+            let _ = self.send_bytes(" stty echo\n");
+            return false;
+        }
+        true
+    }
+
+    /// Reads the host until it has been quiet for `quiet`, bounded by `max`,
+    /// keeping everything it says.
+    ///
+    /// Control messages are deliberately not read, for the reason given on
+    /// [`Engine::discard_unsubmitted`]: a Stop host that arrives during one of
+    /// these short windows stays queued and is honoured by the next wait.
+    async fn settle_after(&mut self, quiet: Duration, max: Duration) {
+        let deadline = Instant::now() + max;
+        // Nothing has arrived yet, so there is nothing to be quiet after: the
+        // window opens on the first byte back. Counting from now instead would
+        // call a host that simply has a long round trip "finished".
+        let mut quiet_at: Option<Instant> = None;
+        loop {
+            let quiet_deadline = quiet_at.unwrap_or_else(|| deadline + Duration::from_secs(1));
+            tokio::select! {
+                _ = tokio::time::sleep_until(quiet_deadline), if quiet_at.is_some() => return,
+                _ = tokio::time::sleep_until(deadline) => return,
+                msg = self.link.rx.recv() => match msg {
+                    Some(TapMsg::Data(bytes)) => {
+                        self.screen.feed(&bytes);
+                        quiet_at = Some(Instant::now() + quiet);
+                    }
+                    Some(TapMsg::Closed) | None => return,
+                },
+            }
+        }
+    }
+
+    /// Reads the host until it announces a prompt, giving up after `max`.
+    /// Controls are not read, for the reason on [`Engine::settle_after`].
+    async fn wait_for_prompt_mark(&mut self, max: Duration) -> bool {
+        let deadline = Instant::now() + max;
+        loop {
+            if self.screen.saw_prompt() {
+                return true;
+            }
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => return false,
+                msg = self.link.rx.recv() => match msg {
+                    Some(TapMsg::Data(bytes)) => self.screen.feed(&bytes),
+                    Some(TapMsg::Closed) | None => return false,
+                },
+            }
+        }
+    }
+
+    /// Whether the shell in front of us will report this command's completion on
+    /// its own, so it can be typed plain.
+    ///
+    /// The proof is a prompt marker, and it has to be a *fresh* one: the hooks
+    /// live in a shell, not in a host, and the ones installed on connect are
+    /// gone the moment a step opens a nested shell. `sudo -i` is not an edge
+    /// case here, it is the first step of most skills. So every submitted line
+    /// forgets the proof ([`Engine::send_bytes`]) and this asks the shell to
+    /// prove it again, which after an ordinary step it already has: the marker
+    /// rides in with the completion of the step before.
+    ///
+    /// When the proof does not come, the hooks are offered to the new shell,
+    /// hidden. If that does not take either, the run falls back to the visible
+    /// completion marker, which is what every host did before any of this and
+    /// still works everywhere.
+    async fn quiet_ready(&mut self) -> bool {
+        if !self.hooks_possible {
+            return false;
+        }
+        // Nearly always already true, and free when it is: the shell's prompt
+        // marker arrives with the previous command's completion.
+        if self.wait_for_prompt_mark(PROMPT_MARK_QUIET).await {
+            return true;
+        }
+        if self.hook_installs >= MAX_HOOK_INSTALLS {
+            // Asked twice, refused twice. Stop typing at a shell that does not
+            // want them; the wrapper works everywhere.
+            self.hooks_possible = false;
+            return false;
+        }
+        self.hook_installs += 1;
+        self.install_hooks().await
+    }
+
+    /// Offers the OSC 133 hooks to the shell in front of us, and waits for it to
+    /// prove they took.
+    ///
+    /// The same integration [`crate::omni`] sends on connect, guarded so that
+    /// running it twice in one shell is a no-op: without the guard a second
+    /// install would prepend `__omni_precmd` to `PROMPT_COMMAND` again and the
+    /// shell would report every command finishing twice, which is a stale
+    /// completion waiting to answer the *next* command.
+    async fn install_hooks(&mut self) -> bool {
+        let line = format!(
+            "command -v __omni_precmd >/dev/null 2>&1 || {{ {}; }}",
+            crate::omni::SHELL_INTEGRATION
+        );
+        if !self.send_hidden(&line).await {
+            return false;
+        }
+        self.wait_for_prompt_mark(PROMPT_MARK_INSTALL).await
     }
 
     /// Identifies the running shell before any step runs, so an unsupported one
@@ -423,12 +645,9 @@ impl<E: SkillEvents> Engine<E> {
                 });
             }
         }
-        // A leading space keeps this out of shell history on the Debian/Ubuntu
-        // default (HISTCONTROL=ignoreboth), since an operator pressing Up in the
-        // pane afterwards shouldn't find our plumbing.
-        let probe = format!(" printf '{SHELL_MARKER}%s__\\n' \"$0\"\n");
-        if let Err(e) = self.send_bytes(&probe) {
-            return Err(format!("could not write to the shell: {e}"));
+        let probe = probe_line(SHELL_MARKER, "\"$0\"");
+        if !self.send_hidden(&probe).await {
+            return Err("could not write to the shell".into());
         }
         let re = Regex::new(&format!("{SHELL_MARKER}([A-Za-z0-9._/-]*)__")).expect("static regex");
         let outcome = wait_for(
@@ -436,7 +655,7 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.link.rx,
             &mut self.ctl,
             &mut self.take_over,
-            &re,
+            Target::Pattern(&re),
             Duration::from_secs(SHELL_DETECT_SECS),
             Duration::ZERO,
         )
@@ -446,7 +665,10 @@ impl<E: SkillEvents> Engine<E> {
             Wait::Timeout => {
                 // A shell that never answered. If the connect-time probe read a
                 // name, that IS the answer: fish gets here every time, because
-                // `$0` is a parse error there rather than a variable.
+                // `$0` is a parse error there rather than a variable. That is
+                // also a line the shell never ran, so nothing on the far side
+                // has turned echo back on: this path owns the restore.
+                let _ = self.send_bytes(" stty echo\n");
                 return Err(match &self.known_shell {
                     Some(shell) => format!(
                         "This host's shell ({shell}) is not supported. Currently only bash, zsh and sh are supported."
@@ -455,7 +677,13 @@ impl<E: SkillEvents> Engine<E> {
                         .into(),
                 });
             }
-            _ => return Err("The shell closed before the run started.".into()),
+            // Closed, aborted, or handed to a terminal tab mid-probe. The last
+            // of those hands the operator a real shell, so it had better be one
+            // that shows them what they type.
+            _ => {
+                let _ = self.send_bytes(" stty echo\n");
+                return Err("The shell closed before the run started.".into());
+            }
         };
         // `$0` is `-bash` for a login shell, `/bin/zsh` for some, `sh` for
         // others: take the basename and drop the login dash.
@@ -473,6 +701,13 @@ impl<E: SkillEvents> Engine<E> {
                 "This host's shell ({shown}) is not supported. Currently only bash, zsh and sh are supported."
             ));
         }
+        // Whether a command may go out plain, with no completion marker for the
+        // operator to read. Both halves are needed and neither is enough: the
+        // hooks have to have been offered to this session, and only bash and
+        // zsh install them when they are. This is the one place the two probes
+        // meet: the connect-time one decided what was written, and the `$0` one
+        // is the authority on what is reading it.
+        self.hooks_possible = self.integration_sent && matches!(name.as_str(), "bash" | "zsh");
         Ok(name)
     }
 
@@ -483,8 +718,8 @@ impl<E: SkillEvents> Engine<E> {
     /// running it at a half-finished line would corrupt it. Best-effort: any
     /// failure yields `None` (unknown), never an error that ends the run.
     async fn probe_uid(&mut self) -> Option<bool> {
-        let probe = format!(" printf '{UID_MARKER}%s__\\n' \"$(id -u)\"\n");
-        if self.send_bytes(&probe).is_err() {
+        let probe = probe_line(UID_MARKER, "\"$(id -u)\"");
+        if !self.send_hidden(&probe).await {
             return None;
         }
         let re = Regex::new(&format!(r"{UID_MARKER}(\d+)__")).expect("static regex");
@@ -493,14 +728,19 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.link.rx,
             &mut self.ctl,
             &mut self.take_over,
-            &re,
+            Target::Pattern(&re),
             Duration::from_secs(UID_PROBE_SECS),
             Duration::ZERO,
         )
         .await;
         match outcome {
             Wait::Matched { group1, .. } => group1.map(|g| g == "0"),
-            _ => None,
+            // Nothing came back, so the line may never have run: put echo back
+            // rather than leave a shell nobody can type into.
+            _ => {
+                let _ = self.send_bytes(" stty echo\n");
+                None
+            }
         }
     }
 
@@ -705,6 +945,11 @@ impl<E: SkillEvents> Engine<E> {
                         "the shell closed unexpectedly",
                     ));
                 }
+                // Whatever the operator did with the keyboard, what the shell
+                // last told us about itself was about the shell they were handed,
+                // and they may not be handing back the same one. Forget it and
+                // make the next command ask again.
+                self.screen.arm_marks();
                 self.emit("info", Some(next_step_id), resumed_line(clear));
                 Ok(())
             }
@@ -885,7 +1130,10 @@ impl<E: SkillEvents> Engine<E> {
                     Ok(re) => re,
                     Err(e) => return StepOutcome::Failed(e.to_string()),
                 };
-                match self.wait_with_pause(step, &re, SETTLE, pattern).await {
+                match self
+                    .wait_with_pause(step, Target::Pattern(&re), SETTLE, pattern)
+                    .await
+                {
                     Ok(Wait::Matched { .. }) => {
                         if let Some(text) = send_on_match {
                             if let Err(e) = self.send_bytes(text) {
@@ -978,20 +1226,46 @@ impl<E: SkillEvents> Engine<E> {
             }
         }
 
-        let wrapped = format!(" {cmd}; printf '{DONE_MARKER}%s__\\n' \"$?\"\n");
-        if let Err(e) = self.send_bytes(&wrapped) {
+        // Ask the shell whether it will account for this command itself. When it
+        // will, the command goes out exactly as the author wrote it and the
+        // operator reads their own line back; when it won't, the completion
+        // marker is appended and they read that too, as they always have.
+        let quiet = self.quiet_ready().await;
+        let line = if quiet {
+            format!(" {cmd}\n")
+        } else {
+            format!(" {cmd}; printf '{DONE_MARKER}%s__\\n' \"$?\"\n")
+        };
+        if let Err(e) = self.send_bytes(&line) {
             return StepOutcome::Failed(format!("could not send: {e}"));
         }
         let re = Regex::new(&format!(r"{DONE_MARKER}(\d+)__")).expect("static regex");
+        let target = if quiet {
+            Target::Done
+        } else {
+            Target::Pattern(&re)
+        };
         // No settle: the marker is unambiguous the moment it lands, and a
         // settle here would tax every step with latency for nothing.
         match self
-            .wait_with_pause(step, &re, Duration::ZERO, "the command to finish")
+            .wait_with_pause(step, target, Duration::ZERO, "the command to finish")
             .await
         {
-            Ok(Wait::Matched { consumed, group1 }) => {
+            Ok(Wait::Matched {
+                consumed,
+                group1,
+                output_at,
+            }) => {
                 let code: u32 = group1.and_then(|g| g.parse().ok()).unwrap_or(1);
-                let output = command_output(&consumed);
+                // Where the command's own output starts, so a `match` test
+                // cannot match the command that produced it: a step running
+                // `grep error log` and branching on `error` would take the match
+                // branch every time. The shell says where when it can, and the
+                // text says where when it has to.
+                let output = match output_at {
+                    Some(at) => &consumed[at..],
+                    None => command_output(&consumed),
+                };
                 let Some(b) = branch else {
                     self.emit("matched", Some(step.id()), format!("exit {code}"));
                     return StepOutcome::Goto(if code == 0 {
@@ -1108,7 +1382,7 @@ impl<E: SkillEvents> Engine<E> {
     async fn wait_with_pause(
         &mut self,
         step: &SeqStep,
-        re: &Regex,
+        target: Target<'_>,
         settle: Duration,
         what: &str,
     ) -> Result<Wait, StepOutcome> {
@@ -1119,7 +1393,7 @@ impl<E: SkillEvents> Engine<E> {
                 &mut self.link.rx,
                 &mut self.ctl,
                 &mut self.take_over,
-                re,
+                target,
                 timeout,
                 settle,
             )
@@ -1160,6 +1434,9 @@ impl<E: SkillEvents> Engine<E> {
                     if clear && !self.discard_unsubmitted().await {
                         return Err(StepOutcome::Closed);
                     }
+                    // See the same line in `park_for_take_over`: the shell they
+                    // hand back may not be the one they were given.
+                    self.screen.arm_marks();
                     self.emit("info", Some(step.id()), resumed_line(clear));
                     // Re-announce the step, because the wait genuinely restarts
                     // here with a full fresh timeout and the panel's countdown
@@ -1183,6 +1460,44 @@ impl<E: SkillEvents> Engine<E> {
             }
         }
     }
+}
+
+/// One of the engine's probes: `printf` the marker with the shell's answer in
+/// it, inside an escape sequence addressed to Broadside rather than to the
+/// terminal, so no pane draws it (see [`screen::BS_OSC`]).
+///
+/// The marker text is inside the payload, not around it, and that is what makes
+/// this safe to send anywhere. A shell whose `printf` leaves `\033` alone prints
+/// the whole thing literally, the same pattern matches the same answer out of
+/// the visible line, and the only difference is that the operator saw it. The
+/// `%s` still cannot be mistaken for an answer, so an echo of the line that
+/// reaches the screen (a shell that ignored `stty -echo`) is still not a match.
+///
+/// A leading space is left to the caller, which is [`Engine::send_hidden`]: on
+/// the Debian/Ubuntu default (`HISTCONTROL=ignoreboth`) it keeps the line out of
+/// shell history, so an operator pressing Up in the pane afterwards doesn't find
+/// Broadside's plumbing.
+fn probe_line(marker: &str, value: &str) -> String {
+    format!(
+        "printf '\\033]{};{marker}%s__\\007' {value}",
+        screen::BS_OSC
+    )
+}
+
+/// What a wait is waiting for.
+///
+/// Text and marks are not the same kind of thing, and the difference is why
+/// marks have to be armed. A pattern matches a *position* in the stream and is
+/// consumed through it, so the same output can never satisfy two steps. A mark
+/// has no position: it is a fact the shell stated, and a fact stays true until
+/// somebody takes it, so a completion left lying about would answer the next
+/// command the instant it was sent.
+#[derive(Clone, Copy)]
+enum Target<'a> {
+    /// Text on the screen.
+    Pattern(&'a Regex),
+    /// The shell's own "that command finished", carrying its exit status.
+    Done,
 }
 
 /// What the step log says about a resume.
@@ -1228,7 +1543,7 @@ fn command_output(consumed: &str) -> &str {
     s
 }
 
-/// Waits until `re` matches the screen, or the deadline passes.
+/// Waits until `target` arrives on the screen, or the deadline passes.
 ///
 /// Matching is event-driven: evaluated on entry (text may already have
 /// arrived) and after each chunk, not polled. Free-standing rather than a
@@ -1241,16 +1556,16 @@ async fn wait_for(
     // Read by the caller's caller in the gap between steps, which is where the
     // request is acted on.
     take_over: &mut bool,
-    re: &Regex,
+    target: Target<'_>,
     timeout: Duration,
     settle: Duration,
 ) -> Wait {
     let deadline = Instant::now() + timeout;
     let mut settle_at: Option<Instant> = None;
     loop {
-        if settle_at.is_none() && re.is_match(screen.view()) {
+        if settle_at.is_none() && arrived(screen, target) {
             if settle.is_zero() {
-                return take_match(screen, re);
+                return take_match(screen, target);
             }
             settle_at = Some(Instant::now() + settle);
         }
@@ -1259,8 +1574,8 @@ async fn wait_for(
         let settle_deadline = settle_at.unwrap_or_else(|| deadline + Duration::from_secs(1));
         tokio::select! {
             _ = tokio::time::sleep_until(settle_deadline), if settle_at.is_some() => {
-                if re.is_match(screen.view()) {
-                    return take_match(screen, re);
+                if arrived(screen, target) {
+                    return take_match(screen, target);
                 }
                 // The text was transient: a repaint blew it away. Keep waiting.
                 settle_at = None;
@@ -1288,7 +1603,33 @@ async fn wait_for(
     }
 }
 
-fn take_match(screen: &mut Screen, re: &Regex) -> Wait {
+/// Whether what the wait is waiting for is on the screen now.
+fn arrived(screen: &mut Screen, target: Target<'_>) -> bool {
+    match target {
+        Target::Pattern(re) => re.is_match(screen.view()),
+        Target::Done => screen.saw_done(),
+    }
+}
+
+/// Takes what arrived, and with it whatever text it accounts for.
+///
+/// A pattern consumes through its own end, so text after it stays matchable. A
+/// completion has no position, so it takes the whole view: it is the last thing
+/// the shell says about a command, and everything up to it belongs to that
+/// command.
+fn take_match(screen: &mut Screen, target: Target<'_>) -> Wait {
+    let re = match target {
+        Target::Pattern(re) => re,
+        Target::Done => {
+            let group1 = screen.take_done().flatten().map(|code| code.to_string());
+            let (consumed, output_at) = screen.take_view();
+            return Wait::Matched {
+                consumed,
+                group1,
+                output_at,
+            };
+        }
+    };
     let (end, group1) = {
         let view = screen.view();
         match re.captures(view) {
@@ -1302,6 +1643,7 @@ fn take_match(screen: &mut Screen, re: &Regex) -> Wait {
     Wait::Matched {
         consumed: screen.consume_through(end),
         group1,
+        output_at: None,
     }
 }
 

@@ -478,13 +478,13 @@ pub async fn run_skill(
                     match opened {
                         Ok(crate::ssh::pty::PtyOpenResult::Opened {
                             login_shell,
-                            capability,
                             // Deliberately the probe's own answer, not the
                             // override: the override decides what is written to
                             // a login shell, and a skill drives the shell
                             // itself. A console menu cannot run one however
                             // firmly it is told it is bash.
-                            integration: _,
+                            capability,
+                            integration,
                         }) => {
                             // Hand the connect-time shell name to the engine so a
                             // refusal can name it (X4): the in-shell `$0` probe
@@ -496,9 +496,19 @@ pub async fn run_skill(
                             // is how fish gets caught, and catching it costs
                             // SHELL_DETECT_SECS of a pane sitting on "starting…"
                             // for an answer that was on the host row all along.
+                            //
+                            // The resolved answer goes with it too, because that
+                            // is the one that says whether the shell integration
+                            // was actually written to this session, and so
+                            // whether the engine can let the shell report its own
+                            // completions instead of appending a marker the
+                            // operator has to read.
                             let engine = Engine::new(link, ctl_rx, events.clone(), meta.clone())
                                 .with_known_shell(login_shell)
-                                .with_known_capability(capability);
+                                .with_known_capability(capability)
+                                .with_integration_sent(
+                                    integration.resolve(capability).with_integration(),
+                                );
                             let outcome = skill_run::run_host(engine, &cfg).await;
                             guard.disposition = outcome.disposition;
                             guard.is_root = outcome.is_root;
