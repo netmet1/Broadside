@@ -715,6 +715,10 @@ pub fn skill_close_run(
 /// Manual takeover: routes the operator's keystrokes to the host's PTY through
 /// the same `SessionCmd::Write` channel the engine uses. Safe against races
 /// because a paused engine sends nothing until the operator resumes it.
+///
+/// The keystrokes are read on the way past, not just forwarded: whether they end
+/// in an Enter is what decides how the eventual resume treats the match buffer.
+/// See [`SkillRunState::session_id_for_input`].
 #[tauri::command]
 pub fn skill_send_input(
     run_id: String,
@@ -723,8 +727,9 @@ pub fn skill_send_input(
     run_state: State<'_, SkillRunState>,
     pty_state: State<'_, PtyState>,
 ) -> AppResult<()> {
-    let session_id = run_state.session_id_for_input(&run_id, host_id)?;
-    pty_state.write(&session_id, data.as_bytes())
+    let bytes = data.as_bytes();
+    let session_id = run_state.session_id_for_input(&run_id, host_id, bytes)?;
+    pty_state.write(&session_id, bytes)
 }
 
 #[cfg(test)]

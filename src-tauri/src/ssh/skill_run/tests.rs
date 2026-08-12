@@ -57,6 +57,19 @@ impl CollectEvents {
             .map(|p| p.phase.clone())
             .collect()
     }
+    /// The events the panel reads as "a step is starting now", as
+    /// `(step_id, countdown)`. Told by `step_kind`, exactly as the panel tells
+    /// them: it is the announcement that restarts the countdown.
+    fn step_announcements(&self) -> Vec<(String, Option<u64>)> {
+        self.0
+            .lock()
+            .unwrap()
+            .progress
+            .iter()
+            .filter(|p| p.step_kind.is_some())
+            .map(|p| (p.step_id.clone().unwrap_or_default(), p.step_secs))
+            .collect()
+    }
 }
 
 /// The test's side of the fake host.
@@ -1019,9 +1032,10 @@ async fn an_abort_skips_the_closing_probe() {
 
 #[tokio::test(start_paused = true)]
 async fn operator_takeover_noise_is_cleared_on_resume() {
-    // The operator types at the paused pane. What they did must not satisfy the
-    // pattern the engine is about to wait for again, so a typed-through pause
-    // resumes with `clear: true`.
+    // A resume that asks to clear does clear, screen and all. Whether it asks is
+    // decided elsewhere (`SkillRunState::resume`, off the back of whether the
+    // operator left anything unsubmitted on the command line); this is only that
+    // the engine honours it.
     let (mut engine, host) = harness();
     let c = cfg(vec![expect_step("a", "READY", None, STOP)]);
     let ctl = host.ctl.clone();
@@ -1040,6 +1054,34 @@ async fn operator_takeover_noise_is_cleared_on_resume() {
     // we aborted it. If takeover noise had counted, this would have "succeeded".
     assert!(!outcome.ok, "takeover output satisfied the pattern");
     assert_eq!(host.events.paused_reasons().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_resumed_wait_announces_its_step_again() {
+    // The wait genuinely restarts with a fresh budget, and the panel's countdown
+    // is keyed off the announcement. Without a second one it kept counting from
+    // when the step first started, so the whole of the second wait was spent
+    // showing a red nought and the only proof the engine was still waiting was
+    // the timeout arriving at the end of it (smoke 55-2 D3).
+    let (mut engine, host) = harness();
+    let c = cfg(vec![expect_step("a", "READY", None, STOP)]);
+    let ctl = host.ctl.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(45)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+        tokio::time::sleep(Duration::from_secs(90)).await;
+        let _ = ctl.send(Ctl::Abort);
+    });
+    let outcome = engine.run_sequence(&c).await;
+    assert!(!outcome.ok, "{outcome:?}");
+    let announced = host.events.step_announcements();
+    assert_eq!(
+        announced.len(),
+        2,
+        "one for the step, one for the resumed wait: {announced:?}"
+    );
+    assert_eq!(announced[0], announced[1], "same step, same fresh budget");
+    assert!(announced[1].1.is_some(), "the countdown has to come with it");
 }
 
 #[tokio::test(start_paused = true)]

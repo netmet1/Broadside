@@ -693,9 +693,10 @@ impl<E: SkillEvents> Engine<E> {
             kind: PauseKind::TakeOver,
         });
         match park(&mut self.screen, &mut self.link.rx, &mut self.ctl).await {
-            // Same rule as the timeout pause: only what the operator typed has
-            // to be forgotten, so the step that follows cannot match against
-            // their keystrokes. If they only read, the buffer is left alone.
+            // Same rule as the timeout pause: only text the operator left
+            // unsubmitted has to be forgotten, so the step that follows cannot
+            // match against their keystrokes. If they only read, or ran
+            // something and pressed Enter, the buffer is left alone.
             Park::Resume { clear } => {
                 if clear && !self.settle_handback().await {
                     return Err(HostOutcome::finished(
@@ -733,12 +734,18 @@ impl<E: SkillEvents> Engine<E> {
         }
     }
 
-    /// The operator has typed into this host and handed it back. Forget all of
-    /// it, including the part that has not arrived yet.
+    /// The operator has left half-typed text on this host's command line and
+    /// handed it back. Forget it, including the part that has not arrived yet.
     ///
-    /// Emptying the match buffer once is the obvious move and it is not enough,
-    /// which is what smoke 55 B3 caught: the operator typed the very text the
-    /// next step was waiting for, resumed, and the step matched it.
+    /// Only reached when the resume says so (see [`Ctl::Resume`]'s `clear`), and
+    /// the condition is narrow on purpose: unsubmitted text, not typing in
+    /// general. A command the operator actually ran is the host talking and its
+    /// output is kept, which is the whole of smoke 55-2 D2.
+    ///
+    /// For the unsubmitted case, emptying the match buffer once is the obvious
+    /// move and it is not enough, which is what smoke 55 B3 caught: the operator
+    /// typed the very text the next step was waiting for, resumed, and the step
+    /// matched it.
     ///
     /// The clear did work. What it cannot do is un-type anything. Those
     /// keystrokes are still sitting on the host's command line, unentered, and
@@ -1116,12 +1123,13 @@ impl<E: SkillEvents> Engine<E> {
             });
             match park(&mut self.screen, &mut self.link.rx, &mut self.ctl).await {
                 Park::Resume { clear } => {
-                    // Clear only when the operator typed during the pause:
-                    // their keystrokes (and whatever they printed) must not
-                    // satisfy the pattern we're about to wait for again. When
-                    // they only watched, the buffer keeps what the host printed
-                    // while parked, so a value that arrived late matches the
-                    // retried wait immediately instead of timing out again.
+                    // Clear only when the operator left text unsubmitted on the
+                    // command line: that is the one thing a redraw can reprint
+                    // into the pattern we're about to wait for again. When they
+                    // only watched, or ran something and pressed Enter, the
+                    // buffer keeps what the host printed while parked, so a
+                    // value that arrived late matches the retried wait
+                    // immediately instead of timing out again.
                     //
                     // Clearing is not the whole of forgetting, and the pattern
                     // this is about to wait for again is exactly the kind a
@@ -1130,6 +1138,20 @@ impl<E: SkillEvents> Engine<E> {
                         return Err(StepOutcome::Closed);
                     }
                     self.emit("info", Some(step.id()), "resumed by the operator");
+                    // Re-announce the step, because the wait genuinely restarts
+                    // here with a full fresh timeout and the panel's countdown
+                    // is keyed off the announcement. Without this it kept
+                    // counting from when the step first started, so the second
+                    // wait was spent showing a red nought while the engine was
+                    // in fact waiting the whole budget again, and the only proof
+                    // of that was the timeout arriving at the end of it.
+                    self.emit_step(
+                        "step",
+                        Some(step.id()),
+                        Some(step.kind_str()),
+                        step.countdown_secs(),
+                        step.summary(),
+                    );
                 }
                 Park::Skip => return Ok(Wait::Skipped),
                 Park::Abort => return Err(StepOutcome::Aborted),
