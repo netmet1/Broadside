@@ -319,6 +319,7 @@ impl SkillLogState {
         if !write {
             return;
         }
+        let trailing = run.panel;
         let mut steps = if detail.writes_steps() {
             run.steps
         } else {
@@ -328,9 +329,30 @@ impl SkillLogState {
         // the same step is not part of what it asked for. Kept only where it is
         // the point (Panel) or where everything is (Debug), so the file stays
         // the size the level implies.
-        if !matches!(detail, LogDetail::Panel | LogDetail::Debug) {
+        if matches!(detail, LogDetail::Panel | LogDetail::Debug) {
+            // Whatever the panel said after the last step closed, which is the
+            // line saying how the run ended: the engine reports a step the
+            // moment it is over and only then announces the failure that ended
+            // it, so that line arrives with no step left to attach it to.
+            // Dropped, it would be the one line of the panel's account this
+            // level does not have, and the one most worth reading.
+            if let Some(last) = steps.last_mut() {
+                last.panel.extend(trailing);
+            }
+        } else {
             for step in &mut steps {
                 step.panel.clear();
+            }
+        }
+        // Same rule, same reason, for the two fields that are Debug's answer and
+        // nobody else's. A level that says "one line per step" has no business
+        // costing two thousand characters a step on disk, and no level can gain
+        // detail it was not written with, so keeping them would only make the
+        // file bigger and rotate it sooner.
+        if !detail.writes_execution() {
+            for step in &mut steps {
+                step.sent = None;
+                step.output = None;
             }
         }
         let record = RunRecord {
@@ -492,6 +514,34 @@ mod tests {
     }
 
     #[test]
+    fn only_debug_keeps_the_line_typed_and_the_output_read() {
+        let (_dir, log) = state();
+        let heavy = |id: &str| StepRecord {
+            sent: Some(" cmd; printf '__bsdone_%s__\\n' \"$?\"".into()),
+            output: Some("a great deal of output".into()),
+            ..run_step(id, "pass")
+        };
+        for (detail, kept) in [
+            (LogDetail::Itemized, false),
+            (LogDetail::Panel, false),
+            (LogDetail::Debug, true),
+        ] {
+            log.begin("run1", 7, "web-01", "Skill");
+            log.step("run1", 7, heavy("a"));
+            log.finish("run1", 7, true, "finished", detail, true);
+            let lines = log.tail(10).unwrap();
+            let v: serde_json::Value = serde_json::from_str(lines.last().unwrap()).unwrap();
+            let step = &v["steps"][0];
+            assert_eq!(
+                step.get("output").is_some(),
+                kept,
+                "{detail:?} kept the wrong thing: {v}"
+            );
+            assert_eq!(step.get("sent").is_some(), kept, "{detail:?}: {v}");
+        }
+    }
+
+    #[test]
     fn panel_lines_attach_to_the_step_that_closes_after_them() {
         let (_dir, log) = state();
         log.begin("run1", 7, "web-01", "Skill");
@@ -506,6 +556,25 @@ mod tests {
         let steps = v["steps"].as_array().unwrap();
         assert_eq!(steps[0]["panel"].as_array().unwrap().len(), 2);
         assert_eq!(steps[1]["panel"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_last_thing_the_panel_said_is_not_lost() {
+        // The order the engine reports in: the step that failed is written down
+        // first, and only then does the panel say why the run stopped. So the
+        // most important line of the account arrives after the last step has
+        // already taken its own lines away.
+        let (_dir, log) = state();
+        log.begin("run1", 7, "web-01", "Skill");
+        log.panel_line("run1", 7, "step run: test -f /etc/nginx/nginx.conf".into());
+        log.step("run1", 7, run_step("nginx", "fail"));
+        log.panel_line("run1", 7, "failed this host is not a web server".into());
+        log.finish("run1", 7, false, "stopped", LogDetail::Panel, true);
+
+        let v: serde_json::Value = serde_json::from_str(&log.tail(1).unwrap()[0]).unwrap();
+        let panel = v["steps"][0]["panel"].as_array().unwrap();
+        assert_eq!(panel.len(), 2, "the closing line was dropped: {v}");
+        assert_eq!(panel[1], "failed this host is not a web server");
     }
 
     #[test]

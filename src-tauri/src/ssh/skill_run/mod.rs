@@ -312,6 +312,37 @@ pub struct SkillStepDone {
     pub took_ms: u64,
 }
 
+impl SkillStepDone {
+    /// The record this step becomes.
+    ///
+    /// Here rather than inside the app's sink so that a test can write what the
+    /// app writes. The docker suite drives a real host through a real engine
+    /// into a real log, and a test that assembled its own [`StepRecord`] on the
+    /// way would be checking a copy of this conversion rather than this one.
+    /// The trimming in particular is worth holding to output a command really
+    /// produced rather than to a string a test made up.
+    pub fn into_record(self) -> crate::skilllog::StepRecord {
+        crate::skilllog::StepRecord {
+            step_id: self.step_id,
+            kind: self.kind,
+            // Filled in by the log itself: it counts the steps that ran, and
+            // that is the only place that knows how many there have been.
+            index: 0,
+            command: self.command,
+            sent: self.sent,
+            output: self
+                .output
+                .as_deref()
+                .map(crate::skilllog::trimmed_output),
+            exit_code: self.exit_code,
+            condition: self.condition,
+            next: self.next,
+            took_ms: self.took_ms,
+            panel: Vec::new(),
+        }
+    }
+}
+
 impl SkillEvents for tauri::AppHandle {
     fn progress(&self, payload: SkillProgress) {
         // The same line the run panel draws, kept against the step that closes
@@ -329,26 +360,9 @@ impl SkillEvents for tauri::AppHandle {
         let _ = self.emit(PAUSED_EVENT, &payload);
     }
     fn step_finished(&self, payload: SkillStepDone) {
-        use crate::skilllog::{trimmed_output, StepRecord};
-        self.state::<crate::skilllog::SkillLogState>().step(
-            &payload.run_id,
-            payload.host_id,
-            StepRecord {
-                step_id: payload.step_id,
-                kind: payload.kind,
-                // Filled in by the log itself: it counts the steps that ran, and
-                // that is the only place that knows how many there have been.
-                index: 0,
-                command: payload.command,
-                sent: payload.sent,
-                output: payload.output.as_deref().map(trimmed_output),
-                exit_code: payload.exit_code,
-                condition: payload.condition,
-                next: payload.next,
-                took_ms: payload.took_ms,
-                panel: Vec::new(),
-            },
-        );
+        let (run_id, host_id) = (payload.run_id.clone(), payload.host_id);
+        self.state::<crate::skilllog::SkillLogState>()
+            .step(&run_id, host_id, payload.into_record());
     }
     fn done(&self, payload: SkillDone) {
         // Read the operator's choice now rather than when the run started, so a

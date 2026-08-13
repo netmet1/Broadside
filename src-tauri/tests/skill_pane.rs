@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use broadside_lib::skilllog::{LogDetail, RunRecord, SkillLogState, MAX_OUTPUT_CHARS};
 use broadside_lib::ssh::pty::{
     open, PtyBlock, PtyClosed, PtyData, PtyEvents, PtyOpenResult, PtyState, SudoInjected,
 };
@@ -29,7 +30,7 @@ use broadside_lib::ssh::skill_run::curtain::Curtain;
 use broadside_lib::ssh::skill_run::state::Ctl;
 use broadside_lib::ssh::skill_run::{
     prepare, run_host, Engine, HostMeta, PtyLink, SkillDone, SkillEvents, SkillPaused,
-    SkillProgress, TapMsg,
+    SkillProgress, SkillStepDone, TapMsg,
 };
 use broadside_lib::ssh::{probe, AuthMethod, ProbeResult, ShellIntegrationPref};
 use skills_host::{SkillsHost, PASSWORD, USER};
@@ -293,23 +294,61 @@ impl PtyEvents for Tap {
     fn sudo_rejected(&self, _payload: SudoInjected) {}
 }
 
+/// Where the run's events go.
+///
+/// The app's own sink is `impl SkillEvents for tauri::AppHandle`, and when a
+/// test asks for a record this is deliberately the same three calls in the same
+/// order: a panel line per progress event, a record per finished step, and the
+/// entry written when the host reports. What each call *does* with the payload
+/// is not reimplemented here, it is [`SkillStepDone::into_record`] and
+/// [`SkillLogState`], so what this suite reads back is what the app would have
+/// written and not a test's idea of it.
 #[derive(Default)]
-struct Events(Mutex<Vec<SkillProgress>>);
+struct Events {
+    seen: Mutex<Vec<SkillProgress>>,
+    /// The log to write into, and the detail level to write at, when the spec
+    /// asked for one. `None` for every test that is only about the pane.
+    log: Option<(Arc<SkillLogState>, LogDetail)>,
+}
 
 impl SkillEvents for Events {
     fn progress(&self, payload: SkillProgress) {
-        self.0.lock().unwrap().push(payload);
+        if let Some((log, _)) = &self.log {
+            log.panel_line(
+                &payload.run_id,
+                payload.host_id,
+                format!("{} {}", payload.phase, payload.detail),
+            );
+        }
+        self.seen.lock().unwrap().push(payload);
     }
     fn paused(&self, payload: SkillPaused) {
         panic!("nothing in this sequence may park: {payload:?}");
     }
-    fn done(&self, _payload: SkillDone) {}
+    fn step_finished(&self, payload: SkillStepDone) {
+        if let Some((log, _)) = &self.log {
+            let (run_id, host_id) = (payload.run_id.clone(), payload.host_id);
+            log.step(&run_id, host_id, payload.into_record());
+        }
+    }
+    fn done(&self, payload: SkillDone) {
+        if let Some((log, detail)) = &self.log {
+            log.finish(
+                &payload.run_id,
+                payload.host_id,
+                payload.ok,
+                &payload.message,
+                *detail,
+                true,
+            );
+        }
+    }
 }
 
 impl Events {
     /// The steps that announced themselves, in order.
     fn steps(&self) -> Vec<String> {
-        self.0
+        self.seen
             .lock()
             .unwrap()
             .iter()
@@ -317,8 +356,18 @@ impl Events {
             .filter_map(|p| p.step_id.clone())
             .collect()
     }
+    /// Every line the run panel drew, in order, formatted the way the panel
+    /// formats it. What the Panel detail level claims to be a copy of.
+    fn panel_lines(&self) -> Vec<String> {
+        self.seen
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|p| format!("{} {}", p.phase, p.detail))
+            .collect()
+    }
     fn log(&self) -> String {
-        self.0
+        self.seen
             .lock()
             .unwrap()
             .iter()
@@ -487,6 +536,9 @@ struct Ran {
     pane: String,
     outcome: broadside_lib::ssh::skill_run::HostOutcome,
     events: Arc<Events>,
+    /// The entry this run left in the skill log, when the spec asked for one.
+    /// One host per drive means one entry.
+    record: Option<RunRecord>,
 }
 
 /// The host this run is driven against: how wide the pane is, which shell logs
@@ -508,6 +560,11 @@ struct Spec {
     quiet_history: bool,
     /// A shell history that was already on the host before Broadside connected.
     seed_history: Option<&'static str>,
+    /// The operator's **Logging type** answer, when this run is one whose
+    /// record is the thing being checked. `None` is every other test here: the
+    /// engine reports its steps either way and the sink throws them away, which
+    /// is what the app does when nobody is recording.
+    log: Option<LogDetail>,
 }
 
 impl Spec {
@@ -519,6 +576,7 @@ impl Spec {
             integration: ShellIntegrationPref::Auto,
             quiet_history: false,
             seed_history: None,
+            log: None,
         }
     }
     fn shell(mut self, shell: &'static str) -> Self {
@@ -544,6 +602,10 @@ impl Spec {
     }
     fn seed_history(mut self, seed: &'static str) -> Self {
         self.seed_history = Some(seed);
+        self
+    }
+    fn logging(mut self, detail: LogDetail) -> Self {
+        self.log = Some(detail);
         self
     }
     fn rc_file(&self) -> &'static str {
@@ -597,6 +659,16 @@ async fn drive_config(spec: Spec, cfg: SequenceConfig) -> (Ran, String) {
     let history_file = spec.history_file();
     let fingerprint = trust(&host).await;
 
+    // The log the app would be writing into, in a directory of this test's own.
+    // `begin` is the app's own first move (`commands::skills` calls it per host
+    // before the engine starts), and without it every later call has no run to
+    // attach to and silently does nothing, which is exactly what it should do.
+    let log_dir = tempfile::TempDir::new().expect("a directory for the log");
+    let skill_log = Arc::new(SkillLogState::new(log_dir.path().into()));
+    if spec.log.is_some() {
+        skill_log.begin("skill-pane", 1, "skills-test", "Docker Skill");
+    }
+
     let raw = Arc::new(Mutex::new(Vec::new()));
     let (tap_tx, tap_rx) = mpsc::unbounded_channel();
     let (_ctl_tx, ctl_rx) = mpsc::unbounded_channel::<Ctl>();
@@ -643,7 +715,10 @@ async fn drive_config(spec: Spec, cfg: SequenceConfig) -> (Ran, String) {
         write: Box::new(move |bytes: &[u8]| write_state.write(&write_id, bytes)),
         curtain,
     };
-    let events = Arc::new(Events::default());
+    let events = Arc::new(Events {
+        seen: Mutex::new(Vec::new()),
+        log: spec.log.map(|detail| (skill_log.clone(), detail)),
+    });
     let engine = Engine::new(
         link,
         ctl_rx,
@@ -672,6 +747,22 @@ async fn drive_config(spec: Spec, cfg: SequenceConfig) -> (Ran, String) {
         .await
         .expect("the run never finished");
 
+    // `run_host` does not report the host: `HostGuard::report` does, once, when
+    // the host is over. That call is what closes the record, so a test that
+    // skipped it would have a log with an open run in it and nothing on disk.
+    if spec.log.is_some() {
+        events.done(SkillDone {
+            run_id: "skill-pane".into(),
+            host_id: 1,
+            label: "skills-test".into(),
+            session_id: session_id.clone(),
+            ok: outcome.ok,
+            message: outcome.message.clone(),
+            is_root: outcome.is_root,
+            shell_open: false,
+        });
+    }
+
     // Both histories: the login shell's, and the one belonging to the shell a
     // `sudo -i` opened, which is a different shell with a different file and is
     // the half a per-host mechanism would miss.
@@ -692,11 +783,27 @@ async fn drive_config(spec: Spec, cfg: SequenceConfig) -> (Ran, String) {
         readable(&pane)
     );
     println!("---------------- log -----------------\n{}", events.log());
+
+    // One host, one run, so at most one entry. Read before the directory goes.
+    let record: Option<RunRecord> = spec.log.and_then(|_| {
+        let lines = skill_log.tail(10).expect("the skill log is readable");
+        assert!(lines.len() <= 1, "one host wrote {} entries", lines.len());
+        lines
+            .first()
+            .map(|l| serde_json::from_str(l).expect("the entry is the shape it was written in"))
+    });
+    if let Some(record) = &record {
+        println!(
+            "--------------- the record ---------------\n{}",
+            serde_json::to_string_pretty(record).unwrap()
+        );
+    }
     (
         Ran {
             pane,
             outcome,
             events,
+            record,
         },
         history,
     )
@@ -804,6 +911,7 @@ async fn a_whole_skill_runs_without_putting_anything_of_its_own_on_the_screen() 
         pane,
         outcome,
         events,
+        ..
     } = drive(Spec::bash(120)).await;
 
     // 1. The run did what the skill said, all the way to the end.
@@ -864,6 +972,7 @@ async fn the_same_skill_on_zsh() {
         pane,
         outcome,
         events,
+        ..
     } = drive(Spec::bash(100).shell("zsh")).await;
     assert!(outcome.ok, "{outcome:?}\n{}", events.log());
     assert_no_plumbing(&pane);
@@ -934,6 +1043,7 @@ async fn a_two_line_prompt_keeps_both_of_its_lines() {
         pane,
         outcome,
         events,
+        ..
     } = drive(Spec::bash(100).ps1("[\\u@skills-test.internal.example.com \\w]\\n\\$ ")).await;
     assert!(outcome.ok, "{outcome:?}\n{}", events.log());
     // Both halves are on the glass, and the top half as many times as the
@@ -1148,6 +1258,230 @@ async fn skill_log_only_on_zsh_which_has_no_switch_to_turn_off() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// What the run writes down
+// ---------------------------------------------------------------------------
+
+/// A short skill whose *record* is the thing being read: one command that says
+/// far more than a record should keep, and one that fails on purpose so there
+/// is an exit code worth having.
+///
+/// `seq 1 1000` rather than a rounder number. The cap is 2,000 characters and
+/// this produces something near 3,900 of them once a PTY has put a carriage
+/// return on every line, so the trim lands in the middle of the three-digit
+/// numbers and the last of them is provably absent from what was kept. `seq 1
+/// 200`, which the rest of this suite uses and which smoke test 58 originally
+/// asked an operator to try, comes to about 900: it would have shown no trim at
+/// all and looked like a bug in the trimming.
+fn record_sequence() -> SequenceConfig {
+    SequenceConfig {
+        params: vec![],
+        start_step_id: "chatty".into(),
+        // The closing uid probe is not a step anybody authored, and this is
+        // about what the record says the skill did.
+        allow_transfer: false,
+        max_step_repeats: None,
+        unlimited_step_repeats: false,
+        steps: vec![
+            run("chatty", "seq 1 1000", "missing", STOP),
+            run(
+                "missing",
+                "test -f /etc/nginx/nginx.conf",
+                "unexpected",
+                "expected",
+            ),
+            log(
+                "unexpected",
+                LogLevel::Error,
+                "this host was meant to be bare",
+                STOP,
+            ),
+            log("expected", LogLevel::Info, "nginx is not installed", STOP),
+        ],
+    }
+}
+
+/// The Debug level against a real host (smoke 58 C4 and C5).
+///
+/// Two halves, and neither means much alone. On a host with the OSC 133 hooks
+/// the engine types the operator's command and nothing else, so there is no
+/// composed line to show and the record says nothing; on a host the operator
+/// has told Broadside never to write to there are no hooks, an exit code has to
+/// come back some other way, and that composed line is the whole reason the
+/// level exists. A record that showed one on both, or on neither, would be
+/// equally wrong, so both are driven here.
+///
+/// The trimming is worth doing against a real command rather than only against
+/// a string a test made up: what a host actually says comes back through a PTY,
+/// with carriage returns in it and the shell's own idea of where the output
+/// began, and the cap has to hold against that rather than against something
+/// tidy.
+#[tokio::test]
+#[ignore]
+async fn the_record_says_what_was_typed_and_keeps_only_the_head_of_what_came_back() {
+    let (hooked, _) = drive_config(
+        Spec::bash(100).logging(LogDetail::Debug),
+        record_sequence(),
+    )
+    .await;
+    let record = hooked.record.expect("the run left no entry at all");
+    assert_eq!(record.result, "SUCCESS", "{}", hooked.events.log());
+    assert_eq!(record.host_label, "skills-test");
+    let ids: Vec<&str> = record.steps.iter().map(|s| s.step_id.as_str()).collect();
+    assert_eq!(ids, vec!["chatty", "missing", "expected"]);
+    // Two commands, and the one that took its failure branch is counted as the
+    // failure it was even though the run carried on happily (smoke 58 C2).
+    assert_eq!(record.commands, 2, "{record:?}");
+    assert_eq!(record.failed, 1, "{record:?}");
+    assert_eq!(record.steps[1].exit_code, Some(1));
+    assert_eq!(record.steps[1].condition, "fail");
+    assert_eq!(record.steps[1].next.as_deref(), Some("expected"));
+
+    // C5. The head of the output, the cap held exactly, and the tail gone: the
+    // last number this command printed is nowhere, which is what says the trim
+    // did something rather than the output having been small all along.
+    let out = record.steps[0]
+        .output
+        .as_deref()
+        .expect("a command's output is the point of the Debug level");
+    let trailer = format!("\n... trimmed at {MAX_OUTPUT_CHARS} characters ...");
+    assert!(
+        out.ends_with(&trailer),
+        "the output was kept whole ({} chars)",
+        out.chars().count()
+    );
+    assert_eq!(out.chars().count(), MAX_OUTPUT_CHARS + trailer.chars().count());
+    assert!(
+        !out.contains("1000"),
+        "the trim kept the tail as well as the head"
+    );
+
+    // C4, first half: nothing was composed, so nothing is shown.
+    for step in &record.steps {
+        assert!(
+            step.sent.is_none(),
+            "a host with the hooks composed a line for {:?}: {:?}",
+            step.step_id,
+            step.sent
+        );
+    }
+
+    // C4, second half: the same skill on a host Broadside may not write to.
+    let (bare, _) = drive_config(
+        Spec::bash(100).untouched().logging(LogDetail::Debug),
+        record_sequence(),
+    )
+    .await;
+    let record = bare.record.expect("the run left no entry at all");
+    assert_eq!(record.result, "SUCCESS", "{}", bare.events.log());
+    for id in ["chatty", "missing"] {
+        let step = record
+            .steps
+            .iter()
+            .find(|s| s.step_id == id)
+            .unwrap_or_else(|| panic!("{id} is not in the record"));
+        let sent = step
+            .sent
+            .as_deref()
+            .unwrap_or_else(|| panic!("{id} had a line composed for it and the record lost it"));
+        let command = step.command.as_deref().expect("a run step has a command");
+        assert!(
+            sent.contains(command) && sent.contains("__bsdone_"),
+            "the line the record shows is not the line that went out: {sent:?}"
+        );
+        // Including the leading space, which is the half an operator reading
+        // this level is most likely to be asking about.
+        assert!(
+            sent.starts_with(' '),
+            "the record dropped the space that keeps the line out of history: {sent:?}"
+        );
+    }
+    // A log step is not a command and never had a line typed for it.
+    let quiet = record.steps.iter().find(|s| s.step_id == "expected").unwrap();
+    assert!(quiet.sent.is_none(), "a log step showed a typed line: {quiet:?}");
+    // And the output is still trimmed the same way, wrapper or no wrapper.
+    let out = record.steps[0].output.as_deref().expect("output");
+    assert!(out.ends_with(&trailer), "the trim did not hold without hooks");
+}
+
+/// A skill that ends the way most real ones fail: waiting for something the
+/// host never says.
+///
+/// Here to make the Panel level's closing line reachable. A log step that
+/// refuses a host announces itself and *is* its own last line, but an `expect`
+/// that times out is reported as a finished step first and only then announced
+/// as the failure, so its closing line arrives with no step left to hold it.
+fn refused_sequence() -> SequenceConfig {
+    SequenceConfig {
+        params: vec![],
+        start_step_id: "missing".into(),
+        allow_transfer: false,
+        max_step_repeats: None,
+        unlimited_step_repeats: false,
+        steps: vec![
+            run(
+                "missing",
+                "test -f /etc/nginx/nginx.conf",
+                "unexpected",
+                "waitfor",
+            ),
+            log(
+                "unexpected",
+                LogLevel::Error,
+                "this host was meant to be bare",
+                STOP,
+            ),
+            SeqStep::Expect {
+                id: "waitfor".into(),
+                pattern: "a-thing-this-host-will-never-say".into(),
+                send_on_match: None,
+                // Short, because the wait is the mechanism and not the point.
+                timeout_secs: Some(3),
+                on_timeout: TimeoutAction::Fail,
+                on_timeout_target: None,
+                on_match: STOP.into(),
+            },
+        ],
+    }
+}
+
+/// The Panel level is the panel's own account, kept (smoke 58 C3).
+///
+/// Asserted as an equality rather than a spot check, because the claim the
+/// level makes is total: every line the panel drew, in the order it drew them,
+/// with none added and none missing. A spot check would pass on a record that
+/// had quietly lost its last line, which is exactly what it used to do.
+#[tokio::test]
+#[ignore]
+async fn the_panel_level_keeps_the_account_the_panel_drew_including_its_last_line() {
+    let (ran, _) = drive_config(
+        Spec::bash(100).logging(LogDetail::Panel),
+        refused_sequence(),
+    )
+    .await;
+    assert!(!ran.outcome.ok, "the run was supposed to be refused");
+    let record = ran.record.expect("the run left no entry at all");
+    assert_eq!(record.result, "FAILED");
+
+    let kept: Vec<String> = record
+        .steps
+        .iter()
+        .flat_map(|s| s.panel.iter().cloned())
+        .collect();
+    assert_eq!(
+        kept,
+        ran.events.panel_lines(),
+        "the record is not the account the panel drew"
+    );
+    // And the line that says why, which is the one a record of a failed run is
+    // read for. It is last, and it is the one that used to be dropped.
+    let last = kept.last().expect("the account is empty");
+    assert!(
+        last.starts_with("failed "),
+        "the closing line is not the failure: {last:?}"
+    );
+}
+
 /// A host set to **Shell integration: Never** (smoke 57-2 D3): the operator has
 /// said Broadside may not write to this machine, so it gets no OSC 133 hooks and
 /// cannot report its own completions.
@@ -1167,6 +1501,7 @@ async fn a_host_broadside_may_not_write_to_still_runs_the_skill() {
         pane,
         outcome,
         events,
+        ..
     } = drive(Spec::bash(100).untouched()).await;
     assert!(outcome.ok, "{outcome:?}\n{}", events.log());
     assert_eq!(
