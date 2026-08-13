@@ -60,6 +60,27 @@ export type CoreShortcut = {
   scope: ShortcutScope;
 };
 
+/** Where a skill run's record goes.
+ *
+ * `remote` is the host's own shell history, which is not something Broadside
+ * writes: it means the shell is left recording the skill's commands, the way
+ * build 57-2 did. The other two put the record in Broadside's Log tab, and
+ * `skill` additionally asks the shell to stop keeping one. */
+export type SkillLogWhere = "skill" | "remote" | "both";
+
+/** How much of a run is written down. */
+export type SkillLogDetail = "summary" | "itemized" | "panel" | "debug";
+
+/** How the skill log reads on screen and on the way out. A display choice: the
+ * file itself is always JSONL, so nothing is lost by picking prose. */
+export type SkillLogFormat = "text" | "json";
+
+export type SkillLogPrefs = {
+  where: SkillLogWhere;
+  detail: SkillLogDetail;
+  format: SkillLogFormat;
+};
+
 export type AppSettings = {
   local_probe: LocalProbe | null;
   /** null = follow the probe suggestion. */
@@ -75,7 +96,14 @@ export type AppSettings = {
   terminal_font_size: number;
   app_font_size: number;
   terminal_scrollback: number;
+  skill_log: SkillLogPrefs;
 };
+
+/** Saved the moment a dropdown changes, so it takes effect on the next host to
+ * start rather than at the next launch. */
+export function setSkillLogPrefs(prefs: SkillLogPrefs): Promise<void> {
+  return invoke<void>("set_skill_log_prefs", { prefs });
+}
 
 /** A host a command targeted (D-061 sub-4). `id` resolves the live colour;
  * `label` is the snapshot fallback. `id` is null for sources without it. */

@@ -22,6 +22,7 @@ export const SECTION_TITLES = [
   "Appearance",
   "Custom terminals",
   "Grid",
+  "Skills",
   "Backup & Restore",
   "Help",
   "Audit log",
@@ -53,6 +54,8 @@ export const SECTION_KEYWORDS: Record<string, string> = {
   "Custom terminals":
     "git bash msys msys2 cygwin add my own program exe application launcher path arguments browse posix bash-like command language family terminal application third party colour color tab colours tint highlight powershell command prompt wsl serial which tab am i in tell tabs apart profile colour",
   Grid: "tiles layout columns rows tile size width height strict drag resize short last row stretch tall gaps split screen side by side",
+  Skills:
+    "skill log logging record run history remote shell history bash_history up arrow recall summary itemized debug run panel step log exit codes json text output style where to log keep commands out of history audit what did the skill do",
   "Backup & Restore": "backup restore export import copy save file folder migrate move to another pc database",
   Help: "hints status bar tooltips bottom bar explanations hover guidance",
   "Audit log": "logs history record trail who what when broadcasts host keys sessions opened turn off",
