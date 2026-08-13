@@ -112,6 +112,32 @@ impl SkillsHost {
         String::from_utf8_lossy(&out.stdout).to_string()
     }
 
+    /// Writes a file anywhere in the container as root, owned by `owner`.
+    ///
+    /// For seeding a shell history that was already there before Broadside ever
+    /// connected, which is the only way to ask whether a run destroys one.
+    pub fn seed_file(&self, path: &str, owner: &str, content: &str) {
+        let out = Command::new("docker")
+            .args([
+                "exec",
+                &self.container_id,
+                "sh",
+                "-c",
+                "printf '%s\\n' \"$1\" > \"$2\" && chown \"$3\" \"$2\"",
+                "sh",
+                content,
+                path,
+                owner,
+            ])
+            .output()
+            .expect("docker exec failed to spawn");
+        assert!(
+            out.status.success(),
+            "could not seed {path}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
     /// Appends one line to a rc file in the test user's home, so a run can be
     /// driven against the prompt an operator actually has rather than the one
     /// Debian ships.

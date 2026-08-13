@@ -506,6 +506,8 @@ struct Spec {
     /// The operator's **Where to log** answer: true is "Skill Log Only", which
     /// asks each shell to stop keeping a history of its own.
     quiet_history: bool,
+    /// A shell history that was already on the host before Broadside connected.
+    seed_history: Option<&'static str>,
 }
 
 impl Spec {
@@ -516,6 +518,7 @@ impl Spec {
             rc: Vec::new(),
             integration: ShellIntegrationPref::Auto,
             quiet_history: false,
+            seed_history: None,
         }
     }
     fn shell(mut self, shell: &'static str) -> Self {
@@ -537,6 +540,10 @@ impl Spec {
     }
     fn quiet_history(mut self) -> Self {
         self.quiet_history = true;
+        self
+    }
+    fn seed_history(mut self, seed: &'static str) -> Self {
+        self.seed_history = Some(seed);
         self
     }
     fn rc_file(&self) -> &'static str {
@@ -569,6 +576,16 @@ async fn drive_config(spec: Spec, cfg: SequenceConfig) -> (Ran, String) {
     let host = SkillsHost::start_with_shell(&format!("/bin/{}", spec.shell));
     for line in &spec.rc {
         host.append_rc(spec.rc_file(), line);
+    }
+    if let Some(seed) = spec.seed_history {
+        // Both shells, because both are asked to stop recording and either could
+        // take that as licence to write an empty list over what was there.
+        host.seed_file(
+            &format!("/home/{USER}/{}", spec.history_file()),
+            USER,
+            seed,
+        );
+        host.seed_file("/root/.bash_history", "root", seed);
     }
     let Spec {
         cols,
@@ -712,6 +729,12 @@ fn assert_nothing_hidden_leaked(pane: &str) {
     for plumbing in [
         "stty", "__bsecho", "__bshook", "__bsshell", "__bsuid", "6273", "__omni_precmd",
         "PROMPT_COMMAND",
+        // Asking the shell to stop keeping a history is Broadside's business
+        // like any other question it asks, and rides on a line the curtain is
+        // already holding back.
+        "set +o history",
+        "fc -p",
+        "BASH_VERSION",
     ] {
         assert!(
             !pane.contains(plumbing),
@@ -1012,6 +1035,9 @@ fn assert_ran(ran: &Ran) {
             readable(&ran.pane)
         );
     }
+    // And the pane is held to the same standard as everywhere else, under the
+    // setting that types one more thing at the host than any other.
+    assert_no_plumbing(&ran.pane);
 }
 
 /// And the setting that does not (prompts80). The engine asks each shell to
@@ -1039,6 +1065,50 @@ async fn skill_log_only_leaves_nothing_in_the_hosts_own_history() {
         assert!(
             !history.contains(plumbing),
             "{plumbing:?} was recorded on the host:\n{history}"
+        );
+    }
+}
+
+/// The operator's own history was there before Broadside was, and has to be
+/// there afterwards (smoke 58 A4).
+///
+/// This is the question that makes the mechanism safe or not, and neither shell
+/// answers it obviously. bash reads its history file into memory at login and
+/// writes that list back out on exit, so turning recording off has to mean
+/// "stop adding" and not "start from empty", or the file comes back truncated.
+/// zsh's `fc -p` switches to a new history with no file behind it, and whether
+/// the real one survives the shell exiting with that still on the stack is a
+/// claim rather than a fact until it is run.
+///
+/// A skill that quietly emptied somebody's `.bash_history` would be a far worse
+/// bug than the one this feature exists to fix.
+#[tokio::test]
+#[ignore]
+async fn a_history_that_was_already_there_survives_a_quiet_run() {
+    const BEFORE: &str = "echo i-was-here-before";
+    for shell in ["bash", "zsh"] {
+        let spec = Spec::bash(100)
+            .shell(shell)
+            .quiet_history()
+            .seed_history(BEFORE)
+            .rc("HISTFILE=$HOME/.zsh_history")
+            .rc("SAVEHIST=1000")
+            .rc("HISTSIZE=1000");
+        let (ran, history) = drive_config(spec, history_sequence()).await;
+        println!("--------------- {shell}, both histories ---------------\n{history}");
+        assert_ran(&ran);
+        // Twice over: the login shell's file and root's, because a `sudo -i`
+        // opens a second shell that is asked the same thing and could destroy a
+        // second file.
+        assert_eq!(
+            history.matches(BEFORE).count(),
+            2,
+            "a run erased history that was not its to erase ({shell}):\n{history}"
+        );
+        // And it still did not add its own.
+        assert!(
+            !history.contains("remember-me"),
+            "{shell} recorded the skill's commands after all:\n{history}"
         );
     }
 }
