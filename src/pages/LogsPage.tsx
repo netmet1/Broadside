@@ -43,9 +43,19 @@ import {
 import {
   type HistoryEntry,
   type HistoryHost,
+  type SkillLogFormat,
   clearCommandHistory,
   commandHistory,
+  getAppSettings,
 } from "@/lib/tauri/settings";
+import {
+  clearSkillLog,
+  exportSkillLog,
+  renderRun,
+  skillLogTail,
+  type SkillLogRun,
+} from "@/lib/tauri/skilllog";
+import { onSkillDone } from "@/lib/tauri/skills";
 import { announceCommandHistory } from "@/lib/commandHistory";
 import {
   buildMatcher,
@@ -56,7 +66,7 @@ import {
 } from "@/lib/search";
 import { cn } from "@/lib/utils";
 
-type Tab = "session" | "audit" | "history" | "errors";
+type Tab = "session" | "audit" | "history" | "errors" | "skills";
 
 /** Colour for a host we can't resolve live (deleted, or a source without ids). */
 const HOST_UNKNOWN_COLOR = "#6b7280";
@@ -255,6 +265,13 @@ export function LogsPage({ visible }: { visible: boolean }) {
   // Error log tab state (D-055)
   const [errorEntries, setErrorEntries] = useState<ErrorEntry[]>([]);
 
+  // Skill log tab state. The rendering style is a Settings choice rather than a
+  // control here, so it is re-read with the entries: a run written at one
+  // detail level still reads at whatever style is set now, because the stored
+  // form is structured either way.
+  const [skillRuns, setSkillRuns] = useState<SkillLogRun[]>([]);
+  const [skillFormat, setSkillFormat] = useState<SkillLogFormat>("text");
+
   const sessionSearchLines = useMemo(
     () =>
       sessionLines.map((l, i) => ({
@@ -289,10 +306,25 @@ export function LogsPage({ visible }: { visible: boolean }) {
     [errorEntries],
   );
 
+  // Each run is one searchable block, so a Find for a host name or a command
+  // lands on the run it happened in rather than on a line torn out of it.
+  const skillDisplay = useMemo(
+    () =>
+      skillRuns.map((r) =>
+        skillFormat === "json" ? JSON.stringify(r, null, 2) : renderRun(r),
+      ),
+    [skillRuns, skillFormat],
+  );
+  const skillSearchLines = useMemo(
+    () => skillDisplay.map((text, i) => ({ key: `${i}`, text })),
+    [skillDisplay],
+  );
+
   const sessionSearch = useLineSearch(sessionSearchLines);
   const auditSearch = useLineSearch(auditSearchLines);
   const historySearch = useLineSearch(historySearchLines);
   const errorSearch = useLineSearch(errorSearchLines);
+  const skillSearch = useLineSearch(skillSearchLines);
   const search =
     tab === "session"
       ? sessionSearch
@@ -300,7 +332,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
         ? auditSearch
         : tab === "history"
           ? historySearch
-          : errorSearch;
+          : tab === "skills"
+            ? skillSearch
+            : errorSearch;
 
   // Ctrl+F / Ctrl+Shift+F while this page is visible (D-015).
   useEffect(() => {
@@ -382,6 +416,54 @@ export function LogsPage({ visible }: { visible: boolean }) {
     };
   }, [visible, tab, errorsNonce]);
 
+  const [skillsNonce, setSkillsNonce] = useState(0);
+  const refreshSkills = useCallback(() => setSkillsNonce((n) => n + 1), []);
+  useEffect(() => {
+    if (!visible || tab !== "skills") return;
+    let alive = true;
+    Promise.all([skillLogTail(1000), getAppSettings()])
+      .then(([runs, s]) => {
+        if (!alive) return;
+        // Newest first (LG6), the tail is chronological (oldest first).
+        setSkillRuns(runs.reverse());
+        setSkillFormat(s.skill_log.format);
+      })
+      .catch((e) => toast.error(errorMessage(e)));
+    return () => {
+      alive = false;
+    };
+  }, [visible, tab, skillsNonce]);
+
+  // A run that ends while this page is already open.
+  //
+  // Each tab reads its file once, when it becomes the visible one, which is
+  // right for a log nothing is currently writing to and wrong for this one: the
+  // operator watching a skill run is the operator most likely to be sitting on
+  // this page when the entry is written. With nothing to tell it the file had
+  // grown, the tab kept showing the read it did on arrival, so the run that had
+  // just finished was missing and the log looked one run behind until they
+  // navigated away and back.
+  //
+  // `skill:done` is emitted after the entry is appended, so a refresh on it
+  // always finds the run that just ended rather than racing it. Errors are
+  // refreshed the same way for the same reason: a host that ends badly writes
+  // an error entry from that same event.
+  useEffect(() => {
+    if (!visible || (tab !== "skills" && tab !== "errors")) return;
+    const refresh = tab === "skills" ? refreshSkills : refreshErrors;
+    // A run against forty hosts ends forty times, often within the same
+    // moment. Coalesce, so a wide run costs one re-read and not forty.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const un = onSkillDone(() => {
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 250);
+    });
+    return () => {
+      clearTimeout(timer);
+      void un.then((f) => f());
+    };
+  }, [visible, tab, refreshSkills, refreshErrors]);
+
   const openSession = async () => {
     try {
       const path = await openDialog({
@@ -433,8 +515,8 @@ export function LogsPage({ visible }: { visible: boolean }) {
     }
   };
 
-  /** Export the audit/error log to a chosen path (LG3/LG4). */
-  const exportLog = async (kind: "audit" | "errors") => {
+  /** Export the audit/error/skill log to a chosen path (LG3/LG4). */
+  const exportLog = async (kind: "audit" | "errors" | "skills") => {
     try {
       const d = new Date();
       const p = (n: number) => String(n).padStart(2, "0");
@@ -443,12 +525,21 @@ export function LogsPage({ visible }: { visible: boolean }) {
         `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
         `-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`;
       const path = await saveDialog({
-        title: kind === "audit" ? "Export audit log" : "Export error log",
+        title:
+          kind === "audit"
+            ? "Export audit log"
+            : kind === "skills"
+              ? "Export skill log"
+              : "Export error log",
         defaultPath: `${stamp}-broadside-${kind}.jsonl`,
       });
       if (typeof path !== "string") return;
       const bytes =
-        kind === "audit" ? await exportAuditLog(path) : await exportErrorLog(path);
+        kind === "audit"
+          ? await exportAuditLog(path)
+          : kind === "skills"
+            ? await exportSkillLog(path)
+            : await exportErrorLog(path);
       toast.success(`Exported ${(bytes / 1024).toFixed(1)} KB`);
     } catch (e) {
       toast.error(errorMessage(e));
@@ -484,7 +575,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-4 border-b border-border/50 px-4 pt-3">
-        {(["session", "audit", "history", "errors"] as const).map((t) => (
+        {(["session", "audit", "history", "skills", "errors"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -502,7 +593,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
                 ? "Audit log"
                 : t === "history"
                   ? "Command history"
-                  : "Errors"}
+                  : t === "skills"
+                    ? "Skills"
+                    : "Errors"}
           </button>
         ))}
       </div>
@@ -706,6 +799,97 @@ export function LogsPage({ visible }: { visible: boolean }) {
                       text
                     )}
                   </pre>
+                );
+              })
+            )}
+          </div>
+        </div>
+      ) : tab === "skills" ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-3 px-4 py-2">
+            <Button variant="ghost" size="sm" onClick={refreshSkills}>
+              <RefreshCwIcon />
+              Refresh
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={skillRuns.length === 0}
+              onClick={async () => {
+                try {
+                  await clearSkillLog();
+                  setSkillRuns([]);
+                } catch (e) {
+                  toast.error(errorMessage(e));
+                }
+              }}
+            >
+              Clear skill log
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={skillRuns.length === 0}
+              onClick={() => exportLog("skills")}
+            >
+              Export…
+            </Button>
+            {skillRuns.length > 0 && (
+              <span className="ml-auto font-mono text-xs text-muted-foreground">
+                {skillRuns.length} {skillRuns.length === 1 ? "run" : "runs"} ·{" "}
+                {skillFormat === "json" ? "JSON" : "text"}
+              </span>
+            )}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+            {skillRuns.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No skill runs recorded. What a run writes down, and whether it
+                writes here at all, is set in Settings under Skills.
+              </p>
+            ) : (
+              skillDisplay.map((text, idx) => {
+                const matches = skillSearch.scan?.perLine.get(idx) ?? null;
+                if (skillSearch.filterActive && !matches) return null;
+                const isActiveLine = skillSearch.activeHit?.lineIdx === idx;
+                const run = skillRuns[idx];
+                return (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "border-b border-border/30 py-2",
+                      skillSearch.findActive && !matches && "opacity-40",
+                    )}
+                  >
+                    <div className="flex items-baseline gap-3 font-mono text-xs">
+                      <span className="text-muted-foreground">
+                        {run.ts ? new Date(run.ts).toLocaleString() : "-"}
+                      </span>
+                      <span
+                        className={cn(
+                          "font-medium",
+                          run.result === "SUCCESS"
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-red-400/90",
+                        )}
+                      >
+                        {run.result}
+                      </span>
+                    </div>
+                    <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+                      {matches && skillSearch.mode !== null ? (
+                        <HighlightedLine
+                          text={text}
+                          matches={matches}
+                          activeRange={
+                            isActiveLine ? skillSearch.activeHit!.match : null
+                          }
+                        />
+                      ) : (
+                        text
+                      )}
+                    </pre>
+                  </div>
                 );
               })
             )}

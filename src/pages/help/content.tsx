@@ -1618,7 +1618,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment",
     body: (
       <>
         <Lead>
@@ -1931,6 +1931,44 @@ export const SECTIONS: HelpSection[] = [
             connect time the refusal is immediate rather than waiting out a
             probe.
           </p>
+          <H3>What you see in the pane</H3>
+          <p>
+            The pane shows your commands, not Broadside's bookkeeping. A step's
+            command goes to the shell exactly as you wrote it, and the shell
+            reports back what it exited with over the same invisible channel that
+            drives <SectionLink id="help-sec-multiterminal">
+              MultiTerminal
+            </SectionLink>{" "}
+            command blocks. The questions a run has to ask the shell along the
+            way (which shell is this, are we root, are the hooks in place) never
+            reach the pane at all: Broadside holds them back on the way to your
+            screen rather than typing anything at the host to hide them, so
+            there is nothing to flicker past and nothing left behind however
+            narrow the pane or however long your prompt.
+          </p>
+          <p>
+            On a host that cannot do that, you will see a{" "}
+            <code>printf</code> appended to each command and a line like{" "}
+            <code>__bsdone_0__</code> under it. That is the fallback, it is
+            harmless, and it means one of three things: the shell is not bash or
+            zsh, this host is set to <Nav>never</Nav> under shell integration, or
+            a step opened a nested shell that would not take the hooks back.
+            Commands still run and branch exactly the same either way.
+          </p>
+          <H3>What a run leaves behind</H3>
+          <p>
+            Out of the box, in <Nav>Logs</Nav> &rarr; <Nav>Skills</Nav>: one
+            entry per host per run, with the exit codes and the timings, and as
+            much of the step-by-step as you ask for. Your host's own shell
+            history is left alone, because Broadside asks each shell it opens to
+            stop recording for the duration.
+          </p>
+          <p>
+            If you would rather the commands stayed in the host's history, where
+            an <Nav>Up</Nav> arrow finds them, that is{" "}
+            <Nav>Settings</Nav> &rarr; <Nav>Skills</Nav> &rarr;{" "}
+            <Nav>Where to log</Nav>. You can have either or both.
+          </p>
         </Detail>
       </>
     ),
@@ -2031,13 +2069,13 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-logs",
     title: "Logs",
     keywords:
-      "logs saved sessions audit log command history search export json pretty print viewer",
+      "logs saved sessions audit log command history search export json pretty print viewer skills skill log skill runs what did the skill do exit codes step log run panel",
     body: (
       <>
         <Lead>
           The <Nav>Logs</Nav> tab is your record of what happened: saved terminal
-          sessions, an audit log of security-relevant actions, and your past
-          commands.
+          sessions, an audit log of security-relevant actions, your past
+          commands, and what your skill runs did.
         </Lead>
         <Detail>
           <H3>What you can find</H3>
@@ -2052,6 +2090,16 @@ export const SECTIONS: HelpSection[] = [
               or off in <Nav>Settings</Nav>.
             </li>
             <li>Command history lists commands you have run, and every view has a search box.</li>
+            <li>
+              <Nav>Skills</Nav> holds one entry per host per skill run: what ran,
+              how it ended, and how long it took. How much detail each entry
+              carries, and whether entries are written at all, is set in{" "}
+              <Nav>Settings</Nav> &rarr; <Nav>Skills</Nav>. Entries are stored as
+              JSON and shown as readable text or as that JSON, whichever you have
+              chosen, so you can change your mind later and everything already
+              recorded reads the new way. <Nav>Export</Nav> always writes the
+              JSON, because an export is for something else to read.
+            </li>
           </Bullets>
         </Detail>
       </>
@@ -2061,7 +2109,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug",
     body: (
       <>
         <Lead>
@@ -2122,6 +2170,34 @@ export const SECTIONS: HelpSection[] = [
               font size from where you are reading and saves it here without the
               button, unless <Nav>Strict</Nav> beside that field is ticked,
               which leaves the wheel alone.
+            </li>
+            <li>
+              <Nav>Skills</Nav>: what a skill run writes down, and where. Until
+              now a run's only lasting trace was the commands it left in each
+              host's own shell history, the ones an <Nav>Up</Nav> arrow finds.
+              That works, and it is per host, it holds the commands without
+              their exit codes, and it fills a scratchpad that is yours rather
+              than Broadside's. So the record can live here instead.
+              <br />
+              <b>Where to log</b> decides that. <Nav>Skill log only</Nav>, the
+              recommendation, writes the run to <Nav>Logs</Nav> &rarr;{" "}
+              <Nav>Skills</Nav> and asks each shell it opens to stop recording,
+              so your history stays as you left it. <Nav>Remote history only</Nav>{" "}
+              writes nothing here and leaves the commands in your history, which
+              is what earlier versions did. <Nav>Both</Nav> does both. This is
+              the only setting on the page that changes anything sent to a host.
+              <br />
+              <b>Logging type</b> decides how much. <Nav>Skill summary</Nav> is
+              one entry for the whole run on a host. <Nav>Itemized</Nav> adds a
+              line per step with its exit code. <Nav>Run panel log</Nav> keeps
+              the step log exactly as the run panel showed it, so the account
+              you were already reading survives the panel closing.{" "}
+              <Nav>Debug</Nav> adds the line Broadside actually typed, where it
+              differs from your command, and what the host said back.
+              <br />
+              <b>Output style</b> is only about reading: entries are always
+              stored as JSON, so changing this re-reads everything already
+              recorded rather than affecting only what comes next.
             </li>
             <li>
               <Nav>Backup &amp; Restore</Nav>: save a copy of your app data, or

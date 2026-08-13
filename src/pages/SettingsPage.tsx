@@ -77,6 +77,7 @@ import {
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { GridSection } from "@/pages/settings/GridSection";
 import { CustomTerminalsSection } from "@/pages/settings/CustomTerminalsSection";
+import { SkillsSection } from "@/pages/settings/SkillsSection";
 import { useAdminLock } from "@/pages/settings/useAdminLock";
 import { useAppearance } from "@/pages/settings/useAppearance";
 import { useBackupRestore } from "@/pages/settings/useBackupRestore";
@@ -1411,6 +1412,17 @@ export function SettingsPage({
       {/* Grid: Terminals grid layout (localStorage, applies on next visit). */}
       {sectionVisible("Grid") && sectionReady("Grid") && (
         <GridSection id={sectionDomId("Grid")} />
+      )}
+
+      {/* Skills: what a run writes down, and where. */}
+      {settings && sectionVisible("Skills") && sectionReady("Skills") && (
+        <SkillsSection
+          id={sectionDomId("Skills")}
+          prefs={settings.skill_log}
+          onChange={(skill_log) =>
+            setSettings((s) => (s ? { ...s, skill_log } : s))
+          }
+        />
       )}
 
       {/* Backup & Restore */}

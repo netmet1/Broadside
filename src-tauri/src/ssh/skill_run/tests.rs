@@ -7,6 +7,7 @@
 //! ordering (a host's output routinely lands while the previous step is still
 //! finishing), and it means no test races the engine to feed it.
 
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use super::config::{
@@ -21,6 +22,7 @@ struct Collected {
     progress: Vec<SkillProgress>,
     paused: Vec<SkillPaused>,
     done: Vec<SkillDone>,
+    steps: Vec<SkillStepDone>,
 }
 
 #[derive(Default)]
@@ -35,6 +37,9 @@ impl SkillEvents for CollectEvents {
     }
     fn done(&self, payload: SkillDone) {
         self.0.lock().unwrap().done.push(payload);
+    }
+    fn step_finished(&self, payload: SkillStepDone) {
+        self.0.lock().unwrap().steps.push(payload);
     }
 }
 
@@ -56,6 +61,10 @@ impl CollectEvents {
             .iter()
             .map(|p| p.phase.clone())
             .collect()
+    }
+    /// The record of the run: one entry per step that finished.
+    fn steps(&self) -> Vec<SkillStepDone> {
+        self.0.lock().unwrap().steps.clone()
     }
     /// The events the panel reads as "a step is starting now", as
     /// `(step_id, countdown)`. Told by `step_kind`, exactly as the panel tells
@@ -112,6 +121,11 @@ fn harness() -> (Engine<CollectEvents>, Host) {
                 .push(String::from_utf8_lossy(b).to_string());
             Ok(())
         }),
+        // This host says nothing back unless a test tells it to, so nothing
+        // ever lifts the curtain and the engine reaches its deadline every
+        // time. That is the intended shape here: these tests are about the
+        // state machine, and the pane is [`super::pane_tests`]'s subject.
+        curtain: Curtain::new(),
     };
     let events = Arc::new(CollectEvents::default());
     let engine = Engine::new(
@@ -221,6 +235,180 @@ fn cfg(steps: Vec<SeqStep>) -> SequenceConfig {
 /// The echo a real shell sends back for a sentinel-wrapped command.
 fn echo_of(command: &str) -> String {
     format!(" {command}; printf '__bsdone_%s__\\n' \"$?\"\r\n")
+}
+
+// ------------------------------------------------------- a host that answers
+//
+// The tests above script a host by queueing what it says before the engine
+// starts, which is both simpler and the real ordering for text. It cannot be
+// the ordering for marks: the quiet path turns entirely on what the shell says
+// *after* a command goes out, and a mark queued in advance would be read, and
+// armed away, before the command that asks for it is ever typed. So this half
+// of the harness answers what is typed at it instead.
+
+/// The shell's side of a host with Broadside's OSC 133 integration on it.
+struct Script {
+    /// Exit code and output for the commands still to come, in order. A command
+    /// with nothing scripted exits 0 and prints nothing.
+    replies: VecDeque<(i32, String)>,
+    /// Whether this shell has the hooks. `sudo -i` takes them away, exactly as
+    /// it does on a real host: the nested shell is a different shell.
+    hooked: bool,
+    /// Whether being offered the hooks installs them. False for the shell that
+    /// simply will not take them, which is the case the fallback exists for.
+    takes_hooks: bool,
+    /// Whether it says where a command's output starts as well as how the
+    /// command ended. False for a shell that has somehow kept the completion
+    /// hook and lost the one in front of it, which leaves the engine with
+    /// completions it cannot tell apart from the previous line's.
+    reports_start: bool,
+}
+
+impl Script {
+    fn answer(&mut self, typed: &str) -> String {
+        if !typed.contains('\n') {
+            // A bare control character submits nothing and starts nothing.
+            return String::new();
+        }
+        let line = typed.trim();
+        // Everything typed at a terminal is echoed. Keeping that unconditional
+        // is the point of the current design: nothing is asked of the shell to
+        // stop it, so nothing about the shell can make hiding fail.
+        let out = format!("{line}\r\n");
+        if line.contains("sudo -i") {
+            self.hooked = false;
+            return out;
+        }
+        let printed = if line.contains("__omni_precmd") {
+            if self.takes_hooks {
+                self.hooked = true;
+            }
+            let answer = if self.hooked { "y" } else { "n" };
+            format!("\x1b]{};{HOOK_MARKER}{answer}__\x07", screen::BS_OSC)
+        } else if line.contains(SHELL_MARKER) {
+            format!("\x1b]{};{SHELL_MARKER}-bash__\x07", screen::BS_OSC)
+        } else if line.contains(UID_MARKER) {
+            format!("\x1b]{};{UID_MARKER}0__\x07", screen::BS_OSC)
+        } else {
+            let (code, text) = self.replies.pop_front().unwrap_or((0, String::new()));
+            return self.finish(out, &text, code, line);
+        };
+        self.finish(out, &printed, 0, line)
+    }
+
+    /// The tail of one command: what it printed, then how the shell accounts for
+    /// it. A hooked one says so out of band; an unhooked one says nothing about
+    /// itself at all. Either kind still runs the marker the engine appended,
+    /// which is the whole of why the fallback wrapper works everywhere.
+    fn finish(&self, mut out: String, printed: &str, code: i32, line: &str) -> String {
+        if self.hooked && self.reports_start {
+            out.push_str("\x1b]133;C\x07");
+        }
+        out.push_str(printed);
+        if line.contains(DONE_MARKER) {
+            out.push_str(&format!("{DONE_MARKER}{code}__\r\n"));
+        }
+        if self.hooked {
+            // The completion, the next prompt, and the mark the integration
+            // puts on the end of `PS1`. That last one is what lifts the
+            // curtain, so a shell without the hooks has to leave it out: a fake
+            // that always sent it would hide the one case the deadline exists
+            // for.
+            out.push_str(&format!(
+                "\x1b]133;D;{code}\x07\x1b]133;A\x07$ \x1b]133;B\x07"
+            ));
+        }
+        out
+    }
+}
+
+/// An engine talking to a shell that reports its own completions, set up the
+/// way the app sets one up: the connect-time probe read bash, so the OSC 133
+/// integration went in with the session.
+fn hooked_harness() -> (Engine<CollectEvents>, Host, Arc<Mutex<Script>>) {
+    hooked_harness_with(false)
+}
+
+/// The same, with the operator's **Where to log** answer. `quiet` is "Skill Log
+/// Only": the record belongs in Broadside, so the host is asked to stop keeping
+/// one of its own.
+fn hooked_harness_with(quiet: bool) -> (Engine<CollectEvents>, Host, Arc<Mutex<Script>>) {
+    let (data_tx, data_rx) = mpsc::unbounded_channel();
+    let (ctl_tx, ctl_rx) = mpsc::unbounded_channel();
+    let writes = Arc::new(Mutex::new(Vec::new()));
+    let script = Arc::new(Mutex::new(Script {
+        replies: VecDeque::new(),
+        hooked: true,
+        takes_hooks: true,
+        reports_start: true,
+    }));
+    let sink = writes.clone();
+    let shell = script.clone();
+    let back = data_tx.clone();
+    let curtain = Curtain::new();
+    let tap_curtain = curtain.clone();
+    let link = PtyLink {
+        rx: data_rx,
+        write: Box::new(move |b: &[u8]| {
+            let text = String::from_utf8_lossy(b).to_string();
+            sink.lock().unwrap().push(text.clone());
+            let reply = shell.lock().unwrap().answer(&text);
+            if !reply.is_empty() {
+                // Through the curtain first and the channel second, the order
+                // [`super::SkillTap`] uses, so that a prompt mark in this reply
+                // has lifted the curtain by the time the engine reads it.
+                let bytes = reply.into_bytes();
+                let _ = tap_curtain.filter(&bytes);
+                let _ = back.send(TapMsg::Data(bytes));
+            }
+            Ok(())
+        }),
+        curtain: curtain.clone(),
+    };
+    let events = Arc::new(CollectEvents::default());
+    let engine = Engine::new(
+        link,
+        ctl_rx,
+        events.clone(),
+        HostMeta {
+            run_id: "run1".into(),
+            host_id: 7,
+            label: "web01".into(),
+            session_id: "sess-7".into(),
+        },
+    )
+    .with_known_capability(ShellCapability::Full)
+    .with_integration_sent(true)
+    .with_quiet_history(quiet);
+    (
+        engine,
+        Host {
+            data: data_tx,
+            ctl: ctl_tx,
+            writes,
+            events,
+        },
+        script,
+    )
+}
+
+impl Host {
+    /// What the operator would have seen typed at their shell, with the
+    /// engine's own hidden plumbing left out of it.
+    fn commands(&self) -> Vec<String> {
+        self.writes()
+            .iter()
+            .map(|w| w.trim().to_string())
+            .filter(|w| {
+                // A hidden line is one line now, and every one of them carries
+                // the marker of the question it is asking.
+                !w.is_empty()
+                    && !w.contains(SHELL_MARKER)
+                    && !w.contains(UID_MARKER)
+                    && !w.contains(HOOK_MARKER)
+            })
+            .collect()
+    }
 }
 
 // ---------------------------------------------------------------- run steps
@@ -1279,6 +1467,486 @@ async fn shell_probe_echo_alone_is_not_a_detection() {
     let (mut engine, host) = harness();
     host.say(" printf '__bsshell_%s__\\n' \"$0\"\r\n");
     assert!(engine.detect_shell().await.is_err());
+}
+
+// ------------------------------------------------- keeping out of the way
+
+#[tokio::test(start_paused = true)]
+async fn a_shell_that_reports_its_own_completions_is_typed_at_plainly() {
+    // The point of the whole thing: what the operator watches go past is the
+    // command their skill author wrote, and nothing else.
+    let (engine, host, script) = hooked_harness();
+    script
+        .lock()
+        .unwrap()
+        .replies
+        .push_back((0, "up 3 days\r\n".into()));
+    let c = cfg(vec![run_step("a", "uptime", STOP, "fail")]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert_eq!(host.commands(), vec!["uptime"]);
+    assert!(
+        !host.typed().contains(DONE_MARKER),
+        "nothing was appended: {:?}",
+        host.typed()
+    );
+    // Verbatim, with no leading space: the space belongs on Broadside's own
+    // lines, where it keeps them out of history, and putting one on the
+    // author's line would only sit between the prompt and the command where
+    // the operator can see it.
+    assert!(host.writes().iter().any(|w| w == "uptime\n"));
+}
+
+// ---------------------------------------------------------------------------
+// Where the run's record goes
+// ---------------------------------------------------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn remote_history_only_types_exactly_what_it_always_typed() {
+    // The setting that says "leave my host recording, as it was". Nothing about
+    // history may appear anywhere in the run: this is the default the engine is
+    // built with, and it is byte-for-byte build 57-2.
+    let (engine, host, script) = hooked_harness();
+    script.lock().unwrap().replies.push_back((0, String::new()));
+    let c = cfg(vec![run_step("a", "uptime", STOP, "fail")]);
+    run_host(engine, &c).await;
+    assert!(
+        !host.typed().contains("history") && !host.typed().contains("fc -p"),
+        "something was said about history when nothing should have been: {:?}",
+        host.typed()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn skill_log_only_stops_the_shell_keeping_its_own_record() {
+    // Twice over, and the second is the one that matters: the shell probe is the
+    // first thing typed at the login shell, and the hook install is the first
+    // thing typed at every shell after it, including the one a `sudo -i` opens.
+    let (engine, host, script) = hooked_harness_with(true);
+    script.lock().unwrap().replies.push_back((0, String::new()));
+    let c = cfg(vec![run_step("a", "uptime", STOP, "fail")]);
+    run_host(engine, &c).await;
+
+    let quieted: Vec<String> = host
+        .writes()
+        .iter()
+        .filter(|w| w.contains("set +o history"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        quieted.len(),
+        2,
+        "expected the shell probe and the hook install to carry it, got:\n{}",
+        host.writes().join("")
+    );
+    // zsh has no `history` option, so it gets the answer in its own terms, and
+    // each branch is entered only by the shell it was written for. Swallowing
+    // the other's complaint instead is not equivalent: `set +o history` in zsh
+    // abandons the rest of the line, taking the shell probe with it, and every
+    // zsh run then died before its first step.
+    for line in &quieted {
+        assert!(line.contains("fc -p"), "zsh has nothing to work with: {line}");
+        assert!(
+            line.contains("if [ -n \"$BASH_VERSION\" ]")
+                && line.contains("elif [ -n \"$ZSH_VERSION\" ]"),
+            "neither builtin may be reached by the shell it would break: {line}"
+        );
+    }
+    // And the operator's own command is still exactly their own command.
+    assert!(host.writes().iter().any(|w| w == "uptime\n"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_run_step_is_written_down_with_what_was_typed_and_what_came_back() {
+    let (engine, host, script) = hooked_harness();
+    script
+        .lock()
+        .unwrap()
+        .replies
+        .push_back((0, "up 3 days\r\n".into()));
+    let c = cfg(vec![run_step("a", "uptime", STOP, "fail")]);
+    run_host(engine, &c).await;
+
+    let steps = host.events.steps();
+    assert_eq!(steps.len(), 1, "{steps:?}");
+    let step = &steps[0];
+    assert_eq!(step.step_id, "a");
+    assert_eq!(step.kind, "run");
+    assert_eq!(step.command.as_deref(), Some("uptime"));
+    assert_eq!(step.exit_code, Some(0));
+    assert_eq!(step.condition, "pass");
+    assert!(step.output.as_deref().unwrap().contains("up 3 days"));
+    // Nothing was composed, so there is nothing to say about what was sent. An
+    // entry that carries `sent` is one where it differs from the command, which
+    // is what makes the Debug level worth reading.
+    assert_eq!(step.sent, None, "{step:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_record_keeps_the_wrapper_a_shell_without_hooks_needed() {
+    let (engine, host) = harness();
+    let c = cfg(vec![run_step("a", "uptime", STOP, "fail")]);
+    let driver = tokio::spawn(async move {
+        host.say("-bash\r\n");
+        host.say(&format!("\x1b]{};{SHELL_MARKER}-bash__\x07", screen::BS_OSC));
+        host.say(&echo_of("uptime"));
+        host.say("up 3 days\r\n");
+        host.say(&format!("{DONE_MARKER}0__\r\n"));
+        host
+    });
+    run_host(engine, &c).await;
+    let host = driver.await.unwrap();
+
+    let steps = host.events.steps();
+    assert_eq!(steps.len(), 1, "{steps:?}");
+    let sent = steps[0].sent.as_deref().expect("the composed line");
+    assert!(sent.starts_with(" uptime; printf "), "{sent:?}");
+    assert_eq!(steps[0].command.as_deref(), Some("uptime"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_step_that_failed_is_recorded_as_failed_even_where_the_run_carried_on() {
+    // The branch was handled, so the run finished happily. The step still failed,
+    // and a record that counted it as a pass because the skill had an `onFailure`
+    // for it would be counting the wrong thing.
+    let (engine, host, script) = hooked_harness();
+    script.lock().unwrap().replies.push_back((3, String::new()));
+    let c = cfg(vec![
+        run_step("a", "test -f /etc/nginx/nginx.conf", STOP, "missing"),
+        SeqStep::Log {
+            id: "missing".into(),
+            level: LogLevel::Info,
+            message: "not installed".into(),
+            next: STOP.into(),
+        },
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+
+    let steps = host.events.steps();
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert_eq!(steps[0].condition, "fail");
+    assert_eq!(steps[0].exit_code, Some(3));
+    assert_eq!(steps[0].next.as_deref(), Some("missing"));
+    // A log step has no command and no exit code, and says so rather than
+    // inventing one.
+    assert_eq!(steps[1].kind, "log");
+    assert_eq!(steps[1].command, None);
+    assert_eq!(steps[1].exit_code, None);
+    assert_eq!(steps[1].condition, "done");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_host_the_operator_stopped_writes_no_step_for_the_one_it_stopped_in() {
+    // Stop host during a step is the run ending, not the step failing. Writing
+    // "expect: failed" for it would put a fiction in the record.
+    let (engine, host) = harness();
+    let c = cfg(vec![expect_step("a", "never", None, STOP)]);
+    let driver = tokio::spawn(async move {
+        host.say("-bash\r\n");
+        host.say(&format!("\x1b]{};{SHELL_MARKER}-bash__\x07", screen::BS_OSC));
+        host.ctl.send(Ctl::Abort).unwrap();
+        host
+    });
+    run_host(engine, &c).await;
+    let host = driver.await.unwrap();
+    assert!(host.events.steps().is_empty(), "{:?}", host.events.steps());
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_exit_code_the_shell_reports_picks_the_branch() {
+    let (engine, host, script) = hooked_harness();
+    script.lock().unwrap().replies.push_back((3, String::new()));
+    let c = cfg(vec![
+        run_step("a", "test -f /etc/nginx/nginx.conf", "yes", "no"),
+        SeqStep::Log {
+            id: "no".into(),
+            level: LogLevel::Info,
+            message: "not installed".into(),
+            next: STOP.into(),
+        },
+        SeqStep::Log {
+            id: "yes".into(),
+            level: LogLevel::Info,
+            message: "installed".into(),
+            next: STOP.into(),
+        },
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    let logged = host.events.0.lock().unwrap();
+    assert!(
+        logged.progress.iter().any(|p| p.detail == "not installed"),
+        "exit 3 should take the failure branch"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_output_match_reads_the_output_and_not_the_command() {
+    // Without the shell's own "output starts here", `consumed` would open with
+    // the echo of the command line, and a step grepping for `error` would match
+    // the word in its own `grep error` and take the match branch every time.
+    let (engine, host, script) = hooked_harness();
+    script.lock().unwrap().replies.push_back((1, String::new()));
+    let mut step = run_step("a", "grep error /var/log/app.log", "found", "clean");
+    if let SeqStep::Run { r#match, .. } = &mut step {
+        *r#match = Some(MatchBranch {
+            pattern: "error".into(),
+            if_match: "found".into(),
+            if_no_match: "clean".into(),
+        });
+    }
+    let c = cfg(vec![
+        step,
+        SeqStep::Log {
+            id: "found".into(),
+            level: LogLevel::Info,
+            message: "matched".into(),
+            next: STOP.into(),
+        },
+        SeqStep::Log {
+            id: "clean".into(),
+            level: LogLevel::Info,
+            message: "no match".into(),
+            next: STOP.into(),
+        },
+    ]);
+    run_host(engine, &c).await;
+    let logged = host.events.0.lock().unwrap();
+    assert!(
+        logged.progress.iter().any(|p| p.detail == "no match"),
+        "the echo is not output: {:?}",
+        logged.progress.iter().map(|p| &p.detail).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_nested_shell_is_given_the_hooks_back() {
+    // `sudo -i` is the first step of most skills, and the shell it opens has
+    // none of the hooks the one on connect was given. Offer them again, hidden,
+    // rather than spending the rest of the run typing the visible marker.
+    let (engine, host, script) = hooked_harness();
+    script.lock().unwrap().replies.push_back((0, String::new()));
+    let c = cfg(vec![
+        interactive(run_step("a", "sudo -i", "b", "fail")),
+        run_step("b", "whoami", STOP, "fail"),
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(
+        host.typed().contains("__omni_precmd"),
+        "the new shell should have been offered the hooks"
+    );
+    // And having taken them, the command itself still went out plain.
+    assert!(
+        !host.typed().contains(DONE_MARKER),
+        "{:?}",
+        host.typed()
+    );
+    assert_eq!(host.commands(), vec!["sudo -i", "whoami"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_shell_that_will_not_take_the_hooks_falls_back_to_the_visible_marker() {
+    // Asked twice, refused twice, and then left alone: a host that cannot
+    // report its own completions still runs the skill, exactly as every host
+    // did before it could.
+    let (engine, host, script) = hooked_harness();
+    {
+        let mut s = script.lock().unwrap();
+        s.hooked = false;
+        s.takes_hooks = false;
+        s.replies.push_back((0, String::new()));
+        s.replies.push_back((0, String::new()));
+    }
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", "fail"),
+        run_step("b", "echo two", STOP, "fail"),
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(
+        host.typed().contains("__bsdone_"),
+        "should have fallen back: {:?}",
+        host.typed()
+    );
+    assert_eq!(
+        host.typed().matches(HOOK_MARKER).count(),
+        MAX_HOOK_INSTALLS as usize,
+        "and stopped asking"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_shell_that_keeps_taking_the_hooks_is_never_given_up_on() {
+    // The cap counts refusals, not offers. A skill that opens a nested shell
+    // between every pair of steps is doing something legitimate, and each one
+    // that takes them costs nothing; counting those against the cap would have
+    // put a long run back on the visible marker for no reason.
+    let (engine, host, script) = hooked_harness();
+    {
+        let mut s = script.lock().unwrap();
+        for _ in 0..3 {
+            s.replies.push_back((0, String::new()));
+        }
+    }
+    let c = cfg(vec![
+        interactive(run_step("a", "sudo -i", "b", "fail")),
+        run_step("b", "whoami", "c", "fail"),
+        interactive(run_step("c", "bash", "d", "fail")),
+        run_step("d", "whoami", "e", "fail"),
+        interactive(run_step("e", "bash", "f", "fail")),
+        run_step("f", "whoami", STOP, "fail"),
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert_eq!(host.typed().matches(HOOK_MARKER).count(), 3);
+    assert!(
+        !host.typed().contains(DONE_MARKER),
+        "every one of them stayed on the quiet path: {:?}",
+        host.typed()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_hooks_are_offered_again_after_the_operator_has_had_the_keyboard() {
+    // They may have run `sudo -i` themselves. Nothing the shell said before they
+    // were handed the keyboard is proof about the shell they hand back, so the
+    // step after a takeover asks again where the step after an ordinary one
+    // would not have needed to.
+    let (engine, host, script) = hooked_harness();
+    {
+        let mut s = script.lock().unwrap();
+        s.replies.push_back((0, String::new()));
+        s.replies.push_back((0, String::new()));
+    }
+    let c = cfg(vec![
+        run_step("a", "whoami", "w", "fail"),
+        SeqStep::Wait {
+            id: "w".into(),
+            seconds: 60,
+            next: "b".into(),
+        },
+        run_step("b", "whoami", STOP, "fail"),
+    ]);
+    let ctl = host.ctl.clone();
+    tokio::spawn(async move {
+        // Land the request inside the wait, well clear of the opening probes, so
+        // it is honoured in the gap before the second run step rather than
+        // before the first.
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        let _ = ctl.send(Ctl::TakeOver);
+        tokio::time::sleep(Duration::from_secs(90)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+    });
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert_eq!(
+        host.typed().matches(HOOK_MARKER).count(),
+        2,
+        "once at the start of the run, once after the keyboard came back: {:?}",
+        host.typed()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_completion_from_before_the_command_cannot_answer_it() {
+    // A mark is a fact, not a position, so one left lying about would answer
+    // the next command the instant it went out. This is the operator running
+    // something of their own during a takeover, and the completion of *that*
+    // being read as the completion of the step that follows.
+    let (engine, host, script) = hooked_harness();
+    script.lock().unwrap().replies.push_back((0, String::new()));
+    host.say("\x1b]133;D;7\x07\x1b]133;A\x07");
+    let c = cfg(vec![run_step("a", "true", STOP, "fail")]);
+    let outcome = run_host(engine, &c).await;
+    assert!(
+        outcome.ok,
+        "the stale exit 7 was taken for the step's own: {outcome:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_probes_answer_without_anything_being_printed() {
+    // The shell and uid probes answer inside an escape no terminal draws, and
+    // the line that asks is kept off the glass by the curtain rather than by
+    // anything typed at the host. So a run opens with a clean pane and the
+    // engine has asked the shell for nothing at all.
+    let (engine, host, _script) = hooked_harness();
+    let mut c = cfg(vec![run_step("a", "true", STOP, "fail")]);
+    c.allow_transfer = true;
+    let outcome = run_host(engine, &c).await;
+    assert_eq!(outcome.is_root, Some(true), "{outcome:?}");
+    let typed = host.typed();
+    // Nothing is asked of the terminal, and nothing is taken back from it.
+    // Every one of these was load-bearing in the old design, and every one of
+    // them was a bug: the row count, the wrap, the fork-and-exec race.
+    assert!(!typed.contains("stty"), "{typed:?}");
+    assert!(!typed.contains("[3A"), "no cursor-up survives: {typed:?}");
+    assert!(!typed.contains("[0J"), "no erase-display survives: {typed:?}");
+    // A probe is one line, with a leading space to keep it out of history.
+    for line in typed.lines().filter(|l| l.contains(SHELL_MARKER)) {
+        assert!(line.starts_with(' '), "{line:?}");
+        assert!(line.trim_end().ends_with("\"$0\""), "{line:?}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_shell_that_will_not_take_the_hooks_is_still_offered_them() {
+    // The old design refused to type the hook offer at a shell that would not
+    // go quiet, because the offer is most of a screenful and it would all have
+    // been seen. The curtain does not care whether the shell cooperates, so the
+    // offer always goes out and the only question left is what the shell says
+    // back. One that says no gets the visible wrapper, as it always did.
+    let (engine, host, script) = hooked_harness();
+    {
+        let mut s = script.lock().unwrap();
+        s.takes_hooks = false;
+        s.replies.push_back((0, String::new()));
+    }
+    let c = cfg(vec![
+        interactive(run_step("a", "sudo -i", "b", "fail")),
+        run_step("b", "whoami", STOP, "fail"),
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(
+        host.typed().contains("__omni_precmd"),
+        "the offer goes out either way: {:?}",
+        host.typed()
+    );
+    // And the step ran anyway, the way every host used to.
+    assert!(host.typed().contains(DONE_MARKER));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_shell_that_reports_a_completion_out_of_order_stops_being_trusted() {
+    // The engine reads a completion as this command's only when the shell said
+    // this command had started. A shell that reports the one and not the other
+    // would otherwise time out every single step for the rest of the run, so the
+    // first step to notice takes the whole run back to the visible marker.
+    let (engine, host, script) = hooked_harness();
+    {
+        let mut s = script.lock().unwrap();
+        s.reports_start = false;
+        s.replies.push_back((0, String::new()));
+        s.replies.push_back((0, String::new()));
+    }
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", "b"),
+        run_step("b", "echo two", STOP, "fail"),
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(
+        host.events.phases().contains(&"timeout".to_string()),
+        "the first step is the one that pays for finding out"
+    );
+    assert!(
+        host.typed().contains(DONE_MARKER),
+        "and the rest of the run is wrapped: {:?}",
+        host.typed()
+    );
 }
 
 // ------------------------------------------------------------- persistence

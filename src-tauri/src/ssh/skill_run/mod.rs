@@ -26,8 +26,35 @@
 //! Expect automation is brittle: prompts drift, programs repaint, hosts are
 //! slow. A step whose pattern never arrives **pauses for the operator** by
 //! default rather than failing silently halfway through an upgrade.
+//!
+//! ## Out of the operator's way
+//!
+//! The operator is watching a real terminal, so what the engine types is theirs
+//! to read, and Broadside's own bookkeeping is not. Two things keep it off the
+//! glass:
+//!
+//! - A `run` step's command goes out **plain**, with nothing appended, wherever
+//!   the shell can report its own completions through the OSC 133 integration
+//!   [`crate::omni`] installs on connect. See [`Engine::quiet_ready`].
+//! - The engine's probes are typed plain too, and are kept off the glass on the
+//!   way out of Broadside rather than by anything done to the shell. See
+//!   [`curtain`].
+//!
+//! The first degrades rather than breaks: a shell that never installed the
+//! hooks (or a nested one that lost them and would not take them back) gets the
+//! visible `; printf '__bsdone_%s__\n' "$?"` wrapper that every host used to
+//! get. The second does not need to degrade, because it does not ask the shell
+//! for anything.
+//!
+//! Both also have to reckon with the same awkward fact, which is that everything
+//! the shell says arrives a round trip after the engine typed. Its answer to the
+//! previous line is still on the wire when the next one goes out, so nothing the
+//! shell *volunteers* can be taken as being about the shell in front of us now.
+//! Every question the engine's decisions rest on is therefore asked and waited
+//! for by name.
 
 pub mod config;
+pub mod curtain;
 pub mod screen;
 pub mod state;
 
@@ -43,6 +70,7 @@ use tokio::time::Instant;
 use crate::error::{AppError, AppResult};
 use crate::ssh::ShellCapability;
 use config::{SeqStep, SequenceConfig, TimeoutAction, STOP};
+use curtain::Curtain;
 use screen::Screen;
 use state::Ctl;
 
@@ -50,7 +78,9 @@ pub const PROGRESS_EVENT: &str = "skill:progress";
 pub const PAUSED_EVENT: &str = "skill:paused";
 pub const DONE_EVENT: &str = "skill:done";
 
-/// Completion marker for a non-interactive `run` step.
+/// Completion marker for a non-interactive `run` step **on a shell that cannot
+/// report its own completions**. The fallback, not the usual path: see
+/// [`Engine::quiet_ready`].
 ///
 /// The `%s` is load-bearing. The shell echoes the command line back over the
 /// PTY, so the marker text appears twice: once in the echo (as the literal
@@ -64,6 +94,9 @@ const SHELL_MARKER: &str = "__bsshell_";
 /// Same marker trick again for the root probe: `__bsuid_0__` means the shell's
 /// effective uid is 0, and `(\d+)` never matches the `%s` echo.
 const UID_MARKER: &str = "__bsuid_";
+/// Whether the OSC 133 hooks are in the shell in front of us, `y` or `n`, asked
+/// and answered in the same hidden line that offers them.
+const HOOK_MARKER: &str = "__bshook_";
 /// Bound on the `id -u` root probe. It answers instantly at a live prompt; this
 /// is only a floor against a wedged shell so a probe can never hang the run.
 const UID_PROBE_SECS: u64 = 5;
@@ -105,6 +138,51 @@ const INTERRUPT_MAX: Duration = Duration::from_secs(5);
 /// one small write.
 const HANDBACK_QUIET: Duration = Duration::from_millis(500);
 const HANDBACK_MAX: Duration = Duration::from_secs(3);
+
+/// How long the curtain stays down after a hidden line has been answered,
+/// waiting for the shell to finish redrawing its prompt (see
+/// [`Engine::raise_curtain`]).
+///
+/// This is a backstop and not the mechanism: on any shell running the
+/// integration the prompt's own mark lifts the curtain, and it arrives in the
+/// same breath as the answer. What this bounds is the shell that answers and
+/// then goes quiet, which is a shell that refused the hooks or died mid-line.
+/// Long enough to cover a round trip and a prompt, short enough that nobody
+/// watches a still pane and wonders.
+const CURTAIN_LIFT_MAX: Duration = Duration::from_millis(600);
+/// How long a prompt that has announced itself has to finish arriving before
+/// the curtain comes down in front of it (see
+/// [`Engine::let_the_prompt_finish`]). The gap between the two marks is one
+/// `PS1` being written, so this is generous by an order of magnitude and is
+/// only ever paid by a shell that opens a prompt and never closes it.
+const PROMPT_DRAW_MAX: Duration = Duration::from_millis(400);
+/// How long to wait for the shell to say whether the integration hooks are in
+/// it. A whole shell startup can be inside this one, since offering the hooks to
+/// a nested shell means running a line of shell in it.
+const HOOK_ANSWER_MAX: Duration = Duration::from_secs(5);
+/// How many times one run will go on offering the hooks to a shell that will not
+/// take them. Counted against refusals only: a long skill may legitimately open
+/// a nested shell many times, and each one that takes them costs nothing. Two
+/// refusals is enough to conclude, and every attempt is a line typed at a host.
+const MAX_HOOK_INSTALLS: u8 = 2;
+/// How long the engine waits at the start of a run for the login to be over
+/// before it types anything.
+///
+/// It cannot simply start. The connect-time setup line
+/// ([`crate::omni::shell_setup_command`]) is written from inside the PTY session
+/// task once the login banner has streamed, so the engine is handed a live
+/// session a long way before the shell behind it is at a prompt. A line typed
+/// into a login that is still running sits in the terminal's input queue until
+/// something reads it, and the curtain cannot help with that: it hides the line
+/// perfectly well, and the run still stalls waiting for an answer from a shell
+/// that has not started listening.
+///
+/// A shell with the integration announces its first prompt, and that is the
+/// signal. A shell without one is waited out instead: quiet for `LOGIN_QUIET`,
+/// capped at `LOGIN_MAX`.
+const LOGIN_MARK_MAX: Duration = Duration::from_secs(4);
+const LOGIN_QUIET: Duration = Duration::from_millis(400);
+const LOGIN_MAX: Duration = Duration::from_secs(3);
 
 /// Shells whose `$?` and `printf` behave identically, which is all the engine's
 /// completion marker relies on. Worded as "currently" everywhere it surfaces:
@@ -193,16 +271,120 @@ pub trait SkillEvents: Send + Sync + 'static {
     fn progress(&self, payload: SkillProgress);
     fn paused(&self, payload: SkillPaused);
     fn done(&self, payload: SkillDone);
+    /// One finished step, for the run's own record (see [`crate::skilllog`]).
+    ///
+    /// Defaulted to nothing on purpose. The engine's job is to know what
+    /// happened; whether anybody is writing it down is a setting, and a test
+    /// driving the engine against a fake host should not have to say so. Only
+    /// the app implements it.
+    fn step_finished(&self, _payload: SkillStepDone) {}
+}
+
+/// What the engine knows about a step once it is over, which is more than the
+/// progress events carry: the line actually typed and the output actually read
+/// are the two things the operator cannot reconstruct from the pane afterwards,
+/// and they are the whole of the Debug level.
+///
+/// Sent for every step at every detail level, and thrown away at the far end by
+/// the ones that do not want it. The alternative, asking the engine what level
+/// is in force before deciding what to report, puts a setting inside the state
+/// machine, and the state machine has enough to think about.
+#[derive(Debug, Clone)]
+pub struct SkillStepDone {
+    pub run_id: String,
+    pub host_id: i64,
+    pub step_id: String,
+    /// `run` | `expect` | `send` | `wait` | `log`.
+    pub kind: String,
+    /// The command the author wrote, on a `run` step.
+    pub command: Option<String>,
+    /// The line Broadside typed, when it differs from the command. `None` when
+    /// they are the same, so an entry that has one is one where the difference
+    /// is the thing worth reading.
+    pub sent: Option<String>,
+    /// What the host said back to a `run` step, before trimming.
+    pub output: Option<String>,
+    pub exit_code: Option<u32>,
+    /// `pass` | `fail` | `timeout` | `skipped` | `done`.
+    pub condition: String,
+    /// Where the run went next.
+    pub next: Option<String>,
+    pub took_ms: u64,
+}
+
+impl SkillStepDone {
+    /// The record this step becomes.
+    ///
+    /// Here rather than inside the app's sink so that a test can write what the
+    /// app writes. The docker suite drives a real host through a real engine
+    /// into a real log, and a test that assembled its own [`StepRecord`] on the
+    /// way would be checking a copy of this conversion rather than this one.
+    /// The trimming in particular is worth holding to output a command really
+    /// produced rather than to a string a test made up.
+    pub fn into_record(self) -> crate::skilllog::StepRecord {
+        crate::skilllog::StepRecord {
+            step_id: self.step_id,
+            kind: self.kind,
+            // Filled in by the log itself: it counts the steps that ran, and
+            // that is the only place that knows how many there have been.
+            index: 0,
+            command: self.command,
+            sent: self.sent,
+            output: self
+                .output
+                .as_deref()
+                .map(crate::skilllog::trimmed_output),
+            exit_code: self.exit_code,
+            condition: self.condition,
+            next: self.next,
+            took_ms: self.took_ms,
+            panel: Vec::new(),
+        }
+    }
 }
 
 impl SkillEvents for tauri::AppHandle {
     fn progress(&self, payload: SkillProgress) {
+        // The same line the run panel draws, kept against the step that closes
+        // after it. The panel formats `{phase} {detail}` and this has to be
+        // that, not an approximation of it: the whole promise of the Panel
+        // detail level is that the file says what the panel said.
+        self.state::<crate::skilllog::SkillLogState>().panel_line(
+            &payload.run_id,
+            payload.host_id,
+            format!("{} {}", payload.phase, payload.detail),
+        );
         let _ = self.emit(PROGRESS_EVENT, &payload);
     }
     fn paused(&self, payload: SkillPaused) {
         let _ = self.emit(PAUSED_EVENT, &payload);
     }
+    fn step_finished(&self, payload: SkillStepDone) {
+        let (run_id, host_id) = (payload.run_id.clone(), payload.host_id);
+        self.state::<crate::skilllog::SkillLogState>()
+            .step(&run_id, host_id, payload.into_record());
+    }
     fn done(&self, payload: SkillDone) {
+        // Read the operator's choice now rather than when the run started, so a
+        // change made in Settings while a skill is running applies to the run
+        // they are looking at. A database that cannot be read is not a reason to
+        // lose the record: fall back to the recommended settings.
+        let prefs = self
+            .try_state::<crate::db::DbState>()
+            .and_then(|db| {
+                db.0.lock()
+                    .ok()
+                    .and_then(|conn| crate::commands::settings::skill_log_prefs(&conn).ok())
+            })
+            .unwrap_or_default();
+        self.state::<crate::skilllog::SkillLogState>().finish(
+            &payload.run_id,
+            payload.host_id,
+            payload.ok,
+            &payload.message,
+            prefs.detail,
+            prefs.log_where.writes_here(),
+        );
         // A host that ended badly is a logged failure (D-055), same as a
         // broadcast result. Never blocks the run.
         if !payload.ok {
@@ -234,6 +416,10 @@ type PtyWrite = Box<dyn Fn(&[u8]) -> AppResult<()> + Send>;
 pub struct PtyLink {
     pub rx: mpsc::UnboundedReceiver<TapMsg>,
     pub write: PtyWrite,
+    /// The engine's half of the curtain. Made by [`tap`] alongside the tap's
+    /// half so the two are the same one; a curtain the tap does not share is a
+    /// curtain that hides nothing.
+    pub curtain: Curtain,
 }
 
 /// Which host this engine is driving, for event payloads.
@@ -246,7 +432,15 @@ pub struct HostMeta {
 }
 
 enum Wait {
-    Matched { consumed: String, group1: Option<String> },
+    Matched {
+        consumed: String,
+        group1: Option<String>,
+        /// Where in `consumed` the command's own output began, when the shell
+        /// marked it. Only a completion carries one: a pattern match has no
+        /// notion of a command, and the fallback wrapper finds the boundary in
+        /// the text instead (see [`command_output`]).
+        output_at: Option<usize>,
+    },
     Timeout,
     Closed,
     Aborted,
@@ -326,11 +520,51 @@ pub struct Engine<E: SkillEvents> {
     /// already known to be undrivable be refused before the `$0` probe is even
     /// sent, instead of after it times out.
     known_capability: Option<ShellCapability>,
+    /// Whether this session was given the OSC 133 integration when it opened.
+    /// The *resolved* answer, so a host the operator has told Broadside never to
+    /// write to is one this engine never offers the hooks to either.
+    integration_sent: bool,
     /// A [`Ctl::TakeOver`] that arrived mid-step and is waiting for the gap
     /// before the next one. Kept here rather than acted on where it is read,
     /// because the two places that read the control channel are both inside a
     /// step, and a step is not a safe place to hand the keyboard over.
     take_over: bool,
+    /// Whether this host's shell could be reporting its own completions, which
+    /// is what lets a command go out with nothing appended to it. Set once the
+    /// shell has identified itself; it says the hooks are *possible* here, never
+    /// that they are in place.
+    hooks_possible: bool,
+    /// Whether the shell in front of us has been *proved* to have the hooks
+    /// since the last thing that could have changed which shell that is. See
+    /// [`Engine::forget_shell`].
+    hooks_proven: bool,
+    /// How many times this run has been refused the hooks, against
+    /// [`MAX_HOOK_INSTALLS`].
+    hook_installs: u8,
+    /// What the operator is not being shown while the engine asks the shell
+    /// something. Shared with the tap, which is the half that does the not
+    /// showing. See [`curtain`].
+    curtain: Curtain,
+    /// Whether this run must leave the host's shell history clean. The one
+    /// setting on the Skills page that changes a byte sent to a host; see
+    /// [`Engine::history_off`].
+    quiet_history: bool,
+    /// What the last `run` step did, for the record. Filled where the facts are
+    /// (the run step has the exit code and the output), read where the step ends
+    /// (the sequence loop has the timing and the branch), so there is one
+    /// reporting call rather than one per outcome.
+    run_facts: Option<RunFacts>,
+}
+
+/// The half of a finished `run` step only [`Engine::run_command_step`] knows.
+#[derive(Debug, Clone, Default)]
+struct RunFacts {
+    command: String,
+    /// The line typed, when it is not the command verbatim.
+    sent: Option<String>,
+    output: Option<String>,
+    exit_code: Option<u32>,
+    condition: Option<String>,
 }
 
 impl<E: SkillEvents> Engine<E> {
@@ -341,6 +575,7 @@ impl<E: SkillEvents> Engine<E> {
         meta: HostMeta,
     ) -> Self {
         Self {
+            curtain: link.curtain.clone(),
             link,
             ctl,
             screen: Screen::new(),
@@ -349,9 +584,26 @@ impl<E: SkillEvents> Engine<E> {
             is_root: None,
             known_shell: None,
             known_capability: None,
+            integration_sent: false,
             take_over: false,
+            hooks_possible: false,
+            hooks_proven: false,
+            hook_installs: 0,
+            quiet_history: false,
+            run_facts: None,
         }
     }
+
+    /// Tells the engine whether this run must leave the host's shell history
+    /// clean, which is the operator's **Where to log** choice.
+    ///
+    /// Off by default, so an engine built without saying (every test that does
+    /// not care, and any future caller) types exactly what it typed before.
+    pub fn with_quiet_history(mut self, quiet: bool) -> Self {
+        self.quiet_history = quiet;
+        self
+    }
+
 
     /// Tells the engine what the SSH-level probe read as the login shell, so a
     /// refusal can name it. Purely cosmetic; it never permits a run.
@@ -369,6 +621,20 @@ impl<E: SkillEvents> Engine<E> {
     /// and the login shell is not necessarily the shell that answers.
     pub fn with_known_capability(mut self, capability: ShellCapability) -> Self {
         self.known_capability = Some(capability);
+        self
+    }
+
+    /// Tells the engine whether this session was given the OSC 133 integration
+    /// on connect, which is what decides whether a command can be typed plain.
+    ///
+    /// Separate from [`with_known_capability`](Self::with_known_capability), and
+    /// deliberately: that one is the probe's own reading, which is what may
+    /// refuse a host, while this one is the resolved answer, which is what was
+    /// actually written to it. They differ exactly where the operator has
+    /// overridden the probe, and the override is the authority on what may be
+    /// typed at their host.
+    pub fn with_integration_sent(mut self, sent: bool) -> Self {
+        self.integration_sent = sent;
         self
     }
 
@@ -398,8 +664,389 @@ impl<E: SkillEvents> Engine<E> {
         });
     }
 
-    fn send_bytes(&self, text: &str) -> AppResult<()> {
+    /// Types at the host.
+    ///
+    /// Submitting a line forgets everything the shell had told us about itself,
+    /// because anything typed can start a new shell. A bare control character
+    /// (Ctrl-U, Ctrl-C) submits nothing and starts nothing, so it leaves that
+    /// knowledge alone.
+    fn send_bytes(&mut self, text: &str) -> AppResult<()> {
+        if text.contains('\n') {
+            self.forget_shell();
+        }
         (self.link.write)(text.as_bytes())
+    }
+
+    /// Forgets which shell we were talking to.
+    ///
+    /// Two things go, and they are different in kind. The marks are facts the
+    /// shell stated, and a completion left lying about would answer the next
+    /// command the instant it went out. The proof that the hooks are live is an
+    /// answer about a *shell*, and `sudo -i` is not an edge case here, it is the
+    /// first step of most skills: the nested shell it opens has none of them.
+    ///
+    /// Note what this does **not** try to be: a guarantee about bytes still on
+    /// the wire. Arming happens when we type, and the shell we typed over may
+    /// still have things to say; its last prompt marker can arrive afterwards
+    /// and look for all the world like the new shell's. That is the bug smoke
+    /// test 56 hit, and the reason nothing here is trusted as proof any more:
+    /// see [`Engine::quiet_ready`].
+    fn forget_shell(&mut self) {
+        self.screen.arm_marks();
+        self.hooks_proven = false;
+    }
+
+    /// Types a line of Broadside's own plumbing without the operator watching it
+    /// go by.
+    ///
+    /// One line, typed plain. Nothing is done to the shell to hide it: the
+    /// curtain comes down on the way out of Broadside instead, so the echo, the
+    /// answer and the shell's redraw of its prompt are simply never forwarded to
+    /// the pane. See [`curtain`] for why that replaced an erase typed at the
+    /// host, and what it cost.
+    ///
+    /// The order matters and is the one thing to be careful with: the curtain is
+    /// lowered *before* the write, not after, so a shell quick enough to echo
+    /// inside the same breath cannot get a byte onto the glass first.
+    ///
+    /// The caller owns raising it again, because the caller is the one that
+    /// knows when its answer has arrived. Every path out of this function that
+    /// returns `false` has already raised it: a curtain left down is a pane that
+    /// never updates again, which is a far worse failure than a visible probe.
+    async fn send_hidden(&mut self, payload: &str) -> bool {
+        let end = self.curtain_end();
+        let line = match end {
+            curtain::End::PromptMark => hidden_line(payload),
+            curtain::End::ProbeAnswer => hidden_line_self_repairing(payload),
+        };
+        self.let_the_prompt_finish().await;
+        self.curtain.lower(end);
+        if self.send_bytes(&line).is_err() {
+            self.raise_curtain().await;
+            return false;
+        }
+        true
+    }
+
+    /// Waits for a part-drawn prompt to finish arriving, before anything is
+    /// hidden from the operator.
+    ///
+    /// The curtain drops *everything* from the moment it is lowered, so the one
+    /// thing that must not be in flight when it comes down is a prompt the
+    /// operator is entitled to see. The engine is told the login is over by the
+    /// shell announcing a prompt, and announcing one is the *first* thing it
+    /// does: the prompt's text, and the mark on the end of it, are still to
+    /// come. Lowering there ate the opening prompt of every run, which is how
+    /// this was found.
+    ///
+    /// Bounded and best-effort. A shell sending no marks at all is never
+    /// waiting on anything here, and one that opens prompts without closing
+    /// them (a half-installed integration) pays the bound once per hidden line
+    /// rather than hanging.
+    async fn let_the_prompt_finish(&mut self) {
+        if !self.screen.prompt_in_progress() {
+            return;
+        }
+        let deadline = Instant::now() + PROMPT_DRAW_MAX;
+        while self.screen.prompt_in_progress() {
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => return,
+                msg = self.link.rx.recv() => match msg {
+                    Some(TapMsg::Data(bytes)) => self.screen.feed(&bytes),
+                    Some(TapMsg::Closed) | None => return,
+                },
+            }
+        }
+    }
+
+    /// Which marker should lift the curtain for the line about to be typed.
+    ///
+    /// The good answer needs the shell to be sending OSC 133, and the honest
+    /// version of "is it" is the same pair [`Engine::wait_for_login`] trusts:
+    /// the integration was written to this session, and the connect-time probe
+    /// read a shell that installs it. `sh` parses the integration happily and
+    /// installs nothing, so it is the case this exists to catch.
+    ///
+    /// A nested shell opened by a step is covered without asking, because the
+    /// line that matters there is [`Engine::install_hooks`], and a shell that
+    /// takes the hooks draws its very next prompt with the mark on the end.
+    /// One that refuses them sends no mark and is caught by the deadline.
+    fn curtain_end(&self) -> curtain::End {
+        if self.integration_sent && self.known_capability == Some(ShellCapability::Full) {
+            curtain::End::PromptMark
+        } else {
+            curtain::End::ProbeAnswer
+        }
+    }
+
+    /// Puts the pane back in the operator's hands, once the shell has finished
+    /// saying what it was going to say.
+    ///
+    /// The answer is not the end of the hidden line. On the
+    /// [`End::PromptMark`](curtain::End::PromptMark) path the shell still has to
+    /// redraw its prompt, and it is that redraw the curtain is really waiting
+    /// for: lifting at the answer would forward the prompt and leave the pane
+    /// showing two. So this waits for the mark rather than for the answer, which
+    /// is why it is the caller's job and not [`Engine::send_hidden`]'s.
+    ///
+    /// The wait is bounded by [`CURTAIN_LIFT_MAX`] and the bytes go into the
+    /// screen as they arrive, so nothing is lost by waiting here.
+    ///
+    /// Nothing is repaired when the bound is what ends it, and that is the
+    /// deliberate part. A shell that answered and then sent no mark did still
+    /// redraw its prompt, and that redraw went under the curtain with
+    /// everything else, so the prompt left on the glass is the one the operator
+    /// should be looking at. Clearing the row "to be safe" would blank a pane
+    /// that was already correct.
+    async fn raise_curtain(&mut self) {
+        let deadline = Instant::now() + CURTAIN_LIFT_MAX;
+        while self.curtain.is_down() {
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => break,
+                msg = self.link.rx.recv() => match msg {
+                    Some(TapMsg::Data(bytes)) => self.screen.feed(&bytes),
+                    Some(TapMsg::Closed) | None => break,
+                },
+            }
+        }
+        self.curtain.raise();
+    }
+
+    /// Reads the host until one of the engine's own probes answers, and takes
+    /// the answer out of the match view on the way past so a later step cannot
+    /// match Broadside's bookkeeping.
+    ///
+    /// Controls are deliberately not read, for the reason given on
+    /// [`Engine::discard_unsubmitted`]: these windows run with the curtain down,
+    /// and a Detach honoured in the middle of one would hand the operator a pane
+    /// that had stopped drawing.
+    async fn hidden_answer(&mut self, re: &Regex, max: Duration) -> Option<String> {
+        let deadline = Instant::now() + max;
+        loop {
+            let hit = {
+                let view = self.screen.view();
+                re.captures(view).map(|c| {
+                    let whole = c.get(0).expect("group 0 always exists");
+                    (
+                        whole.end(),
+                        c.get(1).map(|m| m.as_str().to_string()).unwrap_or_default(),
+                    )
+                })
+            };
+            if let Some((end, answer)) = hit {
+                self.screen.consume_through(end);
+                return Some(answer);
+            }
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => return None,
+                msg = self.link.rx.recv() => match msg {
+                    Some(TapMsg::Data(bytes)) => self.screen.feed(&bytes),
+                    Some(TapMsg::Closed) | None => return None,
+                },
+            }
+        }
+    }
+
+    /// Reads the host until it has been quiet for `quiet`, bounded by `max`,
+    /// keeping everything it says.
+    ///
+    /// Control messages are deliberately not read, for the reason given on
+    /// [`Engine::discard_unsubmitted`]: a Stop host that arrives during one of
+    /// these short windows stays queued and is honoured by the next wait.
+    async fn settle_after(&mut self, quiet: Duration, max: Duration) {
+        let deadline = Instant::now() + max;
+        // Nothing has arrived yet, so there is nothing to be quiet after: the
+        // window opens on the first byte back. Counting from now instead would
+        // call a host that simply has a long round trip "finished".
+        let mut quiet_at: Option<Instant> = None;
+        loop {
+            let quiet_deadline = quiet_at.unwrap_or_else(|| deadline + Duration::from_secs(1));
+            tokio::select! {
+                _ = tokio::time::sleep_until(quiet_deadline), if quiet_at.is_some() => return,
+                _ = tokio::time::sleep_until(deadline) => return,
+                msg = self.link.rx.recv() => match msg {
+                    Some(TapMsg::Data(bytes)) => {
+                        self.screen.feed(&bytes);
+                        quiet_at = Some(Instant::now() + quiet);
+                    }
+                    Some(TapMsg::Closed) | None => return,
+                },
+            }
+        }
+    }
+
+    /// Reads the host until it announces a prompt, giving up after `max`.
+    /// Controls are not read, for the reason on [`Engine::settle_after`].
+    async fn wait_for_prompt_mark(&mut self, max: Duration) -> bool {
+        let deadline = Instant::now() + max;
+        loop {
+            if self.screen.saw_prompt() {
+                return true;
+            }
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => return false,
+                msg = self.link.rx.recv() => match msg {
+                    Some(TapMsg::Data(bytes)) => self.screen.feed(&bytes),
+                    Some(TapMsg::Closed) | None => return false,
+                },
+            }
+        }
+    }
+
+    /// Whether the shell in front of us will report this command's completion on
+    /// its own, so it can be typed plain.
+    ///
+    /// The hooks live in a shell, not in a host: the ones installed on connect
+    /// are gone the moment a step opens a nested one. So the question has to be
+    /// asked again after anything that could have changed shells, and the answer
+    /// cannot be a mark the shell happened to emit. Marks arrive a round trip
+    /// late, so the *old* shell's last prompt marker lands after we have typed
+    /// at the new one and reads as proof about it. That is what hung smoke test
+    /// 56: `sudo -i`, a marker from the shell it replaced, and then a command
+    /// typed plain at a root shell that had no way to answer it.
+    ///
+    /// So the proof is an answer, not a sighting, and there are only two of
+    /// them:
+    ///
+    /// - the shell answered [`Engine::install_hooks`] with "the hooks are here",
+    ///   in a line we typed and waited on, or
+    /// - it reported the *previous* command's completion, which only a hooked
+    ///   shell can do and which nothing has been typed over since.
+    ///
+    /// When neither holds, the hooks are offered to the shell, hidden. If it
+    /// will not take them the run falls back to the visible completion marker,
+    /// which is what every host did before any of this and still works
+    /// everywhere.
+    async fn quiet_ready(&mut self) -> bool {
+        if !self.hooks_possible {
+            return false;
+        }
+        // Free in the steady state: a run step that read a completion off the
+        // shell proved the shell that emitted it, and typed nothing since.
+        if self.hooks_proven {
+            return true;
+        }
+        if self.hook_installs >= MAX_HOOK_INSTALLS {
+            // Asked twice, refused twice. Stop typing at a shell that does not
+            // want them; the wrapper works everywhere.
+            self.hooks_possible = false;
+            return false;
+        }
+        self.hook_installs += 1;
+        self.hooks_proven = self.install_hooks().await;
+        if self.hooks_proven {
+            // A shell that took them is not evidence against the next one, and
+            // a long skill may open nested shells all day.
+            self.hook_installs = 0;
+        }
+        self.hooks_proven
+    }
+
+    /// Offers the OSC 133 hooks to the shell in front of us, and has it say
+    /// whether they are there, in the same line.
+    ///
+    /// The same integration [`crate::omni`] sends on connect, guarded so that
+    /// running it twice in one shell is a no-op: without the guard a second
+    /// install would prepend `__omni_precmd` to `PROMPT_COMMAND` again and the
+    /// shell would report every command finishing twice, which is a stale
+    /// completion waiting to answer the *next* command.
+    ///
+    /// The report on the end is what makes this an answer rather than a hope. It
+    /// is printed by the same line that installs them, so it cannot be about
+    /// some earlier shell, and it says `y` from a shell that already had them as
+    /// readily as from one that has just taken them.
+    ///
+    /// The install is still redirected to `/dev/null`, though the curtain would
+    /// hide whatever it said. Not for the pane's sake any more, but for the
+    /// engine's: this is the only payload with a mouth on it (a shell that
+    /// chokes on the snippet says so), and its complaint would otherwise land in
+    /// the match view where a later step's pattern could find it. The report
+    /// stands outside the redirect, because that one has to be heard.
+    async fn install_hooks(&mut self) -> bool {
+        let report = probe_line(
+            HOOK_MARKER,
+            "\"$(command -v __omni_precmd >/dev/null 2>&1 && echo y || echo n)\"",
+        );
+        let line = format!(
+            "{}{{ command -v __omni_precmd >/dev/null 2>&1 || {{ {}; }}; }} >/dev/null 2>&1; {report}",
+            self.history_off(),
+            crate::omni::SHELL_INTEGRATION
+        );
+        if !self.send_hidden(&line).await {
+            return false;
+        }
+        let re = Regex::new(&format!("{HOOK_MARKER}([a-z]+)__")).expect("static regex");
+        let answer = self.hidden_answer(&re, HOOK_ANSWER_MAX).await;
+        // A shell that took them draws its next prompt with the mark on the end,
+        // which is what lifts the curtain. One that refused sends no mark, so
+        // this is the deadline path, and the row it clears is the prompt the
+        // refusing shell is still sitting on.
+        self.raise_curtain().await;
+        matches!(answer.as_deref(), Some("y"))
+    }
+
+    /// Stops the shell in front of us recording anything, when the operator has
+    /// said the run's record belongs in Broadside and not in their history.
+    /// Empty otherwise, and empty is the whole of the "Remote History Only"
+    /// behaviour: nothing extra is sent, so that setting is byte-for-byte what
+    /// build 57-2 did.
+    ///
+    /// **Why it rides on [`Engine::install_hooks`] rather than being sent on its
+    /// own.** History is a property of a shell, not of a host: a `sudo -i` opens
+    /// a new one that has never heard of any of this, exactly as it opens one
+    /// with no OSC 133 hooks in it. So the question "is this shell set up" has
+    /// to be re-asked at precisely the same moments, and the engine already has
+    /// a line it types at those moments. Putting this on the front of that line
+    /// costs no extra round trip, adds no new place where the engine types, and
+    /// cannot drift out of step with the hook install, because it *is* the hook
+    /// install.
+    ///
+    /// **What it does, per shell.** bash turns recording off outright, which
+    /// covers both the file and the list Up walks. zsh has no such switch, so
+    /// `fc -p` pushes a fresh history with no file behind it, which is the same
+    /// answer in zsh's own terms.
+    ///
+    /// The `if`/`elif` around them is not tidiness, it is the whole thing
+    /// working. Letting each shell try the other's builtin and swallowing the
+    /// complaint looks equivalent and is not: `set +o history` in zsh does not
+    /// merely fail, it **abandons the rest of the command line**, so the shell
+    /// probe that shared that line never ran and every zsh run died before its
+    /// first step with no event to say why. Redirecting stderr hides the
+    /// message, not the consequence. So each branch is entered only by the
+    /// shell it was written for, which is the same form, for the same reason,
+    /// as [`crate::omni::SHELL_INTEGRATION`], and a Bourne shell that is
+    /// neither parses the lot and takes no branch.
+    ///
+    /// **What it does not do.** A shell with no hooks (a plain `sh`, or a host
+    /// set to Shell integration: Never) never reaches `install_hooks`, so it
+    /// never gets this. That is not an oversight: those runs use the visible
+    /// completion wrapper, whose leading space is the pre-existing mechanism for
+    /// the same job, and typing a history command at a shell Broadside was told
+    /// not to write to would be worse than the thing it was avoiding.
+    fn history_off(&self) -> &'static str {
+        if self.quiet_history {
+            "if [ -n \"$BASH_VERSION\" ]; then set +o history; \
+             elif [ -n \"$ZSH_VERSION\" ]; then fc -p; fi; "
+        } else {
+            ""
+        }
+    }
+
+    /// Waits for the login to be over before anything is typed at it.
+    ///
+    /// See [`LOGIN_MARK_MAX`] for why a live session is not the same thing as a
+    /// shell that is ready to be typed at.
+    async fn wait_for_login(&mut self) {
+        // A shell that was given the integration announces its first prompt,
+        // which is the exact moment it is listening. Nothing has been typed yet,
+        // so there is no older shell whose marker this could be.
+        if self.integration_sent
+            && self.known_capability == Some(ShellCapability::Full)
+            && self.wait_for_prompt_mark(LOGIN_MARK_MAX).await
+        {
+            return;
+        }
+        self.settle_after(LOGIN_QUIET, LOGIN_MAX).await;
     }
 
     /// Identifies the running shell before any step runs, so an unsupported one
@@ -423,12 +1070,14 @@ impl<E: SkillEvents> Engine<E> {
                 });
             }
         }
-        // A leading space keeps this out of shell history on the Debian/Ubuntu
-        // default (HISTCONTROL=ignoreboth), since an operator pressing Up in the
-        // pane afterwards shouldn't find our plumbing.
-        let probe = format!(" printf '{SHELL_MARKER}%s__\\n' \"$0\"\n");
-        if let Err(e) = self.send_bytes(&probe) {
-            return Err(format!("could not write to the shell: {e}"));
+        self.wait_for_login().await;
+        // The first thing typed at this shell, so the first chance to stop it
+        // recording. Everything the engine asks it after this is covered; this
+        // line itself is covered only by its own leading space, which is where
+        // it always stood.
+        let probe = format!("{}{}", self.history_off(), probe_line(SHELL_MARKER, "\"$0\""));
+        if !self.send_hidden(&probe).await {
+            return Err("could not write to the shell".into());
         }
         let re = Regex::new(&format!("{SHELL_MARKER}([A-Za-z0-9._/-]*)__")).expect("static regex");
         let outcome = wait_for(
@@ -436,11 +1085,15 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.link.rx,
             &mut self.ctl,
             &mut self.take_over,
-            &re,
+            Target::Pattern(&re),
             Duration::from_secs(SHELL_DETECT_SECS),
             Duration::ZERO,
         )
         .await;
+        // Whatever happened, the operator gets their pane back before this
+        // returns. A refusal below ends the run, and a run that ends behind a
+        // curtain would leave a pane that never draws again.
+        self.raise_curtain().await;
         let raw = match outcome {
             Wait::Matched { group1, .. } => group1.unwrap_or_default(),
             Wait::Timeout => {
@@ -455,6 +1108,7 @@ impl<E: SkillEvents> Engine<E> {
                         .into(),
                 });
             }
+            // Closed, aborted, or handed to a terminal tab mid-probe.
             _ => return Err("The shell closed before the run started.".into()),
         };
         // `$0` is `-bash` for a login shell, `/bin/zsh` for some, `sh` for
@@ -473,6 +1127,13 @@ impl<E: SkillEvents> Engine<E> {
                 "This host's shell ({shown}) is not supported. Currently only bash, zsh and sh are supported."
             ));
         }
+        // Whether a command may go out plain, with no completion marker for the
+        // operator to read. Both halves are needed and neither is enough: the
+        // hooks have to have been offered to this session, and only bash and
+        // zsh install them when they are. This is the one place the two probes
+        // meet: the connect-time one decided what was written, and the `$0` one
+        // is the authority on what is reading it.
+        self.hooks_possible = self.integration_sent && matches!(name.as_str(), "bash" | "zsh");
         Ok(name)
     }
 
@@ -483,8 +1144,8 @@ impl<E: SkillEvents> Engine<E> {
     /// running it at a half-finished line would corrupt it. Best-effort: any
     /// failure yields `None` (unknown), never an error that ends the run.
     async fn probe_uid(&mut self) -> Option<bool> {
-        let probe = format!(" printf '{UID_MARKER}%s__\\n' \"$(id -u)\"\n");
-        if self.send_bytes(&probe).is_err() {
+        let probe = probe_line(UID_MARKER, "\"$(id -u)\"");
+        if !self.send_hidden(&probe).await {
             return None;
         }
         let re = Regex::new(&format!(r"{UID_MARKER}(\d+)__")).expect("static regex");
@@ -493,11 +1154,12 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.link.rx,
             &mut self.ctl,
             &mut self.take_over,
-            &re,
+            Target::Pattern(&re),
             Duration::from_secs(UID_PROBE_SECS),
             Duration::ZERO,
         )
         .await;
+        self.raise_curtain().await;
         match outcome {
             Wait::Matched { group1, .. } => group1.map(|g| g == "0"),
             _ => None,
@@ -620,7 +1282,11 @@ impl<E: SkillEvents> Engine<E> {
                 detail,
             );
             let was_wait = matches!(step, SeqStep::Wait { .. });
-            match self.exec_step(step).await {
+            self.run_facts = None;
+            let began = Instant::now();
+            let outcome = self.exec_step(step).await;
+            self.report_step(step, &outcome, began.elapsed());
+            match outcome {
                 StepOutcome::Goto(next) => {
                     // A small, fixed breather between steps, so a step's last
                     // bytes have landed and the shell is back at a prompt before
@@ -667,6 +1333,48 @@ impl<E: SkillEvents> Engine<E> {
         }
     }
 
+    /// Writes one finished step into the run's record.
+    ///
+    /// Called for every step of every run, whether or not anybody is keeping a
+    /// record: the sink is defaulted to nothing, so a build where the operator
+    /// wants no log pays a struct that is dropped, and the engine never has to
+    /// know which of four detail levels is in force. That question belongs to
+    /// the thing doing the writing.
+    ///
+    /// A step that ended the host (aborted, detached, the shell closing) is not
+    /// reported. Those are not outcomes of the step; they are the run stopping
+    /// during it, and writing "expect: failed" for a step whose real answer is
+    /// "the operator pressed Stop" would put a fiction in the record. The
+    /// closing summary says what actually happened.
+    fn report_step(&mut self, step: &SeqStep, outcome: &StepOutcome, took: Duration) {
+        let (condition, next) = match outcome {
+            StepOutcome::Goto(next) => ("done", Some(next.clone())),
+            StepOutcome::Failed(_) => ("fail", None),
+            StepOutcome::Aborted | StepOutcome::Detached | StepOutcome::Closed => return,
+        };
+        let facts = self.run_facts.take();
+        self.events.step_finished(SkillStepDone {
+            run_id: self.meta.run_id.clone(),
+            host_id: self.meta.host_id,
+            step_id: step.id().to_string(),
+            kind: step.kind_str().to_string(),
+            command: facts.as_ref().map(|f| f.command.clone()),
+            sent: facts.as_ref().and_then(|f| f.sent.clone()),
+            output: facts.as_ref().and_then(|f| f.output.clone()),
+            exit_code: facts.as_ref().and_then(|f| f.exit_code),
+            // A `run` step knows better than the branch it took: a command that
+            // exited non-zero and was handled by an `onFailure` branch reached
+            // the next step perfectly happily, and calling that "done" would
+            // lose the only thing worth counting.
+            condition: facts
+                .as_ref()
+                .and_then(|f| f.condition.clone())
+                .unwrap_or_else(|| condition.to_string()),
+            next,
+            took_ms: took.as_millis() as u64,
+        });
+    }
+
     /// Park before `next_step_id` because the operator asked for the keyboard.
     ///
     /// The same park a timed-out `wait` step uses, and deliberately so: the
@@ -705,6 +1413,11 @@ impl<E: SkillEvents> Engine<E> {
                         "the shell closed unexpectedly",
                     ));
                 }
+                // Whatever the operator did with the keyboard, what the shell
+                // last told us about itself was about the shell they were handed,
+                // and they may not be handing back the same one. Forget it and
+                // make the next command ask again.
+                self.forget_shell();
                 self.emit("info", Some(next_step_id), resumed_line(clear));
                 Ok(())
             }
@@ -762,8 +1475,8 @@ impl<E: SkillEvents> Engine<E> {
     ///   what runs before the acknowledgement. So it always lands in the next
     ///   step's wait, where it matches. No settle window can close that.
     /// - **The next thing the engine types lands on the same line**, because
-    ///   commands go out with a leading space and no line kill in front of them.
-    ///   The operator's `lmnop` plus the closing uid probe became one line,
+    ///   nothing the engine types puts a line kill in front of itself. The
+    ///   operator's `lmnop` plus the closing uid probe became one line,
     ///   `lmnop printf '__bsuid_%s__\n' "$(id -u)"`, which the shell then ran.
     ///
     /// So the line is killed first (Ctrl-U, the POSIX `kill` character: readline
@@ -885,7 +1598,10 @@ impl<E: SkillEvents> Engine<E> {
                     Ok(re) => re,
                     Err(e) => return StepOutcome::Failed(e.to_string()),
                 };
-                match self.wait_with_pause(step, &re, SETTLE, pattern).await {
+                match self
+                    .wait_with_pause(step, Target::Pattern(&re), SETTLE, pattern)
+                    .await
+                {
                     Ok(Wait::Matched { .. }) => {
                         if let Some(text) = send_on_match {
                             if let Err(e) = self.send_bytes(text) {
@@ -958,7 +1674,10 @@ impl<E: SkillEvents> Engine<E> {
             // screen). Send it, let the output settle, which also gives the
             // sudo injector time to answer a password prompt before we type
             // anything else at it, then hand over to expect/send steps.
-            if let Err(e) = self.send_bytes(&format!(" {cmd}\n")) {
+            //
+            // Verbatim, with nothing in front of it: see the note on the
+            // leading space below.
+            if let Err(e) = self.send_bytes(&format!("{cmd}\n")) {
                 return StepOutcome::Failed(format!("could not send: {e}"));
             }
             match wait_quiet(
@@ -978,20 +1697,73 @@ impl<E: SkillEvents> Engine<E> {
             }
         }
 
-        let wrapped = format!(" {cmd}; printf '{DONE_MARKER}%s__\\n' \"$?\"\n");
-        if let Err(e) = self.send_bytes(&wrapped) {
+        // Ask the shell whether it will account for this command itself. When it
+        // will, the command goes out exactly as the author wrote it and the
+        // operator reads their own line back; when it won't, the completion
+        // marker is appended and they read that too, as they always have.
+        //
+        // Which is also the rule for the leading space. Every other line the
+        // engine types carries one, because `HISTCONTROL=ignorespace` is what
+        // keeps Broadside's plumbing out of the history an operator finds by
+        // pressing Up. A line the author wrote is not plumbing: it belongs in
+        // their history exactly as if they had typed it, and the space would
+        // sit between the prompt and the command where they can see it. So the
+        // plain line goes out bare and the composed one keeps its space, which
+        // is the same split as above, drawn in the same place: whatever
+        // Broadside wrote, Broadside hides.
+        let quiet = self.quiet_ready().await;
+        let line = if quiet {
+            format!("{cmd}\n")
+        } else {
+            format!(" {cmd}; printf '{DONE_MARKER}%s__\\n' \"$?\"\n")
+        };
+        // What the record will say, filled in as the answers arrive. `sent` is
+        // only kept where it differs from the command, so an entry carrying one
+        // is one where the difference is the point.
+        self.run_facts = Some(RunFacts {
+            command: cmd.to_string(),
+            sent: (!quiet).then(|| line.trim_end().to_string()),
+            ..RunFacts::default()
+        });
+        if let Err(e) = self.send_bytes(&line) {
             return StepOutcome::Failed(format!("could not send: {e}"));
         }
         let re = Regex::new(&format!(r"{DONE_MARKER}(\d+)__")).expect("static regex");
+        let target = if quiet {
+            Target::Done
+        } else {
+            Target::Pattern(&re)
+        };
         // No settle: the marker is unambiguous the moment it lands, and a
         // settle here would tax every step with latency for nothing.
         match self
-            .wait_with_pause(step, &re, Duration::ZERO, "the command to finish")
+            .wait_with_pause(step, target, Duration::ZERO, "the command to finish")
             .await
         {
-            Ok(Wait::Matched { consumed, group1 }) => {
+            Ok(Wait::Matched {
+                consumed,
+                group1,
+                output_at,
+            }) => {
+                // The shell accounted for a command of its own accord, which
+                // only a hooked one can do, and nothing has been typed over it
+                // since. That is the proof the next step runs on.
+                self.hooks_proven = quiet;
                 let code: u32 = group1.and_then(|g| g.parse().ok()).unwrap_or(1);
-                let output = command_output(&consumed);
+                // Where the command's own output starts, so a `match` test
+                // cannot match the command that produced it: a step running
+                // `grep error log` and branching on `error` would take the match
+                // branch every time. The shell says where when it can, and the
+                // text says where when it has to.
+                let output = match output_at {
+                    Some(at) => &consumed[at..],
+                    None => command_output(&consumed),
+                };
+                if let Some(facts) = self.run_facts.as_mut() {
+                    facts.output = Some(output.to_string());
+                    facts.exit_code = Some(code);
+                    facts.condition = Some(if code == 0 { "pass" } else { "fail" }.into());
+                }
                 let Some(b) = branch else {
                     self.emit("matched", Some(step.id()), format!("exit {code}"));
                     return StepOutcome::Goto(if code == 0 {
@@ -1006,6 +1778,12 @@ impl<E: SkillEvents> Engine<E> {
                     Err(e) => return StepOutcome::Failed(e.to_string()),
                 };
                 let hit = re.is_match(output);
+                // An output test outranks the exit code for the record too, or
+                // a step that branched on `error` being present would be
+                // written down as a pass because `grep` exited zero.
+                if let Some(facts) = self.run_facts.as_mut() {
+                    facts.condition = Some(if hit { "pass" } else { "fail" }.into());
+                }
                 self.emit(
                     "matched",
                     Some(step.id()),
@@ -1022,8 +1800,27 @@ impl<E: SkillEvents> Engine<E> {
                 })
             }
             // Skipping a run step takes its success branch.
-            Ok(Wait::Skipped) => StepOutcome::Goto(on_success.to_string()),
+            Ok(Wait::Skipped) => {
+                if let Some(facts) = self.run_facts.as_mut() {
+                    facts.condition = Some("skipped".into());
+                }
+                StepOutcome::Goto(on_success.to_string())
+            }
             Ok(Wait::Timeout) => {
+                // A completion arrived, and was refused for having no command in
+                // front of it, and then nothing else came. Waiting on this
+                // shell's marks is not going to start working, and every
+                // remaining step would time out the same way, so take the rest
+                // of the run back to the marker that works everywhere.
+                if quiet && self.screen.stray_done() {
+                    self.hooks_possible = false;
+                    self.hooks_proven = false;
+                    self.emit(
+                        "info",
+                        Some(step.id()),
+                        "this shell reports completions out of order; using the visible marker from here",
+                    );
+                }
                 // onTimeout: "fail" on a run step takes the failure branch
                 // rather than ending the host: the skill author gets to
                 // handle it. "goto" takes the timeout target instead, so a
@@ -1033,6 +1830,9 @@ impl<E: SkillEvents> Engine<E> {
                 } else {
                     on_failure.to_string()
                 };
+                if let Some(facts) = self.run_facts.as_mut() {
+                    facts.condition = Some("timeout".into());
+                }
                 // The marker never arrived, so the command is still running and
                 // still owns the terminal. Abandoning it in the engine while
                 // leaving it running on the host means the next step's command
@@ -1108,7 +1908,7 @@ impl<E: SkillEvents> Engine<E> {
     async fn wait_with_pause(
         &mut self,
         step: &SeqStep,
-        re: &Regex,
+        target: Target<'_>,
         settle: Duration,
         what: &str,
     ) -> Result<Wait, StepOutcome> {
@@ -1119,7 +1919,7 @@ impl<E: SkillEvents> Engine<E> {
                 &mut self.link.rx,
                 &mut self.ctl,
                 &mut self.take_over,
-                re,
+                target,
                 timeout,
                 settle,
             )
@@ -1160,6 +1960,9 @@ impl<E: SkillEvents> Engine<E> {
                     if clear && !self.discard_unsubmitted().await {
                         return Err(StepOutcome::Closed);
                     }
+                    // See the same line in `park_for_take_over`: the shell they
+                    // hand back may not be the one they were given.
+                    self.forget_shell();
                     self.emit("info", Some(step.id()), resumed_line(clear));
                     // Re-announce the step, because the wait genuinely restarts
                     // here with a full fresh timeout and the panel's countdown
@@ -1183,6 +1986,85 @@ impl<E: SkillEvents> Engine<E> {
             }
         }
     }
+}
+
+/// One of the engine's probes: `printf` the marker with the shell's answer in
+/// it, inside an escape sequence addressed to Broadside rather than to the
+/// terminal, so no pane draws it (see [`screen::BS_OSC`]).
+///
+/// The marker text is inside the payload, not around it, and that is what makes
+/// this safe to send anywhere. A shell whose `printf` leaves `\033` alone prints
+/// the whole thing literally and the same pattern still matches the same answer
+/// out of the visible line. The `%s` matters for the same reason it always did:
+/// the echo of this line reaches the engine's match view whether or not it
+/// reaches the glass, and a marker with no digit in it can never be mistaken for
+/// an answer to itself.
+///
+/// A leading space is left to the caller, which is [`Engine::send_hidden`]: on
+/// the Debian/Ubuntu default (`HISTCONTROL=ignoreboth`) it keeps the line out of
+/// shell history, so an operator pressing Up in the pane afterwards doesn't find
+/// Broadside's plumbing.
+fn probe_line(marker: &str, value: &str) -> String {
+    format!(
+        "printf '\\033]{};{marker}%s__\\007' {value}",
+        screen::BS_OSC
+    )
+}
+
+/// Put the cursor at the start of the row and clear it.
+///
+/// The only cursor movement left in the engine, and note what it is not: it does
+/// not go *up*. Every erase that counted rows had to be right about how many the
+/// plumbing had used, which depends on the width of the pane, the length of the
+/// prompt and whether the shell drew the line itself. This one addresses the row
+/// the cursor is already on, so there is nothing to be right about.
+///
+/// It is only sent on the [`End::ProbeAnswer`](curtain::End::ProbeAnswer) path,
+/// where the curtain lifts before the shell redraws its prompt and the new
+/// prompt would otherwise be drawn onto the end of the old one. A shell sending
+/// prompt marks never needs it: there the curtain stays down through the redraw
+/// and the pane keeps the prompt it already had.
+const ERASE_ROW: &str = r"\r\033[2K";
+
+/// One line of plumbing, as it is typed at a shell that reports its own prompts.
+///
+/// There is nothing here but the payload. No `stty`, because nothing is being
+/// hidden from the *shell*; no erase, because nothing was drawn. The leading
+/// space is all that is left of the old ceremony, and it is not about the pane
+/// at all: it keeps the line out of `HISTCONTROL=ignorespace` history, so an
+/// operator pressing Up afterwards does not find it.
+///
+/// A `run` step's own command is the one thing that does *not* get one, since
+/// it is the author's line rather than Broadside's. See
+/// [`Engine::run_command_step`].
+fn hidden_line(payload: &str) -> String {
+    format!(" {payload}\n")
+}
+
+/// The same, for a shell that sends no prompt marks and so cannot tell us when
+/// it has finished redrawing.
+///
+/// The curtain lifts at the answer, which is before the prompt is drawn, so the
+/// line clears the row on its way out and lets the prompt land on it. See
+/// [`ERASE_ROW`].
+fn hidden_line_self_repairing(payload: &str) -> String {
+    format!(" {payload}; printf '{ERASE_ROW}'\n")
+}
+
+/// What a wait is waiting for.
+///
+/// Text and marks are not the same kind of thing, and the difference is why
+/// marks have to be armed. A pattern matches a *position* in the stream and is
+/// consumed through it, so the same output can never satisfy two steps. A mark
+/// has no position: it is a fact the shell stated, and a fact stays true until
+/// somebody takes it, so a completion left lying about would answer the next
+/// command the instant it was sent.
+#[derive(Clone, Copy)]
+enum Target<'a> {
+    /// Text on the screen.
+    Pattern(&'a Regex),
+    /// The shell's own "that command finished", carrying its exit status.
+    Done,
 }
 
 /// What the step log says about a resume.
@@ -1228,7 +2110,7 @@ fn command_output(consumed: &str) -> &str {
     s
 }
 
-/// Waits until `re` matches the screen, or the deadline passes.
+/// Waits until `target` arrives on the screen, or the deadline passes.
 ///
 /// Matching is event-driven: evaluated on entry (text may already have
 /// arrived) and after each chunk, not polled. Free-standing rather than a
@@ -1241,16 +2123,16 @@ async fn wait_for(
     // Read by the caller's caller in the gap between steps, which is where the
     // request is acted on.
     take_over: &mut bool,
-    re: &Regex,
+    target: Target<'_>,
     timeout: Duration,
     settle: Duration,
 ) -> Wait {
     let deadline = Instant::now() + timeout;
     let mut settle_at: Option<Instant> = None;
     loop {
-        if settle_at.is_none() && re.is_match(screen.view()) {
+        if settle_at.is_none() && arrived(screen, target) {
             if settle.is_zero() {
-                return take_match(screen, re);
+                return take_match(screen, target);
             }
             settle_at = Some(Instant::now() + settle);
         }
@@ -1259,8 +2141,8 @@ async fn wait_for(
         let settle_deadline = settle_at.unwrap_or_else(|| deadline + Duration::from_secs(1));
         tokio::select! {
             _ = tokio::time::sleep_until(settle_deadline), if settle_at.is_some() => {
-                if re.is_match(screen.view()) {
-                    return take_match(screen, re);
+                if arrived(screen, target) {
+                    return take_match(screen, target);
                 }
                 // The text was transient: a repaint blew it away. Keep waiting.
                 settle_at = None;
@@ -1288,7 +2170,33 @@ async fn wait_for(
     }
 }
 
-fn take_match(screen: &mut Screen, re: &Regex) -> Wait {
+/// Whether what the wait is waiting for is on the screen now.
+fn arrived(screen: &mut Screen, target: Target<'_>) -> bool {
+    match target {
+        Target::Pattern(re) => re.is_match(screen.view()),
+        Target::Done => screen.saw_done(),
+    }
+}
+
+/// Takes what arrived, and with it whatever text it accounts for.
+///
+/// A pattern consumes through its own end, so text after it stays matchable. A
+/// completion has no position, so it takes the whole view: it is the last thing
+/// the shell says about a command, and everything up to it belongs to that
+/// command.
+fn take_match(screen: &mut Screen, target: Target<'_>) -> Wait {
+    let re = match target {
+        Target::Pattern(re) => re,
+        Target::Done => {
+            let group1 = screen.take_done().flatten().map(|code| code.to_string());
+            let (consumed, output_at) = screen.take_view();
+            return Wait::Matched {
+                consumed,
+                group1,
+                output_at,
+            };
+        }
+    };
     let (end, group1) = {
         let view = screen.view();
         match re.captures(view) {
@@ -1302,6 +2210,7 @@ fn take_match(screen: &mut Screen, re: &Regex) -> Wait {
     Wait::Matched {
         consumed: screen.consume_through(end),
         group1,
+        output_at: None,
     }
 }
 
@@ -1415,12 +2324,30 @@ async fn park(
 struct SkillTap {
     app: tauri::AppHandle,
     tx: mpsc::UnboundedSender<TapMsg>,
+    curtain: Curtain,
 }
 
 impl crate::ssh::pty::PtyEvents for SkillTap {
+    /// The fork in the road: the engine is told everything, the operator is told
+    /// everything the engine is not currently hiding from them.
+    ///
+    /// The filter runs *before* the send, which is what lets the engine wait on
+    /// the curtain: by the time a chunk reaches it on the channel, that chunk
+    /// has already been weighed, so a mark inside it has already lifted the
+    /// curtain. The other order would have the engine deciding whether to give
+    /// up on a mark it was holding in its hand.
     fn data(&self, payload: crate::ssh::pty::PtyData) {
-        let _ = self.tx.send(TapMsg::Data(payload.data.clone()));
-        self.app.data(payload);
+        let shown = self.curtain.filter(&payload.data).to_vec();
+        let _ = self.tx.send(TapMsg::Data(payload.data));
+        // An empty payload is not a quiet one: it still costs a serialize, a
+        // JS string and a hop to the webview, and a curtain that is down makes
+        // every chunk empty.
+        if !shown.is_empty() {
+            self.app.data(crate::ssh::pty::PtyData {
+                session_id: payload.session_id,
+                data: shown,
+            });
+        }
     }
     fn flush(&self, session_id: &str) {
         self.app.flush(session_id);
@@ -1448,11 +2375,13 @@ pub fn tap(
 ) -> (PtyLink, impl crate::ssh::pty::PtyEvents) {
     let (tx, rx) = mpsc::unbounded_channel();
     let write_state = app.state::<crate::ssh::pty::PtyState>().inner().clone();
+    let curtain = Curtain::new();
     let link = PtyLink {
         rx,
         write: Box::new(move |bytes: &[u8]| write_state.write(&session_id, bytes)),
+        curtain: curtain.clone(),
     };
-    (link, SkillTap { app, tx })
+    (link, SkillTap { app, tx, curtain })
 }
 
 /// Hosts whose steps need a sudo password but have none stored, surfaced as a
@@ -1555,5 +2484,7 @@ pub fn parse_sequence(config_json: &str) -> AppResult<SequenceConfig> {
         .map_err(|e| AppError::InvalidInput(format!("skill config is malformed: {e}")))
 }
 
+#[cfg(test)]
+mod pane_tests;
 #[cfg(test)]
 mod tests;
