@@ -1,0 +1,6 @@
+# A Dockerfile is read by a Linux shell, and the shell in the container has no
+# idea what a carriage return is. Checked out with CRLF (which is the default on
+# this machine), every line continuation in the fixture picks up a stray \r and
+# the script it writes gets a shebang no kernel will honour. Keep them LF
+# whatever the checkout does.
+src-tauri/tests/fixtures/** text eol=lf
