@@ -35,7 +35,7 @@ const DETAIL_HINT: Record<SkillLogDetail, string> = {
   summary: "One entry for the whole run on each host: how many commands, how many failed, how long it took, and how it ended.",
   itemized: "The summary, then one line per step: what ran, its exit code, whether it passed, and where the run went next.",
   panel:
-    "The summary, then the step log exactly as the run panel showed it. The account you were already reading, kept instead of lost when the panel closes.",
+    "The skill, the host, how long it took, and then the step log exactly as the run panel showed it. The account you were already reading, kept instead of lost when the panel closes.",
   debug:
     "Everything itemized has, plus the line Broadside actually typed where it differs from the command, and what the host said back (trimmed at 2,000 characters).",
 };

@@ -99,13 +99,35 @@ function indent(text: string, by = "  "): string {
 /**
  * One run as prose.
  *
- * The four detail levels are four renderings of the same record rather than
- * four records, which is why the file can be read at a level it was not written
- * at: a run written down as Itemized still shows as a summary if the operator
- * switches, it just has nothing further to say. The one direction that does not
- * work is asking for more than was kept, and each level says what it has.
+ * Each entry says which level it was written at and is rendered that way, so a
+ * log with runs from several levels in it reads as what each run actually kept
+ * rather than as whichever level happens to be selected now. The one direction
+ * that could never work is asking for more than was kept: a Summary entry has
+ * no steps to itemize, and the setting decides what the *next* run writes down.
  */
 export function renderRun(run: SkillLogRun): string {
+  const steps = run.steps ?? [];
+
+  // The panel level is a copy of an account the operator has already read, so
+  // it opens the way the panel does: which skill, which host, how long. The
+  // tally the other levels lead with was never part of what the panel showed,
+  // the outcome is already on the tinted line above every entry, and a failed
+  // run's own last line says why it failed. Repeating any of that here would
+  // only push the log itself further down the page.
+  if (run.detail === "panel") {
+    const head = [
+      `Skill: ${run.skill}`,
+      `Host: ${run.host_label}`,
+      `Duration: ${secs(run.duration_ms)}`,
+    ];
+    const lines = steps.flatMap((s) => s.panel ?? []);
+    if (lines.length === 0) return head.join("\n");
+    // One space, the way an itemized step sits under the same head: enough to
+    // read as a block belonging to the run above it, and no more, because the
+    // panel's own lines already carry their shape.
+    return [...head, "", ...lines.map((l) => ` ${l}`)].join("\n");
+  }
+
   const head = [
     `Skill: ${run.skill}`,
     `Host: ${run.host_label}`,
@@ -116,17 +138,10 @@ export function renderRun(run: SkillLogRun): string {
     `Result: ${run.result}`,
   ];
   if (run.message) head.push(`Message: ${run.message}`);
-  const steps = run.steps ?? [];
   if (steps.length === 0) return head.join("\n");
 
   const total = steps.length;
   const blocks = steps.map((s) => {
-    // Panel: the account the operator already knows how to read, kept as they
-    // read it.
-    if (run.detail === "panel") {
-      const lines = s.panel ?? [];
-      return lines.length > 0 ? lines.join("\n") : `${s.step_id}: (nothing shown)`;
-    }
     const label = s.command ?? s.step_id;
     const exit = s.exit_code === undefined ? "" : ` exit ${s.exit_code}`;
     const line = `${String(s.index).padStart(2)}/${total} ${s.kind}: ${label}${exit} [${s.condition}] ${secs(s.took_ms)}`;
