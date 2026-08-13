@@ -1955,6 +1955,20 @@ export const SECTIONS: HelpSection[] = [
             a step opened a nested shell that would not take the hooks back.
             Commands still run and branch exactly the same either way.
           </p>
+          <H3>What a run leaves behind</H3>
+          <p>
+            Out of the box, in <Nav>Logs</Nav> &rarr; <Nav>Skills</Nav>: one
+            entry per host per run, with the exit codes and the timings, and as
+            much of the step-by-step as you ask for. Your host's own shell
+            history is left alone, because Broadside asks each shell it opens to
+            stop recording for the duration.
+          </p>
+          <p>
+            If you would rather the commands stayed in the host's history, where
+            an <Nav>Up</Nav> arrow finds them, that is{" "}
+            <Nav>Settings</Nav> &rarr; <Nav>Skills</Nav> &rarr;{" "}
+            <Nav>Where to log</Nav>. You can have either or both.
+          </p>
         </Detail>
       </>
     ),
@@ -2055,13 +2069,13 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-logs",
     title: "Logs",
     keywords:
-      "logs saved sessions audit log command history search export json pretty print viewer",
+      "logs saved sessions audit log command history search export json pretty print viewer skills skill log skill runs what did the skill do exit codes step log run panel",
     body: (
       <>
         <Lead>
           The <Nav>Logs</Nav> tab is your record of what happened: saved terminal
-          sessions, an audit log of security-relevant actions, and your past
-          commands.
+          sessions, an audit log of security-relevant actions, your past
+          commands, and what your skill runs did.
         </Lead>
         <Detail>
           <H3>What you can find</H3>
@@ -2076,6 +2090,16 @@ export const SECTIONS: HelpSection[] = [
               or off in <Nav>Settings</Nav>.
             </li>
             <li>Command history lists commands you have run, and every view has a search box.</li>
+            <li>
+              <Nav>Skills</Nav> holds one entry per host per skill run: what ran,
+              how it ended, and how long it took. How much detail each entry
+              carries, and whether entries are written at all, is set in{" "}
+              <Nav>Settings</Nav> &rarr; <Nav>Skills</Nav>. Entries are stored as
+              JSON and shown as readable text or as that JSON, whichever you have
+              chosen, so you can change your mind later and everything already
+              recorded reads the new way. <Nav>Export</Nav> always writes the
+              JSON, because an export is for something else to read.
+            </li>
           </Bullets>
         </Detail>
       </>
@@ -2085,7 +2109,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug",
     body: (
       <>
         <Lead>
@@ -2146,6 +2170,34 @@ export const SECTIONS: HelpSection[] = [
               font size from where you are reading and saves it here without the
               button, unless <Nav>Strict</Nav> beside that field is ticked,
               which leaves the wheel alone.
+            </li>
+            <li>
+              <Nav>Skills</Nav>: what a skill run writes down, and where. Until
+              now a run's only lasting trace was the commands it left in each
+              host's own shell history, the ones an <Nav>Up</Nav> arrow finds.
+              That works, and it is per host, it holds the commands without
+              their exit codes, and it fills a scratchpad that is yours rather
+              than Broadside's. So the record can live here instead.
+              <br />
+              <b>Where to log</b> decides that. <Nav>Skill log only</Nav>, the
+              recommendation, writes the run to <Nav>Logs</Nav> &rarr;{" "}
+              <Nav>Skills</Nav> and asks each shell it opens to stop recording,
+              so your history stays as you left it. <Nav>Remote history only</Nav>{" "}
+              writes nothing here and leaves the commands in your history, which
+              is what earlier versions did. <Nav>Both</Nav> does both. This is
+              the only setting on the page that changes anything sent to a host.
+              <br />
+              <b>Logging type</b> decides how much. <Nav>Skill summary</Nav> is
+              one entry for the whole run on a host. <Nav>Itemized</Nav> adds a
+              line per step with its exit code. <Nav>Run panel log</Nav> keeps
+              the step log exactly as the run panel showed it, so the account
+              you were already reading survives the panel closing.{" "}
+              <Nav>Debug</Nav> adds the line Broadside actually typed, where it
+              differs from your command, and what the host said back.
+              <br />
+              <b>Output style</b> is only about reading: entries are always
+              stored as JSON, so changing this re-reads everything already
+              recorded rather than affecting only what comes next.
             </li>
             <li>
               <Nav>Backup &amp; Restore</Nav>: save a copy of your app data, or
