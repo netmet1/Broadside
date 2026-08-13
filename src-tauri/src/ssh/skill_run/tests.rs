@@ -1696,8 +1696,18 @@ async fn the_probes_answer_without_anything_being_printed() {
     let typed = host.typed();
     assert!(typed.contains(" stty -echo;"), "{typed:?}");
     assert!(typed.contains("stty echo\n"), "echo is always put back");
-    // The erase that takes the one visible line back off the screen.
-    assert!(typed.contains(r"\033[1A\r\033[0J"), "{typed:?}");
+    // Both lines of the pair take their own row back. The first one has to: it
+    // is the line that turns the echo off, so there is no state in which it goes
+    // out unseen, and leaving it to the second line's erase is what smoke test
+    // 56-2 saw. The row arithmetic itself is checked in `super::pane_tests`.
+    assert!(
+        typed.contains(&format!(" stty -echo; printf '{ERASE_TWO_ROWS}")),
+        "the line that turns the echo off does not take itself back: {typed:?}"
+    );
+    assert!(
+        typed.contains(&format!("printf '{ERASE_TWO_ROWS}'; stty echo\n")),
+        "{typed:?}"
+    );
 }
 
 #[tokio::test(start_paused = true)]

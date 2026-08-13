@@ -546,25 +546,33 @@ impl<E: SkillEvents> Engine<E> {
     /// Types a line of Broadside's own plumbing without the operator watching it
     /// go by.
     ///
-    /// `stty -echo` first, so the line itself is never echoed back, then the
-    /// line with two things chained onto it: an erase that takes the visible
-    /// `stty -echo` and the bare prompt under it back off the screen, and the
-    /// restore. Both ride on the hidden line rather than being sent separately,
-    /// so echo comes back even if the engine stops reading (a Stop host pressed
-    /// mid-line must not leave the operator a shell that types nothing).
+    /// Two lines, and **both** have to clean up after themselves, which is the
+    /// thing smoke tests 56 and 56-2 each got wrong in turn. The first line
+    /// cannot help being seen as it is typed, because it is the line that turns
+    /// the echo off; there is no state in which it goes out unechoed. So it
+    /// takes itself back: `stty -echo`, then the erase, then the answer that
+    /// says both have happened. The second line is genuinely unseen and carries
+    /// the same erase and the restore. Each erase rides on the line it cleans
+    /// rather than being sent separately, so echo comes back even if the engine
+    /// stops reading (a Stop host pressed mid-line must not leave the operator a
+    /// shell that types nothing).
     ///
-    /// The erase is `cursor up, column 0, erase to end of display`, and it is
-    /// exact rather than hopeful: with echo off the shell prints its next prompt
-    /// where the last one left the cursor, so the two rows to take back are the
-    /// one the cursor is on and the one above it. A line long enough to have
-    /// wrapped leaves a fragment of itself behind, which is why what is hidden
-    /// this way is kept short.
+    /// The erase is `cursor up, column 0, erase to end of display`: the row the
+    /// cursor is on and the one above it, twice, and it is the same arithmetic
+    /// both times because submitting a line moves the shell to a new row whether
+    /// or not it echoed the line. That last part is measured rather than
+    /// assumed. Smoke 56-2 left exactly one row behind per hidden pair, the
+    /// echoed first line, which is only possible if the second line's own
+    /// submission took a row of its own; see [`pane_tests`](super::pane_tests),
+    /// where the geometry is checked against a modelled terminal.
     ///
-    /// That row arithmetic is only right while the second line really is unseen,
-    /// so the first line does not just turn the echo off, it **says when it
-    /// has** and is waited for. Losing that race does not cost one visible line,
-    /// it costs a visible line *and* an erase that takes the wrong rows, which
-    /// is what smoke test 56 saw.
+    /// A line long enough to have wrapped leaves a fragment of itself behind,
+    /// which is why what is hidden this way is kept short.
+    ///
+    /// The row arithmetic is also only right while the second line really is
+    /// unseen, so the first line does not just turn the echo off, it **says when
+    /// it has** and is waited for. Losing that race costs a visible line *and*
+    /// an erase that takes the wrong rows, which is what smoke test 56 saw.
     ///
     /// `needs_quiet` is for a payload too long to be worth showing: the hook
     /// offer is most of a screenful of shell, so it is not typed at all unless
@@ -573,10 +581,7 @@ impl<E: SkillEvents> Engine<E> {
     /// for itself regardless) should still answer them, visibly, as it always
     /// did.
     async fn send_hidden(&mut self, payload: &str, needs_quiet: bool) -> bool {
-        // `$?` is `stty`'s own exit status, so the answer says whether the echo
-        // is off as well as that the shell got this far.
-        let quieten = format!(" stty -echo; {}\n", probe_line(ECHO_MARKER, "\"$?\""));
-        if self.send_bytes(&quieten).is_err() {
+        if self.send_bytes(&quiet_line()).is_err() {
             return false;
         }
         let re = Regex::new(&format!(r"{ECHO_MARKER}(\d+)__")).expect("static regex");
@@ -588,8 +593,7 @@ impl<E: SkillEvents> Engine<E> {
             let _ = self.send_bytes(" stty echo\n");
             return false;
         }
-        let line = format!(" {payload}; printf '\\033[1A\\r\\033[0J'; stty echo\n");
-        if self.send_bytes(&line).is_err() {
+        if self.send_bytes(&hidden_line(payload)).is_err() {
             // The hidden line never landed, so nothing on the far side is going
             // to turn echo back on. This is the one path that has to.
             let _ = self.send_bytes(" stty echo\n");
@@ -740,13 +744,21 @@ impl<E: SkillEvents> Engine<E> {
     /// is printed by the same line that installs them, so it cannot be about
     /// some earlier shell, and it says `y` from a shell that already had them as
     /// readily as from one that has just taken them.
+    ///
+    /// The install itself is silenced, and that is about the pane rather than
+    /// about tidiness: a hidden line's erase takes back a fixed two rows, so a
+    /// payload that prints anything of its own pushes the rows either side of it
+    /// out of reach and strands them on the operator's screen. This is the only
+    /// payload with a mouth on it (a shell that chokes on the snippet says so),
+    /// so it is the only one that has to be told to keep quiet. The report
+    /// stands outside the redirect, because that one has to be heard.
     async fn install_hooks(&mut self) -> bool {
         let report = probe_line(
             HOOK_MARKER,
             "\"$(command -v __omni_precmd >/dev/null 2>&1 && echo y || echo n)\"",
         );
         let line = format!(
-            "command -v __omni_precmd >/dev/null 2>&1 || {{ {}; }}; {report}",
+            "{{ command -v __omni_precmd >/dev/null 2>&1 || {{ {}; }}; }} >/dev/null 2>&1; {report}",
             crate::omni::SHELL_INTEGRATION
         );
         if !self.send_hidden(&line, true).await {
@@ -1649,10 +1661,41 @@ impl<E: SkillEvents> Engine<E> {
 /// shell history, so an operator pressing Up in the pane afterwards doesn't find
 /// Broadside's plumbing.
 fn probe_line(marker: &str, value: &str) -> String {
+    probe_line_with("", marker, value)
+}
+
+/// The same probe with `lead` printed in front of the marker.
+///
+/// One caller needs it: the line that has to erase itself. Putting the erase
+/// inside the same `printf` is what stops the two being separated, so a shell
+/// that reached the answer has necessarily also done the tidying up.
+fn probe_line_with(lead: &str, marker: &str, value: &str) -> String {
     format!(
-        "printf '\\033]{};{marker}%s__\\007' {value}",
+        "printf '{lead}\\033]{};{marker}%s__\\007' {value}",
         screen::BS_OSC
     )
+}
+
+/// The two rows a hidden line takes back on its way out: the row the cursor is
+/// on, and the row above it. See [`Engine::send_hidden`] for why it is always
+/// exactly two.
+const ERASE_TWO_ROWS: &str = r"\033[1A\r\033[0J";
+
+/// Line one of the hidden pair: turn the echo off, take this line back off the
+/// screen, and say when both have happened.
+///
+/// `$?` is `stty`'s own exit status, so the answer says whether the echo is off
+/// as well as that the shell got this far.
+fn quiet_line() -> String {
+    format!(
+        " stty -echo; {}\n",
+        probe_line_with(ERASE_TWO_ROWS, ECHO_MARKER, "\"$?\"")
+    )
+}
+
+/// Line two: the payload nobody sees, then the same erase, then the restore.
+fn hidden_line(payload: &str) -> String {
+    format!(" {payload}; printf '{ERASE_TWO_ROWS}'; stty echo\n")
 }
 
 /// What a wait is waiting for.
@@ -2068,5 +2111,7 @@ pub fn parse_sequence(config_json: &str) -> AppResult<SequenceConfig> {
         .map_err(|e| AppError::InvalidInput(format!("skill config is malformed: {e}")))
 }
 
+#[cfg(test)]
+mod pane_tests;
 #[cfg(test)]
 mod tests;
