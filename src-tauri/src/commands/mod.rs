@@ -12,5 +12,6 @@ pub mod security;
 pub mod session;
 pub mod sftp;
 pub mod settings;
+pub mod skilllog;
 pub mod skills;
 pub mod ssh;

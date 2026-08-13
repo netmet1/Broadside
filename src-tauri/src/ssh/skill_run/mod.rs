@@ -271,16 +271,106 @@ pub trait SkillEvents: Send + Sync + 'static {
     fn progress(&self, payload: SkillProgress);
     fn paused(&self, payload: SkillPaused);
     fn done(&self, payload: SkillDone);
+    /// One finished step, for the run's own record (see [`crate::skilllog`]).
+    ///
+    /// Defaulted to nothing on purpose. The engine's job is to know what
+    /// happened; whether anybody is writing it down is a setting, and a test
+    /// driving the engine against a fake host should not have to say so. Only
+    /// the app implements it.
+    fn step_finished(&self, _payload: SkillStepDone) {}
+}
+
+/// What the engine knows about a step once it is over, which is more than the
+/// progress events carry: the line actually typed and the output actually read
+/// are the two things the operator cannot reconstruct from the pane afterwards,
+/// and they are the whole of the Debug level.
+///
+/// Sent for every step at every detail level, and thrown away at the far end by
+/// the ones that do not want it. The alternative, asking the engine what level
+/// is in force before deciding what to report, puts a setting inside the state
+/// machine, and the state machine has enough to think about.
+#[derive(Debug, Clone)]
+pub struct SkillStepDone {
+    pub run_id: String,
+    pub host_id: i64,
+    pub step_id: String,
+    /// `run` | `expect` | `send` | `wait` | `log`.
+    pub kind: String,
+    /// The command the author wrote, on a `run` step.
+    pub command: Option<String>,
+    /// The line Broadside typed, when it differs from the command. `None` when
+    /// they are the same, so an entry that has one is one where the difference
+    /// is the thing worth reading.
+    pub sent: Option<String>,
+    /// What the host said back to a `run` step, before trimming.
+    pub output: Option<String>,
+    pub exit_code: Option<u32>,
+    /// `pass` | `fail` | `timeout` | `skipped` | `done`.
+    pub condition: String,
+    /// Where the run went next.
+    pub next: Option<String>,
+    pub took_ms: u64,
 }
 
 impl SkillEvents for tauri::AppHandle {
     fn progress(&self, payload: SkillProgress) {
+        // The same line the run panel draws, kept against the step that closes
+        // after it. The panel formats `{phase} {detail}` and this has to be
+        // that, not an approximation of it: the whole promise of the Panel
+        // detail level is that the file says what the panel said.
+        self.state::<crate::skilllog::SkillLogState>().panel_line(
+            &payload.run_id,
+            payload.host_id,
+            format!("{} {}", payload.phase, payload.detail),
+        );
         let _ = self.emit(PROGRESS_EVENT, &payload);
     }
     fn paused(&self, payload: SkillPaused) {
         let _ = self.emit(PAUSED_EVENT, &payload);
     }
+    fn step_finished(&self, payload: SkillStepDone) {
+        use crate::skilllog::{trimmed_output, StepRecord};
+        self.state::<crate::skilllog::SkillLogState>().step(
+            &payload.run_id,
+            payload.host_id,
+            StepRecord {
+                step_id: payload.step_id,
+                kind: payload.kind,
+                // Filled in by the log itself: it counts the steps that ran, and
+                // that is the only place that knows how many there have been.
+                index: 0,
+                command: payload.command,
+                sent: payload.sent,
+                output: payload.output.as_deref().map(trimmed_output),
+                exit_code: payload.exit_code,
+                condition: payload.condition,
+                next: payload.next,
+                took_ms: payload.took_ms,
+                panel: Vec::new(),
+            },
+        );
+    }
     fn done(&self, payload: SkillDone) {
+        // Read the operator's choice now rather than when the run started, so a
+        // change made in Settings while a skill is running applies to the run
+        // they are looking at. A database that cannot be read is not a reason to
+        // lose the record: fall back to the recommended settings.
+        let prefs = self
+            .try_state::<crate::db::DbState>()
+            .and_then(|db| {
+                db.0.lock()
+                    .ok()
+                    .and_then(|conn| crate::commands::settings::skill_log_prefs(&conn).ok())
+            })
+            .unwrap_or_default();
+        self.state::<crate::skilllog::SkillLogState>().finish(
+            &payload.run_id,
+            payload.host_id,
+            payload.ok,
+            &payload.message,
+            prefs.detail,
+            prefs.log_where.writes_here(),
+        );
         // A host that ended badly is a logged failure (D-055), same as a
         // broadcast result. Never blocks the run.
         if !payload.ok {
@@ -441,6 +531,26 @@ pub struct Engine<E: SkillEvents> {
     /// something. Shared with the tap, which is the half that does the not
     /// showing. See [`curtain`].
     curtain: Curtain,
+    /// Whether this run must leave the host's shell history clean. The one
+    /// setting on the Skills page that changes a byte sent to a host; see
+    /// [`Engine::history_off`].
+    quiet_history: bool,
+    /// What the last `run` step did, for the record. Filled where the facts are
+    /// (the run step has the exit code and the output), read where the step ends
+    /// (the sequence loop has the timing and the branch), so there is one
+    /// reporting call rather than one per outcome.
+    run_facts: Option<RunFacts>,
+}
+
+/// The half of a finished `run` step only [`Engine::run_command_step`] knows.
+#[derive(Debug, Clone, Default)]
+struct RunFacts {
+    command: String,
+    /// The line typed, when it is not the command verbatim.
+    sent: Option<String>,
+    output: Option<String>,
+    exit_code: Option<u32>,
+    condition: Option<String>,
 }
 
 impl<E: SkillEvents> Engine<E> {
@@ -465,7 +575,19 @@ impl<E: SkillEvents> Engine<E> {
             hooks_possible: false,
             hooks_proven: false,
             hook_installs: 0,
+            quiet_history: false,
+            run_facts: None,
         }
+    }
+
+    /// Tells the engine whether this run must leave the host's shell history
+    /// clean, which is the operator's **Where to log** choice.
+    ///
+    /// Off by default, so an engine built without saying (every test that does
+    /// not care, and any future caller) types exactly what it typed before.
+    pub fn with_quiet_history(mut self, quiet: bool) -> Self {
+        self.quiet_history = quiet;
+        self
     }
 
 
@@ -832,7 +954,8 @@ impl<E: SkillEvents> Engine<E> {
             "\"$(command -v __omni_precmd >/dev/null 2>&1 && echo y || echo n)\"",
         );
         let line = format!(
-            "{{ command -v __omni_precmd >/dev/null 2>&1 || {{ {}; }}; }} >/dev/null 2>&1; {report}",
+            "{}{{ command -v __omni_precmd >/dev/null 2>&1 || {{ {}; }}; }} >/dev/null 2>&1; {report}",
+            self.history_off(),
             crate::omni::SHELL_INTEGRATION
         );
         if !self.send_hidden(&line).await {
@@ -846,6 +969,44 @@ impl<E: SkillEvents> Engine<E> {
         // refusing shell is still sitting on.
         self.raise_curtain().await;
         matches!(answer.as_deref(), Some("y"))
+    }
+
+    /// Stops the shell in front of us recording anything, when the operator has
+    /// said the run's record belongs in Broadside and not in their history.
+    /// Empty otherwise, and empty is the whole of the "Remote History Only"
+    /// behaviour: nothing extra is sent, so that setting is byte-for-byte what
+    /// build 57-2 did.
+    ///
+    /// **Why it rides on [`Engine::install_hooks`] rather than being sent on its
+    /// own.** History is a property of a shell, not of a host: a `sudo -i` opens
+    /// a new one that has never heard of any of this, exactly as it opens one
+    /// with no OSC 133 hooks in it. So the question "is this shell set up" has
+    /// to be re-asked at precisely the same moments, and the engine already has
+    /// a line it types at those moments. Putting this on the front of that line
+    /// costs no extra round trip, adds no new place where the engine types, and
+    /// cannot drift out of step with the hook install, because it *is* the hook
+    /// install.
+    ///
+    /// **What it does, per shell.** bash turns recording off outright, which
+    /// covers both the file and the list Up walks. zsh has no such switch, so
+    /// `fc -p` pushes a fresh history with no file behind it, which is the same
+    /// answer in zsh's own terms. Each is wrapped so the shell that does not
+    /// understand it says nothing: bash has no `fc -p` and zsh has no `history`
+    /// option, and neither complaint belongs on the operator's screen or in the
+    /// engine's match buffer.
+    ///
+    /// **What it does not do.** A shell with no hooks (a plain `sh`, or a host
+    /// set to Shell integration: Never) never reaches `install_hooks`, so it
+    /// never gets this. That is not an oversight: those runs use the visible
+    /// completion wrapper, whose leading space is the pre-existing mechanism for
+    /// the same job, and typing a history command at a shell Broadside was told
+    /// not to write to would be worse than the thing it was avoiding.
+    fn history_off(&self) -> &'static str {
+        if self.quiet_history {
+            "{ set +o history; } 2>/dev/null; { fc -p; } 2>/dev/null; "
+        } else {
+            ""
+        }
     }
 
     /// Waits for the login to be over before anything is typed at it.
@@ -887,7 +1048,11 @@ impl<E: SkillEvents> Engine<E> {
             }
         }
         self.wait_for_login().await;
-        let probe = probe_line(SHELL_MARKER, "\"$0\"");
+        // The first thing typed at this shell, so the first chance to stop it
+        // recording. Everything the engine asks it after this is covered; this
+        // line itself is covered only by its own leading space, which is where
+        // it always stood.
+        let probe = format!("{}{}", self.history_off(), probe_line(SHELL_MARKER, "\"$0\""));
         if !self.send_hidden(&probe).await {
             return Err("could not write to the shell".into());
         }
@@ -1094,7 +1259,11 @@ impl<E: SkillEvents> Engine<E> {
                 detail,
             );
             let was_wait = matches!(step, SeqStep::Wait { .. });
-            match self.exec_step(step).await {
+            self.run_facts = None;
+            let began = Instant::now();
+            let outcome = self.exec_step(step).await;
+            self.report_step(step, &outcome, began.elapsed());
+            match outcome {
                 StepOutcome::Goto(next) => {
                     // A small, fixed breather between steps, so a step's last
                     // bytes have landed and the shell is back at a prompt before
@@ -1139,6 +1308,48 @@ impl<E: SkillEvents> Engine<E> {
                 }
             }
         }
+    }
+
+    /// Writes one finished step into the run's record.
+    ///
+    /// Called for every step of every run, whether or not anybody is keeping a
+    /// record: the sink is defaulted to nothing, so a build where the operator
+    /// wants no log pays a struct that is dropped, and the engine never has to
+    /// know which of four detail levels is in force. That question belongs to
+    /// the thing doing the writing.
+    ///
+    /// A step that ended the host (aborted, detached, the shell closing) is not
+    /// reported. Those are not outcomes of the step; they are the run stopping
+    /// during it, and writing "expect: failed" for a step whose real answer is
+    /// "the operator pressed Stop" would put a fiction in the record. The
+    /// closing summary says what actually happened.
+    fn report_step(&mut self, step: &SeqStep, outcome: &StepOutcome, took: Duration) {
+        let (condition, next) = match outcome {
+            StepOutcome::Goto(next) => ("done", Some(next.clone())),
+            StepOutcome::Failed(_) => ("fail", None),
+            StepOutcome::Aborted | StepOutcome::Detached | StepOutcome::Closed => return,
+        };
+        let facts = self.run_facts.take();
+        self.events.step_finished(SkillStepDone {
+            run_id: self.meta.run_id.clone(),
+            host_id: self.meta.host_id,
+            step_id: step.id().to_string(),
+            kind: step.kind_str().to_string(),
+            command: facts.as_ref().map(|f| f.command.clone()),
+            sent: facts.as_ref().and_then(|f| f.sent.clone()),
+            output: facts.as_ref().and_then(|f| f.output.clone()),
+            exit_code: facts.as_ref().and_then(|f| f.exit_code),
+            // A `run` step knows better than the branch it took: a command that
+            // exited non-zero and was handled by an `onFailure` branch reached
+            // the next step perfectly happily, and calling that "done" would
+            // lose the only thing worth counting.
+            condition: facts
+                .as_ref()
+                .and_then(|f| f.condition.clone())
+                .unwrap_or_else(|| condition.to_string()),
+            next,
+            took_ms: took.as_millis() as u64,
+        });
     }
 
     /// Park before `next_step_id` because the operator asked for the keyboard.
@@ -1483,6 +1694,14 @@ impl<E: SkillEvents> Engine<E> {
         } else {
             format!(" {cmd}; printf '{DONE_MARKER}%s__\\n' \"$?\"\n")
         };
+        // What the record will say, filled in as the answers arrive. `sent` is
+        // only kept where it differs from the command, so an entry carrying one
+        // is one where the difference is the point.
+        self.run_facts = Some(RunFacts {
+            command: cmd.to_string(),
+            sent: (!quiet).then(|| line.trim_end().to_string()),
+            ..RunFacts::default()
+        });
         if let Err(e) = self.send_bytes(&line) {
             return StepOutcome::Failed(format!("could not send: {e}"));
         }
@@ -1517,6 +1736,11 @@ impl<E: SkillEvents> Engine<E> {
                     Some(at) => &consumed[at..],
                     None => command_output(&consumed),
                 };
+                if let Some(facts) = self.run_facts.as_mut() {
+                    facts.output = Some(output.to_string());
+                    facts.exit_code = Some(code);
+                    facts.condition = Some(if code == 0 { "pass" } else { "fail" }.into());
+                }
                 let Some(b) = branch else {
                     self.emit("matched", Some(step.id()), format!("exit {code}"));
                     return StepOutcome::Goto(if code == 0 {
@@ -1531,6 +1755,12 @@ impl<E: SkillEvents> Engine<E> {
                     Err(e) => return StepOutcome::Failed(e.to_string()),
                 };
                 let hit = re.is_match(output);
+                // An output test outranks the exit code for the record too, or
+                // a step that branched on `error` being present would be
+                // written down as a pass because `grep` exited zero.
+                if let Some(facts) = self.run_facts.as_mut() {
+                    facts.condition = Some(if hit { "pass" } else { "fail" }.into());
+                }
                 self.emit(
                     "matched",
                     Some(step.id()),
@@ -1547,7 +1777,12 @@ impl<E: SkillEvents> Engine<E> {
                 })
             }
             // Skipping a run step takes its success branch.
-            Ok(Wait::Skipped) => StepOutcome::Goto(on_success.to_string()),
+            Ok(Wait::Skipped) => {
+                if let Some(facts) = self.run_facts.as_mut() {
+                    facts.condition = Some("skipped".into());
+                }
+                StepOutcome::Goto(on_success.to_string())
+            }
             Ok(Wait::Timeout) => {
                 // A completion arrived, and was refused for having no command in
                 // front of it, and then nothing else came. Waiting on this
@@ -1572,6 +1807,9 @@ impl<E: SkillEvents> Engine<E> {
                 } else {
                     on_failure.to_string()
                 };
+                if let Some(facts) = self.run_facts.as_mut() {
+                    facts.condition = Some("timeout".into());
+                }
                 // The marker never arrived, so the command is still running and
                 // still owns the terminal. Abandoning it in the engine while
                 // leaving it running on the host means the next step's command

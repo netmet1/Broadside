@@ -69,6 +69,38 @@ impl SkillsHost {
         host
     }
 
+    /// Appends one line to a rc file in the test user's home, so a run can be
+    /// driven against the prompt an operator actually has rather than the one
+    /// Debian ships.
+    ///
+    /// The line is passed as an *argument* (`$1`), never interpolated into the
+    /// script: a `PS1` is made of exactly the characters a shell would
+    /// otherwise eat, and quoting one through two layers of shell is how a
+    /// fixture starts testing its own escaping instead of the thing in front of
+    /// it.
+    pub fn append_rc(&self, file: &str, line: &str) {
+        let out = Command::new("docker")
+            .args([
+                "exec",
+                "-u",
+                USER,
+                &self.container_id,
+                "sh",
+                "-c",
+                "printf '%s\\n' \"$1\" >> \"$HOME/$2\"",
+                "sh",
+                line,
+                file,
+            ])
+            .output()
+            .expect("docker exec failed to spawn");
+        assert!(
+            out.status.success(),
+            "could not write {file}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
     fn build() {
         let context: PathBuf = [env!("CARGO_MANIFEST_DIR"), "tests", "fixtures", "skills-host"]
             .iter()

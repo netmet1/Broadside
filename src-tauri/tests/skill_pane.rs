@@ -489,8 +489,61 @@ struct Ran {
     events: Arc<Events>,
 }
 
-async fn drive(cols: u32, shell: &str) -> Ran {
+/// The host this run is driven against: how wide the pane is, which shell logs
+/// in, what its prompt looks like, and whether Broadside is allowed to write to
+/// it on connect.
+///
+/// A struct rather than four positional arguments because the last two are the
+/// ones the operator can change from the Hosts tab, and a call that reads
+/// `drive(80, "bash", None, Auto)` says nothing about which of those is which.
+struct Spec {
+    cols: u32,
+    shell: &'static str,
+    /// A `PS1` appended to the login shell's rc, so the very first prompt on
+    /// the glass is already the operator's own.
+    ps1: Option<&'static str>,
+    integration: ShellIntegrationPref,
+}
+
+impl Spec {
+    fn bash(cols: u32) -> Self {
+        Spec {
+            cols,
+            shell: "bash",
+            ps1: None,
+            integration: ShellIntegrationPref::Auto,
+        }
+    }
+    fn shell(mut self, shell: &'static str) -> Self {
+        self.shell = shell;
+        self
+    }
+    fn ps1(mut self, ps1: &'static str) -> Self {
+        self.ps1 = Some(ps1);
+        self
+    }
+    /// The host set to **Shell integration: Never**, which is the operator
+    /// saying "write nothing to this machine".
+    fn untouched(mut self) -> Self {
+        self.integration = ShellIntegrationPref::Never;
+        self
+    }
+}
+
+async fn drive(spec: Spec) -> Ran {
+    let Spec {
+        cols,
+        shell,
+        ps1,
+        integration: pref,
+    } = spec;
     let host = SkillsHost::start_with_shell(&format!("/bin/{shell}"));
+    if let Some(ps1) = ps1 {
+        host.append_rc(
+            if shell == "zsh" { ".zshrc" } else { ".bashrc" },
+            &format!("PS1='{ps1}'"),
+        );
+    }
     let fingerprint = trust(&host).await;
 
     let raw = Arc::new(Mutex::new(Vec::new()));
@@ -515,7 +568,7 @@ async fn drive(cols: u32, shell: &str) -> Ran {
         vec![fingerprint],
         AuthMethod::Password(PASSWORD.to_string()),
         Some(PASSWORD.to_string()),
-        ShellIntegrationPref::Auto,
+        pref,
         cols,
         ROWS,
     )
@@ -552,6 +605,9 @@ async fn drive(cols: u32, shell: &str) -> Ran {
         },
     )
     .with_known_shell(login_shell)
+    // The probe's own answer, and then the resolved one, exactly as the run
+    // command hands them over: a host told "never" is still bash, and is still
+    // drivable, it just gets no hooks and so no quiet completions.
     .with_known_capability(capability)
     .with_integration_sent(integration.resolve(capability).with_integration());
 
@@ -568,7 +624,12 @@ async fn drive(cols: u32, shell: &str) -> Ran {
     let mut term = Term::new(cols as usize);
     term.feed(&String::from_utf8_lossy(&raw.lock().unwrap()));
     let pane = term.text();
-    println!("--------------- pane at {cols} columns ---------------\n{}", readable(&pane));
+    println!(
+        "--------------- {shell} at {cols} columns{}{} ---------------\n{}",
+        if ps1.is_some() { ", operator's own prompt" } else { "" },
+        if pref == ShellIntegrationPref::Never { ", no integration" } else { "" },
+        readable(&pane)
+    );
     println!("---------------- log -----------------\n{}", events.log());
     Ran {
         pane,
@@ -581,12 +642,26 @@ async fn drive(cols: u32, shell: &str) -> Ran {
 /// because it is the assertion that matters, and it is made at more than one.
 fn assert_no_plumbing(pane: &str) {
     // The visible completion wrapper is the fallback for a shell that cannot
-    // report its own completions. Every shell in this suite can.
+    // report its own completions. Every shell in this suite can, bar the host
+    // whose operator told Broadside to write nothing to it.
     assert!(
         !pane.contains("__bsdone"),
         "the run fell back to the visible marker:\n{}",
         readable(pane)
     );
+    assert_nothing_hidden_leaked(pane);
+}
+
+/// The half of that which holds even where the visible wrapper is expected.
+///
+/// The wrapper is the one line of Broadside's the operator is *meant* to read:
+/// it is appended to their own command, in plain sight, because a shell with no
+/// hooks has no other way to report an exit code. Everything else here is a
+/// question the engine asked the shell, and the curtain hides those by never
+/// forwarding them, which owes nothing to the shell integration. So a host set
+/// to Never is held to exactly this standard, and it is the standard that
+/// matters: the wrapper is explainable, a stray `stty` is not.
+fn assert_nothing_hidden_leaked(pane: &str) {
     for plumbing in [
         "stty", "__bsecho", "__bshook", "__bsshell", "__bsuid", "6273", "__omni_precmd",
         "PROMPT_COMMAND",
@@ -599,30 +674,28 @@ fn assert_no_plumbing(pane: &str) {
     }
 }
 
-#[tokio::test]
-#[ignore]
-async fn a_whole_skill_runs_without_putting_anything_of_its_own_on_the_screen() {
-    let Ran {
-        pane,
-        outcome,
-        events,
-    } = drive(120, "bash").await;
+/// Whether this host is one the engine has to append the visible completion
+/// marker for, which changes what a command's row is allowed to look like.
+#[derive(PartialEq)]
+enum Wrapped {
+    No,
+    Yes,
+}
 
-    // 1. The run did what the skill said, all the way to the end.
-    assert!(outcome.ok, "{outcome:?}\n{}", events.log());
-    assert_eq!(
-        events.steps(),
-        vec![
-            "escalate", "amiroot", "nginx", "nonginx", "chatty", "quiet", "coloured", "askme",
-            "answer", "confirmed", "leave", "whoami", "hold", "failing", "expected",
-        ],
-        "the skill took a different path:\n{}",
-        events.log()
-    );
-    // The uid probe at the end of the run reads the shell the `exit` left us in.
-    assert_eq!(outcome.is_root, Some(false), "{outcome:?}");
-
-    // 2. The commands the operator asked for are on the screen, once each.
+/// Every command the skill's author wrote, on exactly one row of the pane, and
+/// starting where a command somebody typed starts.
+///
+/// The second half is the one build 57 shipped without. A prompt ends in a
+/// space of its own, so a leading space on the line the engine sends reads as a
+/// gap the operator cannot account for. The line the engine *composed* still
+/// carries one, deliberately, because that is what keeps it out of the shell's
+/// history: on a host with the wrapper the gap is the rule working, so only the
+/// two interactive steps, which are sent verbatim either way, are checked
+/// there.
+///
+/// Only called where the pane is wide enough for these to fit on one row.
+/// Wrapping a long command in a narrow pane is the pane being narrow.
+fn assert_commands_read_like_typing(pane: &str, wrapped: Wrapped) {
     for command in [
         "sudo -i",
         "id -un",
@@ -639,12 +712,12 @@ async fn a_whole_skill_runs_without_putting_anything_of_its_own_on_the_screen() 
             "{command:?} should appear on exactly one row, and is on {}:\n{}\n\nfull pane:\n{}",
             seen.len(),
             seen.join("\n"),
-            readable(&pane)
+            readable(pane)
         );
-        // And it starts where a typed command starts. The prompt ends in a
-        // space of its own, so a leading space on the line the engine sends
-        // shows up as a gap the operator has no way to account for. Build 57
-        // shipped with one.
+        let sent_verbatim = matches!(command, "sudo -i" | "ask-confirm");
+        if wrapped == Wrapped::Yes && !sent_verbatim {
+            continue;
+        }
         let row = seen[0];
         let at = row.find(command).expect("the row this was found on");
         assert!(
@@ -652,6 +725,33 @@ async fn a_whole_skill_runs_without_putting_anything_of_its_own_on_the_screen() 
             "{command:?} sits away from the prompt: {row:?}"
         );
     }
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_whole_skill_runs_without_putting_anything_of_its_own_on_the_screen() {
+    let Ran {
+        pane,
+        outcome,
+        events,
+    } = drive(Spec::bash(120)).await;
+
+    // 1. The run did what the skill said, all the way to the end.
+    assert!(outcome.ok, "{outcome:?}\n{}", events.log());
+    assert_eq!(
+        events.steps(),
+        vec![
+            "escalate", "amiroot", "nginx", "nonginx", "chatty", "quiet", "coloured", "askme",
+            "answer", "confirmed", "leave", "whoami", "hold", "failing", "expected",
+        ],
+        "the skill took a different path:\n{}",
+        events.log()
+    );
+    // The uid probe at the end of the run reads the shell the `exit` left us in.
+    assert_eq!(outcome.is_root, Some(false), "{outcome:?}");
+
+    // 2. The commands the operator asked for are on the screen, once each.
+    assert_commands_read_like_typing(&pane, Wrapped::No);
     // And so is what they produced.
     for output in ["200", "green", "Continue? yes", "confirmed-yes"] {
         assert!(
@@ -674,7 +774,7 @@ async fn a_whole_skill_runs_without_putting_anything_of_its_own_on_the_screen() 
 #[tokio::test]
 #[ignore]
 async fn the_same_skill_in_an_eighty_column_pane_is_just_as_clean() {
-    let Ran { pane, outcome, .. } = drive(80, "bash").await;
+    let Ran { pane, outcome, .. } = drive(Spec::bash(80)).await;
     assert!(outcome.ok, "{outcome:?}");
     assert_no_plumbing(&pane);
 }
@@ -694,7 +794,7 @@ async fn the_same_skill_on_zsh() {
         pane,
         outcome,
         events,
-    } = drive(100, "zsh").await;
+    } = drive(Spec::bash(100).shell("zsh")).await;
     assert!(outcome.ok, "{outcome:?}\n{}", events.log());
     assert_no_plumbing(&pane);
 }
@@ -712,7 +812,133 @@ async fn the_same_skill_on_zsh() {
 #[tokio::test]
 #[ignore]
 async fn a_pane_far_too_narrow_to_be_reasonable_is_still_clean() {
-    let Ran { pane, outcome, .. } = drive(40, "bash").await;
+    let Ran { pane, outcome, .. } = drive(Spec::bash(40)).await;
     assert!(outcome.ok, "{outcome:?}");
     assert_no_plumbing(&pane);
+}
+
+/// A prompt long enough that the operator's own commands wrap, in a pane narrow
+/// enough to make them (smoke 57-2 B3).
+///
+/// The interesting part is not the length, it is that Broadside no longer has
+/// an opinion about it. The old erase took back a number of rows it worked out
+/// from the width and the length of what it had typed, so a prompt like this
+/// one moved the answer, and a prompt with a git branch in it moved the answer
+/// again every time the branch changed. Nothing is drawn now, so the pane's
+/// arithmetic has nobody doing it.
+///
+/// Sixty columns against a prompt sixty-four characters wide, so the prompt
+/// itself is more than one row before a command is even typed. The commands are
+/// deliberately not checked for sitting on one row: at this width they wrap,
+/// which is the pane being narrow and is the operator's own business.
+#[tokio::test]
+#[ignore]
+async fn a_long_prompt_in_a_narrow_pane() {
+    let Ran { pane, outcome, .. } = drive(
+        Spec::bash(60).ps1("\\u@skills-test.internal.example.com:\\w (feat/prompts80) \\$ "),
+    )
+    .await;
+    assert!(outcome.ok, "{outcome:?}");
+    // The prompt actually took, or this test proves nothing about long prompts.
+    // Matched on the part that survives the wrap: the tail of the prompt is on
+    // the row below, which is the whole point of the width.
+    assert!(
+        pane.contains("skills-test.internal.example.com"),
+        "the fixture's own prompt never reached the pane:\n{}",
+        readable(&pane)
+    );
+    assert_no_plumbing(&pane);
+}
+
+/// A two-line prompt (smoke 57-2 B4), which the old erase could never have
+/// survived: it took back one row, and a prompt that is two rows tall means the
+/// row above the one it cleared is the top half of a prompt.
+///
+/// Wide enough that the commands still fit on one row, so this is also where
+/// the prompt-to-command gap is checked against a prompt that is not the one
+/// Debian ships.
+#[tokio::test]
+#[ignore]
+async fn a_two_line_prompt_keeps_both_of_its_lines() {
+    let Ran {
+        pane,
+        outcome,
+        events,
+    } = drive(Spec::bash(100).ps1("[\\u@skills-test.internal.example.com \\w]\\n\\$ ")).await;
+    assert!(outcome.ok, "{outcome:?}\n{}", events.log());
+    // Both halves are on the glass, and the top half as many times as the
+    // bottom: one eaten row is the whole failure this is looking for.
+    let tops = pane
+        .lines()
+        .filter(|l| l.contains("[skilltest@skills-test.internal.example.com"))
+        .count();
+    // `$`, not `"$ "`: a row is read off the pane with its trailing blanks
+    // trimmed, so the last prompt, the one with nothing typed at it, is a bare
+    // dollar sign. That row is the one an eaten line would most likely be.
+    let bottoms = pane.lines().filter(|l| l.starts_with('$')).count();
+    assert!(tops > 3, "the prompt's first line is missing:\n{}", readable(&pane));
+    assert_eq!(
+        tops, bottoms,
+        "a prompt lost half of itself: {tops} first lines against {bottoms} second:\n{}",
+        readable(&pane)
+    );
+    assert_commands_read_like_typing(&pane, Wrapped::No);
+    assert_no_plumbing(&pane);
+}
+
+/// A host set to **Shell integration: Never** (smoke 57-2 D3): the operator has
+/// said Broadside may not write to this machine, so it gets no OSC 133 hooks and
+/// cannot report its own completions.
+///
+/// Two things have to hold at once here, and they pull in opposite directions.
+/// The visible completion marker *must* come back, because with no hooks there
+/// is no other way to read an exit code, and it must carry its leading space,
+/// because it is Broadside's line and has no business in the operator's history.
+/// Everything the engine asks the shell must still be nowhere, because the
+/// curtain hides by not forwarding and owes nothing to the integration. This is
+/// also the only case in the suite where a hidden line has no prompt mark to
+/// wait for, so it lifts on the engine's own answer and clears its own row.
+#[tokio::test]
+#[ignore]
+async fn a_host_broadside_may_not_write_to_still_runs_the_skill() {
+    let Ran {
+        pane,
+        outcome,
+        events,
+    } = drive(Spec::bash(100).untouched()).await;
+    assert!(outcome.ok, "{outcome:?}\n{}", events.log());
+    assert_eq!(
+        events.steps(),
+        vec![
+            "escalate", "amiroot", "nginx", "nonginx", "chatty", "quiet", "coloured", "askme",
+            "answer", "confirmed", "leave", "whoami", "hold", "failing", "expected",
+        ],
+        "the skill took a different path:\n{}",
+        events.log()
+    );
+    // The fallback is in use, in plain sight, and with the space that keeps it
+    // out of the history an operator reaches with Up.
+    let wrapped: Vec<&str> = pane
+        .lines()
+        .filter(|l| l.contains("__bsdone_") && l.contains("printf"))
+        .collect();
+    assert!(
+        wrapped.len() >= 4,
+        "the visible marker should be on every non-interactive command's row, and is on {}:\n{}",
+        wrapped.len(),
+        readable(&pane)
+    );
+    for row in &wrapped {
+        let at = row.find("test -f").or_else(|| row.find("whoami")).or_else(|| row.find("false"));
+        if let Some(at) = at {
+            assert!(
+                row[..at].ends_with("  "),
+                "the wrapped line lost the space that keeps it out of history: {row:?}"
+            );
+        }
+    }
+    assert_commands_read_like_typing(&pane, Wrapped::Yes);
+    // And nothing the engine asked the shell, which is the part that does not
+    // change with the integration.
+    assert_nothing_hidden_leaked(&pane);
 }

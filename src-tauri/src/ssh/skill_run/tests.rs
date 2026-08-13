@@ -22,6 +22,7 @@ struct Collected {
     progress: Vec<SkillProgress>,
     paused: Vec<SkillPaused>,
     done: Vec<SkillDone>,
+    steps: Vec<SkillStepDone>,
 }
 
 #[derive(Default)]
@@ -36,6 +37,9 @@ impl SkillEvents for CollectEvents {
     }
     fn done(&self, payload: SkillDone) {
         self.0.lock().unwrap().done.push(payload);
+    }
+    fn step_finished(&self, payload: SkillStepDone) {
+        self.0.lock().unwrap().steps.push(payload);
     }
 }
 
@@ -57,6 +61,10 @@ impl CollectEvents {
             .iter()
             .map(|p| p.phase.clone())
             .collect()
+    }
+    /// The record of the run: one entry per step that finished.
+    fn steps(&self) -> Vec<SkillStepDone> {
+        self.0.lock().unwrap().steps.clone()
     }
     /// The events the panel reads as "a step is starting now", as
     /// `(step_id, countdown)`. Told by `step_kind`, exactly as the panel tells
@@ -318,6 +326,13 @@ impl Script {
 /// way the app sets one up: the connect-time probe read bash, so the OSC 133
 /// integration went in with the session.
 fn hooked_harness() -> (Engine<CollectEvents>, Host, Arc<Mutex<Script>>) {
+    hooked_harness_with(false)
+}
+
+/// The same, with the operator's **Where to log** answer. `quiet` is "Skill Log
+/// Only": the record belongs in Broadside, so the host is asked to stop keeping
+/// one of its own.
+fn hooked_harness_with(quiet: bool) -> (Engine<CollectEvents>, Host, Arc<Mutex<Script>>) {
     let (data_tx, data_rx) = mpsc::unbounded_channel();
     let (ctl_tx, ctl_rx) = mpsc::unbounded_channel();
     let writes = Arc::new(Mutex::new(Vec::new()));
@@ -363,7 +378,8 @@ fn hooked_harness() -> (Engine<CollectEvents>, Host, Arc<Mutex<Script>>) {
         },
     )
     .with_known_capability(ShellCapability::Full)
-    .with_integration_sent(true);
+    .with_integration_sent(true)
+    .with_quiet_history(quiet);
     (
         engine,
         Host {
@@ -1479,6 +1495,158 @@ async fn a_shell_that_reports_its_own_completions_is_typed_at_plainly() {
     // author's line would only sit between the prompt and the command where
     // the operator can see it.
     assert!(host.writes().iter().any(|w| w == "uptime\n"));
+}
+
+// ---------------------------------------------------------------------------
+// Where the run's record goes
+// ---------------------------------------------------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn remote_history_only_types_exactly_what_it_always_typed() {
+    // The setting that says "leave my host recording, as it was". Nothing about
+    // history may appear anywhere in the run: this is the default the engine is
+    // built with, and it is byte-for-byte build 57-2.
+    let (engine, host, script) = hooked_harness();
+    script.lock().unwrap().replies.push_back((0, String::new()));
+    let c = cfg(vec![run_step("a", "uptime", STOP, "fail")]);
+    run_host(engine, &c).await;
+    assert!(
+        !host.typed().contains("history") && !host.typed().contains("fc -p"),
+        "something was said about history when nothing should have been: {:?}",
+        host.typed()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn skill_log_only_stops_the_shell_keeping_its_own_record() {
+    // Twice over, and the second is the one that matters: the shell probe is the
+    // first thing typed at the login shell, and the hook install is the first
+    // thing typed at every shell after it, including the one a `sudo -i` opens.
+    let (engine, host, script) = hooked_harness_with(true);
+    script.lock().unwrap().replies.push_back((0, String::new()));
+    let c = cfg(vec![run_step("a", "uptime", STOP, "fail")]);
+    run_host(engine, &c).await;
+
+    let quieted: Vec<String> = host
+        .writes()
+        .iter()
+        .filter(|w| w.contains("set +o history"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        quieted.len(),
+        2,
+        "expected the shell probe and the hook install to carry it, got:\n{}",
+        host.writes().join("")
+    );
+    // zsh has no `history` option, so it gets the answer in its own terms, and
+    // neither shell may complain about the half it does not understand.
+    for line in &quieted {
+        assert!(line.contains("fc -p"), "zsh has nothing to work with: {line}");
+        assert!(
+            line.matches("2>/dev/null").count() >= 2,
+            "a shell that does not know one of these would say so: {line}"
+        );
+    }
+    // And the operator's own command is still exactly their own command.
+    assert!(host.writes().iter().any(|w| w == "uptime\n"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_run_step_is_written_down_with_what_was_typed_and_what_came_back() {
+    let (engine, host, script) = hooked_harness();
+    script
+        .lock()
+        .unwrap()
+        .replies
+        .push_back((0, "up 3 days\r\n".into()));
+    let c = cfg(vec![run_step("a", "uptime", STOP, "fail")]);
+    run_host(engine, &c).await;
+
+    let steps = host.events.steps();
+    assert_eq!(steps.len(), 1, "{steps:?}");
+    let step = &steps[0];
+    assert_eq!(step.step_id, "a");
+    assert_eq!(step.kind, "run");
+    assert_eq!(step.command.as_deref(), Some("uptime"));
+    assert_eq!(step.exit_code, Some(0));
+    assert_eq!(step.condition, "pass");
+    assert!(step.output.as_deref().unwrap().contains("up 3 days"));
+    // Nothing was composed, so there is nothing to say about what was sent. An
+    // entry that carries `sent` is one where it differs from the command, which
+    // is what makes the Debug level worth reading.
+    assert_eq!(step.sent, None, "{step:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_record_keeps_the_wrapper_a_shell_without_hooks_needed() {
+    let (engine, host) = harness();
+    let c = cfg(vec![run_step("a", "uptime", STOP, "fail")]);
+    let driver = tokio::spawn(async move {
+        host.say("-bash\r\n");
+        host.say(&format!("\x1b]{};{SHELL_MARKER}-bash__\x07", screen::BS_OSC));
+        host.say(&echo_of("uptime"));
+        host.say("up 3 days\r\n");
+        host.say(&format!("{DONE_MARKER}0__\r\n"));
+        host
+    });
+    run_host(engine, &c).await;
+    let host = driver.await.unwrap();
+
+    let steps = host.events.steps();
+    assert_eq!(steps.len(), 1, "{steps:?}");
+    let sent = steps[0].sent.as_deref().expect("the composed line");
+    assert!(sent.starts_with(" uptime; printf "), "{sent:?}");
+    assert_eq!(steps[0].command.as_deref(), Some("uptime"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_step_that_failed_is_recorded_as_failed_even_where_the_run_carried_on() {
+    // The branch was handled, so the run finished happily. The step still failed,
+    // and a record that counted it as a pass because the skill had an `onFailure`
+    // for it would be counting the wrong thing.
+    let (engine, host, script) = hooked_harness();
+    script.lock().unwrap().replies.push_back((3, String::new()));
+    let c = cfg(vec![
+        run_step("a", "test -f /etc/nginx/nginx.conf", STOP, "missing"),
+        SeqStep::Log {
+            id: "missing".into(),
+            level: LogLevel::Info,
+            message: "not installed".into(),
+            next: STOP.into(),
+        },
+    ]);
+    let outcome = run_host(engine, &c).await;
+    assert!(outcome.ok, "{outcome:?}");
+
+    let steps = host.events.steps();
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert_eq!(steps[0].condition, "fail");
+    assert_eq!(steps[0].exit_code, Some(3));
+    assert_eq!(steps[0].next.as_deref(), Some("missing"));
+    // A log step has no command and no exit code, and says so rather than
+    // inventing one.
+    assert_eq!(steps[1].kind, "log");
+    assert_eq!(steps[1].command, None);
+    assert_eq!(steps[1].exit_code, None);
+    assert_eq!(steps[1].condition, "done");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_host_the_operator_stopped_writes_no_step_for_the_one_it_stopped_in() {
+    // Stop host during a step is the run ending, not the step failing. Writing
+    // "expect: failed" for it would put a fiction in the record.
+    let (engine, host) = harness();
+    let c = cfg(vec![expect_step("a", "never", None, STOP)]);
+    let driver = tokio::spawn(async move {
+        host.say("-bash\r\n");
+        host.say(&format!("\x1b]{};{SHELL_MARKER}-bash__\x07", screen::BS_OSC));
+        host.ctl.send(Ctl::Abort).unwrap();
+        host
+    });
+    run_host(engine, &c).await;
+    let host = driver.await.unwrap();
+    assert!(host.events.steps().is_empty(), "{:?}", host.events.steps());
 }
 
 #[tokio::test(start_paused = true)]

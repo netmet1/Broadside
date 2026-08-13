@@ -17,6 +17,7 @@ pub mod omni;
 pub mod probe;
 pub mod serial;
 pub mod session;
+pub mod skilllog;
 pub mod ssh;
 
 use tauri::Manager;
@@ -108,6 +109,12 @@ pub fn run() {
 
             // Rolling error log (D-055): always-on, separate from audit.
             app.manage(errlog::ErrLogState::new(app_data_dir.clone()));
+
+            // What a skill run leaves behind, in Broadside rather than in the
+            // host's shell history. Written only when the operator's Skills
+            // setting says so; the state is always here because the choice is
+            // read per run, not at launch.
+            app.manage(skilllog::SkillLogState::new(app_data_dir.clone()));
 
             app.manage(db_state);
 
@@ -226,6 +233,9 @@ pub fn run() {
             commands::errlog::clear_error_log,
             commands::errlog::export_error_log,
             commands::errlog::read_log_lines,
+            commands::skilllog::skill_log_tail,
+            commands::skilllog::clear_skill_log,
+            commands::skilllog::export_skill_log,
             commands::backup::backup_app_data,
             commands::backup::restore_app_data,
             commands::settings::get_app_settings,
@@ -234,6 +244,7 @@ pub fn run() {
             commands::settings::destroy_all_hosts,
             commands::settings::set_help_hints_enabled,
             commands::settings::set_sudo_autofill_enabled,
+            commands::settings::set_skill_log_prefs,
             commands::security::admin_lock_status,
             commands::security::set_admin_passcode,
             commands::security::verify_admin_passcode,

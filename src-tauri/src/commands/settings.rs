@@ -8,6 +8,7 @@ use crate::db::{history, hosts as host_repo, settings, DbState};
 use crate::error::AppResult;
 use crate::guard::{self, CoreRuleInfo, UserRule};
 use crate::probe::{self, HostLatency, LocalProbe};
+use crate::skilllog::{LogDetail, LogWhere};
 
 const KEY_GUARD_RULES: &str = "guard_user_rules";
 const KEY_LOCAL_PROBE: &str = "local_probe";
@@ -23,6 +24,16 @@ const KEY_TERMINAL_FONT_FAMILY: &str = "terminal_font_family";
 const KEY_TERMINAL_FONT_SIZE: &str = "terminal_font_size";
 const KEY_APP_FONT_SIZE: &str = "app_font_size";
 const KEY_TERMINAL_SCROLLBACK: &str = "terminal_scrollback";
+/// Where a skill run's record goes, and so whether the host is left recording
+/// the skill's commands in its own shell history. Public because the skill run
+/// path reads it per run: the setting takes effect on the next host to start,
+/// not on the next launch.
+pub const KEY_SKILL_LOG_WHERE: &str = "skill_log_where";
+/// How much of a run is written down.
+pub const KEY_SKILL_LOG_DETAIL: &str = "skill_log_detail";
+/// How the skill log is rendered and exported. A display choice only: the file
+/// is always JSONL (see [`crate::skilllog`]).
+pub const KEY_SKILL_LOG_FORMAT: &str = "skill_log_format";
 
 pub const DEFAULT_TERMINAL_FONT_FAMILY: &str = "Consolas, 'Cascadia Mono', monospace";
 pub const DEFAULT_TERMINAL_FONT_SIZE: u16 = 13;
@@ -143,6 +154,66 @@ pub struct AppSettings {
     pub terminal_font_size: u16,
     pub app_font_size: u16,
     pub terminal_scrollback: u32,
+    pub skill_log: SkillLogPrefs,
+}
+
+/// The Skills section of Settings, in one piece because the three answers are
+/// read together every time and none of them means much alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillLogPrefs {
+    #[serde(rename = "where")]
+    pub log_where: LogWhere,
+    pub detail: LogDetail,
+    /// `text` or `json`.
+    pub format: LogFormat,
+}
+
+impl Default for SkillLogPrefs {
+    fn default() -> Self {
+        Self {
+            log_where: LogWhere::default(),
+            detail: LogDetail::default(),
+            format: LogFormat::default(),
+        }
+    }
+}
+
+/// How the skill log reads on screen and on the way out to a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogFormat {
+    /// Prose: the shape the examples in the Help tab are written in.
+    #[default]
+    Text,
+    /// The stored line itself, for anything that is going to be parsed.
+    Json,
+}
+
+impl LogFormat {
+    fn from_stored(value: Option<&str>) -> Self {
+        match value {
+            Some("json") => Self::Json,
+            _ => Self::Text,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Json => "json",
+        }
+    }
+}
+
+/// Reads the Skills preferences. Used by the skill run path on every run, which
+/// is what makes the dropdowns take effect immediately rather than at the next
+/// launch.
+pub fn skill_log_prefs(conn: &rusqlite::Connection) -> AppResult<SkillLogPrefs> {
+    Ok(SkillLogPrefs {
+        log_where: LogWhere::from_stored(settings::get(conn, KEY_SKILL_LOG_WHERE)?.as_deref()),
+        detail: LogDetail::from_stored(settings::get(conn, KEY_SKILL_LOG_DETAIL)?.as_deref()),
+        format: LogFormat::from_stored(settings::get(conn, KEY_SKILL_LOG_FORMAT)?.as_deref()),
+    })
 }
 
 #[derive(Deserialize)]
@@ -202,7 +273,24 @@ pub fn get_app_settings(state: State<'_, DbState>) -> AppResult<AppSettings> {
             terminal_scrollback: settings::get(conn, KEY_TERMINAL_SCROLLBACK)?
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(DEFAULT_TERMINAL_SCROLLBACK),
+            skill_log: skill_log_prefs(conn)?,
         })
+    })
+}
+
+/// The Skills section, saved the moment a dropdown changes (the same pattern as
+/// the audit and help-hint toggles). No validation to do: three closed sets,
+/// each of which falls back to its recommended value if the string is not one
+/// the build knows, so a database written by a newer build downgrades safely.
+#[tauri::command]
+pub fn set_skill_log_prefs(
+    prefs: SkillLogPrefs,
+    state: State<'_, DbState>,
+) -> AppResult<()> {
+    with_db(&state, |conn| {
+        settings::set(conn, KEY_SKILL_LOG_WHERE, prefs.log_where.as_str())?;
+        settings::set(conn, KEY_SKILL_LOG_DETAIL, prefs.detail.as_str())?;
+        settings::set(conn, KEY_SKILL_LOG_FORMAT, prefs.format.as_str())
     })
 }
 
@@ -322,6 +410,12 @@ pub fn reset_app_settings(
             KEY_TERMINAL_FONT_SIZE,
             KEY_APP_FONT_SIZE,
             KEY_TERMINAL_SCROLLBACK,
+            // Back to Skill Log Only, which is the choice that leaves a host
+            // cleanest: a preferences reset may never quietly start writing a
+            // skill's commands into somebody's shell history.
+            KEY_SKILL_LOG_WHERE,
+            KEY_SKILL_LOG_DETAIL,
+            KEY_SKILL_LOG_FORMAT,
         ] {
             conn.execute("DELETE FROM settings WHERE key = ?1", rusqlite::params![key])?;
         }

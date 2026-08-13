@@ -395,10 +395,19 @@ pub async fn run_skill(
         })
         .collect();
 
+    // The Skills page's own settings, read once for this dispatch. Two separate
+    // consequences: whether the record is kept here, decided at the end of each
+    // host so a mid-run change counts, and whether the host is left recording
+    // the commands in its own shell history, which has to be decided now
+    // because it changes what the engine types.
+    let skill_log = with_db(&state, crate::commands::settings::skill_log_prefs)?;
+    let skilllog = app.state::<crate::skilllog::SkillLogState>();
+
     let cfg = Arc::new(cfg);
     let events = Arc::new(app.clone());
     for job in jobs {
         let session_id = session_id_for(&run_id, job.host.id);
+        skilllog.begin(&run_id, job.host.id, &job.host.label, &skill.name);
         let ctl_rx = run_state.register_host(&run_id, job.host.id, &session_id);
         let meta = HostMeta {
             run_id: run_id.clone(),
@@ -508,6 +517,12 @@ pub async fn run_skill(
                                 .with_known_capability(capability)
                                 .with_integration_sent(
                                     integration.resolve(capability).with_integration(),
+                                )
+                                // "Skill Log Only" means the record lives here,
+                                // so the host's history is left as the operator
+                                // had it.
+                                .with_quiet_history(
+                                    !skill_log.log_where.keeps_remote_history(),
                                 );
                             let outcome = skill_run::run_host(engine, &cfg).await;
                             guard.disposition = outcome.disposition;
