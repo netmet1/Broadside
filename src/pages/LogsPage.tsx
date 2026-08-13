@@ -55,6 +55,7 @@ import {
   skillLogTail,
   type SkillLogRun,
 } from "@/lib/tauri/skilllog";
+import { onSkillDone } from "@/lib/tauri/skills";
 import { announceCommandHistory } from "@/lib/commandHistory";
 import {
   buildMatcher,
@@ -432,6 +433,36 @@ export function LogsPage({ visible }: { visible: boolean }) {
       alive = false;
     };
   }, [visible, tab, skillsNonce]);
+
+  // A run that ends while this page is already open.
+  //
+  // Each tab reads its file once, when it becomes the visible one, which is
+  // right for a log nothing is currently writing to and wrong for this one: the
+  // operator watching a skill run is the operator most likely to be sitting on
+  // this page when the entry is written. With nothing to tell it the file had
+  // grown, the tab kept showing the read it did on arrival, so the run that had
+  // just finished was missing and the log looked one run behind until they
+  // navigated away and back.
+  //
+  // `skill:done` is emitted after the entry is appended, so a refresh on it
+  // always finds the run that just ended rather than racing it. Errors are
+  // refreshed the same way for the same reason: a host that ends badly writes
+  // an error entry from that same event.
+  useEffect(() => {
+    if (!visible || (tab !== "skills" && tab !== "errors")) return;
+    const refresh = tab === "skills" ? refreshSkills : refreshErrors;
+    // A run against forty hosts ends forty times, often within the same
+    // moment. Coalesce, so a wide run costs one re-read and not forty.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const un = onSkillDone(() => {
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 250);
+    });
+    return () => {
+      clearTimeout(timer);
+      void un.then((f) => f());
+    };
+  }, [visible, tab, refreshSkills, refreshErrors]);
 
   const openSession = async () => {
     try {
