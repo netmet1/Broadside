@@ -248,6 +248,10 @@ struct Script {
     /// with no `stty`, one whose line editor echoes for itself, or one still
     /// busy with its login: all of them mean a hidden line would not be hidden.
     answers_echo: bool,
+    /// Whether the terminal is echoing what is typed at it right now. The engine
+    /// reads this off the stream to decide whether a hidden line would be seen,
+    /// so the fake has to keep it honestly.
+    echo: bool,
     /// Whether it says where a command's output starts as well as how the
     /// command ended. False for a shell that has somehow kept the completion
     /// hook and lost the one in front of it, which leaves the engine with
@@ -262,8 +266,22 @@ impl Script {
             return String::new();
         }
         let line = typed.trim();
-        // Whatever it turns out to be, the shell echoes what was typed at it.
-        let out = format!("{line}\r\n");
+        // What a terminal echoes is what the operator sees, and the engine reads
+        // the echo of its own report to decide whether anyone is watching, so
+        // the fake needs an echo it can turn off.
+        let out = if self.echo {
+            format!("{line}\r\n")
+        } else {
+            String::new()
+        };
+        // The state changes as the line *runs*, which is after the line itself
+        // was echoed: `stty -echo` is always typed at a terminal still echoing.
+        if line == "stty -echo" && self.answers_echo {
+            self.echo = false;
+        }
+        if line.ends_with("stty echo") {
+            self.echo = true;
+        }
         if line.contains("sudo -i") {
             self.hooked = false;
             return out;
@@ -327,6 +345,7 @@ fn hooked_harness() -> (Engine<CollectEvents>, Host, Arc<Mutex<Script>>) {
         hooked: true,
         takes_hooks: true,
         answers_echo: true,
+        echo: true,
         reports_start: true,
     }));
     let sink = writes.clone();
@@ -378,8 +397,12 @@ impl Host {
             .iter()
             .map(|w| w.trim().to_string())
             .filter(|w| {
+                // A hidden line is three: the `stty`, the report that it landed,
+                // and the payload with the restore on the end of it. Only the
+                // middle one has neither `stty` nor a probe marker in it.
                 !w.is_empty()
                     && !w.contains("stty")
+                    && !w.contains(ECHO_MARKER)
                     && !w.contains(SHELL_MARKER)
                     && !w.contains(UID_MARKER)
             })
@@ -1694,18 +1717,21 @@ async fn the_probes_answer_without_anything_being_printed() {
     let outcome = run_host(engine, &c).await;
     assert_eq!(outcome.is_root, Some(true), "{outcome:?}");
     let typed = host.typed();
-    assert!(typed.contains(" stty -echo;"), "{typed:?}");
-    assert!(typed.contains("stty echo\n"), "echo is always put back");
-    // Both lines of the pair take their own row back. The first one has to: it
-    // is the line that turns the echo off, so there is no state in which it goes
-    // out unseen, and leaving it to the second line's erase is what smoke test
-    // 56-2 saw. The row arithmetic itself is checked in `super::pane_tests`.
+    assert!(typed.contains("stty echo"), "echo is always put back");
+    // The line that turns the echo off carries nothing else, because it is the
+    // only one of the three that is certain to be seen and so the only one that
+    // can wrap. Smoke 56-3 hung the report off it and every eighty-column pane
+    // kept most of it. The row arithmetic is checked in `super::pane_tests`.
+    assert!(typed.contains(QUIET_LINE), "{typed:?}");
     assert!(
-        typed.contains(&format!(" stty -echo; printf '{ERASE_TWO_ROWS}")),
-        "the line that turns the echo off does not take itself back: {typed:?}"
+        !typed.contains(" stty -echo;"),
+        "line one has grown something: {typed:?}"
     );
+    // The tidying up and the restore lead the last line rather than trailing
+    // it, so that the answer the engine waits for is the last thing on it. See
+    // `hidden_line`.
     assert!(
-        typed.contains(&format!("printf '{ERASE_TWO_ROWS}'; stty echo\n")),
+        typed.contains(&format!(" printf '{ERASE_HIDDEN}'; stty echo; ")),
         "{typed:?}"
     );
 }

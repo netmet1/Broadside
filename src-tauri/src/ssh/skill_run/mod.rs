@@ -546,33 +546,34 @@ impl<E: SkillEvents> Engine<E> {
     /// Types a line of Broadside's own plumbing without the operator watching it
     /// go by.
     ///
-    /// Two lines, and **both** have to clean up after themselves, which is the
-    /// thing smoke tests 56 and 56-2 each got wrong in turn. The first line
-    /// cannot help being seen as it is typed, because it is the line that turns
-    /// the echo off; there is no state in which it goes out unechoed. So it
-    /// takes itself back: `stty -echo`, then the erase, then the answer that
-    /// says both have happened. The second line is genuinely unseen and carries
-    /// the same erase and the restore. Each erase rides on the line it cleans
-    /// rather than being sent separately, so echo comes back even if the engine
-    /// stops reading (a Stop host pressed mid-line must not leave the operator a
-    /// shell that types nothing).
+    /// Three lines, and only the first two can ever be seen, because the third
+    /// is typed after the echo is off:
     ///
-    /// The erase is `cursor up, column 0, erase to end of display`: the row the
-    /// cursor is on and the one above it, twice, and it is the same arithmetic
-    /// both times because submitting a line moves the shell to a new row whether
-    /// or not it echoed the line. That last part is measured rather than
-    /// assumed. Smoke 56-2 left exactly one row behind per hidden pair, the
-    /// echoed first line, which is only possible if the second line's own
-    /// submission took a row of its own; see [`pane_tests`](super::pane_tests),
-    /// where the geometry is checked against a modelled terminal.
+    /// 1. `stty -echo`. Eleven characters, and its shortness is the design
+    ///    rather than a nicety: see below.
+    /// 2. A `printf` that says the shell has got that far, which is what the
+    ///    engine waits for. Whether *this* line was echoed is also the answer to
+    ///    "did the `stty` take", read directly rather than inferred: the echo of
+    ///    a format string carries `%s` where the answer carries a digit.
+    /// 3. The payload, then the erase, then `stty echo`. The restore rides on
+    ///    the payload rather than being sent after it, so the echo comes back
+    ///    even if the engine stops reading (a Stop host pressed mid-line must
+    ///    not leave the operator a shell that types nothing).
     ///
-    /// A line long enough to have wrapped leaves a fragment of itself behind,
-    /// which is why what is hidden this way is kept short.
+    /// The erase is `cursor up three, column 0, erase to end of display`: four
+    /// rows, one per line submitted plus the one the cursor ends on. Submitting
+    /// a line takes a row whether or not the line was echoed, which is measured
+    /// rather than assumed (smoke 56-2), so the count is the same either way and
+    /// the whole of it is checked against a modelled terminal in
+    /// [`pane_tests`](super::pane_tests).
     ///
-    /// The row arithmetic is also only right while the second line really is
-    /// unseen, so the first line does not just turn the echo off, it **says when
-    /// it has** and is waited for. Losing that race costs a visible line *and*
-    /// an erase that takes the wrong rows, which is what smoke test 56 saw.
+    /// **Why line one has to be short.** The erase counts rows, and a line long
+    /// enough to wrap occupies more than one, so the part that wrapped survives
+    /// it. Smoke test 56-3 put the `stty` and its report on the same line, 67
+    /// characters, which fits an operator's window and does not fit an
+    /// eighty-column pane: at that width every hidden line left most of itself
+    /// on the screen. Splitting them is what makes the echoed text short enough
+    /// that no realistic prompt can push it over the edge of a pane.
     ///
     /// `needs_quiet` is for a payload too long to be worth showing: the hook
     /// offer is most of a screenful of shell, so it is not typed at all unless
@@ -581,22 +582,34 @@ impl<E: SkillEvents> Engine<E> {
     /// for itself regardless) should still answer them, visibly, as it always
     /// did.
     async fn send_hidden(&mut self, payload: &str, needs_quiet: bool) -> bool {
-        if self.send_bytes(&quiet_line()).is_err() {
+        if self.send_bytes(QUIET_LINE).is_err() {
+            return false;
+        }
+        if self.send_bytes(&echo_report_line()).is_err() {
+            // Only one line got out, so there is nothing to erase four rows of:
+            // the bare restore, best effort, on a link that has just failed a
+            // write and will very likely fail this one too.
+            let _ = self.send_bytes(BARE_RESTORE);
             return false;
         }
         let re = Regex::new(&format!(r"{ECHO_MARKER}(\d+)__")).expect("static regex");
-        let quiet = matches!(
-            self.hidden_answer(&re, HIDE_ECHO_MAX).await.as_deref(),
-            Some("0")
-        );
+        let (answered, before) = match self.hidden_answer_with_prefix(&re, HIDE_ECHO_MAX).await {
+            Some((_, before)) => (true, before),
+            None => (false, String::new()),
+        };
+        // The report's own echo is the measurement. A terminal that is still
+        // echoing has already put the format string on the screen by the time
+        // the answer arrives, and the format string is the one thing that can
+        // never be mistaken for an answer.
+        let quiet = answered && !before.contains(&format!("{ECHO_MARKER}%s__"));
         if needs_quiet && !quiet {
-            let _ = self.send_bytes(" stty echo\n");
+            let _ = self.send_bytes(&restore_line());
             return false;
         }
         if self.send_bytes(&hidden_line(payload)).is_err() {
             // The hidden line never landed, so nothing on the far side is going
             // to turn echo back on. This is the one path that has to.
-            let _ = self.send_bytes(" stty echo\n");
+            let _ = self.send_bytes(&restore_line());
             return false;
         }
         true
@@ -611,20 +624,39 @@ impl<E: SkillEvents> Engine<E> {
     /// echo turned off, and a Detach honoured in the middle of one would hand
     /// the operator a shell that types nothing back at them.
     async fn hidden_answer(&mut self, re: &Regex, max: Duration) -> Option<String> {
+        self.hidden_answer_with_prefix(re, max)
+            .await
+            .map(|(answer, _)| answer)
+    }
+
+    /// The same, and also what the shell said *before* the answer.
+    ///
+    /// One caller needs that: everything typed at a terminal that is still
+    /// echoing arrives ahead of the answer to it, so the text in front of the
+    /// marker is where "was anyone watching" is read from. It is returned rather
+    /// than left in the view because the answer is consumed on the way past, and
+    /// with it the echo that preceded it.
+    async fn hidden_answer_with_prefix(
+        &mut self,
+        re: &Regex,
+        max: Duration,
+    ) -> Option<(String, String)> {
         let deadline = Instant::now() + max;
         loop {
             let hit = {
                 let view = self.screen.view();
                 re.captures(view).map(|c| {
+                    let whole = c.get(0).expect("group 0 always exists");
                     (
-                        c.get(0).expect("group 0 always exists").end(),
+                        whole.end(),
                         c.get(1).map(|m| m.as_str().to_string()).unwrap_or_default(),
+                        view[..whole.start()].to_string(),
                     )
                 })
             };
-            if let Some((end, answer)) = hit {
+            if let Some((end, answer, before)) = hit {
                 self.screen.consume_through(end);
-                return Some(answer);
+                return Some((answer, before));
             }
             tokio::select! {
                 _ = tokio::time::sleep_until(deadline) => return None,
@@ -1661,41 +1693,68 @@ impl<E: SkillEvents> Engine<E> {
 /// shell history, so an operator pressing Up in the pane afterwards doesn't find
 /// Broadside's plumbing.
 fn probe_line(marker: &str, value: &str) -> String {
-    probe_line_with("", marker, value)
-}
-
-/// The same probe with `lead` printed in front of the marker.
-///
-/// One caller needs it: the line that has to erase itself. Putting the erase
-/// inside the same `printf` is what stops the two being separated, so a shell
-/// that reached the answer has necessarily also done the tidying up.
-fn probe_line_with(lead: &str, marker: &str, value: &str) -> String {
     format!(
-        "printf '{lead}\\033]{};{marker}%s__\\007' {value}",
+        "printf '\\033]{};{marker}%s__\\007' {value}",
         screen::BS_OSC
     )
 }
 
-/// The two rows a hidden line takes back on its way out: the row the cursor is
-/// on, and the row above it. See [`Engine::send_hidden`] for why it is always
-/// exactly two.
-const ERASE_TWO_ROWS: &str = r"\033[1A\r\033[0J";
+/// The four rows a hidden line takes back on its way out: one for each of the
+/// three lines submitted, and the one the cursor ends on. See
+/// [`Engine::send_hidden`] for why the count is the same whether or not the
+/// shell echoed them.
+const ERASE_HIDDEN: &str = r"\033[3A\r\033[0J";
 
-/// Line one of the hidden pair: turn the echo off, take this line back off the
-/// screen, and say when both have happened.
+/// Line one: turn the echo off, and nothing else.
 ///
-/// `$?` is `stty`'s own exit status, so the answer says whether the echo is off
-/// as well as that the shell got this far.
-fn quiet_line() -> String {
-    format!(
-        " stty -echo; {}\n",
-        probe_line_with(ERASE_TWO_ROWS, ECHO_MARKER, "\"$?\"")
-    )
+/// Nothing else is the point. This is the only text of the three that is
+/// certain to be echoed, so it is the only one that can wrap, and a wrapped line
+/// survives the erase. Eleven characters clears any prompt an operator is
+/// likely to have, in any pane they are likely to use.
+const QUIET_LINE: &str = " stty -echo\n";
+
+/// Tidy up and put the echo back, for the paths where the payload that would
+/// have carried both never goes out. Three lines have still been submitted by
+/// the time this one runs, so it takes back the same four rows.
+///
+/// The one that matters is the shell that will not go quiet: zsh draws the line
+/// it is editing itself and does not care what `stty` was told, so the hook
+/// offer is refused there (it is most of a screenful, and it would all be seen).
+/// Refusing it is right; leaving the asking on the screen is not.
+fn restore_line() -> String {
+    format!(" printf '{ERASE_HIDDEN}'; stty echo\n")
 }
 
-/// Line two: the payload nobody sees, then the same erase, then the restore.
+/// Put the echo back and nothing else, for the one path where too little was
+/// sent for the erase to have anything to count.
+const BARE_RESTORE: &str = " stty echo\n";
+
+/// Line two: say that the shell has reached this point.
+///
+/// `$?` is line one's exit status, so it is `0` from a shell whose `stty` took.
+/// The value is not what the decision rests on though: any digit means the line
+/// ran, and whether the *format* reached the screen is what says if anyone saw
+/// it.
+fn echo_report_line() -> String {
+    format!(" {}\n", probe_line(ECHO_MARKER, "\"$?\""))
+}
+
+/// Line three: tidy up, put the echo back, and only then the payload nobody
+/// sees.
+///
+/// The order is the whole point, and it is not the obvious one. `stty` is an
+/// external program, so restoring the echo costs a fork and an exec, which is
+/// slow enough to lose a race the engine cannot see: the payload's answer is
+/// what the engine waits for, and if the answer comes first then the next
+/// command is typed while the shell is still forking `stty`. A shell that is
+/// executing has its terminal back in canonical mode, so the driver echoes
+/// those bytes where they land, and then the shell's line editor reads them and
+/// draws them again at the prompt. The operator sees their command twice, once
+/// bare and once where it belongs. Putting the answer last means the only thing
+/// left when the engine hears it is drawing a prompt, which is the same short
+/// window every other step already lives with.
 fn hidden_line(payload: &str) -> String {
-    format!(" {payload}; printf '{ERASE_TWO_ROWS}'; stty echo\n")
+    format!(" printf '{ERASE_HIDDEN}'; stty echo; {payload}\n")
 }
 
 /// What a wait is waiting for.
