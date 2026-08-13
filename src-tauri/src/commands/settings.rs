@@ -629,6 +629,25 @@ mod tests {
     }
 
     #[test]
+    fn skill_log_prefs_are_the_shape_the_dropdowns_send() {
+        // The frontend writes `where`, which is a Rust keyword, so the rename is
+        // load-bearing: get it wrong and every dropdown silently saves the
+        // default. Nothing else in the app would notice.
+        let json = r#"{"where":"both","detail":"debug","format":"json"}"#;
+        let parsed: SkillLogPrefs = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.log_where, LogWhere::Both);
+        assert_eq!(parsed.detail, LogDetail::Debug);
+        assert_eq!(parsed.format, LogFormat::Json);
+
+        // And back the same way, because the Settings page reads what it wrote.
+        let out = serde_json::to_string(&SkillLogPrefs::default()).unwrap();
+        assert_eq!(
+            out, r#"{"where":"skill","detail":"summary","format":"text"}"#,
+            "the recommended defaults are what an unset database reads as"
+        );
+    }
+
+    #[test]
     fn both_scope_serializes_lowercase() {
         let json = serde_json::to_string(&ShortcutCommand {
             id: "x".into(),
