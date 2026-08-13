@@ -1474,9 +1474,11 @@ async fn a_shell_that_reports_its_own_completions_is_typed_at_plainly() {
         "nothing was appended: {:?}",
         host.typed()
     );
-    // Still with the leading space, which is what keeps it out of the history
-    // an operator pressing Up would find.
-    assert!(host.writes().iter().any(|w| w == " uptime\n"));
+    // Verbatim, with no leading space: the space belongs on Broadside's own
+    // lines, where it keeps them out of history, and putting one on the
+    // author's line would only sit between the prompt and the command where
+    // the operator can see it.
+    assert!(host.writes().iter().any(|w| w == "uptime\n"));
 }
 
 #[tokio::test(start_paused = true)]

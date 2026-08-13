@@ -1241,8 +1241,8 @@ impl<E: SkillEvents> Engine<E> {
     ///   what runs before the acknowledgement. So it always lands in the next
     ///   step's wait, where it matches. No settle window can close that.
     /// - **The next thing the engine types lands on the same line**, because
-    ///   commands go out with a leading space and no line kill in front of them.
-    ///   The operator's `lmnop` plus the closing uid probe became one line,
+    ///   nothing the engine types puts a line kill in front of itself. The
+    ///   operator's `lmnop` plus the closing uid probe became one line,
     ///   `lmnop printf '__bsuid_%s__\n' "$(id -u)"`, which the shell then ran.
     ///
     /// So the line is killed first (Ctrl-U, the POSIX `kill` character: readline
@@ -1440,7 +1440,10 @@ impl<E: SkillEvents> Engine<E> {
             // screen). Send it, let the output settle, which also gives the
             // sudo injector time to answer a password prompt before we type
             // anything else at it, then hand over to expect/send steps.
-            if let Err(e) = self.send_bytes(&format!(" {cmd}\n")) {
+            //
+            // Verbatim, with nothing in front of it: see the note on the
+            // leading space below.
+            if let Err(e) = self.send_bytes(&format!("{cmd}\n")) {
                 return StepOutcome::Failed(format!("could not send: {e}"));
             }
             match wait_quiet(
@@ -1464,9 +1467,19 @@ impl<E: SkillEvents> Engine<E> {
         // will, the command goes out exactly as the author wrote it and the
         // operator reads their own line back; when it won't, the completion
         // marker is appended and they read that too, as they always have.
+        //
+        // Which is also the rule for the leading space. Every other line the
+        // engine types carries one, because `HISTCONTROL=ignorespace` is what
+        // keeps Broadside's plumbing out of the history an operator finds by
+        // pressing Up. A line the author wrote is not plumbing: it belongs in
+        // their history exactly as if they had typed it, and the space would
+        // sit between the prompt and the command where they can see it. So the
+        // plain line goes out bare and the composed one keeps its space, which
+        // is the same split as above, drawn in the same place: whatever
+        // Broadside wrote, Broadside hides.
         let quiet = self.quiet_ready().await;
         let line = if quiet {
-            format!(" {cmd}\n")
+            format!("{cmd}\n")
         } else {
             format!(" {cmd}; printf '{DONE_MARKER}%s__\\n' \"$?\"\n")
         };
@@ -1759,6 +1772,10 @@ const ERASE_ROW: &str = r"\r\033[2K";
 /// space is all that is left of the old ceremony, and it is not about the pane
 /// at all: it keeps the line out of `HISTCONTROL=ignorespace` history, so an
 /// operator pressing Up afterwards does not find it.
+///
+/// A `run` step's own command is the one thing that does *not* get one, since
+/// it is the author's line rather than Broadside's. See
+/// [`Engine::run_command_step`].
 fn hidden_line(payload: &str) -> String {
     format!(" {payload}\n")
 }

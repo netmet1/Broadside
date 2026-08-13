@@ -431,7 +431,7 @@ fn the_curtain_does_not_reach_the_output_above_it() {
     // costs the operator a line of their own host's output.
     let mut s = Session::new(100);
     s.sh.output = "nginx is not installed\n".to_string();
-    s.command(" check-something\n");
+    s.command("check-something\n");
     s.sh.output.clear();
     let before = s.snapshot();
     assert!(before.contains("nginx is not installed"));
@@ -450,16 +450,20 @@ fn three_hidden_lines_and_two_commands_read_like_a_session_nobody_automated() {
     let mut s = Session::new(80);
 
     s.opening_probes();
-    s.command(" sudo -i\n");
+    s.command("sudo -i\n");
     s.hidden(&probe_payload("__bshook_y__"));
-    s.command(" test -f /etc/nginx/nginx.conf\n");
+    s.command("test -f /etc/nginx/nginx.conf\n");
 
+    // Note where the commands start: hard against the prompt, one space, the
+    // one the prompt itself ends with. The engine's own lines carry a leading
+    // space to stay out of history and the author's lines do not, so there is
+    // no second space to explain to anybody reading the pane.
     assert_eq!(
         s.snapshot(),
         format!(
             "{BANNER}\n\
-             {PROMPT} sudo -i\n\
-             {PROMPT} test -f /etc/nginx/nginx.conf\n\
+             {PROMPT}sudo -i\n\
+             {PROMPT}test -f /etc/nginx/nginx.conf\n\
              {}",
             PROMPT.trim_end()
         )
@@ -476,8 +480,8 @@ fn no_command_the_operator_asked_for_appears_twice() {
     // gone. This is the test that would notice it coming back.
     let mut s = Session::new(80);
     s.opening_probes();
-    s.command(" sudo -i\n");
-    s.command(" whoami\n");
+    s.command("sudo -i\n");
+    s.command("whoami\n");
 
     let seen = s.snapshot();
     for line in ["sudo -i", "whoami"] {

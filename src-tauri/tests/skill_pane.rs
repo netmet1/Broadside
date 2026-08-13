@@ -641,6 +641,16 @@ async fn a_whole_skill_runs_without_putting_anything_of_its_own_on_the_screen() 
             seen.join("\n"),
             readable(&pane)
         );
+        // And it starts where a typed command starts. The prompt ends in a
+        // space of its own, so a leading space on the line the engine sends
+        // shows up as a gap the operator has no way to account for. Build 57
+        // shipped with one.
+        let row = seen[0];
+        let at = row.find(command).expect("the row this was found on");
+        assert!(
+            !row[..at].ends_with("  "),
+            "{command:?} sits away from the prompt: {row:?}"
+        );
     }
     // And so is what they produced.
     for output in ["200", "green", "Continue? yes", "confirmed-yes"] {
