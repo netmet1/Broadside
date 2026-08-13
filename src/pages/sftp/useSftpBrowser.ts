@@ -230,36 +230,81 @@ export function useSftpBrowser(visible: boolean) {
     [session, runOp, list],
   );
 
+  /**
+   * Uploads one file into the remote cwd, with a progress bar.
+   *
+   * `size` is the file's length from the listing we already have, and is what
+   * makes the bar a percentage rather than a pulse. It is optional because not
+   * every caller has it; without it the bar still appears and still counts the
+   * bytes as they go, it just cannot say how far along they are.
+   *
+   * The backend has always emitted per-chunk progress for a single file when
+   * given a transfer id. Commander passed one for folders and not for files,
+   * so a folder had a bar and the 7MB file next to it had nothing to look at
+   * for the same twenty seconds.
+   */
   const upload = useCallback(
-    (localPath: string): Promise<void> => {
+    (localPath: string, size?: number): Promise<void> => {
       if (!session) return Promise.resolve();
-      const remotePath = posixJoin(session.cwd, baseName(localPath));
+      const name = baseName(localPath);
+      const remotePath = posixJoin(session.cwd, name);
+      const transferId = crypto.randomUUID();
+      setTransfer({
+        transferId,
+        direction: "put",
+        name,
+        filesDone: 0,
+        // One file, so the bar drops the file counter and shows bytes alone.
+        // A single-file progress event reports files_done: 0 throughout (there
+        // is no file to have finished until the whole thing has), so a "0/1
+        // files" that only ever reads 0/1 would be worse than saying nothing.
+        filesTotal: 1,
+        bytesDone: 0,
+        bytesTotal: size ?? 0,
+      });
       return runOp(async () => {
         const bytes = await sftpUpload({
           hostId: session.host.id,
           sessionId: session.sessionId,
           localPath,
           remotePath,
+          transferId,
         });
-        toast.success(`Uploaded ${baseName(localPath)} (${bytes} bytes)`);
+        toast.success(`Uploaded ${name} (${formatSize(bytes)})`);
         await list(session.sessionId, session.cwd);
-      });
+      }).finally(() => setTransfer(null));
     },
     [session, runOp, list],
   );
 
+  /** Downloads one remote file, with a progress bar. See `upload` for why the
+   *  size is optional and what it buys. */
   const download = useCallback(
-    (entry: { path: string; name: string }, localPath: string): Promise<void> => {
+    (
+      entry: { path: string; name: string; size?: number },
+      localPath: string,
+    ): Promise<void> => {
       if (!session) return Promise.resolve();
+      const transferId = crypto.randomUUID();
+      setTransfer({
+        transferId,
+        direction: "get",
+        name: entry.name,
+        filesDone: 0,
+        filesTotal: 1,
+        bytesDone: 0,
+        bytesTotal: entry.size ?? 0,
+      });
       return runOp(async () => {
         const bytes = await sftpDownload({
           hostId: session.host.id,
           sessionId: session.sessionId,
           remotePath: entry.path,
           localPath,
+          transferId,
         });
-        toast.success(`Downloaded ${entry.name} (${bytes} bytes)`);
-      });
+        toast.success(`Downloaded ${entry.name} (${formatSize(bytes)})`);
+      }).finally(() => setTransfer(null));
     },
     [session, runOp],
   );

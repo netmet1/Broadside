@@ -74,6 +74,7 @@ export type AppSettings = {
   terminal_font_family: string;
   terminal_font_size: number;
   app_font_size: number;
+  terminal_scrollback: number;
 };
 
 /** A host a command targeted (D-061 sub-4). `id` resolves the live colour;
@@ -163,6 +164,7 @@ export type UiSettingsInput = {
   terminal_font_family: string;
   terminal_font_size: number;
   app_font_size: number;
+  terminal_scrollback: number;
 };
 
 export function setUiSettings(input: UiSettingsInput): Promise<void> {

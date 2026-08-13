@@ -19,7 +19,7 @@ import {
   loadTerminalFontStrict,
   saveTerminalFontStrict,
 } from "@/lib/terminalZoom";
-import { useUiPrefs } from "@/lib/uiPrefs";
+import { MAX_TERMINAL_SCROLLBACK, useUiPrefs } from "@/lib/uiPrefs";
 
 /** Appearance section: terminal/app fonts, host-table column visibility and the
  * local-shell launcher list. Font inputs are seeded from the loaded settings
@@ -84,6 +84,7 @@ export function useAppearance() {
   const [termFontFamily, setTermFontFamily] = useState(GENERIC_MONOSPACE);
   const [termFontSize, setTermFontSize] = useState("13");
   const [appFontSize, setAppFontSize] = useState("16");
+  const [scrollback, setScrollback] = useState("5000");
   const [savingUi, setSavingUi] = useState(false);
 
   /** What the dropdown offers: the detected fonts, plus an unrecognised stored
@@ -111,6 +112,7 @@ export function useAppearance() {
       }
       setTermFontSize(String(s.terminal_font_size));
       setAppFontSize(String(s.app_font_size));
+      setScrollback(String(s.terminal_scrollback));
     },
     [installedFonts],
   );
@@ -165,6 +167,7 @@ export function useAppearance() {
         terminal_font_family: fontValue,
         terminal_font_size: prefs.terminalFontSize,
         app_font_size: prefs.appFontSize,
+        terminal_scrollback: prefs.terminalScrollback,
       });
       applyUiPrefs({ ...prefs, terminalFontFamily: fontValue });
     } catch (e) {
@@ -181,12 +184,29 @@ export function useAppearance() {
     const n = Number(appFontSize);
     return Number.isInteger(n) && n >= 12 && n <= 20 ? n : undefined;
   })();
+  const parsedScrollback = (() => {
+    const n = Number(scrollback);
+    return Number.isInteger(n) && n >= 0 && n <= MAX_TERMINAL_SCROLLBACK
+      ? n
+      : undefined;
+  })();
 
-  /** The two size boxes, and only those. The family is already saved by the
-   * time this runs (see chooseFontFamily), and is re-sent unchanged because the
-   * backend takes the three together. */
+  /** Whether saving would throw lines away, so the button can say so before it
+   * is pressed. Only the direction matters: raising the limit keeps everything
+   * already held, lowering it drops the oldest lines in every open pane the
+   * moment it applies, and those lines are not coming back. */
+  const scrollbackShrinks =
+    parsedScrollback !== undefined && parsedScrollback < prefs.terminalScrollback;
+
+  /** The three numeric boxes, and only those. The family is already saved by
+   * the time this runs (see chooseFontFamily), and is re-sent unchanged because
+   * the backend takes them together. */
   const saveFontSizes = async () => {
-    if (parsedTermFontSize === undefined || parsedAppFontSize === undefined) {
+    if (
+      parsedTermFontSize === undefined ||
+      parsedAppFontSize === undefined ||
+      parsedScrollback === undefined
+    ) {
       return;
     }
     setSavingUi(true);
@@ -196,13 +216,15 @@ export function useAppearance() {
         terminal_font_family: fontValue,
         terminal_font_size: parsedTermFontSize,
         app_font_size: parsedAppFontSize,
+        terminal_scrollback: parsedScrollback,
       });
       applyUiPrefs({
         terminalFontFamily: fontValue,
         terminalFontSize: parsedTermFontSize,
         appFontSize: parsedAppFontSize,
+        terminalScrollback: parsedScrollback,
       });
-      toast.success("Font sizes saved");
+      toast.success("Saved");
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
@@ -226,9 +248,15 @@ export function useAppearance() {
     toggleTermFontStrict,
     appFontSize,
     setAppFontSize,
+    scrollback,
+    setScrollback,
+    scrollbackShrinks,
+    /** The limit currently in force, for the warning to name. */
+    currentScrollback: prefs.terminalScrollback,
     savingUi,
     parsedTermFontSize,
     parsedAppFontSize,
+    parsedScrollback,
     syncFromSettings,
     saveFontSizes,
   };

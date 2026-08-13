@@ -568,7 +568,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding",
     body: (
       <>
         <Lead>
@@ -1182,6 +1182,19 @@ export const SECTIONS: HelpSection[] = [
               Ctrl, is never taken either way.
             </li>
             <li>
+              <strong className="font-semibold">How far you can scroll back</strong>{" "}
+              is 5,000 lines a pane out of the box, set by{" "}
+              <Nav>Terminal scrollback</Nav> in <Nav>Settings</Nav> under{" "}
+              <Nav>Appearance</Nav>. Anything older than that is dropped as new
+              output arrives, so a command that prints more lines than the limit
+              cannot be scrolled back to in full, and neither <Nav>Ctrl+F</Nav>{" "}
+              nor a save can reach what has already gone. Raise it if you work
+              with long output; it costs roughly 2KB a line at 200 columns, and
+              that is per open pane, so 5,000 lines is about 12MB each. Lowering
+              it takes effect the moment you save, on every pane that is already
+              open, and the lines above the new limit are gone.
+            </li>
+            <li>
               Every key Broadside takes, here and everywhere else, is listed in{" "}
               <SectionLink id="help-sec-shortcuts">
                 Keyboard shortcuts
@@ -1197,17 +1210,31 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               The same menu is where you deal with a lot of tabs at once instead
-              of one at a time. <Nav>Retry all</Nav> reconnects every pane
+              of one at a time. <Nav>Reconnect all</Nav> reconnects every pane
               sitting on a <Nav>Try again</Nav> or <Nav>Reconnect</Nav> button,
               and <Nav>Close failed</Nav> clears the same set away instead; both
               carry the count, and the count is the same number because the pane
-              you would retry is the pane you would give up on. Panes still
-              connecting are left alone, and so is any pane waiting on a host
-              key answer, since neither is waiting for a retry.{" "}
+              you would reconnect is the pane you would give up on. Past a
+              handful it asks first, since a large batch means a burst of
+              connections going out at once. Panes still connecting are left
+              alone, and so is any pane waiting on a host key answer, since
+              neither is waiting to be reconnected.{" "}
               <Nav>Unhide all</Nav> puts every terminal you have taken out of the
               grid back into it. Each of the three is in the menu only while
               there is something for it to do, so a menu with none of them in it
               is telling you nothing is wrong.
+            </li>
+            <li>
+              <b>Ending one session without losing the tab.</b> Each row of the{" "}
+              <Nav>Sessions</Nav> menu has a small unplug button at its right
+              hand end. It hangs up on that host and leaves the tab exactly where
+              it is, so everything the session printed stays on screen and the
+              pane offers <Nav>Reconnect</Nav> when you want it back, the same as
+              if you had typed <code>exit</code>. It is in the menu rather than
+              on the tab on purpose: the tab already has an x, and a button a few
+              pixels from it that also means "get rid of this" is how you close
+              the wrong thing. The unplug goes pale when there is no shell behind
+              that row to end.
             </li>
             <li>
               The controls above the tab strip are grouped so they fit whatever
@@ -1591,7 +1618,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting",
     body: (
       <>
         <Lead>
@@ -1780,8 +1807,33 @@ export const SECTIONS: HelpSection[] = [
               rail ends all of them at once, which can leave a host mid-upgrade.
             </li>
             <li>
-              You can type into any host's pane while it runs. That takes the host
-              over: the skill stops driving it and it is yours.
+              <b>Taking a host over.</b> While the skill is driving a pane the
+              keyboard is not yours, and typing into it does nothing; the pane
+              says so rather than leaving you wondering.{" "}
+              <Nav>Take over</Nav> in the pane's header is how you get it. It
+              does not interrupt anything: the skill finishes the step it is on
+              and stops in the gap before the next one, so a command that is
+              still running is left to finish rather than being cut in half. The
+              button says <Nav>After this step…</Nav> while it waits, which on a
+              long step can be a while. The other hosts carry on throughout.
+            </li>
+            <li>
+              Once it stops, the shell is yours to type in and the pane offers{" "}
+              <Nav>Resume</Nav> to hand it back and carry on with the next step,
+              or <Nav>Stop host</Nav> to end this one for good. A command you
+              actually ran counts as the host talking, so the next step is
+              entitled to match what it printed. A line you left half-typed does
+              not: it is taken back off the shell and forgotten on the way out,
+              so your own keystrokes cannot satisfy a step the skill is about to
+              run.
+            </li>
+            <li>
+              A host that pauses <em>on its own</em>, because a step waited for
+              something that never arrived, offers the same shell plus{" "}
+              <Nav>Skip step</Nav>, which declares the half-finished step
+              satisfied and takes its success branch. That one is missing from a
+              pause you asked for, because the step it would skip has not run
+              yet.
             </li>
             <li>
               Each pane's header names the step it is on and where that sits in
@@ -2303,7 +2355,9 @@ export const SECTIONS: HelpSection[] = [
               Memory and processor use scale with how many terminals you keep open
               and the concurrency you set for <Nav>Broadcast</Nav> and{" "}
               <Nav>Skills</Nav> in <Nav>Settings</Nav>; each terminal also keeps
-              its own scrollback in memory.
+              its own scrollback in memory, which is the one you can set
+              yourself (<Nav>Settings</Nav> &rarr; <Nav>Appearance</Nav> &rarr;{" "}
+              <Nav>Terminal scrollback</Nav>).
             </li>
             <li>
               Disk use grows with saved sessions, the audit log and backups, all

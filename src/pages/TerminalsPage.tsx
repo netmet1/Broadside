@@ -87,7 +87,12 @@ const BROADCAST_RAIL_KEY = "terminal-broadcast-rail";
 
 /** Opening more than this many local shells at once first asks for confirmation:
  * a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
- * the common "a handful at once" case (up to 7) stays friction-free. */
+ * the common "a handful at once" case (up to 7) stays friction-free.
+ *
+ * Shared with the Sessions menu's **Reconnect all**, which is the other action
+ * on this page that can start a lot of things from one click. Deliberately one
+ * number: an operator who has learned where "that's a lot" sits should not have
+ * to learn it twice. */
 const BULK_SHELL_WARN = 7;
 /** A profile with a startup command gets a far stricter threshold: every copy
  * runs that command again, and two accidental runs of a deploy script are a
@@ -446,26 +451,6 @@ export function TerminalsPage({
   // Per-kind tab colours, live: Settings and this page are mounted at the same
   // time, so a colour changed there has to arrive here without a restart.
   const shellColors = useShellColors();
-  // How many of the open tabs are actually up. Same rule the tab strip paints
-  // red with: an SSH tab that is connecting, dropped or failed is not
-  // connected, and a local shell never is anything else. Twenty tabs of which
-  // four are red is not twenty sessions, and a count that says it is hides the
-  // only number worth reading in a wall of terminals.
-  const liveCount = useMemo(
-    () =>
-      sessions.filter((s) => s.type !== "ssh" || connectedSessions.has(s.id))
-        .length,
-    [sessions, connectedSessions],
-  );
-  usePageStatus(
-    liveCount === sessions.length
-      ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`
-      : // Only when they differ, so the ordinary case still reads as a plain
-        // count and the slash is a signal that something is down.
-        `${liveCount}/${sessions.length} sessions connected`,
-    visible,
-  );
-
   // Suffix for duplicate terminals to the same target: the 2nd+ get " 02", " 03",
   // … so the tabs are distinguishable (T3). The first stays unsuffixed. Dedup key
   // is the host (SSH) or the shell id (local), so two PowerShell tabs also count.
@@ -1009,6 +994,48 @@ export function TerminalsPage({
   })();
   if (livePhases !== phases) setPhases(livePhases);
 
+  /**
+   * Whether a session's tab and tile read as down, which is the red.
+   *
+   * A remote tab is down whenever it is not connected. Connecting, dropped and
+   * failed are all "the host is not there", and all three are worth the colour.
+   *
+   * A local shell used to be excluded outright, on the reasoning that a local
+   * tab is either running or gone. The unplug button made that untrue: a
+   * PowerShell tab can now sit on a Reconnect banner with nothing behind it,
+   * and it wore exactly the same colour as the live ones beside it (smoke 54
+   * B9). So it is down too, but read from the phase rather than from the
+   * connected set, because those are not the same question for a local shell:
+   * `connecting` is a real state a remote sits in for seconds and a local
+   * passes through in a frame, and asking the connected set would paint every
+   * local tab red for that frame on the way up.
+   */
+  const isDown = useCallback(
+    (s: TermSession) => {
+      if (s.type === "ssh") return !connectedSessions.has(s.id);
+      const phase = livePhases.get(s.id);
+      return phase === "closed" || phase === "failed";
+    },
+    [connectedSessions, livePhases],
+  );
+
+  // How many of the open tabs are actually up. Same rule the tab strip paints
+  // red with, for the same reason: twenty tabs of which four are red is not
+  // twenty sessions, and a count that says it is hides the only number worth
+  // reading in a wall of terminals.
+  const liveCount = useMemo(
+    () => sessions.filter((s) => !isDown(s)).length,
+    [sessions, isDown],
+  );
+  usePageStatus(
+    liveCount === sessions.length
+      ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`
+      : // Only when they differ, so the ordinary case still reads as a plain
+        // count and the slash is a signal that something is down.
+        `${liveCount}/${sessions.length} sessions connected`,
+    visible,
+  );
+
   // COM ports this app already has a live tab on.
   //
   // A serial port belongs to one program at a time, so a second tab on the same
@@ -1069,6 +1096,13 @@ export function TerminalsPage({
     },
     [sessions],
   );
+
+  /** Per-session counter for "end this session, keep the tab". The pane does the
+   * work (see TerminalView's end effect); this only says which one and when. */
+  const [endNonces, setEndNonces] = useState<Map<string, number>>(new Map());
+  const endSession = useCallback((id: string) => {
+    setEndNonces((prev) => new Map(prev).set(id, (prev.get(id) ?? 0) + 1));
+  }, []);
 
   // PTY Find (D-015, Find only; filtering live interactive output is
   // incoherent).
@@ -1228,6 +1262,18 @@ export function TerminalsPage({
   // panes mid-connect, which a retry would abort and start over, and panes
   // holding a host-key dialog, which are not waiting on a retry but on an
   // answer. Both would look like the button had done nothing, or worse.
+  // The sessions with a shell actually behind them right now, which is the only
+  // set "end this session" applies to. Not the complement of `retryableIds`:
+  // that leaves out panes mid-connect and panes holding a host-key dialog, and
+  // neither has a shell to end yet.
+  const openIds = useMemo(
+    () =>
+      new Set(
+        sessions.filter((s) => phases.get(s.id) === "open").map((s) => s.id),
+      ),
+    [sessions, phases],
+  );
+
   const retryableIds = useMemo(
     () =>
       sessions
@@ -1238,11 +1284,25 @@ export function TerminalsPage({
         .map((s) => s.id),
     [sessions, phases],
   );
+  // Past a handful, Reconnect all asks first, at the same threshold and for the
+  // same reason as opening that many local shells: this is the one bulk repair
+  // that *starts* something. Close failed touches only shells that are already
+  // gone, but a full grid that dropped when a VPN did is a lot of tabs wearing a
+  // Reconnect button, and one click on the wrong row would put that many
+  // handshakes on the wire at once. The threshold is shared with the launcher
+  // deliberately, so "how many is a lot" is one answer on this page rather than
+  // two that can drift apart.
+  const [reconnectAllOpen, setReconnectAllOpen] = useState(false);
   // One pass, no stagger. Each retry is a state bump that React batches, and the
   // connects that follow are no heavier than the launcher's own "open N at
   // once", which the same operator can already fire from the + menu.
-  const retryAll = () => {
+  const reconnectAll = () => {
     for (const id of retryableIds) reconnectSession(id);
+    setReconnectAllOpen(false);
+  };
+  const requestReconnectAll = () => {
+    if (retryableIds.length > BULK_SHELL_WARN) setReconnectAllOpen(true);
+    else reconnectAll();
   };
   // The other answer to the same set. Close all asks first because it can take
   // away work in progress; this cannot, since every tab it touches has already
@@ -1510,9 +1570,11 @@ export function TerminalsPage({
         // Picking from the Sessions menu is as deliberate as clicking a tab,
         // and as much a request to work there.
         onActivate={gridFocus.activateDeliberately}
+        openIds={openIds}
+        onEndSession={endSession}
         onCloseAll={() => setCloseAllOpen(true)}
         retryableCount={retryableIds.length}
-        onRetryAll={retryAll}
+        onReconnectAll={requestReconnectAll}
         onCloseFailed={closeFailed}
         hiddenCount={excludedFromGrid.size}
         onUnhideAll={clearGridExcluded}
@@ -1541,10 +1603,7 @@ export function TerminalsPage({
           // the little buttons inside it.
           const isTabStop = s.id === rovingTabId;
           const stopIndex = isTabStop ? 0 : -1;
-          // A remote tab that's open but not connected (connecting, dropped or
-          // failed) reads as disconnected; local shells never are.
-          const disconnected =
-            s.type === "ssh" && !connectedSessions.has(s.id);
+          const disconnected = isDown(s);
           // The colour this tab wears: a host's, a shell kind's, or a profile's.
           // Local tabs used to have none of these and were all the same grey,
           // which is fine with two open and no help at all with ten.
@@ -2248,7 +2307,7 @@ export function TerminalsPage({
           // Taken out of the grid from its tab. The pane stays mounted (and its
           // shell alive); it is simply not laid out.
           const excluded = gridMode && excludedFromGrid.has(s.id);
-          const disconnected = s.type === "ssh" && !connectedSessions.has(s.id);
+          const disconnected = isDown(s);
           // The active tile's header mirrors the tab tint: a ~20% fill in the
           // tab's colour and a top bar in it, falling back to the theme accent
           // (with a foreground top bar) for tiles with no usable hue, which now
@@ -2434,6 +2493,7 @@ export function TerminalsPage({
                   visible={visible && (gridMode ? !excluded : isActive)}
                   retryNonce={retryNonces.get(s.id) ?? 0}
                   resetNonce={resetNonces.get(s.id) ?? 0}
+                  endNonce={endNonces.get(s.id) ?? 0}
                   onGate={handleGate}
                   onClosed={closeSession}
                   onReconnect={reconnectSession}
@@ -2513,6 +2573,33 @@ export function TerminalsPage({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={closeAll}>
               Close all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Not destructive, unlike the two dialogs either side of it: nothing is
+          lost by saying yes, the cost is the size of the burst. So it is worded
+          as a question about the number and its action button carries that
+          number, which is the thing the operator is really agreeing to. */}
+      <AlertDialog open={reconnectAllOpen} onOpenChange={setReconnectAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reconnect that many sessions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This reconnects{" "}
+              <span className="font-semibold text-foreground">
+                all {retryableIds.length}
+              </span>{" "}
+              sessions that dropped or were refused, and every one of them opens
+              a connection at once. A host that is refusing connections may
+              refuse a burst this size again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={reconnectAll}>
+              Reconnect {retryableIds.length}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -20,16 +20,44 @@ pub enum Ctl {
     /// **not** re-send a `run` step's command: the command is still running;
     /// re-sending it could double-execute an upgrade.
     ///
-    /// `clear` says whether the engine should drop its match buffer first.
-    /// True only when the operator typed into the host during the pause: their
-    /// keystrokes (and whatever they provoked) must not satisfy the pattern.
-    /// When they only watched, the buffer keeps whatever the host printed
-    /// while parked, so a value that arrived late matches the retried wait
-    /// immediately. Clearing unconditionally guaranteed a second timeout with
-    /// the awaited text plainly on screen.
+    /// `clear` says whether the engine should drop its match buffer first, and
+    /// the question it answers is narrower than "did the operator type": it is
+    /// **is there unsubmitted text sitting on the command line**.
+    ///
+    /// That is the only thing a hand-back has to forget, and the only thing it
+    /// has to undo. Half-typed text is still on the host's line editor,
+    /// unentered: the shell reprints it on the next redraw, which is how the
+    /// operator's keystrokes ended up satisfying the next step's pattern (smoke
+    /// 55 B3, and again in 55-3 B1), and the next command the engine types
+    /// lands on the end of it. So that case kills the line, clears, and swallows
+    /// what the kill repaints (see `Engine::discard_unsubmitted`).
+    ///
+    /// Everything else is kept, and both halves of that matter:
+    ///
+    /// - The operator only watched. The buffer keeps whatever the host printed
+    ///   while parked, so a value that arrived late matches the retried wait
+    ///   immediately. Clearing here guaranteed a second timeout with the
+    ///   awaited text plainly on screen.
+    /// - The operator ran a command and pressed Enter. Its output is the host
+    ///   talking, not their keystrokes, and the next step is entitled to match
+    ///   it. Clearing here threw that output away, usually before the operator
+    ///   had even pressed Resume, since a command that runs in a moment has
+    ///   already printed by then (smoke 55-2 D2).
     Resume { clear: bool },
     /// Treat the current step as satisfied and take its success branch.
     SkipStep,
+    /// The operator wants the keyboard on this host, from the next gap between
+    /// steps.
+    ///
+    /// Deliberately **not** acted on where it is received. Every other control
+    /// here answers a host that is already parked and waiting to be told what to
+    /// do; this one arrives while the engine is mid-step, and a step is not a
+    /// safe place to stop. A `run` step has typed a command that is still
+    /// executing, and cutting in there would leave the operator sharing a
+    /// keyboard with a command whose output the engine is still matching
+    /// against. So the engine remembers the request and parks in the gap before
+    /// the next step, which is the one moment nothing is in flight.
+    TakeOver,
     /// Stop this host after the current step.
     Abort,
     /// Stop driving this host but leave its shell open, so it can be adopted by
@@ -41,9 +69,9 @@ pub enum Ctl {
 struct HostEntry {
     session_id: String,
     ctl: mpsc::UnboundedSender<Ctl>,
-    /// Whether the operator has typed into this host since the last resume.
-    /// Decides `Ctl::Resume`'s `clear`.
-    typed: bool,
+    /// Whether the operator has left text unsubmitted on this host's command
+    /// line since the last resume. Decides `Ctl::Resume`'s `clear`.
+    unsubmitted: bool,
 }
 
 #[derive(Default)]
@@ -79,7 +107,7 @@ impl SkillRunState {
                 HostEntry {
                     session_id: session_id.to_string(),
                     ctl: tx,
-                    typed: false,
+                    unsubmitted: false,
                 },
             );
         rx
@@ -166,14 +194,39 @@ impl SkillRunState {
     }
 
     /// The PTY session driving one host, for routing manual-takeover keystrokes.
-    /// Also notes that the operator typed, so the next resume clears the match
-    /// buffer rather than letting their keystrokes satisfy the pattern.
-    pub fn session_id_for_input(&self, run_id: &str, host_id: i64) -> AppResult<String> {
+    /// Also tracks whether those keystrokes have been left unsubmitted, which is
+    /// what the next resume clears the match buffer for (see [`Ctl::Resume`]).
+    ///
+    /// The test is the last thing in the chunk: a trailing Enter means the line
+    /// went to the shell and there is nothing left on it to be re-echoed, and
+    /// anything else means there is. Keystrokes arrive one at a time from
+    /// xterm's `onData`, so the chunk is usually a single character; a paste is
+    /// the exception, and reading its last byte is still the right question
+    /// ("what is on the line now"), not an approximation of one.
+    ///
+    /// Editing keys are deliberately not decoded. A Backspace or a Ctrl+C leaves
+    /// the flag set even though the line may now be empty, which costs a clear
+    /// that was not needed. Decoding them means tracking the line editor's state
+    /// from the outside, through a shell's own key bindings, and being wrong at
+    /// that is a false match on the operator's typing, which is the bug this
+    /// exists to prevent.
+    pub fn session_id_for_input(
+        &self,
+        run_id: &str,
+        host_id: i64,
+        data: &[u8],
+    ) -> AppResult<String> {
         let mut map = self.0.lock().unwrap();
         map.get_mut(run_id)
             .and_then(|r| r.hosts.get_mut(&host_id))
             .map(|h| {
-                h.typed = true;
+                match data.last() {
+                    Some(b'\r') | Some(b'\n') => h.unsubmitted = false,
+                    Some(_) => h.unsubmitted = true,
+                    // An empty write is not a keystroke and says nothing about
+                    // the line either way.
+                    None => {}
+                }
                 h.session_id.clone()
             })
             .ok_or_else(|| {
@@ -182,8 +235,8 @@ impl SkillRunState {
     }
 
     /// Resumes a parked host, telling the engine to clear its match buffer only
-    /// if the operator typed into the host since the last resume (see
-    /// [`Ctl::Resume`]).
+    /// if the operator left text unsubmitted on the command line since the last
+    /// resume (see [`Ctl::Resume`]).
     pub fn resume(&self, run_id: &str, host_id: i64) -> AppResult<()> {
         let mut map = self.0.lock().unwrap();
         let entry = map
@@ -192,7 +245,7 @@ impl SkillRunState {
             .ok_or_else(|| {
                 AppError::State(format!("no active skill run {run_id} for host {host_id}"))
             })?;
-        let clear = std::mem::take(&mut entry.typed);
+        let clear = std::mem::take(&mut entry.unsubmitted);
         entry
             .ctl
             .send(Ctl::Resume { clear })
@@ -247,7 +300,10 @@ mod tests {
     fn session_id_round_trips() {
         let state = SkillRunState::default();
         let _rx = state.register_host("run1", 7, "sess-7");
-        assert_eq!(state.session_id_for_input("run1", 7).unwrap(), "sess-7");
+        assert_eq!(
+            state.session_id_for_input("run1", 7, b"x").unwrap(),
+            "sess-7"
+        );
     }
 
     #[test]
@@ -256,7 +312,7 @@ mod tests {
         let _rx = state.register_host("run1", 7, "sess-7");
         assert!(state.send("nope", 7, Ctl::Abort).is_err());
         assert!(state.send("run1", 99, Ctl::Abort).is_err());
-        assert!(state.session_id_for_input("run1", 99).is_err());
+        assert!(state.session_id_for_input("run1", 99, b"x").is_err());
         assert!(state.resume("run1", 99).is_err());
     }
 
@@ -271,15 +327,48 @@ mod tests {
     }
 
     #[test]
-    fn resume_after_typing_clears_once() {
+    fn resume_after_unsubmitted_typing_clears_once() {
+        // Smoke 55 B3: `lnop` is sitting on the command line, unentered, and a
+        // redraw will reprint it. That is the one thing the hand-back forgets.
         let state = SkillRunState::default();
         let mut rx = state.register_host("run1", 7, "sess-7");
-        state.session_id_for_input("run1", 7).unwrap();
+        for c in [b"l", b"n", b"o", b"p"] {
+            state.session_id_for_input("run1", 7, c).unwrap();
+        }
         state.resume("run1", 7).unwrap();
         assert_eq!(rx.try_recv().unwrap(), Ctl::Resume { clear: true });
         // The flag is spent: an untyped second pause resumes without clearing.
         state.resume("run1", 7).unwrap();
         assert_eq!(rx.try_recv().unwrap(), Ctl::Resume { clear: false });
+    }
+
+    #[test]
+    fn a_submitted_command_is_the_host_talking_and_is_kept() {
+        // Smoke 55-2 D2: the operator ran `echo lmnop` and pressed Enter. The
+        // host printed it, usually before Resume was even pressed, and the next
+        // step is entitled to match that. Clearing threw it away.
+        let state = SkillRunState::default();
+        let mut rx = state.register_host("run1", 7, "sess-7");
+        state.session_id_for_input("run1", 7, b"echo lmnop").unwrap();
+        state.session_id_for_input("run1", 7, b"\r").unwrap();
+        state.resume("run1", 7).unwrap();
+        assert_eq!(rx.try_recv().unwrap(), Ctl::Resume { clear: false });
+    }
+
+    #[test]
+    fn typing_after_the_enter_puts_the_line_back_in_play() {
+        // Ran a command, then started typing another and thought better of it.
+        // The second line is still on the editor, so it still has to be
+        // forgotten, and the first command's output goes with it. Nothing can
+        // separate the two by then.
+        let state = SkillRunState::default();
+        let mut rx = state.register_host("run1", 7, "sess-7");
+        state
+            .session_id_for_input("run1", 7, b"echo lmnop\r")
+            .unwrap();
+        state.session_id_for_input("run1", 7, b"l").unwrap();
+        state.resume("run1", 7).unwrap();
+        assert_eq!(rx.try_recv().unwrap(), Ctl::Resume { clear: true });
     }
 
     #[test]

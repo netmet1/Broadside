@@ -17,6 +17,7 @@ export function UiPrefsProvider({ children }: { children: ReactNode }) {
           terminalFontFamily: s.terminal_font_family,
           terminalFontSize: s.terminal_font_size,
           appFontSize: s.app_font_size,
+          terminalScrollback: s.terminal_scrollback,
         }),
       )
       .catch(() => {

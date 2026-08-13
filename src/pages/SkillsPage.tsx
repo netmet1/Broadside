@@ -168,6 +168,35 @@ export function SkillsPage({
    * empty page. */
   const [pendingClose, setPendingClose] = useState<View | null>(null);
 
+  /**
+   * What the rail says beside the skill that has a run: whether it is still
+   * going, and if not, how it ended.
+   *
+   * Read from the hosts, not from `run.runId`. A run id is set the moment a run
+   * starts and cleared only when the operator clears the run, so it answers
+   * "is there a run here", which is a different question from "is it still
+   * going". Deriving the badge from it left the rail saying `running` in green
+   * after every host had already finished or failed, with the panel beside it
+   * showing three red outlines.
+   *
+   * `failed` if any host failed, because that is the outcome someone needs to
+   * be told about and a run that half worked is not a run that worked. Paused
+   * counts as running: the engine is parked waiting for a person, which is a
+   * run that still has somewhere to go.
+   */
+  const runStatus: "running" | "done" | "failed" | null =
+    run.hosts.length === 0
+      ? null
+      : run.active
+        ? "running"
+        : run.hosts.some((h) => h.status === "failed")
+          ? "failed"
+          : "done";
+  const runState =
+    runStatus !== null && runningSkill
+      ? { skillId: runningSkill.id, status: runStatus }
+      : null;
+
   /** Whether the live run's skill permits handing shells to a terminal. */
   const runAllowsTransfer = runningSkill
     ? parseSequence(runningSkill.config_json).allowTransfer
@@ -436,7 +465,7 @@ export function SkillsPage({
                   ? runningSkill?.id ?? null
                   : null
           }
-          runningSkillId={run.runId ? (runningSkill?.id ?? null) : null}
+          runState={runState}
           watching={view.kind === "run"}
           canRun={sel.selected.size > 0 && !run.active}
           onRun={(skill) => setView({ kind: "params", skill })}
@@ -476,6 +505,7 @@ export function SkillsPage({
               allowTransfer={runAllowsTransfer}
               uncapped={runUncapped}
               setTakenOver={run.setTakenOver}
+              requestTakeOver={run.requestTakeOver}
               finishHost={run.finishHost}
               onSendToTerminal={requestHandoff}
               onDone={requestCloseRun}

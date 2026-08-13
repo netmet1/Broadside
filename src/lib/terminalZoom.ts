@@ -90,6 +90,7 @@ function queueSave(next: UiPrefs): void {
       terminal_font_family: p.terminalFontFamily,
       terminal_font_size: p.terminalFontSize,
       app_font_size: p.appFontSize,
+      terminal_scrollback: p.terminalScrollback,
     }).catch((e) => toast.error(errorMessage(e)));
   }, SAVE_DELAY_MS);
 }

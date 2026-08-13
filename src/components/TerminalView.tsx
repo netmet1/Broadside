@@ -10,6 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
+import { ArrowDownIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
@@ -31,8 +32,10 @@ import {
   shellWarningDismissed,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
+import { useHint } from "@/lib/status";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
+import { cn } from "@/lib/utils";
 
 /** Copy `sel` to the clipboard and flash a short confirmation toast. Nothing
  * on-screen otherwise signals that copy-on-select fired, so the toast is the
@@ -108,7 +111,11 @@ type Phase =
   | { kind: "open" }
   | { kind: "gate"; gate: ConnectionGate }
   | { kind: "failed"; message: string }
-  | { kind: "closed"; message: string };
+  /** `clean` is how the session ended, not whether it ended: a shell that was
+   * asked to go and went is clean, and a shell that died on its own or came
+   * back non-zero is not. It only tints the message on the banner, so a wrong
+   * guess costs a colour rather than a behaviour. */
+  | { kind: "closed"; message: string; clean: boolean };
 
 /** How far along a pane's connection is, without the message that goes with it.
  * Reported to the page (see `onPhaseChange`) because "not connected" is four
@@ -138,6 +145,11 @@ type Props = {
    * clears this pane's buffer and scrollback, the remote is untouched and keeps
    * running. */
   resetNonce: number;
+  /** Bumped to end this session on purpose while keeping the tab (the unplug
+   * button in the Sessions menu). Closes the shell and drops the pane into its
+   * closed phase, which is the same place typing `exit` leaves it: the buffer
+   * stays readable and the banner offers Reconnect or Close tab. */
+  endNonce: number;
   onGate: (sessionId: string, gate: ConnectionGate) => void;
   onClosed: (sessionId: string) => void;
   /** Re-open the PTY on this same session id (Reconnect button on the closed
@@ -179,6 +191,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       visible,
       retryNonce,
       resetNonce,
+      endNonce,
       onGate,
       onClosed,
       onReconnect,
@@ -259,6 +272,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     },
     [sessionId],
   );
+  // Whether this pane is parked above the live end of its output, which is the
+  // only time the jump-to-bottom button is drawn. The ref is the one the
+  // terminal's own events compare against; the state is only what renders.
+  const scrolledUpRef = useRef(false);
+  const [scrolledUp, setScrolledUp] = useState(false);
+  const hint = useHint();
 
   // Create the terminal once.
   useEffect(() => {
@@ -267,6 +286,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       fontSize: prefsRef.current.terminalFontSize,
       cursorBlink: true,
       theme: readTerminalTheme(),
+      scrollback: prefsRef.current.terminalScrollback,
       // Find needs it. `registerDecoration` is still behind xterm's proposed-API
       // gate, and the search addon calls it for every match it highlights; with
       // the gate shut the call throws, which is why the Find bar could never say
@@ -285,6 +305,32 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const resultsSub = search.onDidChangeResults(({ resultIndex, resultCount }) => {
       onSearchResultsRef.current(resultIndex, resultCount);
     });
+
+    // Scrolled-up detection, for the jump-to-bottom button below.
+    //
+    // Deliberately not the shared ScrollToBottom component, which the Broadcast
+    // pages use. That one watches a real scrolling element with a
+    // MutationObserver over its whole subtree, which is exactly right for a log
+    // built out of DOM nodes and exactly wrong here: xterm rewrites its rows on
+    // every frame of output, so a subtree observer on a wall of live terminals
+    // would be re-measuring all of them continuously. xterm knows the answer
+    // already, so ask it.
+    //
+    // Two events, because either alone leaves a case out: `onScroll` covers the
+    // viewport moving, and `onWriteParsed` covers output arriving while it sits
+    // still, which grows the distance to the bottom without any scrolling at
+    // all. The ref is what keeps this from being a setState per frame.
+    const updateScrolledUp = () => {
+      const b = term.buffer.active;
+      // A couple of rows of slack, so the button does not blink in and out at
+      // the boundary while output is arriving.
+      const next = b.baseY - b.viewportY > 2;
+      if (next === scrolledUpRef.current) return;
+      scrolledUpRef.current = next;
+      setScrolledUp(next);
+    };
+    const scrollSub = term.onScroll(updateScrolledUp);
+    const writeSub = term.onWriteParsed(updateScrolledUp);
 
     // Ctrl+F opens the Find bar instead of sending ^F to the remote shell.
     //
@@ -401,6 +447,31 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // renderer and re-measured the char size (which also covers a font change
     // applied while the pane was hidden). A fit here is a fit against live
     // dimensions, and every scroll sync that follows agrees with it.
+    //
+    // Smoke 52-3 section H reported a pane that "started to scroll to the
+    // bottom by itself" on the way back, after an `ls -R` had been writing to
+    // it for minutes while it was hidden, and was fine once it got there. Not
+    // reproduced on a second attempt, and not diagnosed. What it is *not*, read
+    // out of the xterm 6 sources we actually ship rather than guessed at:
+    //
+    //   - Not an animation. `smoothScrollDuration` defaults to 0 and we never
+    //     set it, so every scroll xterm performs is a single assignment. The
+    //     public `scrollToBottom()` takes no argument, so there is nothing to
+    //     pass here to make that more true than it already is.
+    //   - Not the renderer waking up. A paused RenderService records one
+    //     `_needsFullRefresh` and repaints once on resume. One repaint.
+    //   - Not a parse backlog. `WriteBuffer` reschedules itself with
+    //     `setTimeout`, never a frame callback, so a hidden pane goes on
+    //     parsing at the same rate a visible one does and cannot bank minutes
+    //     of output.
+    //   - Not our own batching. The DataPump's window is 4ms with a 256KB cap
+    //     (ssh/pty.rs), so it cannot hold anything either.
+    //
+    // Both conditions it was seen under have since changed: that pane was
+    // capped at xterm's 1000 lines and was trimming its buffer on every line,
+    // and local shells now start in UTF-8. Worth re-running before looking
+    // further, and worth capturing what the pane shows on arrival rather than
+    // only that it moved.
     const io = new IntersectionObserver((entries) => {
       const entry = entries[entries.length - 1];
       intersectingRef.current = entry.isIntersecting;
@@ -488,7 +559,15 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           (closed.exit_code !== null
             ? `shell exited with code ${closed.exit_code}`
             : "connection closed");
-        setPhase({ kind: "closed", message: detail });
+        // A zero exit is the only thing here that went to plan. A message from
+        // the backend is always a reason it should not have ended, and a close
+        // with no exit code at all is a connection that went away rather than a
+        // shell that left.
+        setPhase({
+          kind: "closed",
+          message: detail,
+          clean: closed.message == null && closed.exit_code === 0,
+        });
       }
     });
 
@@ -496,6 +575,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       dataSub.dispose();
       resultsSub.dispose();
       resizeSub.dispose();
+      scrollSub.dispose();
+      writeSub.dispose();
       cancelAnimationFrame(refitRaf);
       observer.disconnect();
       io.disconnect();
@@ -522,6 +603,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const clear = () => {
       termRef.current?.reset();
       if (containerRef.current?.offsetParent) fitRef.current?.fit();
+      // Nothing left to be above: reset throws the scrollback away, so the
+      // jump-to-bottom button would otherwise sit there over an empty pane
+      // until the next write happened to fire its listener.
+      scrolledUpRef.current = false;
+      setScrolledUp(false);
     };
     clear();
     // The echoed ^L: hidden, and the form feed behind it taken back.
@@ -561,6 +647,33 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     }, 350);
     return () => clearTimeout(sweep);
   }, [resetNonce]);
+
+  // End this session on purpose, and keep the pane.
+  //
+  // The phase has to be set here rather than waited for, because a close asked
+  // for through `pty_close` is a *deliberate* one and the backend deliberately
+  // does not emit `pty:closed` for those (see ssh/pty.rs, local/mod.rs,
+  // serial/mod.rs: a stray event there would fire on every tab close, after the
+  // pane listening for it has gone). Every other caller of `ptyClose` is also
+  // throwing the tab away, so nobody has needed the event; this one keeps the
+  // tab, so it announces the close itself.
+  //
+  // Skips nonce 0 so mounting never kills the shell it just opened. Anything
+  // not currently `open` is left alone: a pane mid-connect has an invoke in
+  // flight that would race this, and one already closed or failed has nothing
+  // to end and must keep the message it has, which says how it actually died.
+  useEffect(() => {
+    if (endNonce === 0) return;
+    if (phaseRef.current.kind !== "open") return;
+    ptyClose(sessionId).catch(() => {});
+    // Clean by definition: this is the one close that was asked for from
+    // inside the app, so there is nothing here for the banner to warn about.
+    setPhase({
+      kind: "closed",
+      message: "session ended from the Sessions menu",
+      clean: true,
+    });
+  }, [endNonce, sessionId, setPhase]);
 
   useImperativeHandle(searchHandleRef, () => ({
     findNext: (pattern, options, incremental) => {
@@ -767,6 +880,21 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);
 
+  // Scrollback, on its own and deliberately not folded into the block above.
+  // Nothing about the geometry changes, so there is nothing to refit: xterm
+  // resizes the buffer off the back of the option and the pane keeps its rows
+  // and columns. It applies to a hidden pane as readily as a visible one for the
+  // same reason. Raising it is free and keeps everything already held; lowering
+  // it discards the oldest lines there and then, which is why the field that
+  // sets it is behind a Save rather than applying as it is typed.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    if (term.options.scrollback !== prefs.terminalScrollback) {
+      term.options.scrollback = prefs.terminalScrollback;
+    }
+  }, [prefs.terminalScrollback]);
+
   // Re-theme the live terminal when the app theme changes (S1). The CSS vars
   // recompute from the html class, so re-reading them gives the new colours.
   // Deferred to the next frame: next-themes flips the <html> class in its own
@@ -815,6 +943,30 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           terminal cell does not, so a rem gutter would grow against text that
           had not moved. */}
       <div ref={containerRef} className="h-full w-full pl-[2px]" />
+      {/* Back to the live end, for a pane you have scrolled up in.
+          Ctrl+End does it and so does typing anything, but neither is
+          discoverable, and reading something a thousand lines back and then
+          hunting for the bottom with a wheel is the whole complaint.
+
+          Drawn only while the pane is genuinely up in its scrollback, and only
+          while a shell is actually there: a closed pane already has a banner
+          along its bottom edge and does not need a second thing floating over
+          it. Sits above that edge and inside the right margin, clear of both
+          the banner and xterm's own scrollbar. */}
+      {scrolledUp && phase.kind === "open" && (
+        <button
+          type="button"
+          className="absolute bottom-4 right-6 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/80 text-muted-foreground shadow-md transition-colors hover:bg-accent hover:text-foreground"
+          onClick={() => {
+            termRef.current?.scrollToBottom();
+            termRef.current?.focus();
+          }}
+          aria-label="Scroll to the newest output"
+          {...hint("Jump to the newest output in this pane.")}
+        >
+          <ArrowDownIcon className="h-4 w-4" />
+        </button>
+      )}
       {(phase.kind === "connecting" ||
         phase.kind === "gate" ||
         phase.kind === "failed") && (
@@ -891,13 +1043,45 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           </Button>
         </div>
       )}
-      {/* Disconnected: keep scrollback readable, show a slim banner. */}
+      {/* Disconnected: keep scrollback readable, show a slim banner.
+
+          The bar itself is mostly transparent, because the line it covers is
+          the one that matters: the last thing the shell said before it went is
+          usually why it went, and a solid bar put it out of reach at exactly
+          the moment it was worth reading.
+
+          The two things drawn on it do not follow it down, and for the same
+          reason: what is behind them is arbitrary terminal output at arbitrary
+          ANSI colours, and neither a control nor a sentence is readable
+          floating over a wall of bright green. Legibility of what you have to
+          read is not the part to trade away for a glimpse of what you don't.
+
+          So each gets its own opaque plate and the gap between them stays
+          clear, which is where the last line shows through. The message was
+          dropped to a whisper instead, and against uncoloured output it came
+          out very close to the text behind it, so the two read as one smear.
+          Its plate is tinted by how the session ended, which is worth saying
+          anyway: `exit 0` and a shell that died are the same slim bar
+          otherwise.
+
+          Both plates sit at the right, the message against the buttons, so the
+          clear gap is one span at the left rather than a slot in the middle.
+          A message pinned to the far corner had the whole bar's width between
+          it and the button it is the reason for, and the eye had to cross the
+          output to join them up. */}
       {phase.kind === "closed" && (
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 border-t border-border/50 bg-background/95 px-3 py-2">
-          <span className="text-xs text-muted-foreground">
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-end gap-2 border-t border-border/40 bg-background/40 px-3 py-2">
+          <span
+            className={cn(
+              "min-w-0 truncate rounded-md border bg-background/90 px-2 py-0.5 text-xs",
+              phase.clean
+                ? "border-border/60 text-muted-foreground"
+                : "border-amber-500/40 text-amber-700 dark:text-amber-300",
+            )}
+          >
             {phase.message}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 rounded-md bg-background p-1">
             <Button
               variant="outline"
               size="sm"

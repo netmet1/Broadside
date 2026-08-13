@@ -94,6 +94,17 @@ const SHELL_DETECT_SECS: u64 = 15;
 /// waiting longer.
 const INTERRUPT_QUIET: Duration = Duration::from_millis(400);
 const INTERRUPT_MAX: Duration = Duration::from_secs(5);
+/// How long the shell has to go quiet after the operator hands it back, and the
+/// ceiling on waiting for that. See [`Engine::discard_unsubmitted`], which is
+/// where the reasoning for needing this at all lives.
+///
+/// The quiet window has to outlast a round trip plus a redraw, since that is
+/// the thing being absorbed, and the ceiling has to be short enough that a host
+/// which never goes quiet (a `tail -f` the operator left running) does not hold
+/// the run up. Everything in between is a shell repainting a prompt, which is
+/// one small write.
+const HANDBACK_QUIET: Duration = Duration::from_millis(500);
+const HANDBACK_MAX: Duration = Duration::from_secs(3);
 
 /// Shells whose `$?` and `printf` behave identically, which is all the engine's
 /// completion marker relies on. Worded as "currently" everywhere it surfaces:
@@ -137,6 +148,23 @@ pub struct SkillPaused {
     pub session_id: String,
     pub step_id: String,
     pub reason: String,
+    pub kind: PauseKind,
+}
+
+/// Why a host is parked. Both pauses offer the operator the same shell and the
+/// same keyboard; they differ in what `step_id` means, and so in which exits
+/// make sense.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PauseKind {
+    /// A `wait` step timed out and its on-timeout action is `pause`. `step_id`
+    /// is the step that is half-done: Resume retries its pattern, and Skip step
+    /// declares it satisfied.
+    Timeout,
+    /// The operator asked for the keyboard (`Ctl::TakeOver`). `step_id` is the
+    /// step that has **not** run yet, so Resume runs it and there is nothing for
+    /// Skip step to skip.
+    TakeOver,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -298,6 +326,11 @@ pub struct Engine<E: SkillEvents> {
     /// already known to be undrivable be refused before the `$0` probe is even
     /// sent, instead of after it times out.
     known_capability: Option<ShellCapability>,
+    /// A [`Ctl::TakeOver`] that arrived mid-step and is waiting for the gap
+    /// before the next one. Kept here rather than acted on where it is read,
+    /// because the two places that read the control channel are both inside a
+    /// step, and a step is not a safe place to hand the keyboard over.
+    take_over: bool,
 }
 
 impl<E: SkillEvents> Engine<E> {
@@ -316,6 +349,7 @@ impl<E: SkillEvents> Engine<E> {
             is_root: None,
             known_shell: None,
             known_capability: None,
+            take_over: false,
         }
     }
 
@@ -401,6 +435,7 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.screen,
             &mut self.link.rx,
             &mut self.ctl,
+            &mut self.take_over,
             &re,
             Duration::from_secs(SHELL_DETECT_SECS),
             Duration::ZERO,
@@ -457,6 +492,7 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.screen,
             &mut self.link.rx,
             &mut self.ctl,
+            &mut self.take_over,
             &re,
             Duration::from_secs(UID_PROBE_SECS),
             Duration::ZERO,
@@ -479,6 +515,7 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.screen,
             &mut self.link.rx,
             &mut self.ctl,
+            &mut self.take_over,
             LINGER_QUIET,
             LINGER_MAX,
         )
@@ -527,6 +564,7 @@ impl<E: SkillEvents> Engine<E> {
                         is_root: None,
                     }
                 }
+                Ok(Ctl::TakeOver) => self.take_over = true,
                 Ok(Ctl::Resume { .. }) | Ok(Ctl::SkipStep) => {}
                 Err(mpsc::error::TryRecvError::Empty) => {}
             }
@@ -536,6 +574,16 @@ impl<E: SkillEvents> Engine<E> {
             let Some(step) = cfg.step(&current) else {
                 return HostOutcome::finished(false, format!("step not found: {current}"));
             };
+            // The one moment nothing is in flight, and so the only safe place to
+            // hand the keyboard over: the previous step has settled and the next
+            // has not been typed. A request that arrived at any point during the
+            // last step lands here.
+            if std::mem::take(&mut self.take_over) {
+                match self.park_for_take_over(step.id()).await {
+                    Ok(()) => {}
+                    Err(outcome) => return outcome,
+                }
+            }
             let count = runs.entry(step.id()).or_insert(0);
             // Saturating, because with no cap this counts for as long as the
             // operator lets the skill run, and an overflow panic would take the
@@ -619,6 +667,158 @@ impl<E: SkillEvents> Engine<E> {
         }
     }
 
+    /// Park before `next_step_id` because the operator asked for the keyboard.
+    ///
+    /// The same park a timed-out `wait` step uses, and deliberately so: the
+    /// operator gets the identical set of exits, the panel already knows how to
+    /// draw them, and there is one pause concept in this engine rather than two.
+    /// What differs is only what it is a pause *before*: a timeout parks with a
+    /// step half-done and something to retry, this parks with the next step not
+    /// yet typed. `kind` on the event is how the panel tells them apart, and it
+    /// is why the panel does not offer **Skip step** here: there is nothing yet
+    /// to skip.
+    ///
+    /// `Ok(())` means carry on and run the step. `Err` carries the outcome the
+    /// host ended on.
+    async fn park_for_take_over(&mut self, next_step_id: &str) -> Result<(), HostOutcome> {
+        let reason = "you have the keyboard. Automation is stopped until you resume.".to_string();
+        self.emit("info", Some(next_step_id), "paused for takeover");
+        self.events.paused(SkillPaused {
+            run_id: self.meta.run_id.clone(),
+            host_id: self.meta.host_id,
+            label: self.meta.label.clone(),
+            session_id: self.meta.session_id.clone(),
+            step_id: next_step_id.to_string(),
+            reason,
+            kind: PauseKind::TakeOver,
+        });
+        match park(&mut self.screen, &mut self.link.rx, &mut self.ctl).await {
+            // Same rule as the timeout pause: only text the operator left
+            // unsubmitted has to be taken back off the line and forgotten, so
+            // the step that follows cannot match against their keystrokes. If
+            // they only read, or ran something and pressed Enter, the line is
+            // already clear and the buffer is left alone.
+            Park::Resume { clear } => {
+                if clear && !self.discard_unsubmitted().await {
+                    return Err(HostOutcome::finished(
+                        false,
+                        "the shell closed unexpectedly",
+                    ));
+                }
+                self.emit("info", Some(next_step_id), resumed_line(clear));
+                Ok(())
+            }
+            // Skip is treated as a resume. The panel does not offer it in this
+            // state, since the step it would skip has not run, so this is only
+            // reachable from a stale click; running the step the operator was
+            // about to watch is the harmless reading of an ambiguous request.
+            Park::Skip => {
+                self.emit("info", Some(next_step_id), "resumed by the operator");
+                Ok(())
+            }
+            Park::Abort => Err(HostOutcome {
+                ok: false,
+                message: "stopped by the operator".into(),
+                disposition: Disposition::Aborted,
+                is_root: None,
+            }),
+            Park::Detach => Err(HostOutcome {
+                ok: true,
+                message: "handed off to a terminal tab".into(),
+                disposition: Disposition::Detached,
+                is_root: None,
+            }),
+            Park::Closed => Err(HostOutcome::finished(
+                false,
+                "the shell closed unexpectedly",
+            )),
+        }
+    }
+
+    /// The operator has left half-typed text on this host's command line and
+    /// handed it back. Take it off the line, then forget it.
+    ///
+    /// Only reached when the resume says so (see [`Ctl::Resume`]'s `clear`), and
+    /// the condition is narrow on purpose: unsubmitted text, not typing in
+    /// general. A command the operator actually ran is the host talking and its
+    /// output is kept, which is the whole of smoke 55-2 D2.
+    ///
+    /// For the unsubmitted case, emptying the match buffer is the obvious move
+    /// and it is not enough, which is what smoke 55 B3 caught and smoke 55-3 B1
+    /// caught again: the operator typed the very text the next step was waiting
+    /// for, resumed, and the step matched it.
+    ///
+    /// The clear does work. What it cannot do is un-type anything, and that is
+    /// the actual problem. Those keystrokes are still sitting on the host's
+    /// command line, unentered, and they cause two separate failures:
+    ///
+    /// - **A shell reprints that line whenever something asks it to redraw**,
+    ///   and handing back asks. The amber bar this pane wears while parked is
+    ///   taller than the strip it wears while running, so the pane changes
+    ///   height, refits, the new size goes to the host, and the shell repaints
+    ///   its prompt with the operator's half-typed text on it. That repaint
+    ///   arrives *after* the settle below, not during it, because the pane does
+    ///   not shrink until it hears the resume acknowledged, and this function is
+    ///   what runs before the acknowledgement. So it always lands in the next
+    ///   step's wait, where it matches. No settle window can close that.
+    /// - **The next thing the engine types lands on the same line**, because
+    ///   commands go out with a leading space and no line kill in front of them.
+    ///   The operator's `lmnop` plus the closing uid probe became one line,
+    ///   `lmnop printf '__bsuid_%s__\n' "$(id -u)"`, which the shell then ran.
+    ///
+    /// So the line is killed first (Ctrl-U, the POSIX `kill` character: readline
+    /// binds it to `unix-line-discard` in both emacs and vi-insert modes, and a
+    /// shell with no line editing at all, like dash, gets the same behaviour
+    /// from the tty driver). Not Ctrl-C, which would signal whatever the
+    /// operator left running, for the same reason `interrupt_running` is only
+    /// ever aimed at a `run` step's own command. The one case it does not cover
+    /// is an operator who moved the cursor back into the middle of their text,
+    /// since Ctrl-U kills leftwards from the cursor; anything right of it
+    /// survives, and that is worth the narrower blast radius.
+    ///
+    /// Then the buffer is emptied, whatever the shell says while it settles is
+    /// swallowed (the kill's own repaint, and any echo still in flight), and it
+    /// is emptied again. Bounded at both ends: a host printing continuously
+    /// never falls quiet, and waiting for it to would hold the run up for as
+    /// long as it kept talking.
+    ///
+    /// Control messages are deliberately *not* read here. A Stop host pressed
+    /// during this half-second stays queued and is honoured by the next wait,
+    /// which is where every other control is handled; reading them here would
+    /// mean re-implementing all of them for the sake of answering half a second
+    /// sooner.
+    ///
+    /// Returns false if the shell closed while settling, which the caller owns:
+    /// this one is deep enough in the middle of things to have no opinion about
+    /// how a host should end.
+    async fn discard_unsubmitted(&mut self) -> bool {
+        if self.send_bytes("\x15").is_err() {
+            return false;
+        }
+        self.screen.clear();
+        let deadline = Instant::now() + HANDBACK_MAX;
+        let mut quiet_at = Instant::now() + HANDBACK_QUIET;
+        let mut alive = true;
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep_until(quiet_at) => break,
+                _ = tokio::time::sleep_until(deadline) => break,
+                msg = self.link.rx.recv() => match msg {
+                    // Something is still being repainted. Push the quiet window
+                    // ahead of it rather than counting from the resume, so a
+                    // redraw that arrives late is still inside the window.
+                    Some(TapMsg::Data(_)) => quiet_at = Instant::now() + HANDBACK_QUIET,
+                    Some(TapMsg::Closed) | None => {
+                        alive = false;
+                        break;
+                    }
+                },
+            }
+        }
+        self.screen.clear();
+        alive
+    }
+
     async fn exec_step(&mut self, step: &SeqStep) -> StepOutcome {
         match step {
             SeqStep::Send { input, next, .. } => match self.send_bytes(input) {
@@ -658,6 +858,7 @@ impl<E: SkillEvents> Engine<E> {
                     &mut self.screen,
                     &mut self.link.rx,
                     &mut self.ctl,
+                    &mut self.take_over,
                     duration,
                 )
                 .await
@@ -764,6 +965,7 @@ impl<E: SkillEvents> Engine<E> {
                 &mut self.screen,
                 &mut self.link.rx,
                 &mut self.ctl,
+                &mut self.take_over,
                 INTERACTIVE_QUIET,
                 Duration::from_secs(step.timeout_secs()),
             )
@@ -889,6 +1091,7 @@ impl<E: SkillEvents> Engine<E> {
             &mut self.screen,
             &mut self.link.rx,
             &mut self.ctl,
+            &mut self.take_over,
             INTERRUPT_QUIET,
             INTERRUPT_MAX,
         )
@@ -915,6 +1118,7 @@ impl<E: SkillEvents> Engine<E> {
                 &mut self.screen,
                 &mut self.link.rx,
                 &mut self.ctl,
+                &mut self.take_over,
                 re,
                 timeout,
                 settle,
@@ -938,19 +1142,39 @@ impl<E: SkillEvents> Engine<E> {
                 session_id: self.meta.session_id.clone(),
                 step_id: step.id().to_string(),
                 reason,
+                kind: PauseKind::Timeout,
             });
             match park(&mut self.screen, &mut self.link.rx, &mut self.ctl).await {
                 Park::Resume { clear } => {
-                    // Clear only when the operator typed during the pause:
-                    // their keystrokes (and whatever they printed) must not
-                    // satisfy the pattern we're about to wait for again. When
-                    // they only watched, the buffer keeps what the host printed
-                    // while parked, so a value that arrived late matches the
-                    // retried wait immediately instead of timing out again.
-                    if clear {
-                        self.screen.clear();
+                    // Clear only when the operator left text unsubmitted on the
+                    // command line: that is the one thing a redraw can reprint
+                    // into the pattern we're about to wait for again. When they
+                    // only watched, or ran something and pressed Enter, the
+                    // buffer keeps what the host printed while parked, so a
+                    // value that arrived late matches the retried wait
+                    // immediately instead of timing out again.
+                    //
+                    // Clearing is not the whole of forgetting, and the pattern
+                    // this is about to wait for again is exactly the kind a
+                    // redraw can satisfy by accident. See `discard_unsubmitted`.
+                    if clear && !self.discard_unsubmitted().await {
+                        return Err(StepOutcome::Closed);
                     }
-                    self.emit("info", Some(step.id()), "resumed by the operator");
+                    self.emit("info", Some(step.id()), resumed_line(clear));
+                    // Re-announce the step, because the wait genuinely restarts
+                    // here with a full fresh timeout and the panel's countdown
+                    // is keyed off the announcement. Without this it kept
+                    // counting from when the step first started, so the second
+                    // wait was spent showing a red nought while the engine was
+                    // in fact waiting the whole budget again, and the only proof
+                    // of that was the timeout arriving at the end of it.
+                    self.emit_step(
+                        "step",
+                        Some(step.id()),
+                        Some(step.kind_str()),
+                        step.countdown_secs(),
+                        step.summary(),
+                    );
                 }
                 Park::Skip => return Ok(Wait::Skipped),
                 Park::Abort => return Err(StepOutcome::Aborted),
@@ -958,6 +1182,19 @@ impl<E: SkillEvents> Engine<E> {
                 Park::Closed => return Err(StepOutcome::Closed),
             }
         }
+    }
+}
+
+/// What the step log says about a resume.
+///
+/// When the operator left text unsubmitted, the engine takes it back off the
+/// command line, and a line disappearing out of their shell should be accounted
+/// for in the log rather than left looking like a glitch.
+fn resumed_line(cleared: bool) -> &'static str {
+    if cleared {
+        "resumed by the operator; the half-typed line was cleared"
+    } else {
+        "resumed by the operator"
     }
 }
 
@@ -1000,6 +1237,10 @@ async fn wait_for(
     screen: &mut Screen,
     rx: &mut mpsc::UnboundedReceiver<TapMsg>,
     ctl: &mut mpsc::UnboundedReceiver<Ctl>,
+    // `take_over` is set if a Ctl::TakeOver arrives while this wait is running.
+    // Read by the caller's caller in the gap between steps, which is where the
+    // request is acted on.
+    take_over: &mut bool,
     re: &Regex,
     timeout: Duration,
     settle: Duration,
@@ -1035,6 +1276,11 @@ async fn wait_for(
                 Some(Ctl::Abort) | None => return Wait::Aborted,
                 // Stop driving, but hand the shell off rather than close it.
                 Some(Ctl::Detach) => return Wait::Detached,
+                // Remembered, not obeyed: the operator asked for the keyboard
+                // while this step is mid-flight, and it is handed over in the
+                // gap after it rather than into the middle of it. Carrying it
+                // out of here is the whole reason this takes a flag.
+                Some(Ctl::TakeOver) => *take_over = true,
                 // Resume with nothing to resume from: ignore.
                 Some(Ctl::Resume { .. }) => {}
             },
@@ -1065,6 +1311,7 @@ async fn wait_quiet(
     screen: &mut Screen,
     rx: &mut mpsc::UnboundedReceiver<TapMsg>,
     ctl: &mut mpsc::UnboundedReceiver<Ctl>,
+    take_over: &mut bool,
     quiet: Duration,
     timeout: Duration,
 ) -> Wait {
@@ -1086,6 +1333,8 @@ async fn wait_quiet(
                 Some(Ctl::Abort) | None => return Wait::Aborted,
                 // Stop driving, but hand the shell off rather than close it.
                 Some(Ctl::Detach) => return Wait::Detached,
+                // Remembered for the gap after this step; see wait_for.
+                Some(Ctl::TakeOver) => *take_over = true,
                 Some(Ctl::Resume { .. }) => {}
             },
         }
@@ -1099,6 +1348,7 @@ async fn wait_fixed(
     screen: &mut Screen,
     rx: &mut mpsc::UnboundedReceiver<TapMsg>,
     ctl: &mut mpsc::UnboundedReceiver<Ctl>,
+    take_over: &mut bool,
     duration: Duration,
 ) -> Wait {
     let deadline = Instant::now() + duration;
@@ -1114,6 +1364,8 @@ async fn wait_fixed(
                 Some(Ctl::Abort) | None => return Wait::Aborted,
                 // Stop driving, but hand the shell off rather than close it.
                 Some(Ctl::Detach) => return Wait::Detached,
+                // Remembered for the gap after this step; see wait_for.
+                Some(Ctl::TakeOver) => *take_over = true,
                 // A resume during a plain wait has nothing to resume.
                 Some(Ctl::Resume { .. }) => {}
             },
@@ -1138,6 +1390,10 @@ async fn park(
                 Some(Ctl::SkipStep) => Park::Skip,
                 Some(Ctl::Abort) | None => Park::Abort,
                 Some(Ctl::Detach) => Park::Detach,
+                // Already parked, so the request is already granted: the
+                // operator has the keyboard. Nothing to do but keep waiting
+                // for the instruction that ends the pause.
+                Some(Ctl::TakeOver) => continue,
             },
             msg = rx.recv() => match msg {
                 Some(TapMsg::Data(bytes)) => screen.feed(&bytes),

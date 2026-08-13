@@ -57,6 +57,19 @@ impl CollectEvents {
             .map(|p| p.phase.clone())
             .collect()
     }
+    /// The events the panel reads as "a step is starting now", as
+    /// `(step_id, countdown)`. Told by `step_kind`, exactly as the panel tells
+    /// them: it is the announcement that restarts the countdown.
+    fn step_announcements(&self) -> Vec<(String, Option<u64>)> {
+        self.0
+            .lock()
+            .unwrap()
+            .progress
+            .iter()
+            .filter(|p| p.step_kind.is_some())
+            .map(|p| (p.step_id.clone().unwrap_or_default(), p.step_secs))
+            .collect()
+    }
 }
 
 /// The test's side of the fake host.
@@ -1019,9 +1032,10 @@ async fn an_abort_skips_the_closing_probe() {
 
 #[tokio::test(start_paused = true)]
 async fn operator_takeover_noise_is_cleared_on_resume() {
-    // The operator types at the paused pane. What they did must not satisfy the
-    // pattern the engine is about to wait for again, so a typed-through pause
-    // resumes with `clear: true`.
+    // A resume that asks to clear does clear, screen and all. Whether it asks is
+    // decided elsewhere (`SkillRunState::resume`, off the back of whether the
+    // operator left anything unsubmitted on the command line); this is only that
+    // the engine honours it.
     let (mut engine, host) = harness();
     let c = cfg(vec![expect_step("a", "READY", None, STOP)]);
     let ctl = host.ctl.clone();
@@ -1040,6 +1054,34 @@ async fn operator_takeover_noise_is_cleared_on_resume() {
     // we aborted it. If takeover noise had counted, this would have "succeeded".
     assert!(!outcome.ok, "takeover output satisfied the pattern");
     assert_eq!(host.events.paused_reasons().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_resumed_wait_announces_its_step_again() {
+    // The wait genuinely restarts with a fresh budget, and the panel's countdown
+    // is keyed off the announcement. Without a second one it kept counting from
+    // when the step first started, so the whole of the second wait was spent
+    // showing a red nought and the only proof the engine was still waiting was
+    // the timeout arriving at the end of it (smoke 55-2 D3).
+    let (mut engine, host) = harness();
+    let c = cfg(vec![expect_step("a", "READY", None, STOP)]);
+    let ctl = host.ctl.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(45)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+        tokio::time::sleep(Duration::from_secs(90)).await;
+        let _ = ctl.send(Ctl::Abort);
+    });
+    let outcome = engine.run_sequence(&c).await;
+    assert!(!outcome.ok, "{outcome:?}");
+    let announced = host.events.step_announcements();
+    assert_eq!(
+        announced.len(),
+        2,
+        "one for the step, one for the resumed wait: {announced:?}"
+    );
+    assert_eq!(announced[0], announced[1], "same step, same fresh budget");
+    assert!(announced[1].1.is_some(), "the countdown has to come with it");
 }
 
 #[tokio::test(start_paused = true)]
@@ -1317,4 +1359,255 @@ fn needs_sudo_password_spots_a_sudo_step() {
 fn parse_sequence_rejects_a_malformed_config() {
     assert!(parse_sequence("{ not json").is_err());
     assert!(parse_sequence(r#"{"startStepId":"a","steps":[]}"#).is_ok());
+}
+
+#[tokio::test(start_paused = true)]
+async fn take_over_waits_for_the_step_to_finish() {
+    // The whole point of the deferral: a request that arrives while a command
+    // is running must not park the engine in the middle of it. The engine
+    // finishes step a, and only then parks before step b.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        run_step("b", "echo two", STOP, STOP),
+    ]);
+
+    let events = host.events.clone();
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        // Step a is in flight, waiting for its completion marker.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        ctl.send(Ctl::TakeOver).unwrap();
+        // Still mid-step a beat later: nothing has parked.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(
+            events.0.lock().unwrap().paused.is_empty(),
+            "parked in the middle of a running step"
+        );
+        // Now let step a finish.
+        let _ = data.send(TapMsg::Data(echo_of("echo one").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"one
+__bsdone_0__
+".to_vec()));
+        // It should park before step b rather than run it.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(
+            events.0.lock().unwrap().paused.len(),
+            1,
+            "should be parked before the second step"
+        );
+        let _ = ctl.send(Ctl::Resume { clear: false });
+        let _ = data.send(TapMsg::Data(echo_of("echo two").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"two
+__bsdone_0__
+".to_vec()));
+    });
+
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+    // Both steps ran: the first before the pause, the second after the resume.
+    assert!(host.typed().contains("echo one"));
+    assert!(host.typed().contains("echo two"));
+
+    let paused = &host.events.0.lock().unwrap().paused;
+    assert_eq!(paused.len(), 1);
+    // Parked before the step that has not run, which is what tells the panel
+    // there is nothing here for Skip step to skip.
+    assert_eq!(paused[0].step_id, "b");
+    assert_eq!(paused[0].kind, PauseKind::TakeOver);
+}
+
+#[tokio::test(start_paused = true)]
+async fn take_over_is_spent_once_and_does_not_park_again() {
+    // One request, one pause. A flag that was not cleared would park before
+    // every remaining step, which is the obvious way to get this wrong.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        run_step("b", "echo two", STOP, STOP),
+    ]);
+    host.ctl.send(Ctl::TakeOver).unwrap();
+    host.say(&echo_of("echo one"));
+    host.say("one\r\n__bsdone_0__\r\n");
+
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+        let _ = data.send(TapMsg::Data(echo_of("echo two").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"two\r\n__bsdone_0__\r\n".to_vec()));
+    });
+
+    assert!(engine.run_sequence(&c).await.ok);
+    assert_eq!(host.events.0.lock().unwrap().paused.len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_redraw_after_the_handback_cannot_satisfy_the_next_step() {
+    // Smoke 55 B3, and the reason clearing the buffer once is not enough.
+    //
+    // The operator takes the host over before an expect step, types the very
+    // text that step is waiting for, and resumes. Emptying the buffer takes
+    // their echo out of it, but it does not take the half-typed line off the
+    // host: the shell still has it, and reprints it the moment anything asks
+    // for a redraw. Handing back is one of those things, because the pane
+    // changes height and the new size goes to the host as a resize.
+    //
+    // So the redraw here lands a beat *after* the resume, which is exactly the
+    // shape that used to slip through, and the step must still not match it.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        on_timeout(expect_step("b", "lnop", None, STOP), TimeoutAction::Fail),
+    ]);
+
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        // Asked for while step a is in flight, so the engine parks in the gap
+        // before step b, which is the step this is about.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        ctl.send(Ctl::TakeOver).unwrap();
+        let _ = data.send(TapMsg::Data(echo_of("echo one").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"one\r\n__bsdone_0__\r\n".to_vec()));
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Parked. The operator types, and the host echoes it back.
+        let _ = data.send(TapMsg::Data(b"lnop".to_vec()));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _ = ctl.send(Ctl::Resume { clear: true });
+        // The resize the hand-back caused reaches the host, and the shell
+        // repaints its prompt with what is still sitting on it.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let _ = data.send(TapMsg::Data(b"\r$ lnop".to_vec()));
+    });
+
+    let outcome = engine.run_sequence(&c).await;
+    // The step timed out on a pattern only the operator ever produced, which is
+    // the honest answer. Matching it would report a check as passed that the
+    // host never answered.
+    assert!(!outcome.ok, "the redraw satisfied the step: {outcome:?}");
+    assert_eq!(host.events.0.lock().unwrap().paused.len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_handback_takes_the_operators_half_typed_line_off_the_shell() {
+    // Smoke 55-3 B1, and why swallowing the redraw was treating a symptom.
+    //
+    // The operator's `lmnop` is still on the host's command line when the run
+    // carries on, so the next thing the engine types lands on the end of it:
+    // `lmnop printf '__bsuid_%s__\n' "$(id -u)"` went out as one line and the
+    // shell ran it. Kill the line first and the next command starts its own.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        run_step("b", "echo two", STOP, STOP),
+    ]);
+
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        ctl.send(Ctl::TakeOver).unwrap();
+        let _ = data.send(TapMsg::Data(echo_of("echo one").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"one\r\n__bsdone_0__\r\n".to_vec()));
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Parked. The operator types without pressing Enter.
+        let _ = data.send(TapMsg::Data(b"lmnop".to_vec()));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _ = ctl.send(Ctl::Resume { clear: true });
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let _ = data.send(TapMsg::Data(echo_of("echo two").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"two\r\n__bsdone_0__\r\n".to_vec()));
+    });
+
+    assert!(engine.run_sequence(&c).await.ok);
+    let typed = host.typed();
+    let kill = typed.find('\u{15}').expect("the line was never killed");
+    let next = typed.find("echo two").expect("step b never ran");
+    assert!(kill < next, "the kill has to precede the next command: {typed:?}");
+    // And only the one, from the one resume that asked for it.
+    assert_eq!(typed.matches('\u{15}').count(), 1, "{typed:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_handback_with_nothing_typed_leaves_the_line_alone() {
+    // The counterpart. Nothing was left unsubmitted, so there is nothing to
+    // take back, and killing a line the operator did not dirty would be the
+    // engine reaching into a shell it has no reason to touch.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        run_step("b", "echo two", STOP, STOP),
+    ]);
+    host.ctl.send(Ctl::TakeOver).unwrap();
+    host.say(&echo_of("echo one"));
+    host.say("one\r\n__bsdone_0__\r\n");
+
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+        let _ = data.send(TapMsg::Data(echo_of("echo two").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"two\r\n__bsdone_0__\r\n".to_vec()));
+    });
+
+    assert!(engine.run_sequence(&c).await.ok);
+    assert!(!host.typed().contains('\u{15}'), "{:?}", host.typed());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_handback_with_nothing_typed_still_sees_what_the_host_said() {
+    // The other half, and what keeps the settle from being a blunt instrument:
+    // the operator only watched, so there is nothing of theirs to forget and
+    // the buffer must survive the resume intact. A value that landed while
+    // parked satisfies the step it was parked before, immediately.
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        on_timeout(expect_step("b", "READY", None, STOP), TimeoutAction::Fail),
+    ]);
+
+    let ctl = host.ctl.clone();
+    let data = host.data.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        ctl.send(Ctl::TakeOver).unwrap();
+        let _ = data.send(TapMsg::Data(echo_of("echo one").into_bytes()));
+        let _ = data.send(TapMsg::Data(b"one\r\n__bsdone_0__\r\n".to_vec()));
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        // The host catches up on its own while parked. Nobody typed.
+        let _ = data.send(TapMsg::Data(b"READY\r\n".to_vec()));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _ = ctl.send(Ctl::Resume { clear: false });
+    });
+
+    let outcome = engine.run_sequence(&c).await;
+    assert!(outcome.ok, "{outcome:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_taken_over_host_can_be_stopped_from_the_pause() {
+    let (mut engine, host) = harness();
+    let c = cfg(vec![
+        run_step("a", "echo one", "b", STOP),
+        run_step("b", "echo two", STOP, STOP),
+    ]);
+    host.ctl.send(Ctl::TakeOver).unwrap();
+    host.say(&echo_of("echo one"));
+    host.say("one\r\n__bsdone_0__\r\n");
+
+    let ctl = host.ctl.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = ctl.send(Ctl::Abort);
+    });
+
+    let outcome = engine.run_sequence(&c).await;
+    assert!(!outcome.ok);
+    assert_eq!(outcome.disposition, Disposition::Aborted);
+    // The second step never ran.
+    assert!(!host.typed().contains("echo two"));
 }

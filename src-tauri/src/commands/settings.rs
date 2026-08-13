@@ -22,10 +22,26 @@ const KEY_SHORTCUTS: &str = "shortcut_commands";
 const KEY_TERMINAL_FONT_FAMILY: &str = "terminal_font_family";
 const KEY_TERMINAL_FONT_SIZE: &str = "terminal_font_size";
 const KEY_APP_FONT_SIZE: &str = "app_font_size";
+const KEY_TERMINAL_SCROLLBACK: &str = "terminal_scrollback";
 
 pub const DEFAULT_TERMINAL_FONT_FAMILY: &str = "Consolas, 'Cascadia Mono', monospace";
 pub const DEFAULT_TERMINAL_FONT_SIZE: u16 = 13;
 pub const DEFAULT_APP_FONT_SIZE: u16 = 16;
+
+/// How many lines a terminal pane keeps above the top of the screen.
+///
+/// xterm's own default is 1000, which is what every pane ran on until this
+/// setting existed, and it is low enough that an ordinary `seq 1 70000` throws
+/// away all but the last thousand lines before anyone can scroll up. 5000 is
+/// the middle ground the common terminals sit around and costs roughly 12MB a
+/// pane at 200 columns, because xterm holds a cell as three 32-bit words.
+pub const DEFAULT_TERMINAL_SCROLLBACK: u32 = 5_000;
+
+/// The ceiling on that. Not xterm's limit, which is far higher: it is the point
+/// where a pane's buffer stops being a convenience and starts being the reason
+/// the machine is out of memory. 50k lines at 200 columns is about 120MB, and
+/// an operator with twenty panes open has asked for 2.4GB without being told.
+pub const MAX_TERMINAL_SCROLLBACK: u32 = 50_000;
 
 /// Where a shortcut command can run. `Ssh` covers remote SSH hosts and local
 /// WSL tabs (both run Linux); `Local` covers local Command Prompt and PowerShell
@@ -126,6 +142,7 @@ pub struct AppSettings {
     pub terminal_font_family: String,
     pub terminal_font_size: u16,
     pub app_font_size: u16,
+    pub terminal_scrollback: u32,
 }
 
 #[derive(Deserialize)]
@@ -182,6 +199,9 @@ pub fn get_app_settings(state: State<'_, DbState>) -> AppResult<AppSettings> {
             app_font_size: settings::get(conn, KEY_APP_FONT_SIZE)?
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(DEFAULT_APP_FONT_SIZE),
+            terminal_scrollback: settings::get(conn, KEY_TERMINAL_SCROLLBACK)?
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(DEFAULT_TERMINAL_SCROLLBACK),
         })
     })
 }
@@ -191,9 +211,10 @@ pub struct UiSettingsInput {
     pub terminal_font_family: String,
     pub terminal_font_size: u16,
     pub app_font_size: u16,
+    pub terminal_scrollback: u32,
 }
 
-/// Appearance settings: terminal font + size, application font size.
+/// Appearance settings: terminal font + size, application font size, scrollback.
 #[tauri::command]
 pub fn set_ui_settings(input: UiSettingsInput, state: State<'_, DbState>) -> AppResult<()> {
     let family = input.terminal_font_family.trim();
@@ -213,6 +234,17 @@ pub fn set_ui_settings(input: UiSettingsInput, state: State<'_, DbState>) -> App
             conn,
             KEY_APP_FONT_SIZE,
             &input.app_font_size.clamp(12, 20).to_string(),
+        )?;
+        // Zero is a legal answer and is left alone: it means keep nothing above
+        // the screen, which is a reasonable thing to ask of a terminal someone
+        // else can see. xterm throws on a negative, which a u32 cannot be.
+        settings::set(
+            conn,
+            KEY_TERMINAL_SCROLLBACK,
+            &input
+                .terminal_scrollback
+                .min(MAX_TERMINAL_SCROLLBACK)
+                .to_string(),
         )
     })
 }
@@ -289,6 +321,7 @@ pub fn reset_app_settings(
             KEY_TERMINAL_FONT_FAMILY,
             KEY_TERMINAL_FONT_SIZE,
             KEY_APP_FONT_SIZE,
+            KEY_TERMINAL_SCROLLBACK,
         ] {
             conn.execute("DELETE FROM settings WHERE key = ?1", rusqlite::params![key])?;
         }

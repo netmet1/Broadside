@@ -653,6 +653,24 @@ pub fn skill_skip_step(
     run_state.send(&run_id, host_id, Ctl::SkipStep)
 }
 
+/// Ask for the keyboard on one host that is still running.
+///
+/// Does not take effect at once, and that is the design rather than a
+/// limitation: the engine finishes the step it is on and parks in the gap
+/// before the next one. A `run` step has a command executing that the engine is
+/// still matching output against, and cutting in there would put two typists on
+/// one shell. Once parked, the host is in exactly the state a timed-out step
+/// leaves it in, with the same Resume, Stop host and (where the skill allows it)
+/// To terminal exits.
+#[tauri::command]
+pub fn skill_take_over(
+    run_id: String,
+    host_id: i64,
+    run_state: State<'_, SkillRunState>,
+) -> AppResult<()> {
+    run_state.send(&run_id, host_id, Ctl::TakeOver)
+}
+
 /// Stop one host gracefully, leaving the others running.
 #[tauri::command]
 pub fn skill_abort(
@@ -697,6 +715,10 @@ pub fn skill_close_run(
 /// Manual takeover: routes the operator's keystrokes to the host's PTY through
 /// the same `SessionCmd::Write` channel the engine uses. Safe against races
 /// because a paused engine sends nothing until the operator resumes it.
+///
+/// The keystrokes are read on the way past, not just forwarded: whether they end
+/// in an Enter is what decides how the eventual resume treats the match buffer.
+/// See [`SkillRunState::session_id_for_input`].
 #[tauri::command]
 pub fn skill_send_input(
     run_id: String,
@@ -705,8 +727,9 @@ pub fn skill_send_input(
     run_state: State<'_, SkillRunState>,
     pty_state: State<'_, PtyState>,
 ) -> AppResult<()> {
-    let session_id = run_state.session_id_for_input(&run_id, host_id)?;
-    pty_state.write(&session_id, data.as_bytes())
+    let bytes = data.as_bytes();
+    let session_id = run_state.session_id_for_input(&run_id, host_id, bytes)?;
+    pty_state.write(&session_id, bytes)
 }
 
 #[cfg(test)]

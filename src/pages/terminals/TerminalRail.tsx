@@ -48,17 +48,17 @@
  * that only exists at exactly two tiles; the entry itself is meaningless
  * elsewhere, so it goes.
  *
- * The Sessions menu's bulk repairs, **Retry all**, **Close failed** and
+ * The Sessions menu's bulk repairs, **Reconnect all**, **Close failed** and
  * **Unhide all**, are the other exception, and they are worth naming because
  * they look at first like a breach of the rule rather than a limit on it. What
  * greying buys is a reader learning that an action exists before the day they
  * want it, and that is worth a permanently dead row when the action is the only
  * clue to something non-obvious: Reset grid greyed is how anyone finds out a
- * tile edge can be dragged at all. None of these three teaches anything. "Retry
- * all" and "Close failed" arrive already understood the moment a pane goes red,
- * and "Unhide all" the moment one is hidden, so carrying them through every
- * other moment buys nothing and costs length in the one menu that is already as
- * long as the session list.
+ * tile edge can be dragged at all. None of these three teaches anything.
+ * "Reconnect all" and "Close failed" arrive already understood the moment a
+ * pane goes red, and "Unhide all" the moment one is hidden, so carrying them
+ * through every other moment buys nothing and costs length in the one menu that
+ * is already as long as the session list.
  *
  * Each of the three says what it is waiting for, in the status bar, while it is
  * greyed, which takes a little work: the browser will not dispatch a mouse
@@ -86,6 +86,7 @@ import {
   Rows2Icon,
   SlidersHorizontalIcon,
   UndoIcon,
+  UnplugIcon,
   XIcon,
 } from "lucide-react";
 
@@ -143,9 +144,11 @@ export function TerminalRail({
   sessions,
   tabSuffix,
   onActivate,
+  openIds,
+  onEndSession,
   onCloseAll,
   retryableCount,
-  onRetryAll,
+  onReconnectAll,
   onCloseFailed,
   hiddenCount,
   onUnhideAll,
@@ -179,12 +182,17 @@ export function TerminalRail({
   sessions: TermSession[];
   tabSuffix: Map<string, string>;
   onActivate: (id: string) => void;
+  /** Which sessions have a live shell behind them. Everything else in the list
+   * is connecting, waiting on a host-key answer, or already gone. */
+  openIds: Set<string>;
+  /** End a session's shell and leave its tab where it is. */
+  onEndSession: (id: string) => void;
   onCloseAll: () => void;
   /** How many panes are sitting on a Try again / Reconnect button. One number
-   * for both repairs: whatever Retry all would bring back is exactly what Close
-   * failed would clear away, which is what makes the pair readable. */
+   * for both repairs: whatever Reconnect all would bring back is exactly what
+   * Close failed would clear away, which is what makes the pair readable. */
   retryableCount: number;
-  onRetryAll: () => void;
+  onReconnectAll: () => void;
   onCloseFailed: () => void;
   /** How many open terminals are currently taken out of the grid. */
   hiddenCount: number;
@@ -230,12 +238,12 @@ export function TerminalRail({
   // naming it at all.
   const sessionsExtras: string[] = [];
   if (retryableCount > 0) {
-    sessionsExtras.push("retry or clear away the ones that dropped");
+    sessionsExtras.push("reconnect or clear away the ones that dropped");
   }
   if (gridMode && hiddenCount > 0) {
     sessionsExtras.push("put hidden ones back in the grid");
   }
-  const sessionsHint = `Jump to an open terminal session, ${sessionsExtras
+  const sessionsHint = `Jump to an open terminal session, end one without closing its tab, ${sessionsExtras
     .map((e) => `${e}, `)
     .join("")}or close them all.`;
 
@@ -243,6 +251,10 @@ export function TerminalRail({
   // than the pane's width that changes how wide this row wants to be, so a
   // font change or a control appearing re-asks the question from scratch.
   const railRef = useRef<HTMLDivElement>(null);
+  // Whether the Sessions menu is closing because a session was chosen from it,
+  // as opposed to being dismissed. Read once by `onCloseAutoFocus` below, which
+  // is the only thing that needs to tell those two apart.
+  const pickedSession = useRef(false);
   const { prefs } = useUiPrefs();
   const compact = useRailCompact(
     railRef,
@@ -380,8 +392,13 @@ export function TerminalRail({
       )}
 
       {/* Everything else that shapes the view. All of it is occasional, and
-          together it is what used to push this rail off a 1024px window. */}
-      <DropdownMenu>
+          together it is what used to push this rail off a 1024px window.
+
+          Non-modal for the same reason as the Sessions menu below, and mostly
+          so the two behave alike: two menus side by side in one rail that
+          answer an outside click differently is the kind of difference nobody
+          can name and everybody feels. */}
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
             size={compact ? "icon-sm" : "sm"}
@@ -525,9 +542,21 @@ export function TerminalRail({
         />
         {/* The jump list and Close all are one menu. Both are about the set of
             open sessions, and a Select that was really a command menu plus a
-            button beside it was two controls saying one thing. */}
+            button beside it was two controls saying one thing.
+
+            Not modal, which is the default and was wrong here. A modal menu
+            puts `pointer-events: none` on the whole body for as long as it is
+            open, so the first click anywhere outside is spent dismissing it and
+            never reaches what was clicked; the terminal you were aiming at
+            needs a second click. That is a fair trade for a menu you are
+            expected to leave the moment you pick something, and a bad one for
+            this menu, which stays open on purpose after the unplug button so
+            you can end several sessions in a row. The cost of staying open
+            should not be a wasted click on the way out. Non-modal also drops
+            the focus trap and the scroll lock, neither of which this list
+            wants. */}
         {sessions.length > 0 && (
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
                 size="sm"
@@ -547,7 +576,29 @@ export function TerminalRail({
                 )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-w-72">
+            <DropdownMenuContent
+              align="end"
+              className="max-w-72"
+              // Picking a session hands the keyboard to that session's
+              // terminal, and Radix's own closing behaviour is to put it back
+              // on this button. Whichever of the two runs last wins, and the
+              // order is not ours to decide: `activateDeliberately` waits a
+              // frame for the menu to go before it focuses anything, while
+              // Radix restores focus from its own teardown. When Radix went
+              // second the keyboard sat on this button while the ring was on a
+              // tile, and typing went nowhere until the tile was clicked.
+              //
+              // So do not race it: when the close came from choosing a
+              // session, say plainly that focus is already spoken for. Only
+              // then, because dismissing the menu with Escape or a click
+              // outside has chosen nothing, and returning the keyboard to the
+              // button it came from is exactly right there.
+              onCloseAutoFocus={(e) => {
+                if (!pickedSession.current) return;
+                pickedSession.current = false;
+                e.preventDefault();
+              }}
+            >
               {sessions.map((s) => {
                 // Same colour the tab wears, for the same reason: this list is
                 // how you find a session when there are too many tabs to read,
@@ -556,7 +607,10 @@ export function TerminalRail({
                 return (
                 <DropdownMenuItem
                   key={s.id}
-                  onSelect={() => onActivate(s.id)}
+                  onSelect={() => {
+                    pickedSession.current = true;
+                    onActivate(s.id);
+                  }}
                   className={cn(s.id === activeId && "bg-accent/50")}
                 >
                   {s.type === "ssh" ? (
@@ -578,6 +632,56 @@ export function TerminalRail({
                     {sessionLabel(s)}
                     {tabSuffix.get(s.id)}
                   </span>
+                  {/* End the session, keep the tab.
+
+                      Here rather than on the tab itself because the tab already
+                      has an x, and two buttons a few pixels apart that both look
+                      like "get rid of this" is how you close the wrong thing.
+                      The distance is the point: this is the deliberate one, and
+                      it is worth a menu.
+
+                      Greyed rather than removed once the shell is gone, per this
+                      file's rule, so the row keeps its shape and the column of
+                      icons does not shuffle as sessions die.
+
+                      All three pointer events are stopped, or the row
+                      underneath takes them as "go to this session" and the menu
+                      closes on the way to somewhere nobody asked to be.
+
+                      Pointer-UP is the one that is easy to miss, and stopping
+                      only the other two is worse than stopping none: the menu
+                      item watches pointerdown to know the press started on
+                      itself, and on pointerup it *synthesises a click* on the
+                      row whenever it did not see one, so that a press which
+                      began elsewhere and finished here still selects. Swallow
+                      the pointerdown alone and that flag never gets set, so the
+                      row manufactures the very click this button is trying not
+                      to make: smoke 54 B7 (the unplug jumped you to the session
+                      you had just ended) and B3 (and closed the menu doing it)
+                      were both this, one event apart. */}
+                  <button
+                    type="button"
+                    disabled={!openIds.has(s.id)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerUp={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onEndSession(s.id);
+                    }}
+                    className={cn(
+                      "ml-auto shrink-0 rounded-sm p-1 text-muted-foreground",
+                      "hover:bg-destructive/10 hover:text-destructive",
+                      "disabled:pointer-events-none disabled:opacity-30",
+                    )}
+                    {...hint(
+                      openIds.has(s.id)
+                        ? `End the shell on "${sessionLabel(s)}" and keep the tab. Everything it printed stays on screen, and the pane offers Reconnect when you want it back.`
+                        : "Nothing to end: this session has no shell running. It is connecting, waiting on a host-key answer, or already closed.",
+                    )}
+                  >
+                    <UnplugIcon className="h-3.5 w-3.5" />
+                  </button>
                 </DropdownMenuItem>
                 );
               })}
@@ -596,10 +700,20 @@ export function TerminalRail({
                   dead row for something like Reset grid, where the action is
                   the only clue that tile edges can be dragged at all. These
                   three teach nothing you don't already know the moment they
-                  appear, so a menu that stays short is worth more. */}
+                  appear, so a menu that stays short is worth more.
+
+                  "Reconnect all" over "Retry all", which is what this said
+                  first. The set is mixed: some of these panes connected and
+                  dropped, some were refused and never connected at all, and the
+                  buttons they wear differ for exactly that reason (Reconnect
+                  and Try again). One word has to cover both. Reconnect is a
+                  slight stretch for a session that never got up, and retry was
+                  a stretch for one that ran for an hour, but reconnect is the
+                  one an operator reads as the thing they want, which is the
+                  test that matters in a menu. */}
               {retryableCount > 0 && (
                 <DropdownMenuItem
-                  onSelect={onRetryAll}
+                  onSelect={onReconnectAll}
                   {...hint(
                     retryableCount === 1
                       ? "Reconnect the one session that dropped or was refused. Sessions still connecting, and any waiting on a host-key answer, are left alone."
@@ -607,19 +721,20 @@ export function TerminalRail({
                   )}
                 >
                   <RefreshCwIcon />
-                  Retry all
+                  Reconnect all
                   <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
                     {retryableCount}
                   </span>
                 </DropdownMenuItem>
               )}
 
-              {/* The other answer to the same tabs, and it shares Retry all's
-                  count on purpose: the pane you would retry is the pane you
-                  would give up on, so a reader who has understood one entry has
-                  understood both. No confirmation, unlike Close all, because
-                  every tab this touches is already dead, its shell already
-                  gone; there is nothing here to interrupt or lose. */}
+              {/* The other answer to the same tabs, and it shares Reconnect
+                  all's count on purpose: the pane you would reconnect is the
+                  pane you would give up on, so a reader who has understood one
+                  entry has understood both. No confirmation, unlike Close all
+                  and unlike its own twin above, because every tab this touches
+                  is already dead, its shell already gone; there is nothing here
+                  to interrupt, and nothing it starts. */}
               {retryableCount > 0 && (
                 <DropdownMenuItem
                   onSelect={onCloseFailed}
