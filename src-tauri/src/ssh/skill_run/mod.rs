@@ -990,10 +990,18 @@ impl<E: SkillEvents> Engine<E> {
     /// **What it does, per shell.** bash turns recording off outright, which
     /// covers both the file and the list Up walks. zsh has no such switch, so
     /// `fc -p` pushes a fresh history with no file behind it, which is the same
-    /// answer in zsh's own terms. Each is wrapped so the shell that does not
-    /// understand it says nothing: bash has no `fc -p` and zsh has no `history`
-    /// option, and neither complaint belongs on the operator's screen or in the
-    /// engine's match buffer.
+    /// answer in zsh's own terms.
+    ///
+    /// The `if`/`elif` around them is not tidiness, it is the whole thing
+    /// working. Letting each shell try the other's builtin and swallowing the
+    /// complaint looks equivalent and is not: `set +o history` in zsh does not
+    /// merely fail, it **abandons the rest of the command line**, so the shell
+    /// probe that shared that line never ran and every zsh run died before its
+    /// first step with no event to say why. Redirecting stderr hides the
+    /// message, not the consequence. So each branch is entered only by the
+    /// shell it was written for, which is the same form, for the same reason,
+    /// as [`crate::omni::SHELL_INTEGRATION`], and a Bourne shell that is
+    /// neither parses the lot and takes no branch.
     ///
     /// **What it does not do.** A shell with no hooks (a plain `sh`, or a host
     /// set to Shell integration: Never) never reaches `install_hooks`, so it
@@ -1003,7 +1011,8 @@ impl<E: SkillEvents> Engine<E> {
     /// not to write to would be worse than the thing it was avoiding.
     fn history_off(&self) -> &'static str {
         if self.quiet_history {
-            "{ set +o history; } 2>/dev/null; { fc -p; } 2>/dev/null; "
+            "if [ -n \"$BASH_VERSION\" ]; then set +o history; \
+             elif [ -n \"$ZSH_VERSION\" ]; then fc -p; fi; "
         } else {
             ""
         }

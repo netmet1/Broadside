@@ -319,11 +319,20 @@ impl SkillLogState {
         if !write {
             return;
         }
-        let steps = if detail.writes_steps() {
+        let mut steps = if detail.writes_steps() {
             run.steps
         } else {
             Vec::new()
         };
+        // Itemized asked for one line per step, so the panel's own account of
+        // the same step is not part of what it asked for. Kept only where it is
+        // the point (Panel) or where everything is (Debug), so the file stays
+        // the size the level implies.
+        if !matches!(detail, LogDetail::Panel | LogDetail::Debug) {
+            for step in &mut steps {
+                step.panel.clear();
+            }
+        }
         let record = RunRecord {
             ts: Utc::now().to_rfc3339(),
             run_id: run_id.to_string(),
@@ -463,6 +472,23 @@ mod tests {
         assert_eq!(steps[0]["index"], 1);
         assert_eq!(steps[1]["index"], 2);
         assert_eq!(steps[1]["step_id"], "second");
+    }
+
+    #[test]
+    fn itemized_does_not_carry_the_panels_account_of_the_same_step() {
+        // One line per step is what was asked for; the panel's version of it is
+        // a different level's answer and would only make the file bigger.
+        let (_dir, log) = state();
+        log.begin("run1", 7, "web-01", "Skill");
+        log.panel_line("run1", 7, "    step first       run: do first".into());
+        log.step("run1", 7, run_step("first", "pass"));
+        log.finish("run1", 7, true, "finished", LogDetail::Itemized, true);
+
+        let v: serde_json::Value = serde_json::from_str(&log.tail(1).unwrap()[0]).unwrap();
+        assert!(
+            v["steps"][0].get("panel").is_none(),
+            "itemized kept the panel lines: {v}"
+        );
     }
 
     #[test]

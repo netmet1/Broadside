@@ -69,6 +69,49 @@ impl SkillsHost {
         host
     }
 
+    /// Reads a file from the test user's home, empty if it is not there. Used
+    /// for the shell's own history file, which is the only witness to whether
+    /// Broadside left one.
+    pub fn read_home_file(&self, name: &str) -> String {
+        let out = Command::new("docker")
+            .args([
+                "exec",
+                "-u",
+                USER,
+                &self.container_id,
+                "sh",
+                "-c",
+                "cat \"$HOME/$1\" 2>/dev/null || true",
+                "sh",
+                name,
+            ])
+            .output()
+            .expect("docker exec failed to spawn");
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
+    /// Reads any file in the container as root, empty if it is not there.
+    ///
+    /// For `/root/.bash_history`, which the test user cannot read and which is
+    /// the only witness to what the shell a `sudo -i` opened remembered. That
+    /// is a different shell with a different history file, so a check against
+    /// the login user's own history says nothing about it.
+    pub fn read_as_root(&self, path: &str) -> String {
+        let out = Command::new("docker")
+            .args([
+                "exec",
+                &self.container_id,
+                "sh",
+                "-c",
+                "cat \"$1\" 2>/dev/null || true",
+                "sh",
+                path,
+            ])
+            .output()
+            .expect("docker exec failed to spawn");
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
     /// Appends one line to a rc file in the test user's home, so a run can be
     /// driven against the prompt an operator actually has rather than the one
     /// Debian ships.

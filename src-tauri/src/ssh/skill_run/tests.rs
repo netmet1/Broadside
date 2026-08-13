@@ -1540,12 +1540,16 @@ async fn skill_log_only_stops_the_shell_keeping_its_own_record() {
         host.writes().join("")
     );
     // zsh has no `history` option, so it gets the answer in its own terms, and
-    // neither shell may complain about the half it does not understand.
+    // each branch is entered only by the shell it was written for. Swallowing
+    // the other's complaint instead is not equivalent: `set +o history` in zsh
+    // abandons the rest of the line, taking the shell probe with it, and every
+    // zsh run then died before its first step.
     for line in &quieted {
         assert!(line.contains("fc -p"), "zsh has nothing to work with: {line}");
         assert!(
-            line.matches("2>/dev/null").count() >= 2,
-            "a shell that does not know one of these would say so: {line}"
+            line.contains("if [ -n \"$BASH_VERSION\" ]")
+                && line.contains("elif [ -n \"$ZSH_VERSION\" ]"),
+            "neither builtin may be reached by the shell it would break: {line}"
         );
     }
     // And the operator's own command is still exactly their own command.

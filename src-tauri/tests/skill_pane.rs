@@ -499,10 +499,13 @@ struct Ran {
 struct Spec {
     cols: u32,
     shell: &'static str,
-    /// A `PS1` appended to the login shell's rc, so the very first prompt on
-    /// the glass is already the operator's own.
-    ps1: Option<&'static str>,
+    /// Lines appended to the login shell's rc before the first connection, so
+    /// whatever they set is already in force at the very first prompt.
+    rc: Vec<String>,
     integration: ShellIntegrationPref,
+    /// The operator's **Where to log** answer: true is "Skill Log Only", which
+    /// asks each shell to stop keeping a history of its own.
+    quiet_history: bool,
 }
 
 impl Spec {
@@ -510,17 +513,21 @@ impl Spec {
         Spec {
             cols,
             shell: "bash",
-            ps1: None,
+            rc: Vec::new(),
             integration: ShellIntegrationPref::Auto,
+            quiet_history: false,
         }
     }
     fn shell(mut self, shell: &'static str) -> Self {
         self.shell = shell;
         self
     }
-    fn ps1(mut self, ps1: &'static str) -> Self {
-        self.ps1 = Some(ps1);
+    fn rc(mut self, line: &str) -> Self {
+        self.rc.push(line.to_string());
         self
+    }
+    fn ps1(self, ps1: &str) -> Self {
+        self.rc(&format!("PS1='{ps1}'"))
     }
     /// The host set to **Shell integration: Never**, which is the operator
     /// saying "write nothing to this machine".
@@ -528,22 +535,49 @@ impl Spec {
         self.integration = ShellIntegrationPref::Never;
         self
     }
+    fn quiet_history(mut self) -> Self {
+        self.quiet_history = true;
+        self
+    }
+    fn rc_file(&self) -> &'static str {
+        if self.shell == "zsh" {
+            ".zshrc"
+        } else {
+            ".bashrc"
+        }
+    }
+    fn history_file(&self) -> &'static str {
+        if self.shell == "zsh" {
+            ".zsh_history"
+        } else {
+            ".bash_history"
+        }
+    }
 }
 
 async fn drive(spec: Spec) -> Ran {
+    drive_config(spec, sequence()).await.0
+}
+
+/// The same, for a sequence of the test's own choosing, and handing back what
+/// the shell wrote to its history file on the way out as well as the pane.
+///
+/// Reading the history is why a caller has to end its sequence by leaving the
+/// shell: bash and zsh both write the file when they exit, so a run that hands
+/// the shell back still open has left nothing to read yet.
+async fn drive_config(spec: Spec, cfg: SequenceConfig) -> (Ran, String) {
+    let host = SkillsHost::start_with_shell(&format!("/bin/{}", spec.shell));
+    for line in &spec.rc {
+        host.append_rc(spec.rc_file(), line);
+    }
     let Spec {
         cols,
         shell,
-        ps1,
         integration: pref,
+        quiet_history,
+        ..
     } = spec;
-    let host = SkillsHost::start_with_shell(&format!("/bin/{shell}"));
-    if let Some(ps1) = ps1 {
-        host.append_rc(
-            if shell == "zsh" { ".zshrc" } else { ".bashrc" },
-            &format!("PS1='{ps1}'"),
-        );
-    }
+    let history_file = spec.history_file();
     let fingerprint = trust(&host).await;
 
     let raw = Arc::new(Mutex::new(Vec::new()));
@@ -609,16 +643,26 @@ async fn drive(spec: Spec) -> Ran {
     // command hands them over: a host told "never" is still bash, and is still
     // drivable, it just gets no hooks and so no quiet completions.
     .with_known_capability(capability)
-    .with_integration_sent(integration.resolve(capability).with_integration());
+    .with_integration_sent(integration.resolve(capability).with_integration())
+    .with_quiet_history(quiet_history);
 
     // The same preparation the app does before a run: it validates the graph and
     // it is where an authored `\n` becomes a real newline. Skipping it sent the
     // interactive answer as the two literal characters, which is a fine way to
     // learn that the engine does not unescape at send time.
-    let cfg = prepare(&sequence(), &HashMap::new()).expect("the sequence is well formed");
+    let cfg = prepare(&cfg, &HashMap::new()).expect("the sequence is well formed");
     let outcome = tokio::time::timeout(Duration::from_secs(240), run_host(engine, &cfg))
         .await
         .expect("the run never finished");
+
+    // Both histories: the login shell's, and the one belonging to the shell a
+    // `sudo -i` opened, which is a different shell with a different file and is
+    // the half a per-host mechanism would miss.
+    let history = format!(
+        "{}{}",
+        host.read_home_file(history_file),
+        host.read_as_root("/root/.bash_history")
+    );
 
     // Render everything the host said, exactly as the pane would have.
     let mut term = Term::new(cols as usize);
@@ -626,16 +670,19 @@ async fn drive(spec: Spec) -> Ran {
     let pane = term.text();
     println!(
         "--------------- {shell} at {cols} columns{}{} ---------------\n{}",
-        if ps1.is_some() { ", operator's own prompt" } else { "" },
         if pref == ShellIntegrationPref::Never { ", no integration" } else { "" },
+        if quiet_history { ", history off" } else { "" },
         readable(&pane)
     );
     println!("---------------- log -----------------\n{}", events.log());
-    Ran {
-        pane,
-        outcome,
-        events,
-    }
+    (
+        Ran {
+            pane,
+            outcome,
+            events,
+        },
+        history,
+    )
 }
 
 /// Nothing of Broadside's own may be on the glass at any width. Split out
@@ -884,6 +931,151 @@ async fn a_two_line_prompt_keeps_both_of_its_lines() {
     );
     assert_commands_read_like_typing(&pane, Wrapped::No);
     assert_no_plumbing(&pane);
+}
+
+// ---------------------------------------------------------------------------
+// What the operator's shell remembers afterwards
+// ---------------------------------------------------------------------------
+
+/// A short skill that leaves the shell, so it writes its history file before
+/// the test reads it. Both shells write on exit and not before, so a run that
+/// hands the shell back still open has left nothing to read.
+///
+/// `sudo -i` is in here on purpose. History belongs to a shell rather than a
+/// host, so the root shell it opens has never heard of any of this, and
+/// `remember-me-root` is the command that says whether the engine asked the new
+/// shell the same question it asked the old one.
+fn history_sequence() -> SequenceConfig {
+    SequenceConfig {
+        params: vec![],
+        start_step_id: "one".into(),
+        // No transfer, so `run_host` skips the uid probe: this sequence ends by
+        // closing the shell and there is nothing left to probe.
+        allow_transfer: false,
+        max_step_repeats: None,
+        unlimited_step_repeats: false,
+        steps: vec![
+            run("one", "echo remember-me-login", "escalate", STOP),
+            interactive(run("escalate", "sudo -i", "two", STOP)),
+            run("two", "echo remember-me-root", "leave", STOP),
+            SeqStep::Send {
+                id: "leave".into(),
+                input: "exit\\n".into(),
+                next: "out".into(),
+            },
+            SeqStep::Send {
+                id: "out".into(),
+                input: "exit\\n".into(),
+                next: STOP.into(),
+            },
+        ],
+    }
+}
+
+/// The setting that leaves things as they were. Run first as the control: a
+/// "nothing was recorded" assertion is worth nothing until something has proved
+/// this host records anything at all.
+#[tokio::test]
+#[ignore]
+async fn remote_history_only_leaves_the_commands_where_they_have_always_been() {
+    let (ran, history) = drive_config(Spec::bash(100), history_sequence()).await;
+    println!("--------------- both histories ---------------\n{history}");
+    assert_ran(&ran);
+    for command in ["echo remember-me-login", "echo remember-me-root"] {
+        assert!(
+            history.contains(command),
+            "the fixture records nothing, so this suite cannot tell whether \
+             Broadside stopped it: {command:?} missing from\n{history}"
+        );
+    }
+}
+
+/// Both commands really ran.
+///
+/// Every assertion in this section is about something **not** being in a file,
+/// and a run that died on its first line satisfies all of them. It nearly did:
+/// the first version of the history-off line abandoned the rest of the command
+/// line on zsh, so the run never started, the history was empty, and the test
+/// went green. This is what makes the emptiness mean anything.
+fn assert_ran(ran: &Ran) {
+    assert_eq!(
+        ran.events.steps(),
+        vec!["one", "escalate", "two", "leave", "out"],
+        "the run did not do what it was asked, so an empty history proves \
+         nothing:\n{}",
+        ran.events.log()
+    );
+    for echoed in ["remember-me-login", "remember-me-root"] {
+        assert!(
+            ran.pane.contains(echoed),
+            "{echoed:?} never reached the pane:\n{}",
+            readable(&ran.pane)
+        );
+    }
+}
+
+/// And the setting that does not (prompts80). The engine asks each shell to
+/// stop keeping a record, on the same line it asks about the OSC 133 hooks, so
+/// the question is re-asked at exactly the moments the shell can have changed.
+#[tokio::test]
+#[ignore]
+async fn skill_log_only_leaves_nothing_in_the_hosts_own_history() {
+    let (ran, history) =
+        drive_config(Spec::bash(100).quiet_history(), history_sequence()).await;
+    println!("--------------- both histories ---------------\n{history}");
+    assert_ran(&ran);
+    // Both shells, and the second is the one the mechanism could plausibly miss:
+    // the root shell a `sudo -i` opens is a different shell with its own
+    // history, and it is the first step of most skills.
+    for command in ["remember-me-login", "remember-me-root"] {
+        assert!(
+            !history.contains(command),
+            "{command:?} was recorded on the host after all:\n{history}"
+        );
+    }
+    // Nor any of Broadside's own plumbing, which is the same promise from the
+    // other end.
+    for plumbing in ["__bsshell", "__bsuid", "__bshook", "set +o history"] {
+        assert!(
+            !history.contains(plumbing),
+            "{plumbing:?} was recorded on the host:\n{history}"
+        );
+    }
+}
+
+/// zsh has no `history` option to turn off, so it gets `fc -p` instead: a fresh
+/// history with no file behind it, pushed over the real one. Same promise, said
+/// in zsh's own terms, and worth its own run because the two shells share none
+/// of the mechanism.
+///
+/// The rc lines are the fixture admitting that a bare zsh keeps no history at
+/// all: with `HISTFILE` unset there is nothing to write to, and a test that
+/// passed because of that would be proving nothing.
+#[tokio::test]
+#[ignore]
+async fn skill_log_only_on_zsh_which_has_no_switch_to_turn_off() {
+    let zsh = || {
+        Spec::bash(100)
+            .shell("zsh")
+            .rc("HISTFILE=$HOME/.zsh_history")
+            .rc("SAVEHIST=1000")
+            .rc("HISTSIZE=1000")
+    };
+    let (control_run, control) = drive_config(zsh(), history_sequence()).await;
+    println!("--------------- zsh control ---------------\n{control}");
+    assert_ran(&control_run);
+    assert!(
+        control.contains("echo remember-me-login"),
+        "the zsh fixture records nothing, so this proves nothing:\n{control}"
+    );
+
+    let (ran, history) = drive_config(zsh().quiet_history(), history_sequence()).await;
+    println!("--------------- zsh, history off ---------------\n{history}");
+    assert_ran(&ran);
+    assert!(
+        !history.contains("remember-me-login"),
+        "zsh kept the command anyway:\n{history}"
+    );
 }
 
 /// A host set to **Shell integration: Never** (smoke 57-2 D3): the operator has
