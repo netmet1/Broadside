@@ -77,6 +77,26 @@ struct Marks {
     done: Option<Option<i32>>,
 }
 
+/// Whether a prompt is halfway onto the screen right now.
+///
+/// Its own thing, outside [`Marks`], because it is not a fact about the shell
+/// that the engine arms and takes: it is where the cursor is, and arming has no
+/// opinion on that. `A` opens a prompt and the `B` on the end of `PS1` closes
+/// it, so between the two there is prompt text on its way to the pane that
+/// nothing has drawn yet.
+///
+/// The engine needs it before it lowers the curtain. Everything from that
+/// moment on is dropped, so lowering between an `A` and its `B` drops the
+/// prompt the operator was about to be given, and the pane loses a line it
+/// should have kept. That is not hypothetical: waiting for `A` was how the
+/// first prompt of a run went missing at every width.
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum PromptState {
+    #[default]
+    Idle,
+    Drawing,
+}
+
 /// Frozen-line budget. Long enough to span a verbose step's output, bounded so
 /// a run that produces gigabytes can't grow the buffer without limit.
 const MAX_PENDING: usize = 256 * 1024;
@@ -99,6 +119,9 @@ struct Interp {
     col: usize,
     /// What the shell has said about itself, out of band.
     marks: Marks,
+    /// Whether a prompt is part-drawn. Deliberately not part of [`Marks`], and
+    /// so not cleared by arming: see [`PromptState`].
+    prompt_state: PromptState,
 }
 
 impl Interp {
@@ -240,7 +263,11 @@ impl Perform for Interp {
         };
         if *id == b"133".as_slice() {
             match params.get(1).and_then(|kind| kind.first()) {
-                Some(b'A') => self.marks.prompt = true,
+                Some(b'A') => {
+                    self.marks.prompt = true;
+                    self.prompt_state = PromptState::Drawing;
+                }
+                Some(b'B') => self.prompt_state = PromptState::Idle,
                 Some(b'C') => {
                     self.marks.output_at = Some(self.view_len());
                     // A new command has started, so any completion banked before
@@ -395,6 +422,11 @@ impl Screen {
     /// front of it *now*, rather than in the one it started with.
     pub fn saw_prompt(&self) -> bool {
         self.interp.marks.prompt
+    }
+
+    /// Whether a prompt is halfway onto the screen. See [`PromptState`].
+    pub fn prompt_in_progress(&self) -> bool {
+        self.interp.prompt_state == PromptState::Drawing
     }
 
     /// Whether the shell has reported a command finishing **and** started one

@@ -36,13 +36,15 @@
 //! - A `run` step's command goes out **plain**, with nothing appended, wherever
 //!   the shell can report its own completions through the OSC 133 integration
 //!   [`crate::omni`] installs on connect. See [`Engine::quiet_ready`].
-//! - The engine's probes are typed with the terminal's echo off and answer
-//!   inside an escape sequence no terminal draws. See [`Engine::send_hidden`].
+//! - The engine's probes are typed plain too, and are kept off the glass on the
+//!   way out of Broadside rather than by anything done to the shell. See
+//!   [`curtain`].
 //!
-//! Both degrade rather than break. A shell that never installed the hooks (or a
-//! nested one that lost them and would not take them back) gets the visible
-//! `; printf '__bsdone_%s__\n' "$?"` wrapper that every host used to get, and a
-//! shell that ignores `stty` shows the probe exactly as it always did.
+//! The first degrades rather than breaks: a shell that never installed the
+//! hooks (or a nested one that lost them and would not take them back) gets the
+//! visible `; printf '__bsdone_%s__\n' "$?"` wrapper that every host used to
+//! get. The second does not need to degrade, because it does not ask the shell
+//! for anything.
 //!
 //! Both also have to reckon with the same awkward fact, which is that everything
 //! the shell says arrives a round trip after the engine typed. Its answer to the
@@ -52,6 +54,7 @@
 //! for by name.
 
 pub mod config;
+pub mod curtain;
 pub mod screen;
 pub mod state;
 
@@ -67,6 +70,7 @@ use tokio::time::Instant;
 use crate::error::{AppError, AppResult};
 use crate::ssh::ShellCapability;
 use config::{SeqStep, SequenceConfig, TimeoutAction, STOP};
+use curtain::Curtain;
 use screen::Screen;
 use state::Ctl;
 
@@ -90,12 +94,6 @@ const SHELL_MARKER: &str = "__bsshell_";
 /// Same marker trick again for the root probe: `__bsuid_0__` means the shell's
 /// effective uid is 0, and `(\d+)` never matches the `%s` echo.
 const UID_MARKER: &str = "__bsuid_";
-/// The shell's answer to `stty -echo`: its exit status, so `__bsecho_0__` means
-/// the terminal has stopped echoing and the next line can be typed unseen. The
-/// `%s` trick matters more here than anywhere: this answer is read off a line
-/// that *was* echoed, so a marker without a digit in it would match its own echo
-/// and prove nothing.
-const ECHO_MARKER: &str = "__bsecho_";
 /// Whether the OSC 133 hooks are in the shell in front of us, `y` or `n`, asked
 /// and answered in the same hidden line that offers them.
 const HOOK_MARKER: &str = "__bshook_";
@@ -141,16 +139,23 @@ const INTERRUPT_MAX: Duration = Duration::from_secs(5);
 const HANDBACK_QUIET: Duration = Duration::from_millis(500);
 const HANDBACK_MAX: Duration = Duration::from_secs(3);
 
-/// How long a hidden line waits for the shell to confirm the terminal's echo is
-/// off before the line it is hiding is typed (see [`Engine::send_hidden`]).
+/// How long the curtain stays down after a hidden line has been answered,
+/// waiting for the shell to finish redrawing its prompt (see
+/// [`Engine::raise_curtain`]).
 ///
-/// Waiting for the confirmation, rather than for a pause, is the whole point.
-/// A fixed quiet window was the bug smoke test 56 found: the window opened on
-/// the login banner, expired while the shell was still working through its
-/// startup, and the line meant to be hidden went out to a terminal that was
-/// still echoing. The operator watched Broadside's plumbing go past, and the
-/// erase behind it took the wrong two rows.
-const HIDE_ECHO_MAX: Duration = Duration::from_secs(3);
+/// This is a backstop and not the mechanism: on any shell running the
+/// integration the prompt's own mark lifts the curtain, and it arrives in the
+/// same breath as the answer. What this bounds is the shell that answers and
+/// then goes quiet, which is a shell that refused the hooks or died mid-line.
+/// Long enough to cover a round trip and a prompt, short enough that nobody
+/// watches a still pane and wonders.
+const CURTAIN_LIFT_MAX: Duration = Duration::from_millis(600);
+/// How long a prompt that has announced itself has to finish arriving before
+/// the curtain comes down in front of it (see
+/// [`Engine::let_the_prompt_finish`]). The gap between the two marks is one
+/// `PS1` being written, so this is generous by an order of magnitude and is
+/// only ever paid by a shell that opens a prompt and never closes it.
+const PROMPT_DRAW_MAX: Duration = Duration::from_millis(400);
 /// How long to wait for the shell to say whether the integration hooks are in
 /// it. A whole shell startup can be inside this one, since offering the hooks to
 /// a nested shell means running a line of shell in it.
@@ -167,8 +172,10 @@ const MAX_HOOK_INSTALLS: u8 = 2;
 /// ([`crate::omni::shell_setup_command`]) is written from inside the PTY session
 /// task once the login banner has streamed, so the engine is handed a live
 /// session a long way before the shell behind it is at a prompt. A line typed
-/// into a login that is still running sits in the terminal's input queue with
-/// the echo on, which is exactly what `stty -echo` cannot help with.
+/// into a login that is still running sits in the terminal's input queue until
+/// something reads it, and the curtain cannot help with that: it hides the line
+/// perfectly well, and the run still stalls waiting for an answer from a shell
+/// that has not started listening.
 ///
 /// A shell with the integration announces its first prompt, and that is the
 /// signal. A shell without one is waited out instead: quiet for `LOGIN_QUIET`,
@@ -305,6 +312,10 @@ type PtyWrite = Box<dyn Fn(&[u8]) -> AppResult<()> + Send>;
 pub struct PtyLink {
     pub rx: mpsc::UnboundedReceiver<TapMsg>,
     pub write: PtyWrite,
+    /// The engine's half of the curtain. Made by [`tap`] alongside the tap's
+    /// half so the two are the same one; a curtain the tap does not share is a
+    /// curtain that hides nothing.
+    pub curtain: Curtain,
 }
 
 /// Which host this engine is driving, for event payloads.
@@ -426,6 +437,10 @@ pub struct Engine<E: SkillEvents> {
     /// How many times this run has been refused the hooks, against
     /// [`MAX_HOOK_INSTALLS`].
     hook_installs: u8,
+    /// What the operator is not being shown while the engine asks the shell
+    /// something. Shared with the tap, which is the half that does the not
+    /// showing. See [`curtain`].
+    curtain: Curtain,
 }
 
 impl<E: SkillEvents> Engine<E> {
@@ -436,6 +451,7 @@ impl<E: SkillEvents> Engine<E> {
         meta: HostMeta,
     ) -> Self {
         Self {
+            curtain: link.curtain.clone(),
             link,
             ctl,
             screen: Screen::new(),
@@ -451,6 +467,7 @@ impl<E: SkillEvents> Engine<E> {
             hook_installs: 0,
         }
     }
+
 
     /// Tells the engine what the SSH-level probe read as the login shell, so a
     /// refusal can name it. Purely cosmetic; it never permits a run.
@@ -546,73 +563,117 @@ impl<E: SkillEvents> Engine<E> {
     /// Types a line of Broadside's own plumbing without the operator watching it
     /// go by.
     ///
-    /// Three lines, and only the first two can ever be seen, because the third
-    /// is typed after the echo is off:
+    /// One line, typed plain. Nothing is done to the shell to hide it: the
+    /// curtain comes down on the way out of Broadside instead, so the echo, the
+    /// answer and the shell's redraw of its prompt are simply never forwarded to
+    /// the pane. See [`curtain`] for why that replaced an erase typed at the
+    /// host, and what it cost.
     ///
-    /// 1. `stty -echo`. Eleven characters, and its shortness is the design
-    ///    rather than a nicety: see below.
-    /// 2. A `printf` that says the shell has got that far, which is what the
-    ///    engine waits for. Whether *this* line was echoed is also the answer to
-    ///    "did the `stty` take", read directly rather than inferred: the echo of
-    ///    a format string carries `%s` where the answer carries a digit.
-    /// 3. The payload, then the erase, then `stty echo`. The restore rides on
-    ///    the payload rather than being sent after it, so the echo comes back
-    ///    even if the engine stops reading (a Stop host pressed mid-line must
-    ///    not leave the operator a shell that types nothing).
+    /// The order matters and is the one thing to be careful with: the curtain is
+    /// lowered *before* the write, not after, so a shell quick enough to echo
+    /// inside the same breath cannot get a byte onto the glass first.
     ///
-    /// The erase is `cursor up three, column 0, erase to end of display`: four
-    /// rows, one per line submitted plus the one the cursor ends on. Submitting
-    /// a line takes a row whether or not the line was echoed, which is measured
-    /// rather than assumed (smoke 56-2), so the count is the same either way and
-    /// the whole of it is checked against a modelled terminal in
-    /// [`pane_tests`](super::pane_tests).
-    ///
-    /// **Why line one has to be short.** The erase counts rows, and a line long
-    /// enough to wrap occupies more than one, so the part that wrapped survives
-    /// it. Smoke test 56-3 put the `stty` and its report on the same line, 67
-    /// characters, which fits an operator's window and does not fit an
-    /// eighty-column pane: at that width every hidden line left most of itself
-    /// on the screen. Splitting them is what makes the echoed text short enough
-    /// that no realistic prompt can push it over the edge of a pane.
-    ///
-    /// `needs_quiet` is for a payload too long to be worth showing: the hook
-    /// offer is most of a screenful of shell, so it is not typed at all unless
-    /// the shell has confirmed nobody will see it. The short probes are sent
-    /// either way, since a shell with no `stty` (or a line editor that echoes
-    /// for itself regardless) should still answer them, visibly, as it always
-    /// did.
-    async fn send_hidden(&mut self, payload: &str, needs_quiet: bool) -> bool {
-        if self.send_bytes(QUIET_LINE).is_err() {
-            return false;
-        }
-        if self.send_bytes(&echo_report_line()).is_err() {
-            // Only one line got out, so there is nothing to erase four rows of:
-            // the bare restore, best effort, on a link that has just failed a
-            // write and will very likely fail this one too.
-            let _ = self.send_bytes(BARE_RESTORE);
-            return false;
-        }
-        let re = Regex::new(&format!(r"{ECHO_MARKER}(\d+)__")).expect("static regex");
-        let (answered, before) = match self.hidden_answer_with_prefix(&re, HIDE_ECHO_MAX).await {
-            Some((_, before)) => (true, before),
-            None => (false, String::new()),
+    /// The caller owns raising it again, because the caller is the one that
+    /// knows when its answer has arrived. Every path out of this function that
+    /// returns `false` has already raised it: a curtain left down is a pane that
+    /// never updates again, which is a far worse failure than a visible probe.
+    async fn send_hidden(&mut self, payload: &str) -> bool {
+        let end = self.curtain_end();
+        let line = match end {
+            curtain::End::PromptMark => hidden_line(payload),
+            curtain::End::ProbeAnswer => hidden_line_self_repairing(payload),
         };
-        // The report's own echo is the measurement. A terminal that is still
-        // echoing has already put the format string on the screen by the time
-        // the answer arrives, and the format string is the one thing that can
-        // never be mistaken for an answer.
-        let quiet = answered && !before.contains(&format!("{ECHO_MARKER}%s__"));
-        if needs_quiet && !quiet {
-            let _ = self.send_bytes(&restore_line());
-            return false;
-        }
-        if self.send_bytes(&hidden_line(payload)).is_err() {
-            // The hidden line never landed, so nothing on the far side is going
-            // to turn echo back on. This is the one path that has to.
-            let _ = self.send_bytes(&restore_line());
+        self.let_the_prompt_finish().await;
+        self.curtain.lower(end);
+        if self.send_bytes(&line).is_err() {
+            self.raise_curtain().await;
             return false;
         }
         true
+    }
+
+    /// Waits for a part-drawn prompt to finish arriving, before anything is
+    /// hidden from the operator.
+    ///
+    /// The curtain drops *everything* from the moment it is lowered, so the one
+    /// thing that must not be in flight when it comes down is a prompt the
+    /// operator is entitled to see. The engine is told the login is over by the
+    /// shell announcing a prompt, and announcing one is the *first* thing it
+    /// does: the prompt's text, and the mark on the end of it, are still to
+    /// come. Lowering there ate the opening prompt of every run, which is how
+    /// this was found.
+    ///
+    /// Bounded and best-effort. A shell sending no marks at all is never
+    /// waiting on anything here, and one that opens prompts without closing
+    /// them (a half-installed integration) pays the bound once per hidden line
+    /// rather than hanging.
+    async fn let_the_prompt_finish(&mut self) {
+        if !self.screen.prompt_in_progress() {
+            return;
+        }
+        let deadline = Instant::now() + PROMPT_DRAW_MAX;
+        while self.screen.prompt_in_progress() {
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => return,
+                msg = self.link.rx.recv() => match msg {
+                    Some(TapMsg::Data(bytes)) => self.screen.feed(&bytes),
+                    Some(TapMsg::Closed) | None => return,
+                },
+            }
+        }
+    }
+
+    /// Which marker should lift the curtain for the line about to be typed.
+    ///
+    /// The good answer needs the shell to be sending OSC 133, and the honest
+    /// version of "is it" is the same pair [`Engine::wait_for_login`] trusts:
+    /// the integration was written to this session, and the connect-time probe
+    /// read a shell that installs it. `sh` parses the integration happily and
+    /// installs nothing, so it is the case this exists to catch.
+    ///
+    /// A nested shell opened by a step is covered without asking, because the
+    /// line that matters there is [`Engine::install_hooks`], and a shell that
+    /// takes the hooks draws its very next prompt with the mark on the end.
+    /// One that refuses them sends no mark and is caught by the deadline.
+    fn curtain_end(&self) -> curtain::End {
+        if self.integration_sent && self.known_capability == Some(ShellCapability::Full) {
+            curtain::End::PromptMark
+        } else {
+            curtain::End::ProbeAnswer
+        }
+    }
+
+    /// Puts the pane back in the operator's hands, once the shell has finished
+    /// saying what it was going to say.
+    ///
+    /// The answer is not the end of the hidden line. On the
+    /// [`End::PromptMark`](curtain::End::PromptMark) path the shell still has to
+    /// redraw its prompt, and it is that redraw the curtain is really waiting
+    /// for: lifting at the answer would forward the prompt and leave the pane
+    /// showing two. So this waits for the mark rather than for the answer, which
+    /// is why it is the caller's job and not [`Engine::send_hidden`]'s.
+    ///
+    /// The wait is bounded by [`CURTAIN_LIFT_MAX`] and the bytes go into the
+    /// screen as they arrive, so nothing is lost by waiting here.
+    ///
+    /// Nothing is repaired when the bound is what ends it, and that is the
+    /// deliberate part. A shell that answered and then sent no mark did still
+    /// redraw its prompt, and that redraw went under the curtain with
+    /// everything else, so the prompt left on the glass is the one the operator
+    /// should be looking at. Clearing the row "to be safe" would blank a pane
+    /// that was already correct.
+    async fn raise_curtain(&mut self) {
+        let deadline = Instant::now() + CURTAIN_LIFT_MAX;
+        while self.curtain.is_down() {
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => break,
+                msg = self.link.rx.recv() => match msg {
+                    Some(TapMsg::Data(bytes)) => self.screen.feed(&bytes),
+                    Some(TapMsg::Closed) | None => break,
+                },
+            }
+        }
+        self.curtain.raise();
     }
 
     /// Reads the host until one of the engine's own probes answers, and takes
@@ -620,27 +681,10 @@ impl<E: SkillEvents> Engine<E> {
     /// match Broadside's bookkeeping.
     ///
     /// Controls are deliberately not read, for the reason given on
-    /// [`Engine::discard_unsubmitted`]: these windows bracket a shell with its
-    /// echo turned off, and a Detach honoured in the middle of one would hand
-    /// the operator a shell that types nothing back at them.
+    /// [`Engine::discard_unsubmitted`]: these windows run with the curtain down,
+    /// and a Detach honoured in the middle of one would hand the operator a pane
+    /// that had stopped drawing.
     async fn hidden_answer(&mut self, re: &Regex, max: Duration) -> Option<String> {
-        self.hidden_answer_with_prefix(re, max)
-            .await
-            .map(|(answer, _)| answer)
-    }
-
-    /// The same, and also what the shell said *before* the answer.
-    ///
-    /// One caller needs that: everything typed at a terminal that is still
-    /// echoing arrives ahead of the answer to it, so the text in front of the
-    /// marker is where "was anyone watching" is read from. It is returned rather
-    /// than left in the view because the answer is consumed on the way past, and
-    /// with it the echo that preceded it.
-    async fn hidden_answer_with_prefix(
-        &mut self,
-        re: &Regex,
-        max: Duration,
-    ) -> Option<(String, String)> {
         let deadline = Instant::now() + max;
         loop {
             let hit = {
@@ -650,13 +694,12 @@ impl<E: SkillEvents> Engine<E> {
                     (
                         whole.end(),
                         c.get(1).map(|m| m.as_str().to_string()).unwrap_or_default(),
-                        view[..whole.start()].to_string(),
                     )
                 })
             };
-            if let Some((end, answer, before)) = hit {
+            if let Some((end, answer)) = hit {
                 self.screen.consume_through(end);
-                return Some((answer, before));
+                return Some(answer);
             }
             tokio::select! {
                 _ = tokio::time::sleep_until(deadline) => return None,
@@ -777,12 +820,11 @@ impl<E: SkillEvents> Engine<E> {
     /// some earlier shell, and it says `y` from a shell that already had them as
     /// readily as from one that has just taken them.
     ///
-    /// The install itself is silenced, and that is about the pane rather than
-    /// about tidiness: a hidden line's erase takes back a fixed two rows, so a
-    /// payload that prints anything of its own pushes the rows either side of it
-    /// out of reach and strands them on the operator's screen. This is the only
-    /// payload with a mouth on it (a shell that chokes on the snippet says so),
-    /// so it is the only one that has to be told to keep quiet. The report
+    /// The install is still redirected to `/dev/null`, though the curtain would
+    /// hide whatever it said. Not for the pane's sake any more, but for the
+    /// engine's: this is the only payload with a mouth on it (a shell that
+    /// chokes on the snippet says so), and its complaint would otherwise land in
+    /// the match view where a later step's pattern could find it. The report
     /// stands outside the redirect, because that one has to be heard.
     async fn install_hooks(&mut self) -> bool {
         let report = probe_line(
@@ -793,14 +835,17 @@ impl<E: SkillEvents> Engine<E> {
             "{{ command -v __omni_precmd >/dev/null 2>&1 || {{ {}; }}; }} >/dev/null 2>&1; {report}",
             crate::omni::SHELL_INTEGRATION
         );
-        if !self.send_hidden(&line, true).await {
+        if !self.send_hidden(&line).await {
             return false;
         }
         let re = Regex::new(&format!("{HOOK_MARKER}([a-z]+)__")).expect("static regex");
-        matches!(
-            self.hidden_answer(&re, HOOK_ANSWER_MAX).await.as_deref(),
-            Some("y")
-        )
+        let answer = self.hidden_answer(&re, HOOK_ANSWER_MAX).await;
+        // A shell that took them draws its next prompt with the mark on the end,
+        // which is what lifts the curtain. One that refused sends no mark, so
+        // this is the deadline path, and the row it clears is the prompt the
+        // refusing shell is still sitting on.
+        self.raise_curtain().await;
+        matches!(answer.as_deref(), Some("y"))
     }
 
     /// Waits for the login to be over before anything is typed at it.
@@ -843,7 +888,7 @@ impl<E: SkillEvents> Engine<E> {
         }
         self.wait_for_login().await;
         let probe = probe_line(SHELL_MARKER, "\"$0\"");
-        if !self.send_hidden(&probe, false).await {
+        if !self.send_hidden(&probe).await {
             return Err("could not write to the shell".into());
         }
         let re = Regex::new(&format!("{SHELL_MARKER}([A-Za-z0-9._/-]*)__")).expect("static regex");
@@ -857,15 +902,16 @@ impl<E: SkillEvents> Engine<E> {
             Duration::ZERO,
         )
         .await;
+        // Whatever happened, the operator gets their pane back before this
+        // returns. A refusal below ends the run, and a run that ends behind a
+        // curtain would leave a pane that never draws again.
+        self.raise_curtain().await;
         let raw = match outcome {
             Wait::Matched { group1, .. } => group1.unwrap_or_default(),
             Wait::Timeout => {
                 // A shell that never answered. If the connect-time probe read a
                 // name, that IS the answer: fish gets here every time, because
-                // `$0` is a parse error there rather than a variable. That is
-                // also a line the shell never ran, so nothing on the far side
-                // has turned echo back on: this path owns the restore.
-                let _ = self.send_bytes(" stty echo\n");
+                // `$0` is a parse error there rather than a variable.
                 return Err(match &self.known_shell {
                     Some(shell) => format!(
                         "This host's shell ({shell}) is not supported. Currently only bash, zsh and sh are supported."
@@ -874,13 +920,8 @@ impl<E: SkillEvents> Engine<E> {
                         .into(),
                 });
             }
-            // Closed, aborted, or handed to a terminal tab mid-probe. The last
-            // of those hands the operator a real shell, so it had better be one
-            // that shows them what they type.
-            _ => {
-                let _ = self.send_bytes(" stty echo\n");
-                return Err("The shell closed before the run started.".into());
-            }
+            // Closed, aborted, or handed to a terminal tab mid-probe.
+            _ => return Err("The shell closed before the run started.".into()),
         };
         // `$0` is `-bash` for a login shell, `/bin/zsh` for some, `sh` for
         // others: take the basename and drop the login dash.
@@ -916,7 +957,7 @@ impl<E: SkillEvents> Engine<E> {
     /// failure yields `None` (unknown), never an error that ends the run.
     async fn probe_uid(&mut self) -> Option<bool> {
         let probe = probe_line(UID_MARKER, "\"$(id -u)\"");
-        if !self.send_hidden(&probe, false).await {
+        if !self.send_hidden(&probe).await {
             return None;
         }
         let re = Regex::new(&format!(r"{UID_MARKER}(\d+)__")).expect("static regex");
@@ -930,14 +971,10 @@ impl<E: SkillEvents> Engine<E> {
             Duration::ZERO,
         )
         .await;
+        self.raise_curtain().await;
         match outcome {
             Wait::Matched { group1, .. } => group1.map(|g| g == "0"),
-            // Nothing came back, so the line may never have run: put echo back
-            // rather than leave a shell nobody can type into.
-            _ => {
-                let _ = self.send_bytes(" stty echo\n");
-                None
-            }
+            _ => None,
         }
     }
 
@@ -1683,10 +1720,11 @@ impl<E: SkillEvents> Engine<E> {
 ///
 /// The marker text is inside the payload, not around it, and that is what makes
 /// this safe to send anywhere. A shell whose `printf` leaves `\033` alone prints
-/// the whole thing literally, the same pattern matches the same answer out of
-/// the visible line, and the only difference is that the operator saw it. The
-/// `%s` still cannot be mistaken for an answer, so an echo of the line that
-/// reaches the screen (a shell that ignored `stty -echo`) is still not a match.
+/// the whole thing literally and the same pattern still matches the same answer
+/// out of the visible line. The `%s` matters for the same reason it always did:
+/// the echo of this line reaches the engine's match view whether or not it
+/// reaches the glass, and a marker with no digit in it can never be mistaken for
+/// an answer to itself.
 ///
 /// A leading space is left to the caller, which is [`Engine::send_hidden`]: on
 /// the Debian/Ubuntu default (`HISTCONTROL=ignoreboth`) it keeps the line out of
@@ -1699,62 +1737,40 @@ fn probe_line(marker: &str, value: &str) -> String {
     )
 }
 
-/// The four rows a hidden line takes back on its way out: one for each of the
-/// three lines submitted, and the one the cursor ends on. See
-/// [`Engine::send_hidden`] for why the count is the same whether or not the
-/// shell echoed them.
-const ERASE_HIDDEN: &str = r"\033[3A\r\033[0J";
-
-/// Line one: turn the echo off, and nothing else.
+/// Put the cursor at the start of the row and clear it.
 ///
-/// Nothing else is the point. This is the only text of the three that is
-/// certain to be echoed, so it is the only one that can wrap, and a wrapped line
-/// survives the erase. Eleven characters clears any prompt an operator is
-/// likely to have, in any pane they are likely to use.
-const QUIET_LINE: &str = " stty -echo\n";
-
-/// Tidy up and put the echo back, for the paths where the payload that would
-/// have carried both never goes out. Three lines have still been submitted by
-/// the time this one runs, so it takes back the same four rows.
+/// The only cursor movement left in the engine, and note what it is not: it does
+/// not go *up*. Every erase that counted rows had to be right about how many the
+/// plumbing had used, which depends on the width of the pane, the length of the
+/// prompt and whether the shell drew the line itself. This one addresses the row
+/// the cursor is already on, so there is nothing to be right about.
 ///
-/// The one that matters is the shell that will not go quiet: zsh draws the line
-/// it is editing itself and does not care what `stty` was told, so the hook
-/// offer is refused there (it is most of a screenful, and it would all be seen).
-/// Refusing it is right; leaving the asking on the screen is not.
-fn restore_line() -> String {
-    format!(" printf '{ERASE_HIDDEN}'; stty echo\n")
-}
+/// It is only sent on the [`End::ProbeAnswer`](curtain::End::ProbeAnswer) path,
+/// where the curtain lifts before the shell redraws its prompt and the new
+/// prompt would otherwise be drawn onto the end of the old one. A shell sending
+/// prompt marks never needs it: there the curtain stays down through the redraw
+/// and the pane keeps the prompt it already had.
+const ERASE_ROW: &str = r"\r\033[2K";
 
-/// Put the echo back and nothing else, for the one path where too little was
-/// sent for the erase to have anything to count.
-const BARE_RESTORE: &str = " stty echo\n";
-
-/// Line two: say that the shell has reached this point.
+/// One line of plumbing, as it is typed at a shell that reports its own prompts.
 ///
-/// `$?` is line one's exit status, so it is `0` from a shell whose `stty` took.
-/// The value is not what the decision rests on though: any digit means the line
-/// ran, and whether the *format* reached the screen is what says if anyone saw
-/// it.
-fn echo_report_line() -> String {
-    format!(" {}\n", probe_line(ECHO_MARKER, "\"$?\""))
-}
-
-/// Line three: tidy up, put the echo back, and only then the payload nobody
-/// sees.
-///
-/// The order is the whole point, and it is not the obvious one. `stty` is an
-/// external program, so restoring the echo costs a fork and an exec, which is
-/// slow enough to lose a race the engine cannot see: the payload's answer is
-/// what the engine waits for, and if the answer comes first then the next
-/// command is typed while the shell is still forking `stty`. A shell that is
-/// executing has its terminal back in canonical mode, so the driver echoes
-/// those bytes where they land, and then the shell's line editor reads them and
-/// draws them again at the prompt. The operator sees their command twice, once
-/// bare and once where it belongs. Putting the answer last means the only thing
-/// left when the engine hears it is drawing a prompt, which is the same short
-/// window every other step already lives with.
+/// There is nothing here but the payload. No `stty`, because nothing is being
+/// hidden from the *shell*; no erase, because nothing was drawn. The leading
+/// space is all that is left of the old ceremony, and it is not about the pane
+/// at all: it keeps the line out of `HISTCONTROL=ignorespace` history, so an
+/// operator pressing Up afterwards does not find it.
 fn hidden_line(payload: &str) -> String {
-    format!(" printf '{ERASE_HIDDEN}'; stty echo; {payload}\n")
+    format!(" {payload}\n")
+}
+
+/// The same, for a shell that sends no prompt marks and so cannot tell us when
+/// it has finished redrawing.
+///
+/// The curtain lifts at the answer, which is before the prompt is drawn, so the
+/// line clears the row on its way out and lets the prompt land on it. See
+/// [`ERASE_ROW`].
+fn hidden_line_self_repairing(payload: &str) -> String {
+    format!(" {payload}; printf '{ERASE_ROW}'\n")
 }
 
 /// What a wait is waiting for.
@@ -2030,12 +2046,30 @@ async fn park(
 struct SkillTap {
     app: tauri::AppHandle,
     tx: mpsc::UnboundedSender<TapMsg>,
+    curtain: Curtain,
 }
 
 impl crate::ssh::pty::PtyEvents for SkillTap {
+    /// The fork in the road: the engine is told everything, the operator is told
+    /// everything the engine is not currently hiding from them.
+    ///
+    /// The filter runs *before* the send, which is what lets the engine wait on
+    /// the curtain: by the time a chunk reaches it on the channel, that chunk
+    /// has already been weighed, so a mark inside it has already lifted the
+    /// curtain. The other order would have the engine deciding whether to give
+    /// up on a mark it was holding in its hand.
     fn data(&self, payload: crate::ssh::pty::PtyData) {
-        let _ = self.tx.send(TapMsg::Data(payload.data.clone()));
-        self.app.data(payload);
+        let shown = self.curtain.filter(&payload.data).to_vec();
+        let _ = self.tx.send(TapMsg::Data(payload.data));
+        // An empty payload is not a quiet one: it still costs a serialize, a
+        // JS string and a hop to the webview, and a curtain that is down makes
+        // every chunk empty.
+        if !shown.is_empty() {
+            self.app.data(crate::ssh::pty::PtyData {
+                session_id: payload.session_id,
+                data: shown,
+            });
+        }
     }
     fn flush(&self, session_id: &str) {
         self.app.flush(session_id);
@@ -2063,11 +2097,13 @@ pub fn tap(
 ) -> (PtyLink, impl crate::ssh::pty::PtyEvents) {
     let (tx, rx) = mpsc::unbounded_channel();
     let write_state = app.state::<crate::ssh::pty::PtyState>().inner().clone();
+    let curtain = Curtain::new();
     let link = PtyLink {
         rx,
         write: Box::new(move |bytes: &[u8]| write_state.write(&session_id, bytes)),
+        curtain: curtain.clone(),
     };
-    (link, SkillTap { app, tx })
+    (link, SkillTap { app, tx, curtain })
 }
 
 /// Hosts whose steps need a sudo password but have none stored, surfaced as a

@@ -113,6 +113,11 @@ fn harness() -> (Engine<CollectEvents>, Host) {
                 .push(String::from_utf8_lossy(b).to_string());
             Ok(())
         }),
+        // This host says nothing back unless a test tells it to, so nothing
+        // ever lifts the curtain and the engine reaches its deadline every
+        // time. That is the intended shape here: these tests are about the
+        // state machine, and the pane is [`super::pane_tests`]'s subject.
+        curtain: Curtain::new(),
     };
     let events = Arc::new(CollectEvents::default());
     let engine = Engine::new(
@@ -244,14 +249,6 @@ struct Script {
     /// Whether being offered the hooks installs them. False for the shell that
     /// simply will not take them, which is the case the fallback exists for.
     takes_hooks: bool,
-    /// Whether it confirms that the terminal's echo is off. False for a shell
-    /// with no `stty`, one whose line editor echoes for itself, or one still
-    /// busy with its login: all of them mean a hidden line would not be hidden.
-    answers_echo: bool,
-    /// Whether the terminal is echoing what is typed at it right now. The engine
-    /// reads this off the stream to decide whether a hidden line would be seen,
-    /// so the fake has to keep it honestly.
-    echo: bool,
     /// Whether it says where a command's output starts as well as how the
     /// command ended. False for a shell that has somehow kept the completion
     /// hook and lost the one in front of it, which leaves the engine with
@@ -266,36 +263,15 @@ impl Script {
             return String::new();
         }
         let line = typed.trim();
-        // What a terminal echoes is what the operator sees, and the engine reads
-        // the echo of its own report to decide whether anyone is watching, so
-        // the fake needs an echo it can turn off.
-        let out = if self.echo {
-            format!("{line}\r\n")
-        } else {
-            String::new()
-        };
-        // The state changes as the line *runs*, which is after the line itself
-        // was echoed: `stty -echo` is always typed at a terminal still echoing.
-        if line == "stty -echo" && self.answers_echo {
-            self.echo = false;
-        }
-        if line.ends_with("stty echo") {
-            self.echo = true;
-        }
+        // Everything typed at a terminal is echoed. Keeping that unconditional
+        // is the point of the current design: nothing is asked of the shell to
+        // stop it, so nothing about the shell can make hiding fail.
+        let out = format!("{line}\r\n");
         if line.contains("sudo -i") {
             self.hooked = false;
             return out;
         }
-        // Order matters below: the hidden lines all end in `stty echo`, so the
-        // bare-`stty` arm has to come last or it would swallow them.
-        let printed = if line.contains(ECHO_MARKER) {
-            // The line that turns the echo off says when it has. Answering this
-            // is the whole of what stops the next line being seen.
-            if !self.answers_echo {
-                return out;
-            }
-            format!("\x1b]{};{ECHO_MARKER}0__\x07", screen::BS_OSC)
-        } else if line.contains("__omni_precmd") {
+        let printed = if line.contains("__omni_precmd") {
             if self.takes_hooks {
                 self.hooked = true;
             }
@@ -305,8 +281,6 @@ impl Script {
             format!("\x1b]{};{SHELL_MARKER}-bash__\x07", screen::BS_OSC)
         } else if line.contains(UID_MARKER) {
             format!("\x1b]{};{UID_MARKER}0__\x07", screen::BS_OSC)
-        } else if line.contains("stty") {
-            String::new()
         } else {
             let (code, text) = self.replies.pop_front().unwrap_or((0, String::new()));
             return self.finish(out, &text, code, line);
@@ -327,7 +301,14 @@ impl Script {
             out.push_str(&format!("{DONE_MARKER}{code}__\r\n"));
         }
         if self.hooked {
-            out.push_str(&format!("\x1b]133;D;{code}\x07\x1b]133;A\x07"));
+            // The completion, the next prompt, and the mark the integration
+            // puts on the end of `PS1`. That last one is what lifts the
+            // curtain, so a shell without the hooks has to leave it out: a fake
+            // that always sent it would hide the one case the deadline exists
+            // for.
+            out.push_str(&format!(
+                "\x1b]133;D;{code}\x07\x1b]133;A\x07$ \x1b]133;B\x07"
+            ));
         }
         out
     }
@@ -344,13 +325,13 @@ fn hooked_harness() -> (Engine<CollectEvents>, Host, Arc<Mutex<Script>>) {
         replies: VecDeque::new(),
         hooked: true,
         takes_hooks: true,
-        answers_echo: true,
-        echo: true,
         reports_start: true,
     }));
     let sink = writes.clone();
     let shell = script.clone();
     let back = data_tx.clone();
+    let curtain = Curtain::new();
+    let tap_curtain = curtain.clone();
     let link = PtyLink {
         rx: data_rx,
         write: Box::new(move |b: &[u8]| {
@@ -358,10 +339,16 @@ fn hooked_harness() -> (Engine<CollectEvents>, Host, Arc<Mutex<Script>>) {
             sink.lock().unwrap().push(text.clone());
             let reply = shell.lock().unwrap().answer(&text);
             if !reply.is_empty() {
-                let _ = back.send(TapMsg::Data(reply.into_bytes()));
+                // Through the curtain first and the channel second, the order
+                // [`super::SkillTap`] uses, so that a prompt mark in this reply
+                // has lifted the curtain by the time the engine reads it.
+                let bytes = reply.into_bytes();
+                let _ = tap_curtain.filter(&bytes);
+                let _ = back.send(TapMsg::Data(bytes));
             }
             Ok(())
         }),
+        curtain: curtain.clone(),
     };
     let events = Arc::new(CollectEvents::default());
     let engine = Engine::new(
@@ -397,14 +384,12 @@ impl Host {
             .iter()
             .map(|w| w.trim().to_string())
             .filter(|w| {
-                // A hidden line is three: the `stty`, the report that it landed,
-                // and the payload with the restore on the end of it. Only the
-                // middle one has neither `stty` nor a probe marker in it.
+                // A hidden line is one line now, and every one of them carries
+                // the marker of the question it is asking.
                 !w.is_empty()
-                    && !w.contains("stty")
-                    && !w.contains(ECHO_MARKER)
                     && !w.contains(SHELL_MARKER)
                     && !w.contains(UID_MARKER)
+                    && !w.contains(HOOK_MARKER)
             })
             .collect()
     }
@@ -1709,60 +1694,55 @@ async fn a_completion_from_before_the_command_cannot_answer_it() {
 
 #[tokio::test(start_paused = true)]
 async fn the_probes_answer_without_anything_being_printed() {
-    // The shell and uid probes are typed with the echo off and answer inside an
-    // escape no terminal draws, so a run opens with a clean pane.
+    // The shell and uid probes answer inside an escape no terminal draws, and
+    // the line that asks is kept off the glass by the curtain rather than by
+    // anything typed at the host. So a run opens with a clean pane and the
+    // engine has asked the shell for nothing at all.
     let (engine, host, _script) = hooked_harness();
     let mut c = cfg(vec![run_step("a", "true", STOP, "fail")]);
     c.allow_transfer = true;
     let outcome = run_host(engine, &c).await;
     assert_eq!(outcome.is_root, Some(true), "{outcome:?}");
     let typed = host.typed();
-    assert!(typed.contains("stty echo"), "echo is always put back");
-    // The line that turns the echo off carries nothing else, because it is the
-    // only one of the three that is certain to be seen and so the only one that
-    // can wrap. Smoke 56-3 hung the report off it and every eighty-column pane
-    // kept most of it. The row arithmetic is checked in `super::pane_tests`.
-    assert!(typed.contains(QUIET_LINE), "{typed:?}");
-    assert!(
-        !typed.contains(" stty -echo;"),
-        "line one has grown something: {typed:?}"
-    );
-    // The tidying up and the restore lead the last line rather than trailing
-    // it, so that the answer the engine waits for is the last thing on it. See
-    // `hidden_line`.
-    assert!(
-        typed.contains(&format!(" printf '{ERASE_HIDDEN}'; stty echo; ")),
-        "{typed:?}"
-    );
+    // Nothing is asked of the terminal, and nothing is taken back from it.
+    // Every one of these was load-bearing in the old design, and every one of
+    // them was a bug: the row count, the wrap, the fork-and-exec race.
+    assert!(!typed.contains("stty"), "{typed:?}");
+    assert!(!typed.contains("[3A"), "no cursor-up survives: {typed:?}");
+    assert!(!typed.contains("[0J"), "no erase-display survives: {typed:?}");
+    // A probe is one line, with a leading space to keep it out of history.
+    for line in typed.lines().filter(|l| l.contains(SHELL_MARKER)) {
+        assert!(line.starts_with(' '), "{line:?}");
+        assert!(line.trim_end().ends_with("\"$0\""), "{line:?}");
+    }
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_hidden_line_is_not_typed_until_the_echo_is_confirmed_off() {
-    // Smoke test 56's bug. The shell was still working through its login when
-    // the pause the engine used to take expired, so the line meant to be unseen
-    // went out to a terminal that was still echoing. The confirmation is what
-    // replaces the pause, and the long payloads are not sent without it.
+async fn a_shell_that_will_not_take_the_hooks_is_still_offered_them() {
+    // The old design refused to type the hook offer at a shell that would not
+    // go quiet, because the offer is most of a screenful and it would all have
+    // been seen. The curtain does not care whether the shell cooperates, so the
+    // offer always goes out and the only question left is what the shell says
+    // back. One that says no gets the visible wrapper, as it always did.
     let (engine, host, script) = hooked_harness();
-    // A shell that never answers the echo probe: `stty` missing, a line editor
-    // of its own, or simply too busy.
-    script.lock().unwrap().answers_echo = false;
-    script.lock().unwrap().replies.push_back((0, String::new()));
+    {
+        let mut s = script.lock().unwrap();
+        s.takes_hooks = false;
+        s.replies.push_back((0, String::new()));
+    }
     let c = cfg(vec![
         interactive(run_step("a", "sudo -i", "b", "fail")),
         run_step("b", "whoami", STOP, "fail"),
     ]);
     let outcome = run_host(engine, &c).await;
     assert!(outcome.ok, "{outcome:?}");
-    // The screenful of shell that offers the hooks was never typed.
     assert!(
-        !host.typed().contains("__omni_precmd"),
-        "{:?}",
+        host.typed().contains("__omni_precmd"),
+        "the offer goes out either way: {:?}",
         host.typed()
     );
     // And the step ran anyway, the way every host used to.
     assert!(host.typed().contains(DONE_MARKER));
-    // Echo is put back even on the path that gives up.
-    assert!(host.typed().contains(" stty echo\n"));
 }
 
 #[tokio::test(start_paused = true)]

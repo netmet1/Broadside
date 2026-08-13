@@ -1,27 +1,32 @@
 //! What the operator actually sees while the engine types.
 //!
-//! A hidden line is three commands and an erase, and whether they leave the pane
-//! as they found it is arithmetic about rows. Nothing else in these tests can
-//! check it: the fake host in [`super::tests`] answers questions, it does not
-//! draw, so an erase that takes the wrong rows passes every one of them. That
-//! arithmetic has now been wrong three times (smoke tests 56, 56-2 and 56-3), so
-//! it gets a terminal of its own here, with a width.
+//! The fake host in [`super::tests`] answers questions and does not draw, so
+//! anything wrong with the pane passes every one of its tests. This is the
+//! terminal with a width in it.
 //!
-//! Two things in the model are measurements rather than protocol. The first is
-//! that submitting a line moves the shell to a new row **whether or not the line
-//! was echoed**: smoke 56-2 left exactly one row behind per hidden line, the
-//! echoed part, and no other geometry produces that. The second is that a line
-//! too long for the pane wraps onto another row and the erase, which counts
-//! rows, then leaves the part that wrapped: that is smoke 56-3, at eighty
-//! columns, five times over.
+//! What is modelled here is the whole path: a shell that echoes what is typed
+//! at it and redraws its prompt afterwards, a [`Curtain`] between that shell
+//! and the glass, and a [`Pane`] that only ever receives what the curtain
+//! forwards. That last part is the change these tests exist to pin down. The
+//! plumbing used to be removed from the pane by a cursor-up-and-erase typed at
+//! the host, and getting the row count right depended on the width of the pane,
+//! the length of the prompt and whether the shell echoed at all. It was wrong
+//! three times (smoke tests 56, 56-2 and 56-3). Now the plumbing is not
+//! forwarded, so there is no count to get right, and
+//! [`width_is_no_longer_something_the_pane_depends_on`] is the test that says
+//! so.
 
-use super::{
-    echo_report_line, hidden_line, restore_line, screen::BS_OSC, ERASE_HIDDEN, QUIET_LINE,
-};
+use super::curtain::{Curtain, End};
+use super::{hidden_line, hidden_line_self_repairing, screen::BS_OSC};
 
 /// The prompt from the smoke test, so a failure here reads like the report.
 const PROMPT: &str = "root@skills-host-01:~# ";
 const BANNER: &str = "Last login: Wed Aug 12 21:30:32 2026 from 203.0.113.215";
+
+/// `OSC 133 ; B`, which the integration puts on the end of `PS1`. A shell
+/// running the hooks ends every prompt with it, and it is what lifts the
+/// curtain.
+const MARK: &str = "\u{1b}]133;B\u{7}";
 
 /// A terminal, in the only dimensions this cares about: rows of text, a width to
 /// wrap at, and where the cursor sits.
@@ -56,12 +61,23 @@ impl Pane {
                                 None => return,
                             }
                         };
-                        let n = num.parse::<usize>().unwrap_or(0).max(1);
                         match action {
-                            'A' => self.row = self.row.saturating_sub(n),
+                            'A' => {
+                                let n = num.parse::<usize>().unwrap_or(1).max(1);
+                                self.row = self.row.saturating_sub(n);
+                            }
                             // Erase in display, from the cursor down. Every use
                             // here is the default (0) form.
                             'J' => self.erase_below(),
+                            // Erase in line. `2` is the whole row, which is the
+                            // only form the engine sends.
+                            'K' => {
+                                if num == "2" {
+                                    self.rows[self.row].clear();
+                                } else {
+                                    self.rows[self.row].truncate(self.col);
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -129,65 +145,147 @@ impl Pane {
     }
 }
 
-/// A shell at a prompt: it echoes what is typed only while the echo is on,
-/// always moves to a new row when a line is submitted, runs the line, and draws
-/// its prompt again.
+/// A shell at a prompt. It echoes what is typed, runs it, and draws its prompt
+/// again, which is all a shell has to do for the pane to be interesting.
+///
+/// Note what it does **not** have any more: a way to be told to stop echoing.
+/// Nothing is asked of the shell, so there is no cooperation to model and no
+/// shell-shaped way for hiding to fail.
 struct Shell {
-    echo: bool,
-    /// Whether `stty -echo` actually stops it echoing. False for a shell whose
-    /// line editor draws the line itself and does not consult the terminal,
-    /// which is zsh, measured.
-    obeys_stty: bool,
-    /// What a command that is not `stty` or `printf` prints. The engine's
-    /// payloads print an escape sequence and nothing else, which is the point of
-    /// them, so this is empty except in the test that asks what happens when it
-    /// is not.
+    /// Whether it runs the integration, and so ends its prompt with [`MARK`].
+    /// False for a plain `sh`, which parses the integration and installs
+    /// nothing, and for a shell that refuses the hooks.
+    hooked: bool,
+    /// The prompt it draws. Its own field because a prompt that spans two rows
+    /// is the case the old erase could never have survived.
+    prompt: String,
+    /// What a command that is not a `printf` prints. The engine's payloads
+    /// answer inside an escape and print nothing, which is the point of them,
+    /// so this is empty except where a test asks otherwise.
     output: String,
 }
 
 impl Shell {
     fn new() -> Self {
         Shell {
-            echo: true,
-            obeys_stty: true,
+            hooked: true,
+            prompt: PROMPT.to_string(),
             output: String::new(),
         }
     }
 
-    /// A session as the engine finds it: a login banner and a prompt.
-    fn boot(&mut self, pane: &mut Pane) {
-        pane.feed(BANNER);
-        pane.feed("\n");
-        pane.feed(PROMPT);
+    fn prompt(&self) -> String {
+        if self.hooked {
+            format!("{}{MARK}", self.prompt)
+        } else {
+            self.prompt.clone()
+        }
     }
 
-    fn submit(&mut self, line: &str, pane: &mut Pane) {
+    /// Everything the host sends in reply to one submitted line.
+    fn submit(&mut self, line: &str) -> String {
         let typed = line.trim_end_matches('\n');
-        if self.echo {
-            pane.feed(typed);
+        let mut out = String::new();
+        // Every terminal echoes what is typed at it. Unconditionally, now.
+        out.push_str(typed);
+        out.push('\n');
+        if self.hooked {
+            out.push_str("\u{1b}]133;C\u{7}");
         }
-        // The measurement, not the protocol: the submission takes a row whether
-        // or not the line was echoed. See the module docs.
-        pane.feed("\n");
         for seg in segments(typed) {
-            self.run(seg.trim(), pane);
+            let seg = seg.trim();
+            if seg.starts_with("printf ") {
+                out.push_str(&expand_printf(seg));
+            } else {
+                out.push_str(&self.output.clone());
+            }
         }
-        pane.feed(PROMPT);
+        if self.hooked {
+            out.push_str("\u{1b}]133;D;0\u{7}\u{1b}]133;A\u{7}");
+        }
+        out.push_str(&self.prompt());
+        out
+    }
+}
+
+/// A shell, a curtain and a pane, wired the way the app wires them.
+struct Session {
+    sh: Shell,
+    pane: Pane,
+    curtain: Curtain,
+}
+
+impl Session {
+    fn new(cols: usize) -> Self {
+        let mut s = Session {
+            sh: Shell::new(),
+            pane: Pane::new(cols),
+            curtain: Curtain::new(),
+        };
+        s.pane.feed(BANNER);
+        s.pane.feed("\n");
+        s.pane.feed(&s.sh.prompt());
+        s
     }
 
-    fn run(&mut self, seg: &str, pane: &mut Pane) {
-        match seg {
-            "stty -echo" => self.echo = !self.obeys_stty,
-            "stty echo" => self.echo = true,
-            _ if seg.starts_with("printf ") => {
-                let out = expand_printf(seg);
-                pane.feed(&out);
-            }
-            _ => {
-                let out = self.output.clone();
-                pane.feed(&out);
-            }
-        }
+    /// A session whose shell does not run the integration.
+    fn unhooked(cols: usize) -> Self {
+        let mut s = Session {
+            sh: Shell {
+                hooked: false,
+                ..Shell::new()
+            },
+            pane: Pane::new(cols),
+            curtain: Curtain::new(),
+        };
+        s.pane.feed(BANNER);
+        s.pane.feed("\n");
+        s.pane.feed(&s.sh.prompt());
+        s
+    }
+
+    /// The tap: what the shell said, less what the curtain is holding back.
+    fn show(&mut self, out: &str) {
+        let shown = self.curtain.filter(out.as_bytes()).to_vec();
+        self.pane.feed(&String::from_utf8_lossy(&shown));
+    }
+
+    /// A command the operator asked for. Nothing is hidden.
+    fn command(&mut self, line: &str) {
+        let out = self.sh.submit(line);
+        self.show(&out);
+    }
+
+    /// One line of the engine's own plumbing, start to finish, exactly as
+    /// [`super::Engine::send_hidden`] and [`super::Engine::raise_curtain`]
+    /// between them drive it.
+    fn hidden(&mut self, payload: &str) {
+        let end = if self.sh.hooked {
+            End::PromptMark
+        } else {
+            End::ProbeAnswer
+        };
+        self.curtain.lower(end);
+        let line = match end {
+            End::PromptMark => hidden_line(payload),
+            End::ProbeAnswer => hidden_line_self_repairing(payload),
+        };
+        let out = self.sh.submit(&line);
+        self.show(&out);
+        // The engine's backstop, which repairs nothing on purpose: see
+        // `Engine::raise_curtain`.
+        self.curtain.raise();
+    }
+
+    /// The engine's usual pair at the start of a run: ask what shell this is,
+    /// then offer it the hooks.
+    fn opening_probes(&mut self) {
+        self.hidden(&probe_payload("__bsshell_-bash__"));
+        self.hidden(&probe_payload("__bshook_y__"));
+    }
+
+    fn snapshot(&self) -> String {
+        self.pane.snapshot()
     }
 }
 
@@ -217,11 +315,7 @@ fn expand_printf(seg: &str) -> String {
     let mut parts = seg.splitn(3, '\'');
     parts.next();
     let fmt = parts.next().unwrap_or_default();
-    let arg = match parts.next().unwrap_or_default().trim() {
-        // `$?` after a `stty` that worked.
-        "\"$?\"" => "0",
-        other => other.trim_matches('"'),
-    };
+    let arg = parts.next().unwrap_or_default().trim().trim_matches('"');
     unescape(fmt).replacen("%s", arg, 1)
 }
 
@@ -266,69 +360,64 @@ fn unescape(fmt: &str) -> String {
 
 /// A payload of the shape the engine actually sends: a probe that answers inside
 /// an escape sequence and prints nothing a terminal draws.
-fn probe_payload() -> String {
-    format!("printf '\\033]{BS_OSC};__bshook_y__\\007'")
-}
-
-/// The three lines of one hidden line, as [`super::Engine::send_hidden`] sends
-/// them.
-fn hidden_lines(sh: &mut Shell, pane: &mut Pane) {
-    sh.submit(QUIET_LINE, pane);
-    sh.submit(&echo_report_line(), pane);
-    sh.submit(&hidden_line(&probe_payload()), pane);
+fn probe_payload(answer: &str) -> String {
+    format!("printf '\\033]{BS_OSC};{answer}\\007'")
 }
 
 #[test]
 fn a_hidden_line_leaves_the_pane_exactly_as_it_found_it() {
-    let mut pane = Pane::new(120);
-    let mut sh = Shell::new();
-    sh.boot(&mut pane);
-    let before = pane.snapshot();
+    let mut s = Session::new(120);
+    let before = s.snapshot();
 
-    hidden_lines(&mut sh, &mut pane);
+    s.hidden(&probe_payload("__bshook_y__"));
 
-    assert_eq!(pane.snapshot(), before, "something was left behind");
-    assert!(sh.echo, "the echo has to be back on afterwards");
+    assert_eq!(s.snapshot(), before, "something was left behind");
 }
 
 #[test]
-fn eighty_columns_is_not_a_narrow_pane() {
-    // Smoke 56-3. The erase counts rows, so the only text that can be echoed has
-    // to fit on one, and "kept short" has to mean short enough for the width
-    // every terminal has by default and roughly what a tile in a four-up grid
-    // gets. Eleven characters and a prompt do. Sixty-seven and a prompt did not.
-    let mut pane = Pane::new(80);
-    let mut sh = Shell::new();
-    sh.boot(&mut pane);
-    let before = pane.snapshot();
-
-    hidden_lines(&mut sh, &mut pane);
-    hidden_lines(&mut sh, &mut pane);
-
-    assert_eq!(pane.snapshot(), before);
+fn width_is_no_longer_something_the_pane_depends_on() {
+    // The heart of it. Smoke 56-3 was clean at 120 columns and left most of
+    // every hidden line on the screen at 80, because the erase counted rows and
+    // a wrapped line occupies two. Nothing is drawn now, so nothing can wrap,
+    // and the narrow end of this range is narrower than any pane anybody works
+    // in. If this ever fails at one width and passes at another, the curtain
+    // has stopped being the thing that hides the plumbing.
+    for cols in [40, 60, 80, 100, 120, 200] {
+        let mut s = Session::new(cols);
+        let before = s.snapshot();
+        s.opening_probes();
+        s.opening_probes();
+        assert_eq!(s.snapshot(), before, "at {cols} columns");
+    }
 }
 
 #[test]
-fn the_echoed_line_fits_a_pane_with_room_to_spare() {
-    // The margin, said as a number so that anything lengthening this line has to
-    // come back here and think about eighty columns.
-    let echoed = QUIET_LINE.trim_end_matches('\n').len();
-    assert!(
-        echoed <= 16,
-        "line one is {echoed} characters, and every one of them has to fit on a \
-         row with the prompt in front of it"
-    );
+fn a_prompt_that_takes_two_rows_is_no_harder_than_one_that_takes_one() {
+    // What waiting for the prompt's own mark buys. The curtain stays down
+    // through the redraw, so the pane keeps the prompt it already had and never
+    // has to work out how tall it was. An erase could not have done this at any
+    // row count, because the count depends on the prompt.
+    let mut s = Session::new(80);
+    s.sh.prompt = "\u{250c}\u{2500}[root@skills-host-01]\u{2500}[~]\n\u{2514}\u{2500}# ".into();
+    s.pane = Pane::new(80);
+    s.pane.feed(BANNER);
+    s.pane.feed("\n");
+    let p = s.sh.prompt();
+    s.pane.feed(&p);
+    let before = s.snapshot();
+
+    s.opening_probes();
+
+    assert_eq!(s.snapshot(), before);
 }
 
 #[test]
 fn the_operator_never_reads_the_engines_own_plumbing() {
-    let mut pane = Pane::new(100);
-    let mut sh = Shell::new();
-    sh.boot(&mut pane);
-    hidden_lines(&mut sh, &mut pane);
+    let mut s = Session::new(100);
+    s.opening_probes();
 
-    let seen = pane.snapshot();
-    for plumbing in ["stty", "printf", "__bsecho_", "__bshook_", "6273"] {
+    let seen = s.snapshot();
+    for plumbing in ["printf", "__bsshell_", "__bshook_", "6273", "stty"] {
         assert!(
             !seen.contains(plumbing),
             "{plumbing:?} was left on the screen:\n{seen}"
@@ -337,21 +426,19 @@ fn the_operator_never_reads_the_engines_own_plumbing() {
 }
 
 #[test]
-fn the_erase_does_not_reach_the_output_above_it() {
-    // The failure the other way round: an erase that counts one row too many
-    // takes a line of the host's own output with it.
-    let mut pane = Pane::new(100);
-    let mut sh = Shell::new();
-    sh.boot(&mut pane);
-    sh.output = "nginx is not installed\n".to_string();
-    sh.submit(" check-something\n", &mut pane);
-    sh.output.clear();
-    let before = pane.snapshot();
+fn the_curtain_does_not_reach_the_output_above_it() {
+    // The failure the other way round: hiding that takes one thing too many
+    // costs the operator a line of their own host's output.
+    let mut s = Session::new(100);
+    s.sh.output = "nginx is not installed\n".to_string();
+    s.command(" check-something\n");
+    s.sh.output.clear();
+    let before = s.snapshot();
     assert!(before.contains("nginx is not installed"));
 
-    hidden_lines(&mut sh, &mut pane);
+    s.opening_probes();
 
-    assert_eq!(pane.snapshot(), before);
+    assert_eq!(s.snapshot(), before);
 }
 
 #[test]
@@ -360,18 +447,15 @@ fn three_hidden_lines_and_two_commands_read_like_a_session_nobody_automated() {
     // and the hook offer, `sudo -i` costs another hook offer because the nested
     // shell has none, and what is left on the glass is the two commands the
     // operator asked for.
-    let mut pane = Pane::new(80);
-    let mut sh = Shell::new();
-    sh.boot(&mut pane);
+    let mut s = Session::new(80);
 
-    hidden_lines(&mut sh, &mut pane);
-    hidden_lines(&mut sh, &mut pane);
-    sh.submit(" sudo -i\n", &mut pane);
-    hidden_lines(&mut sh, &mut pane);
-    sh.submit(" test -f /etc/nginx/nginx.conf\n", &mut pane);
+    s.opening_probes();
+    s.command(" sudo -i\n");
+    s.hidden(&probe_payload("__bshook_y__"));
+    s.command(" test -f /etc/nginx/nginx.conf\n");
 
     assert_eq!(
-        pane.snapshot(),
+        s.snapshot(),
         format!(
             "{BANNER}\n\
              {PROMPT} sudo -i\n\
@@ -383,102 +467,161 @@ fn three_hidden_lines_and_two_commands_read_like_a_session_nobody_automated() {
 }
 
 #[test]
-fn a_line_that_wraps_is_what_the_erase_cannot_survive() {
-    // Both mistakes in one test, so the model is known to be able to fail and
-    // the reason the lines are shaped the way they are is on the record.
-    //
-    // This is build56-3's hidden pair: the `stty` and its report on one line
-    // with the erase on the front, and a payload line that takes back two rows.
-    // At 120 columns it is clean, which is why it passed everything. At 80 the
-    // echoed line wraps, the erase takes back the rows it counted rather than
-    // the rows that were used, and most of it stays on the screen.
+fn no_command_the_operator_asked_for_appears_twice() {
+    // Smoke 56-4 section A2. The double echo came from restoring the terminal's
+    // echo with an external binary: the engine typed its next command while the
+    // shell was still forking `stty`, so the tty driver echoed it where it
+    // landed and the line editor drew it again at the prompt. Nothing is forked
+    // any more, and there is no echo to restore, so the shape of that bug is
+    // gone. This is the test that would notice it coming back.
+    let mut s = Session::new(80);
+    s.opening_probes();
+    s.command(" sudo -i\n");
+    s.command(" whoami\n");
+
+    let seen = s.snapshot();
+    for line in ["sudo -i", "whoami"] {
+        assert_eq!(
+            seen.matches(line).count(),
+            1,
+            "{line:?} is on the screen more than once:\n{seen}"
+        );
+    }
+}
+
+#[test]
+fn a_shell_that_draws_its_own_line_is_hidden_just_the_same() {
+    // zsh. Its line editor draws what is being typed itself rather than letting
+    // the tty echo it, which is why `stty -echo` never worked there and why zsh
+    // used to fall back to the visible completion marker. The curtain does not
+    // care who drew the bytes or how many of them there are, so this is now the
+    // same case as bash. That is the whole reason zsh gets quiet markers now.
+    let mut s = Session::new(80);
+    let before = s.snapshot();
+
+    // A line editor's redraw: it rewrites the line as it goes, with cursor
+    // moves and a re-print, which is far more bytes than an echo.
+    s.curtain.lower(End::PromptMark);
+    let payload = probe_payload("__bshook_y__");
+    let line = hidden_line(&payload);
+    let typed = line.trim_end_matches('\n');
+    let redrawn = format!("\r\u{1b}[2K{PROMPT}{typed}\r\u{1b}[2K{PROMPT}{typed}\n");
+    s.show(&redrawn);
+    let out = {
+        let mut sh = Shell::new();
+        sh.submit(&line)
+    };
+    s.show(&out);
+    s.curtain.raise();
+
+    assert_eq!(s.snapshot(), before);
+}
+
+#[test]
+fn a_shell_with_no_marks_at_all_still_gets_a_clean_pane() {
+    // A plain `sh`: the integration is POSIX enough to parse and installs
+    // nothing, so no prompt mark is ever coming. The curtain lifts at the
+    // engine's own answer instead, and the line clears the row on its way out
+    // so the prompt that follows lands on it rather than after it.
+    let mut s = Session::unhooked(80);
+    let before = s.snapshot();
+
+    s.hidden(&probe_payload("__bsshell_-sh__"));
+
+    assert_eq!(s.snapshot(), before);
+}
+
+#[test]
+fn a_payload_that_prints_is_hidden_with_the_rest_of_the_plumbing() {
+    // A deliberate change from the erase design, which let a hidden payload's
+    // complaint through on the grounds that it might matter. It does not: the
+    // only payload that can print is the hook offer, its complaint is about
+    // Broadside's own snippet rather than about anything the operator did, and
+    // the run answers it by falling back to the visible marker. Showing them a
+    // bash error about `__omni_precmd` is noise.
+    let mut s = Session::new(100);
+    let before = s.snapshot();
+
+    s.sh.output = "bash: __omni_precmd: command not found\n".to_string();
+    s.hidden("some-payload");
+
+    let seen = s.snapshot();
+    assert_eq!(seen, before, "the pane is untouched either way:\n{seen}");
+}
+
+#[test]
+fn a_prompt_still_being_drawn_when_the_curtain_falls_is_not_eaten() {
+    // The engine is told the login is over by the shell announcing a prompt,
+    // and `OSC 133 ; A` is the announcement, not the prompt: the text and the
+    // `B` on the end of it are still to come. Lowering the curtain there drops
+    // them, and the run's opening prompt is gone from the pane for good. The
+    // engine waits for the prompt to close before it hides anything, and this
+    // is the shape of what it is waiting out.
+    let mut s = Session::new(80);
+    // A prompt part-way onto the screen: announced, nothing drawn yet.
+    s.pane.feed("\u{1b}]133;A\u{7}");
+
+    // What the engine does: let it land first, and only then hide.
+    s.pane.feed(&s.sh.prompt());
+    s.hidden(&probe_payload("__bsshell_-bash__"));
+
+    let seen = s.snapshot();
+    assert_eq!(
+        seen.matches(PROMPT.trim_end()).count(),
+        2,
+        "the prompt the operator was owed is missing:\n{seen}"
+    );
+}
+
+#[test]
+fn nothing_the_engine_types_moves_the_cursor() {
+    // The old plumbing carried `\033[3A` and an erase-to-end-of-display, and
+    // every bug in three builds was that arithmetic. The only escape left is
+    // the one that clears the row the cursor is already on. Stated here so that
+    // putting a cursor movement back has to argue with a test first.
+    let line = hidden_line("printf 'x'");
+    assert!(!line.contains("\\033["), "{line:?}");
+    assert!(!line.contains("stty"), "{line:?}");
+    assert_eq!(line, " printf 'x'\n");
+
+    let repairing = hidden_line_self_repairing("printf 'x'");
+    assert!(!repairing.contains("A"), "no cursor-up: {repairing:?}");
+    assert!(!repairing.contains("0J"), "no erase-display: {repairing:?}");
+    assert!(repairing.contains(r"\r\033[2K"), "{repairing:?}");
+}
+
+#[test]
+fn the_old_shape_would_still_fail_this_model() {
+    // The model has to be able to report a dirty pane, or every test above is
+    // vacuous. This is build 56-3's hidden pair fed straight to the pane with
+    // no curtain in front of it: clean at 120 columns, which is why it passed
+    // everything, and dirty at 80, which is where the smoke test found it.
     let old_first = format!(
         " stty -echo; printf '\\033[1A\\r\\033[0J\\033]{BS_OSC};__bsecho_%s__\\007' \"$?\"\n"
     );
     let old_second = format!(
         " {}; printf '\\033[1A\\r\\033[0J'; stty echo\n",
-        probe_payload()
+        probe_payload("__bshook_y__")
     );
 
     for (cols, dirty) in [(120, false), (80, true)] {
-        let mut pane = Pane::new(cols);
-        let mut sh = Shell::new();
-        sh.boot(&mut pane);
-        let before = pane.snapshot();
-        sh.submit(&old_first, &mut pane);
-        sh.submit(&old_second, &mut pane);
+        let mut s = Session::new(cols);
+        s.sh.hooked = false;
+        let before = s.snapshot();
+        // No curtain: straight to the glass, as it was.
+        let a = s.sh.submit(&old_first);
+        s.pane.feed(&a);
+        let b = s.sh.submit(&old_second);
+        s.pane.feed(&b);
         assert_eq!(
-            pane.snapshot().contains("stty"),
+            s.snapshot().contains("stty"),
             dirty,
             "at {cols} columns the old shape should {} have left something:\n{}",
             if dirty { "" } else { "not" },
-            pane.snapshot()
+            s.snapshot()
         );
         if !dirty {
-            assert_eq!(pane.snapshot(), before);
+            assert_eq!(s.snapshot(), before);
         }
     }
-}
-
-#[test]
-fn a_shell_that_will_not_go_quiet_still_gets_its_pane_back() {
-    // zsh. Its line editor draws what is being typed itself and does not care
-    // what `stty` was told, so both of the first two lines are seen and the
-    // engine refuses to send the third (the hook offer is most of a screenful).
-    // Refusing is right. Leaving the asking on the screen is not, so the line
-    // that backs out takes the same four rows with it.
-    let mut pane = Pane::new(80);
-    let mut sh = Shell::new();
-    sh.boot(&mut pane);
-    let before = pane.snapshot();
-
-    sh.obeys_stty = false;
-    sh.submit(QUIET_LINE, &mut pane);
-    sh.submit(&echo_report_line(), &mut pane);
-    sh.submit(&restore_line(), &mut pane);
-
-    assert!(sh.echo, "this shell was never going to stop echoing");
-    assert_eq!(pane.snapshot(), before);
-}
-
-#[test]
-fn a_payload_with_a_mouth_on_it_is_heard_rather_than_swallowed() {
-    // The erase now runs at the front of the last line rather than the end of
-    // it, so a hidden payload that prints something says it where the prompt
-    // was about to go, instead of being wiped by its own line's tidying up.
-    // Nothing sent this way is supposed to print (they answer inside an escape
-    // sequence, and the one that could have complained is redirected at the
-    // source), so this is about what happens when something goes wrong: the
-    // operator gets to see it, and the pane below it still lines up.
-    let mut pane = Pane::new(100);
-    let mut sh = Shell::new();
-    sh.boot(&mut pane);
-    let before = pane.snapshot();
-
-    sh.submit(QUIET_LINE, &mut pane);
-    sh.submit(&echo_report_line(), &mut pane);
-    sh.output = "bash: __omni_precmd: command not found\n".to_string();
-    sh.submit(&hidden_line("some-payload"), &mut pane);
-
-    let seen = pane.snapshot();
-    assert!(
-        seen.contains("command not found"),
-        "the complaint was eaten:\n{seen}"
-    );
-    assert!(
-        !seen.contains("stty"),
-        "and none of the asking is left either:\n{seen}"
-    );
-    assert_eq!(
-        seen.lines().count(),
-        before.lines().count() + 1,
-        "one row for the complaint, and no others:\n{seen}"
-    );
-}
-
-#[test]
-fn the_erase_takes_back_one_row_per_line_submitted_plus_the_one_it_stands_on() {
-    // The count, stated where a future edit to the number of lines will trip
-    // over it: three lines go out, so the erase is three up and everything below.
-    assert_eq!(ERASE_HIDDEN, r"\033[3A\r\033[0J");
 }

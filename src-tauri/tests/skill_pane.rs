@@ -4,11 +4,12 @@
 //!     cargo test --test skill_pane -- --ignored --nocapture
 //!
 //! The unit tests in `skill_run::tests` drive the engine against a fake host
-//! that answers questions but does not draw, and `skill_run::pane_tests` checks
-//! the erase arithmetic against a modelled terminal but a modelled shell. This
-//! is the join: a real shell, a real login, real sudo, and every byte it sends
-//! rendered through a terminal so the assertion can be the one that actually
-//! matters, which is that none of Broadside's own plumbing is on the glass.
+//! that answers questions but does not draw, and `skill_run::pane_tests` puts a
+//! modelled shell behind a real curtain in front of a modelled terminal. This is
+//! the join: a real shell, a real login, real sudo, and every byte that gets
+//! past the curtain rendered through a terminal, so the assertion can be the one
+//! that actually matters, which is that none of Broadside's own plumbing is on
+//! the glass.
 //!
 //! Ignored by default, like the other docker suites (D-035).
 
@@ -24,6 +25,7 @@ use broadside_lib::ssh::pty::{
 use broadside_lib::ssh::skill_run::config::{
     LogLevel, MatchBranch, SeqStep, SequenceConfig, TimeoutAction, STOP,
 };
+use broadside_lib::ssh::skill_run::curtain::Curtain;
 use broadside_lib::ssh::skill_run::state::Ctl;
 use broadside_lib::ssh::skill_run::{
     prepare, run_host, Engine, HostMeta, PtyLink, SkillDone, SkillEvents, SkillPaused,
@@ -264,17 +266,23 @@ fn blank_to(row: &mut Vec<char>, col: usize) {
 // Wiring: one tap feeding both the engine and the terminal
 // ---------------------------------------------------------------------------
 
-/// The production tap does exactly this: every byte goes to the live pane *and*
-/// to the engine. Here the pane is a `Term`, so what is asserted on is what the
-/// operator would have seen.
+/// The production tap does exactly this: the engine is told everything, and the
+/// pane is told everything the curtain is not holding back. Here the pane is a
+/// `Term`, so what is asserted on is what the operator would have seen.
+///
+/// The order matters and is the production order: filter first, send second, so
+/// that a prompt mark inside a chunk has already lifted the curtain by the time
+/// the engine reads that chunk.
 struct Tap {
     tx: mpsc::UnboundedSender<TapMsg>,
     raw: Arc<Mutex<Vec<u8>>>,
+    curtain: Curtain,
 }
 
 impl PtyEvents for Tap {
     fn data(&self, payload: PtyData) {
-        self.raw.lock().unwrap().extend_from_slice(&payload.data);
+        let shown = self.curtain.filter(&payload.data).to_vec();
+        self.raw.lock().unwrap().extend_from_slice(&shown);
         let _ = self.tx.send(TapMsg::Data(payload.data));
     }
     fn closed(&self, _payload: PtyClosed) {
@@ -490,11 +498,13 @@ async fn drive(cols: u32, shell: &str) -> Ran {
     let (_ctl_tx, ctl_rx) = mpsc::unbounded_channel::<Ctl>();
     let pty_state = PtyState::default();
     let session_id = "skill-pane-session".to_string();
+    let curtain = Curtain::new();
 
     let opened = open(
         Tap {
             tx: tap_tx,
             raw: raw.clone(),
+            curtain: curtain.clone(),
         },
         &pty_state,
         session_id.clone(),
@@ -527,6 +537,7 @@ async fn drive(cols: u32, shell: &str) -> Ran {
     let link = PtyLink {
         rx: tap_rx,
         write: Box::new(move |bytes: &[u8]| write_state.write(&write_id, bytes)),
+        curtain,
     };
     let events = Arc::new(Events::default());
     let engine = Engine::new(
@@ -569,17 +580,13 @@ async fn drive(cols: u32, shell: &str) -> Ran {
 /// Nothing of Broadside's own may be on the glass at any width. Split out
 /// because it is the assertion that matters, and it is made at more than one.
 fn assert_no_plumbing(pane: &str) {
-    assert_no_plumbing_except_the_wrapper(pane);
     // The visible completion wrapper is the fallback for a shell that cannot
-    // report its own completions. This one can, on both shells it was in.
+    // report its own completions. Every shell in this suite can.
     assert!(
         !pane.contains("__bsdone"),
         "the run fell back to the visible marker:\n{}",
         readable(pane)
     );
-}
-
-fn assert_no_plumbing_except_the_wrapper(pane: &str) {
     for plumbing in [
         "stty", "__bsecho", "__bshook", "__bsshell", "__bsuid", "6273", "__omni_precmd",
         "PROMPT_COMMAND",
@@ -649,11 +656,11 @@ async fn a_whole_skill_runs_without_putting_anything_of_its_own_on_the_screen() 
 
 /// The same run in a pane the width of a plain terminal.
 ///
-/// This is the width the erase has always been vague about: it takes back a
-/// fixed number of rows, so a line long enough to have wrapped leaves the part
-/// that wrapped. 80 columns is not an exotic case, it is the default size of
-/// every terminal ever made and roughly what a tile in a four-up grid gets, so
-/// "kept short" has to mean short enough for this.
+/// The width that found build 56-3: the erase counted rows, the echoed line was
+/// 67 characters, and 80 columns is where that wraps. It is not an exotic case,
+/// it is the default size of every terminal ever made and roughly what a tile in
+/// a four-up grid gets, so it stays in the suite as the width most likely to be
+/// real even though the mechanism it caught is gone.
 #[tokio::test]
 #[ignore]
 async fn the_same_skill_in_an_eighty_column_pane_is_just_as_clean() {
@@ -662,15 +669,14 @@ async fn the_same_skill_in_an_eighty_column_pane_is_just_as_clean() {
     assert_no_plumbing(&pane);
 }
 
-/// zsh, whose line editor draws the line it is editing itself and may well not
-/// care what `stty` was told.
+/// zsh, whose line editor draws the line it is editing itself rather than
+/// letting the terminal echo it.
 ///
-/// Two things are being asked. Whether the run works at all, which it must. And
-/// whether the pane stays clean, which it should even if zsh echoes: the erase
-/// counts one row per line submitted, and that is true of an echoed line as much
-/// as an unechoed one, as long as it is short enough not to wrap. What the
-/// engine is entitled to do on a shell it cannot silence is fall back to the
-/// visible completion marker, so that one is reported rather than asserted.
+/// That used to be a tier of its own. `stty -echo` does not stop ZLE drawing, so
+/// the engine could not hide a long payload there, would not offer zsh the
+/// hooks, and zsh fell back to the visible completion marker for the whole run.
+/// Hiding no longer asks the shell for anything, so zsh is now held to exactly
+/// the standard bash is: a clean pane **and** the shell's own completions.
 #[tokio::test]
 #[ignore]
 async fn the_same_skill_on_zsh() {
@@ -680,13 +686,23 @@ async fn the_same_skill_on_zsh() {
         events,
     } = drive(100, "zsh").await;
     assert!(outcome.ok, "{outcome:?}\n{}", events.log());
-    println!(
-        "zsh: the engine {} the shell's own completions",
-        if pane.contains("__bsdone") {
-            "could NOT use"
-        } else {
-            "used"
-        }
-    );
-    assert_no_plumbing_except_the_wrapper(&pane);
+    assert_no_plumbing(&pane);
+}
+
+/// Forty columns, which is narrower than anybody works in.
+///
+/// This is the question smoke test 56-4 was left open on. The erase took back a
+/// fixed number of rows, so there was always some width at which the prompt plus
+/// the shortest line the engine could type would not fit on one of them, and the
+/// only honest answer about where that width was had to come from an operator
+/// trying it. Nothing is drawn now, so nothing can wrap, and the answer is that
+/// there is no such width. Asserted here rather than asked, at a width chosen to
+/// be absurd: the real commands in the sequence wrap freely at 40 columns, which
+/// is the operator's business, and Broadside's own lines are still nowhere.
+#[tokio::test]
+#[ignore]
+async fn a_pane_far_too_narrow_to_be_reasonable_is_still_clean() {
+    let Ran { pane, outcome, .. } = drive(40, "bash").await;
+    assert!(outcome.ok, "{outcome:?}");
+    assert_no_plumbing(&pane);
 }
