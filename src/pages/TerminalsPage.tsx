@@ -585,6 +585,23 @@ export function TerminalsPage({
   const [tabsCompact, setTabsCompact] = useState(
     () => localStorage.getItem(TABS_COMPACT_KEY) === "1",
   );
+  // Whether the tab strip is rolled up, giving its row to the tiles. Grid only:
+  // in Tabs layout the strip is the only way to change session, so hiding it
+  // there is a way to get stuck.
+  //
+  // Plain state, deliberately not persisted, unlike every other view preference
+  // on this page. It is asked for when the screen is full and wanted back the
+  // moment it is not, so it belongs to this run of the app rather than to the
+  // operator. Starting a cold app with no tabs on it would also be a puzzle
+  // nobody would connect to something they did last week.
+  const [tabBarHidden, setTabBarHidden] = useState(false);
+  const toggleTabBar = useCallback(() => setTabBarHidden((v) => !v), []);
+  // Whether it is actually rolled up right now. Switching to Tabs brings the
+  // strip back without clearing the choice, so switching back to a grid rolls
+  // it up again: the same shape as the broadcast rail, which also comes back on
+  // its own when there is something to broadcast to.
+  const tabsRolledUp = gridMode && tabBarHidden;
+
   const toggleTabsCompact = useCallback(() => {
     setTabsCompact((prev) => {
       const next = !prev;
@@ -1545,6 +1562,15 @@ export function TerminalsPage({
             // so where it landed has to be obvious; the default ring is a grey
             // at half opacity on a grey strip, and it was not.
             "terminal-chrome",
+            // The anchor the floating "+" hangs from when the tab strip is
+            // rolled up: `top-full` on that button has to mean "just under the
+            // chrome", which it only does if the chrome is the containing
+            // block. In fullscreen the strip is `absolute` and already is one,
+            // so this is only for the rest of the time -- and written as an
+            // either/or rather than as a second class, because two position
+            // utilities on one element are settled by the order Tailwind
+            // happens to emit them in, which is not a thing to bet a layout on.
+            !gridFullscreen && "relative",
             gridFullscreen &&
               // has-[[data-state=open]] is what keeps the strip down while a
               // menu opened from it is up, and it is not a nicety: without it
@@ -1632,6 +1658,8 @@ export function TerminalsPage({
         }}
         hideGridHeaders={hideGridHeaders}
         toggleGridHeaders={toggleGridHeaders}
+        tabBarHidden={tabBarHidden}
+        toggleTabBar={toggleTabBar}
         customGrid={customGrid}
         gridCount={gridCount}
         twoUpSplit={twoUpSplit}
@@ -1663,7 +1691,24 @@ export function TerminalsPage({
           dropdown (which opens downward, below the strip) isn't clipped by an
           overflow container. (overflow-x:auto forces overflow-y to compute to
           auto too, which silently cropped the menu and made "+" look dead.) */}
-      <div className="flex items-center gap-1 border-b border-border/50 px-2 pt-2">
+      {/* Rolled up, the row comes out of the flow entirely and hangs off the
+          bottom edge of the chrome instead, carrying nothing but the "+". That
+          is what gives the tiles the space: a row still in the flow with its
+          contents hidden is a row still taking its height.
+
+          It sits over the top-right tile and is opaque, which is the deal: the
+          real estate is worth more than the sliver of terminal underneath, and
+          a see-through button over moving text is harder to read than either
+          the button or the text alone. */}
+      <div
+        className={cn(
+          "flex items-center gap-1",
+          tabsRolledUp
+            ? "absolute right-0 top-full z-30 p-2"
+            : "border-b border-border/50 px-2 pt-2",
+        )}
+      >
+        {!tabsRolledUp && (
         <div
           ref={tabScrollRef}
           role="tablist"
@@ -2006,11 +2051,21 @@ export function TerminalsPage({
           </p>
         )}
         </div>
+        )}
         {/* "+" launcher for local shells (Windows Terminal style). A
             self-contained dropdown (not a Select) so it opens reliably. Kept
             OUTSIDE the scrolling tab list above so its downward menu isn't
             clipped by that container's overflow. */}
-        <div ref={launcherRef} className="relative shrink-0">
+        <div
+          ref={launcherRef}
+          className={cn(
+            "relative shrink-0",
+            // Floating over a terminal, it needs a ground of its own: the
+            // button is a border and two glyphs, and over scrolling output
+            // that is not a button, it is a smudge.
+            tabsRolledUp && "rounded-md bg-background shadow-md",
+          )}
+        >
           <button
             type="button"
             onClick={() => setShellMenuOpen((v) => !v)}

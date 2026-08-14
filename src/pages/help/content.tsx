@@ -1269,6 +1269,19 @@ export const SECTIONS: HelpSection[] = [
               runs that command again.
             </li>
             <li>
+              <b>A second session on the same thing.</b> Hover a tab and one of
+              the small icons on it is a copy button; right-click the tab and{" "}
+              <Nav>Open another session</Nav> does the same. It opens a fresh
+              session on that host, or another of that local shell, and lands it
+              directly after the tab it came from. Nothing is copied across:
+              it is a new shell, with its own scrollback. The pair is told apart
+              by the number the second one picks up, <code>web-01 02</code>, and
+              that number follows them into the broadcast lists.
+              <br />
+              The only time it asks first is a tab launched from a profile that
+              types a startup command, because the copy runs that command again.
+            </li>
+            <li>
               <b>Ending one session without losing the tab.</b> Each row of the{" "}
               <Nav>Sessions</Nav> menu has a small unplug button at its right
               hand end. It hangs up on that host and leaves the tab exactly where
@@ -1287,9 +1300,21 @@ export const SECTIONS: HelpSection[] = [
               for tile title bars stay out in the open because they are the ones
               you reach for. Everything else that shapes the view lives under{" "}
               <Nav>View</Nav>: fullscreen again (with the key beside it),{" "}
-              <Nav>Full tab labels</Nav>, flipping two terminals between
-              side-by-side and top/bottom, <Nav>Reset grid</Nav> and{" "}
-              <Nav>Reset display</Nav>.
+              <Nav>Full tab labels</Nav>, <Nav>Tab bar</Nav>, flipping two
+              terminals between side-by-side and top/bottom,{" "}
+              <Nav>Reset grid</Nav> and <Nav>Reset display</Nav>.
+            </li>
+            <li>
+              <b>Rolling the tab strip away.</b> <Nav>View</Nav> &gt;{" "}
+              <Nav>Tab bar</Nav>, in Grid only, unticks the strip and gives its
+              row to the tiles. The <Nav>+</Nav> launcher does not go with it: it
+              floats over the top right corner of the grid so a new local shell
+              is still one click away. Switch back to <Nav>Tabs</Nav> and the
+              strip returns on its own, because there it is the only way to
+              change session and hiding it would strand you; switch back to Grid
+              and it rolls up again. The choice lasts for as long as the app is
+              running and is not remembered across restarts: it is something you
+              want when the screen is full, not a standing preference.
             </li>
             <li>
               <b>Greyed does not mean gone.</b> An entry that has nothing to act

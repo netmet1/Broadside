@@ -131,6 +131,8 @@ export function TerminalRail({
   maximizeActive,
   hideGridHeaders,
   toggleGridHeaders,
+  tabBarHidden,
+  toggleTabBar,
   customGrid,
   gridCount,
   twoUpSplit,
@@ -170,6 +172,9 @@ export function TerminalRail({
   maximizeActive: () => void;
   hideGridHeaders: boolean;
   toggleGridHeaders: () => void;
+  /** Whether the tab strip is rolled up. Grid-only, and this session only. */
+  tabBarHidden: boolean;
+  toggleTabBar: () => void;
   customGrid: boolean;
   gridCount: number;
   twoUpSplit: "cols" | "rows";
@@ -422,7 +427,7 @@ export function TerminalRail({
             variant="outline"
             aria-label="View"
             {...hint(
-              "Fullscreen, tab labels, tile arrangement and the two reset actions.",
+              "Fullscreen, the tab bar and its labels, tile arrangement and the two reset actions.",
             )}
           >
             <SlidersHorizontalIcon className="h-3.5 w-3.5" />
@@ -473,6 +478,30 @@ export function TerminalRail({
           >
             Full tab labels
           </DropdownMenuCheckboxItem>
+
+          {/* Grid only, and gone rather than greyed outside it, which is the
+              exception the two-up flip already sets: this is not an action
+              waiting on something, it is one that cannot mean anything in Tabs.
+              The strip is the only way to change session there, so an entry
+              offering to take it away would be an entry offering to strand you.
+
+              Stated as what you have rather than as what the switch does, like
+              Full tab labels above, so the tick always means "this is on
+              screen". A "Hide tab bar" checkbox that is ticked when the tabs
+              are *not* there reads backwards every time. */}
+          {gridMode && (
+            <DropdownMenuCheckboxItem
+              checked={!tabBarHidden}
+              onCheckedChange={toggleTabBar}
+              {...hint(
+                tabBarHidden
+                  ? "The tab strip is hidden and the tiles have its row. Click to bring it back."
+                  : "The tab strip is shown. Click to hide it and give the row to the tiles.",
+              )}
+            >
+              Tab bar
+            </DropdownMenuCheckboxItem>
+          )}
 
           {/* The one entry that still comes and goes, and the exception proves
               the rule: everything else here is an action that exists and is
