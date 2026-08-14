@@ -36,8 +36,9 @@ export type Host = {
    * page's memory of this session. */
   connect_failed_at: string | null;
   /** How often a closed pane asks this host whether it is back, in seconds.
-   * Null means the default, {@link DEFAULT_PROBE_INTERVAL_SECS}. Form-written,
-   * through its own call like `shell_integration`. */
+   * Null means the default, {@link DEFAULT_PROBE_INTERVAL_SECS};
+   * {@link PROBE_INTERVAL_OFF} means don't ask, and don't draw the pill.
+   * Form-written, through its own call like `shell_integration`. */
   probe_interval_secs: number | null;
 };
 
@@ -48,6 +49,10 @@ export type Host = {
 export const DEFAULT_PROBE_INTERVAL_SECS = 3;
 export const MIN_PROBE_INTERVAL_SECS = 1;
 export const MAX_PROBE_INTERVAL_SECS = 10;
+/** Turned off for this host: no probing, and no pill on its closed panes. Zero
+ * rather than another null because null already means "nobody has said", which
+ * is not the same answer and must keep following the default if it moves. */
+export const PROBE_INTERVAL_OFF = 0;
 
 export type HostInput = {
   label: string;

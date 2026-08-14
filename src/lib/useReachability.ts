@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import {
   DEFAULT_PROBE_INTERVAL_SECS,
+  PROBE_INTERVAL_OFF,
   getHost,
   probeHostReachable,
 } from "@/lib/tauri/hosts";
@@ -63,7 +64,8 @@ export type Reachability = {
  * The interval is the host's own (1-10s, default 3), read when the probing
  * starts rather than passed in from the session's open-time snapshot of the
  * host, so an operator who decides mid-reboot that they want to be asked more
- * often gets it on the next pane rather than the next restart.
+ * often gets it on the next pane rather than the next restart. A host set to
+ * off returns null from here, i.e. no pill.
  */
 export function useReachability(
   hostId: number | null,
@@ -160,6 +162,20 @@ export function useReachability(
         // stop answering the question the operator is actually asking.
       }
       if (cancelled) return;
+      // Turned off for this host. Null rather than an empty window, so the pane
+      // draws no pill at all: a pill reading nothing is a worse answer than no
+      // pill, and an operator who asked for it off asked for the space back.
+      //
+      // This is read here rather than gated by the caller from the session's
+      // open-time snapshot of the host, for the same reason the interval is: the
+      // setting is meant to take effect on the host, not on the tabs that
+      // happened to be open when it was changed. The cost is that the pill draws
+      // in its pending state until the host row comes back, which is one local
+      // database read and lands well inside a frame.
+      if (secs === PROBE_INTERVAL_OFF) {
+        setState(null);
+        return;
+      }
       // Straight into the first probe, with no wait. The pane has just lost its
       // connection, so the first thing anyone wants to know is whether it is
       // already back, and starting with a delay would put the pill's first word

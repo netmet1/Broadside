@@ -487,8 +487,11 @@ export const SECTIONS: HelpSection[] = [
               clicking <Nav>Reconnect</Nav> every few seconds to find out.
               <br />
               This setting is how often it asks, from every second to every ten,
-              three by default. What it does is open a connection to the host's
-              SSH port, not send a ping, and the difference is the point: a Linux
+              three by default, or <Nav>Off</Nav> for a host you would rather
+              were not asked at all. Off means no checking and no pill;{" "}
+              <Nav>Reconnect</Nav> still works, you just have to try it to find
+              out. What the check does is open a connection to the host's SSH
+              port, not send a ping, and the difference is the point: a Linux
               machine answers a ping some tens of seconds before{" "}
               <code>sshd</code> is listening, so a pill fed by pings would go
               green while <Nav>Reconnect</Nav> still failed. Nothing is sent to

@@ -41,6 +41,7 @@ import {
   type HostInput,
   MAX_PROBE_INTERVAL_SECS,
   MIN_PROBE_INTERVAL_SECS,
+  PROBE_INTERVAL_OFF,
   checkPrivateKey,
   clearHostCredentials,
   createHost,
@@ -250,6 +251,7 @@ export function HostFormPanel({
   const [probeInterval, setProbeInterval] = useState<number>(
     host?.probe_interval_secs ?? DEFAULT_PROBE_INTERVAL_SECS,
   );
+  const probeOff = probeInterval === PROBE_INTERVAL_OFF;
 
   const {
     register,
@@ -505,7 +507,8 @@ export function HostFormPanel({
       // Same shape, same reason. `null` when the operator left it on the
       // default, so a host that was never given an answer keeps following the
       // default if the default ever moves, rather than being pinned to whatever
-      // it happened to be on the day the host was added.
+      // it happened to be on the day the host was added. Off is not that: it is
+      // an answer, and it is stored as one.
       const wantInterval =
         probeInterval === DEFAULT_PROBE_INTERVAL_SECS ? null : probeInterval;
       if (wantInterval !== (host?.probe_interval_secs ?? null)) {
@@ -1128,37 +1131,77 @@ export function HostFormPanel({
             </span>
           </Label>
           <div className="grid gap-2">
-            <Select
-              value={String(probeInterval)}
-              onValueChange={(v) => setProbeInterval(Number(v))}
-            >
-              <SelectTrigger id="probe-interval" className="w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from(
-                  { length: MAX_PROBE_INTERVAL_SECS - MIN_PROBE_INTERVAL_SECS + 1 },
-                  (_, i) => MIN_PROBE_INTERVAL_SECS + i,
-                ).map((secs) => (
-                  <SelectItem key={secs} value={String(secs)}>
-                    Every {secs} second{secs === 1 ? "" : "s"}
-                    {secs === DEFAULT_PROBE_INTERVAL_SECS ? " (default)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* The dropdown holds the number and nothing else, with the words
+                either side of it, so picking an interval is picking a number
+                rather than reading ten sentences that differ by one word.
+                "Off" is the one entry that is not a number, and it takes the
+                sentence with it: "Every Off seconds" is not English, so the
+                surrounding words step aside when it is chosen. */}
+            <div className="flex items-center gap-2">
+              {!probeOff && (
+                <Label
+                  htmlFor="probe-interval"
+                  className="text-sm font-normal text-muted-foreground"
+                >
+                  Every
+                </Label>
+              )}
+              <Select
+                value={String(probeInterval)}
+                onValueChange={(v) => setProbeInterval(Number(v))}
+              >
+                <SelectTrigger id="probe-interval" className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from(
+                    { length: MAX_PROBE_INTERVAL_SECS - MIN_PROBE_INTERVAL_SECS + 1 },
+                    (_, i) => MIN_PROBE_INTERVAL_SECS + i,
+                  ).map((secs) => (
+                    <SelectItem key={secs} value={String(secs)}>
+                      {secs}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={String(PROBE_INTERVAL_OFF)}>Off</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-muted-foreground">
+                {probeOff
+                  ? "no reconnect check for this host"
+                  : `second${probeInterval === 1 ? "" : "s"}${
+                      probeInterval === DEFAULT_PROBE_INTERVAL_SECS
+                        ? " (the default)"
+                        : ""
+                    }`}
+              </span>
+            </div>
             {/* Worth saying plainly, because "is it back" and "does it answer a
                 ping" are not the same question and the difference is the whole
                 point. A rebooting Linux box answers ICMP some tens of seconds
                 before sshd binds, so a pill that went green on a ping would go
                 green while Reconnect still fails. */}
-            <p className="text-xs text-muted-foreground">
-              Runs only while a terminal for this host is sitting closed, and
-              stops when the tab is closed or reconnected. It opens a connection
-              to port {portValue || 22} rather than pinging, so it turns
-              green when Reconnect will actually work rather than when the
-              machine first answers.
-            </p>
+            {probeOff ? (
+              <p className="text-xs text-muted-foreground">
+                Closed terminals for this host will not check whether it is back,
+                and show no pill. Reconnect still works; you just have to try it
+                to find out.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Runs only while a terminal for this host is sitting closed, and
+                stops when the tab is closed or reconnected. It opens a
+                connection to port{" "}
+                {/* The port is the one part of this sentence that is about
+                    *this* host rather than about the feature, so it is lifted
+                    out of the grey and set in the same face the form uses for
+                    values. It follows the field above as it is typed. */}
+                <span className="rounded bg-foreground/10 px-1 py-0.5 font-mono text-foreground">
+                  {portValue || 22}
+                </span>{" "}
+                rather than pinging, so it turns green when Reconnect will
+                actually work rather than when the machine first answers.
+              </p>
+            )}
           </div>
         </div>
 
