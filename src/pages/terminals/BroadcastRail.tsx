@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangleIcon, EraserIcon, SendIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  CopyIcon,
+  EraserIcon,
+  SendIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -20,7 +25,12 @@ import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { useHint } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
-import { sessionLabel, type TermSession } from "@/pages/terminals/session";
+import {
+  duplicateSuffixes,
+  sessionLabel,
+  sessionsSharingAHost,
+  type TermSession,
+} from "@/pages/terminals/session";
 import { useSessionBroadcast } from "@/pages/ptyBroadcast/useSessionBroadcast";
 
 /** Neutral dot colour for local shells (they have no per-host colour). */
@@ -127,14 +137,23 @@ export function BroadcastRail({
   const targets = byFamily[family];
   const isSsh = family === "ssh";
 
+  // The same numbering the tab strip uses, over *all* sessions rather than this
+  // family's, so a row here is named exactly what its tab is named. Numbering
+  // per family would drift the moment the families held different sets.
+  const suffixById = useMemo(() => duplicateSuffixes(sessions), [sessions]);
+  const labelFor = useCallback(
+    (s: TermSession) => sessionLabel(s) + (suffixById.get(s.id) ?? ""),
+    [suffixById],
+  );
+
   const describe = useCallback(
     (s: TermSession) => ({
       host_id: s.type === "ssh" ? s.host.id : null,
-      label: sessionLabel(s),
+      label: labelFor(s),
       color: s.type === "ssh" ? s.host.color : LOCAL_COLOR,
       kind: s.type === "local" ? s.shell.kind : undefined,
     }),
-    [],
+    [labelFor],
   );
 
   const {
@@ -179,6 +198,14 @@ export function BroadcastRail({
   const allSelected =
     connectedTargets.length > 0 &&
     connectedTargets.every((s) => selected.has(s.id));
+
+  // How many of the *checked* rows are on a host another checked row is also
+  // on. Over the selection rather than the whole list, because two tabs on one
+  // host are only a surprise when both of them are about to be typed into.
+  const sharedHosts = useMemo(
+    () => sessionsSharingAHost(targets.filter((s) => selected.has(s.id))),
+    [targets, selected],
+  );
 
   const send = useCallback(async () => {
     const cmd = command.trim();
@@ -309,6 +336,12 @@ export function BroadcastRail({
                   )}
                 >
                   {sessionLabel(s)}
+                  {/* The " 02" that tells two sessions on one host apart. Dimmed
+                      rather than run into the label, because it is not part of
+                      the machine's name: it says which of two tabs this row is. */}
+                  <span className="text-muted-foreground">
+                    {suffixById.get(s.id)}
+                  </span>
                 </span>
                 {/* Marked, never filtered (D-067). Broadcasting to this session
                     works fine (it is keystrokes into a PTY), but the command
@@ -346,6 +379,21 @@ export function BroadcastRail({
             placeholder="Command to broadcast"
           />
         </div>
+        {/* Two of the checked sessions are on one machine, so the command runs
+            there twice. Said, not blocked: it is a normal way to work (a tail
+            in one pane, the work in the other) and a dialog on every send would
+            be one nobody reads by the second week. What makes it worth saying
+            at all is that the count on the button below is sessions, and the
+            number in the operator's head is usually machines. */}
+        {sharedHosts > 0 && (
+          <p className="flex items-start gap-1.5 text-[10px] leading-tight text-amber-600 dark:text-amber-400">
+            <CopyIcon className="mt-px h-3 w-3 shrink-0" />
+            <span>
+              {sharedHosts} of these are on the same host, so it will run there
+              more than once.
+            </span>
+          </p>
+        )}
         <Button
           size="sm"
           className="w-full"

@@ -72,6 +72,71 @@ export function sessionLabel(s: TermSession): string {
   return s.title || s.profileLabel || s.shell.label;
 }
 
+/** What two tabs have to share before one of them is a duplicate of the other:
+ * the host for an SSH tab, the shell for a local one. */
+function dedupKey(s: TermSession): string {
+  return s.type === "ssh" ? `ssh:${s.host.id}` : `local:${s.shell.id}`;
+}
+
+/**
+ * The " 02", " 03" a tab picks up when it is not the first on its target.
+ * Returns a suffix per session id, empty string for the ones that take none.
+ *
+ * Here rather than in the tab strip because the strip is not the only place
+ * duplicates need telling apart, and it turned out to be the least important
+ * one: a broadcast list showing `web-01` twice with no way to tell which is
+ * which is how a command goes to one machine twice while its operator counts
+ * five. The tab strip, a broadcast rail and the MultiTerminal picker all number
+ * them the same way, from here.
+ *
+ * Numbered by creation order (`seq`), not display order, so dragging a tab
+ * somewhere else never reshuffles names that are already on screen.
+ *
+ * A renamed tab consumes its number but shows none: the operator gave it an
+ * explicit name, and "Build box 02" would read as a duplicate of a tab that
+ * does not exist. Consuming it anyway is what keeps every other tab's number
+ * where it was.
+ */
+export function duplicateSuffixes(
+  sessions: readonly TermSession[],
+): Map<string, string> {
+  const counts = new Map<string, number>();
+  const map = new Map<string, string>();
+  for (const s of [...sessions].sort((a, b) => a.seq - b.seq)) {
+    const key = dedupKey(s);
+    const n = (counts.get(key) ?? 0) + 1;
+    counts.set(key, n);
+    const renamed = s.type === "local" && !!s.title;
+    map.set(s.id, !renamed && n > 1 ? ` ${String(n).padStart(2, "0")}` : "");
+  }
+  return map;
+}
+
+/** How many of these sessions are on a host that another one of them is also
+ * on. Zero when every session has a machine to itself.
+ *
+ * Used to say so, quietly, above a broadcast Send button, because the count on
+ * that button is sessions and the number in the operator's head is usually
+ * machines. Not to block it: two shells on one box is a normal way to work (a
+ * tail in one, the work in the other), and a dialog that fired every time would
+ * be one nobody reads by the second week.
+ *
+ * SSH only, and that is not an oversight. Two local PowerShell tabs are not two
+ * ways into one thing, they are two processes with their own working
+ * directories; a command sent to both runs once in each and has been sent to
+ * exactly as many shells as the button said. Counting them here would raise a
+ * warning about the ordinary case of having two shells open. */
+export function sessionsSharingAHost(sessions: readonly TermSession[]): number {
+  const counts = new Map<number, number>();
+  for (const s of sessions) {
+    if (s.type !== "ssh") continue;
+    counts.set(s.host.id, (counts.get(s.host.id) ?? 0) + 1);
+  }
+  let shared = 0;
+  for (const n of counts.values()) if (n > 1) shared += n;
+  return shared;
+}
+
 /** Which shortcut scope a tab belongs to. SSH hosts, local WSL tabs and custom
  * POSIX terminals (Git Bash and the like) run Linux commands (ssh); local
  * Command Prompt / PowerShell run Windows ones (local); a serial console has

@@ -57,6 +57,10 @@ import {
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import type { SshTermSession } from "@/pages/TerminalsPage";
+import {
+  duplicateSuffixes,
+  sessionsSharingAHost,
+} from "@/pages/terminals/session";
 
 const MIRROR_KEY = "omni-mirror-typed";
 const HEADERS_KEY = "omni-headers";
@@ -134,6 +138,13 @@ export function MultiTerminalPage({
     return m;
   }, [sessions]);
 
+  // The " 02" the tab strip gives the second session on a host, so a rail of
+  // rows that all read "web-01" says which is which. It follows the label into
+  // the output blocks as well: a page whose whole job is running one command in
+  // several places has to be able to say which place a block came from, and two
+  // blocks headed the same thing cannot.
+  const suffixById = useMemo(() => duplicateSuffixes(sessions), [sessions]);
+
   // Host ids with an open terminal session, drives whether a block shows the
   // "jump to this host's terminal" icon (hidden for deleted/closed hosts).
   const openHostIds = useMemo(
@@ -162,6 +173,19 @@ export function MultiTerminalPage({
     () =>
       sessions.filter((s) => selected.has(s.id) && connectedSessions.has(s.id))
         .length,
+    [sessions, selected, connectedSessions],
+  );
+
+  // How many of the selected, connected terminals share a host with another
+  // one. Over what would actually be dispatched to, not over the whole rail:
+  // two tabs on a host are only a surprise when both are about to be run.
+  const sharedHosts = useMemo(
+    () =>
+      sessionsSharingAHost(
+        sessions.filter(
+          (s) => selected.has(s.id) && connectedSessions.has(s.id),
+        ),
+      ),
     [sessions, selected, connectedSessions],
   );
 
@@ -232,10 +256,12 @@ export function MultiTerminalPage({
   const mirrorRef = useRef(mirrorTyped);
   const sessionsByIdRef = useRef(sessionsById);
   const selectedRef = useRef(selected);
+  const suffixByIdRef = useRef(suffixById);
   useLayoutEffect(() => {
     mirrorRef.current = mirrorTyped;
     sessionsByIdRef.current = sessionsById;
     selectedRef.current = selected;
+    suffixByIdRef.current = suffixById;
   });
   // Per-session FIFO queue of commands WE dispatched, so a block can be tagged
   // dispatched (always shown) vs hand-typed (shown only when mirror is on).
@@ -280,7 +306,8 @@ export function MultiTerminalPage({
             dbId: null,
             ts,
             hostId: sess.host.id,
-            labelSnapshot: sess.host.label,
+            labelSnapshot:
+              sess.host.label + (suffixByIdRef.current.get(sess.id) ?? ""),
             colorSnapshot: sess.host.color,
             command,
             lines: blk.lines,
@@ -298,7 +325,7 @@ export function MultiTerminalPage({
       omniBlocksAdd({
         ts,
         host_id: sess.host.id,
-        label: sess.host.label,
+        label: sess.host.label + (suffixByIdRef.current.get(sess.id) ?? ""),
         command,
         lines: blk.lines,
         exit_code: blk.exit_code,
@@ -584,7 +611,9 @@ export function MultiTerminalPage({
             {visibleSessions.map((s) => {
               const isConnected = connectedSessions.has(s.id);
               const color = hostsById.get(s.host.id)?.color ?? s.host.color;
-              const label = hostsById.get(s.host.id)?.label ?? s.host.label;
+              const label =
+                (hostsById.get(s.host.id)?.label ?? s.host.label) +
+                (suffixById.get(s.id) ?? "");
               if (railCollapsed) {
                 return (
                   <button
@@ -876,7 +905,20 @@ export function MultiTerminalPage({
           </div>
 
           {/* Composer. */}
-          <div className="flex items-end gap-2 border-t border-border/50 p-3">
+          <div className="border-t border-border/50 p-3">
+          {/* Two checked sessions on one machine, so the command runs there
+              twice. Said rather than blocked: it is a normal way to work, and a
+              dialog on every send is one nobody reads by the second week. It
+              earns its place here because the count in the placeholder is
+              terminals and the number in the operator's head is machines. */}
+          {sharedHosts > 0 && (
+            <p className="mb-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+              <CopyIcon className="h-3.5 w-3.5 shrink-0" />
+              {sharedHosts} of the selected terminals are on the same host, so
+              this will run there more than once.
+            </p>
+          )}
+          <div className="flex items-end gap-2">
             <Composer
               value={command}
               onChange={setCommand}
@@ -904,6 +946,7 @@ export function MultiTerminalPage({
               Send
             </Button>
           </div>
+          </div>
         </div>
       </div>
 
@@ -914,7 +957,9 @@ export function MultiTerminalPage({
         hits={guardHits}
         hostLabels={sessions
           .filter((s) => selected.has(s.id) && connectedSessions.has(s.id))
-          .map((s) => s.host.label)
+          // Suffixed, so a host listed twice here reads as two sessions on one
+          // machine rather than as the dialog having repeated itself.
+          .map((s) => s.host.label + (suffixById.get(s.id) ?? ""))
           .sort()}
         onConfirmed={() => {
           dispatch(command.trim());

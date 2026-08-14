@@ -1647,6 +1647,18 @@ export const SECTIONS: HelpSection[] = [
               that ran. You can delete an individual block to keep the view tidy.
             </li>
             <li>
+              <b>Two sessions on one host</b> are allowed, and the rail says so
+              rather than stopping you. They are listed separately and numbered,{" "}
+              <code>web-01</code> and <code>web-01 02</code>, the same numbers
+              their tabs carry, and their blocks in the log are headed the same
+              way. If two of the sessions you have checked are on one machine, a
+              line above the composer says how many, because the count you are
+              sending to is terminals and the number you are usually thinking of
+              is machines. It is a note, not a question: a tail in one pane and
+              the work in another is a normal way to use this, and a dialog on
+              every send would be one you stopped reading.
+            </li>
+            <li>
               Turn on <Nav>Show Manual Activity</Nav> to also capture commands you
               type by hand inside a <Nav>Terminals</Nav> tab; with it off, only
               commands sent from <Nav>MultiTerminal</Nav> appear here. It follows

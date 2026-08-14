@@ -57,6 +57,7 @@ import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import {
+  duplicateSuffixes,
   labelInitials,
   sessionColor,
   sessionLabel,
@@ -496,27 +497,10 @@ export function TerminalsPage({
   // time, so a colour changed there has to arrive here without a restart.
   const shellColors = useShellColors();
   // Suffix for duplicate terminals to the same target: the 2nd+ get " 02", " 03",
-  // … so the tabs are distinguishable (T3). The first stays unsuffixed. Dedup key
-  // is the host (SSH) or the shell id (local), so two PowerShell tabs also count.
-  // Numbered by creation order (seq), NOT display order, so dragging a tab to a
-  // new position never reshuffles the suffixes (the names stay put as the user
-  // expects them to).
-  // A renamed tab still consumes its number so the tabs around it keep the
-  // suffixes they already had, but shows none of its own: the operator gave it
-  // an explicit name, and "Build box 02" would read as a duplicate of a tab
-  // that doesn't exist.
-  const tabSuffix = useMemo(() => {
-    const counts = new Map<string, number>();
-    const map = new Map<string, string>();
-    for (const s of [...sessions].sort((a, b) => a.seq - b.seq)) {
-      const key = s.type === "ssh" ? `ssh:${s.host.id}` : `local:${s.shell.id}`;
-      const n = (counts.get(key) ?? 0) + 1;
-      counts.set(key, n);
-      const renamed = s.type === "local" && !!s.title;
-      map.set(s.id, !renamed && n > 1 ? ` ${String(n).padStart(2, "0")}` : "");
-    }
-    return map;
-  }, [sessions]);
+  // … so the tabs are distinguishable (T3). Shared with the broadcast lists, so
+  // a tab and the row that broadcasts to it carry the same name; see
+  // ./terminals/session for why the numbering works the way it does.
+  const tabSuffix = useMemo(() => duplicateSuffixes(sessions), [sessions]);
 
   // The scrolling grid container. Declared up here rather than beside the other
   // element refs below, because the layout hook measures it: how many columns

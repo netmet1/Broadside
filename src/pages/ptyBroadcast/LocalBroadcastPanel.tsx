@@ -27,7 +27,11 @@ import type { ShortcutScope } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import { LocalShellIcon } from "@/pages/TerminalsPage";
-import { sessionLabel, type LocalTermSession } from "@/pages/terminals/session";
+import {
+  duplicateSuffixes,
+  sessionLabel,
+  type LocalTermSession,
+} from "@/pages/terminals/session";
 import { useSessionBroadcast } from "@/pages/ptyBroadcast/useSessionBroadcast";
 
 /** Neutral dot colour for local shells (they have no per-host colour). Matches
@@ -65,20 +69,11 @@ export function LocalBroadcastPanel({
 }) {
   const railKey = `${storagePrefix}-rail-collapsed`;
 
-  // Duplicate " 02" suffix per shell id, ordered by creation seq (mirrors
-  // TerminalsPage's tab suffix): the 2nd+ copy of the same shell gets a number
-  // so otherwise-identical labels ("PowerShell") stay distinguishable. A tab
-  // the operator renamed carries its own name instead, so it takes no suffix.
-  const suffixById = useMemo(() => {
-    const counts = new Map<string, number>();
-    const map = new Map<string, string>();
-    for (const s of [...sessions].sort((a, b) => a.seq - b.seq)) {
-      const n = (counts.get(s.shell.id) ?? 0) + 1;
-      counts.set(s.shell.id, n);
-      map.set(s.id, !s.title && n > 1 ? ` ${String(n).padStart(2, "0")}` : "");
-    }
-    return map;
-  }, [sessions]);
+  // Duplicate " 02" suffix, the same one the tab strip uses, so the 2nd+ copy of
+  // a shell is distinguishable from a list of otherwise identical
+  // "PowerShell"s. This used to be its own copy of the numbering; it is now the
+  // shared one, which is what keeps it agreeing with the tab it names.
+  const suffixById = useMemo(() => duplicateSuffixes(sessions), [sessions]);
 
   // sessionLabel, so a renamed tab is named the same here as in the tab strip.
   const labelFor = useCallback(
