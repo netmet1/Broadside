@@ -447,6 +447,12 @@ const WARNINGS: WarningGroup[] = [
           "The shell has exited or the connection dropped. The scrollback is kept and stays readable; Reconnect starts a fresh shell on the same host, Close tab throws it away.",
       },
       {
+        message: <Msg>A pill on that banner reading “SSH 12/14 86%”</Msg>,
+        where: "Terminal pane, remote sessions only",
+        means:
+          "While the pane sits closed, Broadside keeps asking the host whether its SSH port is accepting connections, so a machine you have rebooted tells you when it is back rather than you clicking Reconnect to find out. Green means it is answering now and Reconnect should work; red means it is not; amber means it missed the last check but has been answering. The figures are the last two minutes. It opens a connection to the port rather than pinging, on purpose: a rebooting Linux box answers a ping well before sshd is listening, so a ping would go green while Reconnect still failed. How often it asks is per host, on the host's own form. Nothing is sent to the host and nothing is logged in on; the checking stops the moment you reconnect or close the tab.",
+      },
+      {
         message: (
           <Msg>An amber line across the bottom of the pane, with “Got it”</Msg>
         ),
