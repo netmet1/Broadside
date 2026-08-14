@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
+  CopyPlusIcon,
   Grid2x2Icon,
   Grid2x2XIcon,
   Maximize2Icon,
@@ -23,6 +24,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   BAUD_RATES,
   DEFAULT_BAUD,
@@ -170,6 +180,8 @@ type Props = {
   /** Rename a local shell tab for the rest of this session. An empty title
    * clears the override and falls back to the derived shell/profile label. */
   onRenameSession: (id: string, title: string) => void;
+  /** A second tab on the same target, landing directly after this one. */
+  onDuplicateSession: (id: string) => void;
   /** Maximize the given terminal to fill the whole window. */
   onMaximize: (id: string) => void;
   /** Whether the terminal is currently maximized (hides the page chrome). */
@@ -211,6 +223,7 @@ export function TerminalsPage({
   onCloseSession,
   onReorder,
   onRenameSession,
+  onDuplicateSession,
   onMaximize,
   maximized,
   gridFullscreen,
@@ -400,6 +413,28 @@ export function TerminalsPage({
       }
     },
     [shellCount, maxShells, openShells, bulkConfirmOver],
+  );
+
+  // A duplicate that would re-run a profile's startup command, held for the
+  // confirmation. Null the rest of the time, which is almost always: an SSH tab
+  // and a plain shell both duplicate on the spot.
+  const [dupConfirm, setDupConfirm] = useState<TermSession | null>(null);
+
+  // Another tab on the same target. The guard is the same one the launcher's
+  // "how many" box uses, for the same reason and at the same threshold of one:
+  // a profile's startup command runs again in the copy, and a second `terraform
+  // apply` is a different kind of accident from a second shell. Everything else
+  // goes straight through, because a second shell on a box is the thing being
+  // made cheap here and asking about it would undo that.
+  const requestDuplicate = useCallback(
+    (s: TermSession) => {
+      if (s.type === "local" && s.startupCommand?.trim()) {
+        setDupConfirm(s);
+        return;
+      }
+      onDuplicateSession(s.id);
+    },
+    [onDuplicateSession],
   );
 
   // Saved launch profiles (localStorage), re-read whenever the page is shown so
@@ -1666,8 +1701,14 @@ export function TerminalsPage({
               ? { backgroundColor: `${tabColor}33`, borderTopColor: tabColor! }
               : { borderTopColor: "var(--foreground)" };
           return (
+          // Right-click offers the same actions the tab's own little buttons do.
+          // Deliberately the same set and no more: the buttons appear on hover,
+          // so on a strip of ten tabs they are findable only by sweeping the
+          // mouse along it, and the menu is where you go when you know what you
+          // want. Nothing here is reachable *only* from the menu.
+          <ContextMenu key={s.id}>
+          <ContextMenuTrigger asChild>
           <div
-            key={s.id}
             ref={(el) => {
               if (el) tabElRefs.current.set(s.id, el);
               else tabElRefs.current.delete(s.id);
@@ -1877,6 +1918,28 @@ export function TerminalsPage({
             >
               <Maximize2Icon className="h-3.5 w-3.5" />
             </button>
+            {/* A second session on the same target, without the trip back to
+                the Hosts page and the hunt for a host that is already open in
+                front of you. Hidden until hover like its neighbours: the strip
+                is the one row on this page with no width to spare, and this is
+                a convenience rather than something anyone needs to see. */}
+            <button
+              type="button"
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
+              tabIndex={stopIndex}
+              onClick={(e) => {
+                e.stopPropagation();
+                requestDuplicate(s);
+              }}
+              aria-label={`Open another ${sessionLabel(s)}`}
+              title={
+                s.type === "ssh"
+                  ? "Open a second session on this host"
+                  : "Open another of this shell"
+              }
+            >
+              <CopyPlusIcon className="h-3.5 w-3.5" />
+            </button>
             <button
               type="button"
               className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
@@ -1890,6 +1953,50 @@ export function TerminalsPage({
               <XIcon className="h-3.5 w-3.5" />
             </button>
           </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuLabel className="max-w-56 truncate">
+              {sessionLabel(s)}
+              {tabSuffix.get(s.id)}
+            </ContextMenuLabel>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => requestDuplicate(s)}>
+              <CopyPlusIcon />
+              {s.type === "ssh" ? "Open another session" : "Open another"}
+            </ContextMenuItem>
+            {s.type === "local" && !s.profileLabel && (
+              <ContextMenuItem onSelect={() => startRename(s)}>
+                <PencilIcon />
+                Rename tab
+              </ContextMenuItem>
+            )}
+            {gridMode && (
+              <ContextMenuItem onSelect={() => toggleGridExcluded(s.id)}>
+                {excludedFromGrid.has(s.id) ? (
+                  <Grid2x2XIcon />
+                ) : (
+                  <Grid2x2Icon />
+                )}
+                {excludedFromGrid.has(s.id)
+                  ? "Show in the grid"
+                  : "Hide from the grid"}
+              </ContextMenuItem>
+            )}
+            <ContextMenuItem onSelect={() => onMaximize(s.id)}>
+              <Maximize2Icon />
+              Maximize
+              <ContextMenuShortcut>F11</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onSelect={() => closeSession(s.id)}
+              className="text-destructive focus:text-destructive"
+            >
+              <XIcon />
+              Close tab
+            </ContextMenuItem>
+          </ContextMenuContent>
+          </ContextMenu>
           );
         })}
         {sessions.length === 0 && (
@@ -2764,6 +2871,45 @@ export function TerminalsPage({
               }}
             >
               Open {bulkConfirm?.count}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* The only time duplicating a tab asks anything. A copy of a profile tab
+          types the profile's startup command again, and the operator reaching
+          for the duplicate button is thinking about the shell, not about what
+          the profile does on the way in. */}
+      <AlertDialog
+        open={dupConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setDupConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run the startup command again?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Another{" "}
+              <span className="font-semibold text-foreground">
+                {dupConfirm ? sessionLabel(dupConfirm) : ""}
+              </span>{" "}
+              runs this profile's startup command in the new tab, the same as
+              opening it from the launcher would:
+              <span className="mt-2 block truncate rounded bg-muted px-2 py-1 font-mono text-xs text-foreground">
+                {dupConfirm?.type === "local" ? dupConfirm.startupCommand : ""}
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (dupConfirm) onDuplicateSession(dupConfirm.id);
+                setDupConfirm(null);
+              }}
+            >
+              Open another
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
