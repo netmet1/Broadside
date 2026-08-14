@@ -242,7 +242,7 @@ const MIGRATIONS: &[&str] = &[
     // skill run), and cleared by the first one that connects.
     "ALTER TABLE hosts ADD COLUMN connect_failed_at TEXT;",
     // 21: how often to ask this host whether it is back, in seconds, NULL
-    // meaning the default of 3.
+    // meaning the default of 3 and zero meaning don't ask at all.
     //
     // Read by the reachability probe a pane runs while it sits closed, which is
     // the one thing in the app that repeats on a timer against a machine that
@@ -251,7 +251,9 @@ const MIGRATIONS: &[&str] = &[
     // anyone noticing, and a box across a satellite link should not be asked
     // that often. Held to 1-10 by the setter for the same reason the guard
     // threshold is capped -- a probe interval nobody can see is still a probe
-    // interval, and there is no useful answer outside that range.
+    // interval, and there is no useful answer outside that range. Zero is not
+    // in that range and is not clamped into it: it is the one value that means
+    // something other than a period, so the setter admits it by name.
     "ALTER TABLE hosts ADD COLUMN probe_interval_secs INTEGER;",
 ];
 
@@ -514,19 +516,42 @@ mod tests {
 
         // Out of range is clamped, not stored and not refused, in both
         // directions and on the way back out as well as in.
-        hosts::set_probe_interval(&conn, host.id, Some(0)).unwrap();
-        assert_eq!(hosts::get(&conn, host.id).unwrap().probe_interval_secs, Some(1));
         hosts::set_probe_interval(&conn, host.id, Some(600)).unwrap();
         assert_eq!(hosts::get(&conn, host.id).unwrap().probe_interval_secs, Some(10));
 
+        // Except zero, which is the one value outside the range that means
+        // something: the check is off for this host. It has to survive both the
+        // writer and the reader intact, because a zero rounded up to 1 would
+        // turn "never ask" into "ask as often as possible", which is the worst
+        // reading of it available.
+        hosts::set_probe_interval(&conn, host.id, Some(hosts::PROBE_INTERVAL_OFF)).unwrap();
+        assert_eq!(
+            hosts::get(&conn, host.id).unwrap().probe_interval_secs,
+            Some(hosts::PROBE_INTERVAL_OFF),
+            "off is stored as off, not rounded into the range"
+        );
+        assert_ne!(
+            hosts::get(&conn, host.id).unwrap().probe_interval_secs,
+            None,
+            "off is not the same as never answered"
+        );
+
         // A value written straight into the column by hand still reads back
-        // inside the range, because the reader clamps too.
+        // inside the range, because the reader clamps too. A negative one is
+        // nonsense rather than a second way of saying off, so it rounds up to
+        // the minimum instead of landing on zero.
         conn.execute(
             "UPDATE hosts SET probe_interval_secs = 9000 WHERE id = ?1",
             rusqlite::params![host.id],
         )
         .unwrap();
         assert_eq!(hosts::get(&conn, host.id).unwrap().probe_interval_secs, Some(10));
+        conn.execute(
+            "UPDATE hosts SET probe_interval_secs = -5 WHERE id = ?1",
+            rusqlite::params![host.id],
+        )
+        .unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().probe_interval_secs, Some(1));
 
         // And saving the form cannot disturb it, for the same reason
         // `shell_integration` is kept out of `update`.

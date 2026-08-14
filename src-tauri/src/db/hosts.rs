@@ -55,7 +55,8 @@ pub struct Host {
     /// Backend-written from every connect path, like `login_shell`.
     pub connect_failed_at: Option<String>,
     /// How often a closed pane asks this host whether it is back, in seconds
-    /// (migration 21). `None` means the default, [`DEFAULT_PROBE_INTERVAL_SECS`].
+    /// (migration 21). `None` means the default, [`DEFAULT_PROBE_INTERVAL_SECS`];
+    /// [`PROBE_INTERVAL_OFF`] means don't ask at all.
     ///
     /// Form-written, like `shell_integration`, and through its own setter for
     /// the same reason: it is not part of what identifies or reaches a host, so
@@ -72,6 +73,27 @@ pub const DEFAULT_PROBE_INTERVAL_SECS: u16 = 3;
 /// The range the form offers, and the range the setter holds anything to.
 pub const MIN_PROBE_INTERVAL_SECS: u16 = 1;
 pub const MAX_PROBE_INTERVAL_SECS: u16 = 10;
+/// Turned off for this host: no probing, and no pill on its closed panes.
+///
+/// Zero is the sentinel rather than a fourth column or a nullable pair because
+/// zero seconds is not an interval anyone could mean: an interval of nought is a
+/// spin loop, so the only sane reading of it is "don't". It sits outside
+/// [`MIN_PROBE_INTERVAL_SECS`] deliberately, and every clamp below has to admit
+/// it by name rather than by range, which is the point: a value that arrives
+/// out of range is still rounded into the range, and only an exact zero is off.
+pub const PROBE_INTERVAL_OFF: u16 = 0;
+
+/// Hold a stored interval to something usable: an exact zero is "off" and
+/// passes through, anything else is rounded into the offered range.
+///
+/// Shared by the reader and the writer so a value cannot mean one thing on the
+/// way in and another on the way out.
+fn clamp_probe_interval(secs: i64) -> u16 {
+    if secs == PROBE_INTERVAL_OFF as i64 {
+        return PROBE_INTERVAL_OFF;
+    }
+    secs.clamp(MIN_PROBE_INTERVAL_SECS as i64, MAX_PROBE_INTERVAL_SECS as i64) as u16
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct HostInput {
@@ -105,9 +127,7 @@ fn from_row(row: &Row) -> rusqlite::Result<Host> {
         shell_capability: row.get(15)?,
         shell_integration: row.get(16)?,
         connect_failed_at: row.get(17)?,
-        probe_interval_secs: row
-            .get::<_, Option<i64>>(18)?
-            .map(|v| v.clamp(MIN_PROBE_INTERVAL_SECS as i64, MAX_PROBE_INTERVAL_SECS as i64) as u16),
+        probe_interval_secs: row.get::<_, Option<i64>>(18)?.map(clamp_probe_interval),
     })
 }
 
@@ -278,13 +298,14 @@ pub fn set_shell_integration(conn: &Connection, id: i64, pref: Option<&str>) -> 
 /// the host form, like [`set_shell_integration`], and kept out of [`update`] for
 /// the same reason.
 ///
-/// Anything outside 1-10 is clamped rather than rejected, and `None` clears the
-/// column back to the default. The form cannot send anything else, so this is
-/// guarding against a database edited by hand or written by a later build, and
-/// in both cases a working probe at a sane interval beats a failed save.
+/// Three things can be stored: `None` clears the column back to the default, an
+/// exact [`PROBE_INTERVAL_OFF`] turns the check off for this host, and anything
+/// else is clamped into 1-10 rather than rejected. The form cannot send anything
+/// outside that, so the clamp is guarding against a database edited by hand or
+/// written by a later build, and in both cases a working probe at a sane
+/// interval beats a failed save.
 pub fn set_probe_interval(conn: &Connection, id: i64, secs: Option<u16>) -> AppResult<()> {
-    let secs = secs
-        .map(|s| s.clamp(MIN_PROBE_INTERVAL_SECS, MAX_PROBE_INTERVAL_SECS) as i64);
+    let secs = secs.map(|s| clamp_probe_interval(s as i64) as i64);
     let now = Utc::now().to_rfc3339();
     let affected = conn.execute(
         "UPDATE hosts SET probe_interval_secs = ?1, updated_at = ?2 WHERE id = ?3",

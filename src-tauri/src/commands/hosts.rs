@@ -59,9 +59,10 @@ pub fn set_host_shell_integration(
 }
 
 /// How often a closed pane asks this host whether it is back, 1-10 seconds,
-/// `None` for the default of 3. Its own command for the same reason as
-/// `set_host_shell_integration`: it is not part of what a CSV import knows how
-/// to say, so importing a host must not be able to state an answer for it.
+/// `None` for the default of 3, zero to turn the check off for this host. Its
+/// own command for the same reason as `set_host_shell_integration`: it is not
+/// part of what a CSV import knows how to say, so importing a host must not be
+/// able to state an answer for it.
 #[tauri::command]
 pub fn set_host_probe_interval(
     id: i64,
@@ -98,12 +99,16 @@ pub async fn probe_host_reachable(
     let (hostname, port, interval) = {
         let conn = lock(&state)?;
         let host = host_repo::get(&conn, id)?;
-        (
-            host.hostname,
-            host.port,
-            host.probe_interval_secs
-                .unwrap_or(host_repo::DEFAULT_PROBE_INTERVAL_SECS),
-        )
+        // A host with the check turned off still gets a straight answer if
+        // something asks: "off" says how often to ask, not what is true. The
+        // pane stops calling instead. Falling through with the stored zero
+        // would give the connect a zero timeout, i.e. an instant and always
+        // wrong "no".
+        let interval = match host.probe_interval_secs {
+            None | Some(host_repo::PROBE_INTERVAL_OFF) => host_repo::DEFAULT_PROBE_INTERVAL_SECS,
+            Some(secs) => secs,
+        };
+        (host.hostname, host.port, interval)
     };
     let timeout = std::time::Duration::from_millis(u64::from(interval) * 1000);
     Ok(crate::probe::tcp_connect_ms(&hostname, port, timeout)
