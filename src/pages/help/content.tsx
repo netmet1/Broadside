@@ -409,7 +409,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-hosts",
     title: "Hosts",
     keywords:
-      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask",
+      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first",
     body: (
       <>
         <Lead>
@@ -486,9 +486,23 @@ export const SECTIONS: HelpSection[] = [
               moment it answers, so you can watch a reboot come round instead of
               clicking <Nav>Reconnect</Nav> every few seconds to find out.
               <br />
+              Watch the words on it and not just the colour, because for the
+              first few seconds of a reboot the pill reads{" "}
+              <Nav>SSH still answering</Nav>. That is not the host coming back
+              impossibly fast. When you type <code>reboot</code> your login
+              shell is killed before <code>sshd</code> is, so your terminal
+              drops to this banner while the machine is still listening and will
+              go on answering for another ten or twenty seconds. Nothing has
+              gone down yet, and the pill says so in those words rather than
+              pretending not to have an answer. Once the host really goes the
+              pill turns red, and when it comes back it reads{" "}
+              <Nav>SSH back</Nav> with the figures beside it. <b>Back</b> is the
+              one that means what you are waiting for.
+              <br />
               This setting is how often it asks, from every second to every ten,
-              three by default, or <Nav>Off</Nav> for a host you would rather
-              were not asked at all. Off means no checking and no pill;{" "}
+              three by default, or <Nav>Disable</Nav> for a host you would
+              rather were not asked at all. Disabled means no checking and no
+              pill;{" "}
               <Nav>Reconnect</Nav> still works, you just have to try it to find
               out. What the check does is open a connection to the host's SSH
               port, not send a ping, and the difference is the point: a Linux

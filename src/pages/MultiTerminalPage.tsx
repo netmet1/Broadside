@@ -79,6 +79,17 @@ type DisplayBlock = {
   ts: string;
   hostId: number | null;
   labelSnapshot: string;
+  /** The " 02" that says which session on that host this block came from, kept
+   * out of `labelSnapshot` rather than concatenated into it.
+   *
+   * It used to be concatenated, and that is exactly why it never appeared: the
+   * renderer prefers the host's *live* label so a host renamed mid-session
+   * re-heads its old blocks, and the live label has no number on it, so the
+   * number was thrown away every time the host still existed. Which was always.
+   *
+   * Empty for a block reloaded from the database, whose stored label has the
+   * number baked into it already; see where it is unpicked at render. */
+  suffixSnapshot: string;
   colorSnapshot: string;
   command: string | null;
   lines: string[];
@@ -306,8 +317,8 @@ export function MultiTerminalPage({
             dbId: null,
             ts,
             hostId: sess.host.id,
-            labelSnapshot:
-              sess.host.label + (suffixByIdRef.current.get(sess.id) ?? ""),
+            labelSnapshot: sess.host.label,
+            suffixSnapshot: suffixByIdRef.current.get(sess.id) ?? "",
             colorSnapshot: sess.host.color,
             command,
             lines: blk.lines,
@@ -354,7 +365,12 @@ export function MultiTerminalPage({
             dbId: s.id,
             ts: s.ts,
             hostId: s.host_id,
+            // Stored with the number already in it, which is right for a row
+            // that has to make sense on its own years later. Unpicked at
+            // render, not here: what it takes to tell the number from the name
+            // is the host's live label, and that has not loaded yet.
             labelSnapshot: s.label,
+            suffixSnapshot: "",
             colorSnapshot: HOST_UNKNOWN_COLOR,
             command: s.command,
             lines: s.lines,
@@ -611,9 +627,10 @@ export function MultiTerminalPage({
             {visibleSessions.map((s) => {
               const isConnected = connectedSessions.has(s.id);
               const color = hostsById.get(s.host.id)?.color ?? s.host.color;
-              const label =
-                (hostsById.get(s.host.id)?.label ?? s.host.label) +
-                (suffixById.get(s.id) ?? "");
+              // Kept apart so the number can be dimmed rather than run into the
+              // name.
+              const name = hostsById.get(s.host.id)?.label ?? s.host.label;
+              const suffix = suffixById.get(s.id) ?? "";
               if (railCollapsed) {
                 return (
                   <button
@@ -635,8 +652,17 @@ export function MultiTerminalPage({
                       className="h-2.5 w-2.5 rounded-full"
                       style={{ backgroundColor: color }}
                     />
+                    {/* Initials of the name, then the number. Not the initials
+                        of the two together: "webserver1 02" gave "W0", which
+                        reads as a name and not as a second session, and the two
+                        rows it was meant to tell apart came out "W" and "W0".
+                        The space goes, since there is no room for it here and
+                        nothing for it to separate at this size. */}
                     <span className="font-mono text-[10px] leading-none">
-                      {wordInitials(label)}
+                      {wordInitials(name)}
+                      <span className="text-muted-foreground">
+                        {suffix.trim()}
+                      </span>
                     </span>
                   </button>
                 );
@@ -666,7 +692,12 @@ export function MultiTerminalPage({
                     className="min-w-0 truncate"
                     title={railTooltip(hostsById.get(s.host.id) ?? s.host)}
                   >
-                    {label}
+                    {name}
+                    {/* Dimmed rather than run into the name, the same as the
+                        Terminals rail and the tab strip: it is not part of what
+                        the machine is called, it says which of two sessions on
+                        it this row is. */}
+                    <span className="text-muted-foreground">{suffix}</span>
                   </span>
                   {/* The same mark the other rails carry. This page has the
                       most to lose from a shell it cannot follow -- a checked
@@ -877,11 +908,23 @@ export function MultiTerminalPage({
                   const live = b.hostId != null ? hostsById.get(b.hostId) : undefined;
                   const color = live?.color ?? b.colorSnapshot;
                   const label = live?.label ?? b.labelSnapshot;
+                  // A block reloaded from the database carries one string with
+                  // the number already inside it. Recover the number by taking
+                  // off the live name it begins with, rather than by looking
+                  // for something shaped like " 02" on the end: a host really
+                  // can be called "rack 02", and a rule that guessed would
+                  // quietly rename it every time the app started.
+                  const suffix =
+                    b.suffixSnapshot ||
+                    (live && b.labelSnapshot.startsWith(live.label)
+                      ? b.labelSnapshot.slice(live.label.length)
+                      : "");
                   return (
                     <OmniBlock
                       key={b.key}
                       color={color}
                       label={label}
+                      suffix={suffix}
                       command={b.command}
                       ts={b.ts}
                       lines={b.lines}
@@ -1001,6 +1044,7 @@ const NOTICE: Record<Exclude<BlockInteractivity, "normal">, string> = {
 function OmniBlock({
   color,
   label,
+  suffix,
   command,
   ts,
   lines,
@@ -1013,6 +1057,9 @@ function OmniBlock({
 }: {
   color: string;
   label: string;
+  /** The " 02" telling this block's session from another on the same host.
+   * Empty for the first, and for a host with only one session open. */
+  suffix: string;
   command: string | null;
   ts: string;
   lines: string[];
@@ -1080,6 +1127,11 @@ function OmniBlock({
         />
         <span className="min-w-0 truncate font-medium" style={{ color }}>
           {label}
+          {/* Not in the host's colour, and not in the header's weight: the
+              number is not part of the machine's name, it says which of two
+              sessions on that machine answered. Same treatment as the rail and
+              the tab strip, so the three read as one numbering scheme. */}
+          <span className="font-normal text-muted-foreground">{suffix}</span>
         </span>
         {command && (
           <code className="min-w-0 flex-1 truncate rounded bg-muted/40 px-1.5 py-0.5 font-mono text-foreground/80">

@@ -392,6 +392,11 @@ export function HostFormPanel({
   const keyPathReg = register("keyPath");
 
   const selectedColor = watch("color");
+  // Named in the header, so it follows the field as it is typed rather than
+  // reporting the host as it was when the form opened: this form is long
+  // enough to scroll, and the one thing that should never scroll away is which
+  // host is being edited.
+  const hostnameValue = watch("hostname");
   const authMethod = watch("authMethod");
   const sudoSameAsLogin = watch("sudoSameAsLogin");
   // Named in the reconnect-check note, so it follows the field as it is typed:
@@ -600,7 +605,35 @@ export function HostFormPanel({
     <section className="flex h-full flex-col bg-background">
       <header className="px-8 py-5">
         <h1 className="font-heading text-xl font-semibold tracking-tight">
-          {isEdit ? "Edit host" : "Add host"}
+          {/* Which host this is, in the one part of the panel that does not
+              scroll. Editing is where it matters: adding has nothing to name
+              yet, and "Add host - web01" would be describing a host that does
+              not exist.
+
+              The name is the hostname rather than the label, and it wears the
+              host's own colour, so the two things an operator checks before
+              typing into a form full of credentials (right machine, right
+              colour) are answered without scrolling back up. Both follow their
+              fields live, which is what makes the colour swatch legible as a
+              choice: you see what you picked on something the size of a title
+              rather than on a 12px dot.
+
+              The dash goes with an empty hostname. A title reading "Edit host
+              -" looks broken, and a half-typed hostname is a normal state for
+              a field somebody is editing. */}
+          {isEdit ? (
+            <>
+              Edit host
+              {hostnameValue?.trim() && (
+                <>
+                  {" - "}
+                  <span style={{ color: selectedColor }}>{hostnameValue}</span>
+                </>
+              )}
+            </>
+          ) : (
+            "Add host"
+          )}
         </h1>
         <p className="text-sm text-muted-foreground">
           {isEdit
@@ -633,7 +666,7 @@ export function HostFormPanel({
 
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <div className="grid gap-1">
-              <Label htmlFor="hostname">Hostname</Label>
+              <Label htmlFor="hostname">Hostname/IP</Label>
               <Input
                 id="hostname"
                 {...register("hostname")}
@@ -1131,26 +1164,40 @@ export function HostFormPanel({
             </span>
           </Label>
           <div className="grid gap-2">
-            {/* The dropdown holds the number and nothing else, with the words
-                either side of it, so picking an interval is picking a number
-                rather than reading ten sentences that differ by one word.
-                "Off" is the one entry that is not a number, and it takes the
-                sentence with it: "Every Off seconds" is not English, so the
-                surrounding words step aside when it is chosen. */}
+            {/* The dropdown holds the number and nothing else, and the unit is
+                in the label to its left rather than in a sentence built around
+                it: picking an interval is picking a number, not reading ten
+                sentences that differ by one word.
+                "(default)" rides with the value instead of trailing the row,
+                so it is visible while choosing rather than only after the
+                choice, and the row does not change width when it appears.
+                Disable is the one entry that is not a number, and it takes the
+                label with it: "Reconnect Seconds: Disable" reads as a value of
+                a quantity, which it is not. On its own the control says what it
+                is doing, and the card's own heading above still names it. */}
             <div className="flex items-center gap-2">
               {!probeOff && (
                 <Label
                   htmlFor="probe-interval"
                   className="text-sm font-normal text-muted-foreground"
                 >
-                  Every
+                  Reconnect Seconds
                 </Label>
               )}
               <Select
                 value={String(probeInterval)}
                 onValueChange={(v) => setProbeInterval(Number(v))}
               >
-                <SelectTrigger id="probe-interval" className="w-24">
+                {/* Centred, which takes both halves: the value is given the
+                    slack (`flex-1`) and told to centre in it, and a spacer the
+                    width of the chevron balances the right-hand side so the
+                    middle of the text is the middle of the control rather than
+                    the middle of what the chevron left over. */}
+                <SelectTrigger
+                  id="probe-interval"
+                  className="w-32 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:justify-center"
+                >
+                  <span className="size-4 shrink-0" aria-hidden="true" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1158,22 +1205,24 @@ export function HostFormPanel({
                     { length: MAX_PROBE_INTERVAL_SECS - MIN_PROBE_INTERVAL_SECS + 1 },
                     (_, i) => MIN_PROBE_INTERVAL_SECS + i,
                   ).map((secs) => (
-                    <SelectItem key={secs} value={String(secs)}>
-                      {secs}
+                    <SelectItem
+                      key={secs}
+                      value={String(secs)}
+                      className="justify-center pl-8"
+                    >
+                      {secs === DEFAULT_PROBE_INTERVAL_SECS
+                        ? `${secs} (default)`
+                        : secs}
                     </SelectItem>
                   ))}
-                  <SelectItem value={String(PROBE_INTERVAL_OFF)}>Off</SelectItem>
+                  <SelectItem
+                    value={String(PROBE_INTERVAL_OFF)}
+                    className="justify-center pl-8"
+                  >
+                    Disable
+                  </SelectItem>
                 </SelectContent>
               </Select>
-              <span className="text-sm text-muted-foreground">
-                {probeOff
-                  ? "no reconnect check for this host"
-                  : `second${probeInterval === 1 ? "" : "s"}${
-                      probeInterval === DEFAULT_PROBE_INTERVAL_SECS
-                        ? " (the default)"
-                        : ""
-                    }`}
-              </span>
             </div>
             {/* Worth saying plainly, because "is it back" and "does it answer a
                 ping" are not the same question and the difference is the whole

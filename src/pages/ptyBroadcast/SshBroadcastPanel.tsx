@@ -24,6 +24,7 @@ import { RailFilterControls } from "@/components/RailFilterControls";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import type { SshTermSession } from "@/pages/TerminalsPage";
+import { duplicateSuffixes } from "@/pages/terminals/session";
 import { useSessionBroadcast } from "@/pages/ptyBroadcast/useSessionBroadcast";
 
 /** Persisted collapse state for the session rail (mirrors MultiTerminal). */
@@ -58,13 +59,21 @@ export function SshBroadcastPanel({
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
 }) {
+  // The " 02" the tab strip gives the second session on a host. Every other
+  // list that names a session numbers them from here; this panel was the one
+  // that did not, so two sessions on one machine were two identical rows in the
+  // rail and two identical lines in the report, which is the exact confusion
+  // the numbering exists to prevent, on the one screen that sends a command to
+  // both at once.
+  const suffixById = useMemo(() => duplicateSuffixes(sessions), [sessions]);
   const describe = useCallback(
     (s: SshTermSession) => ({
       host_id: s.host.id,
       label: s.host.label,
+      suffix: suffixById.get(s.id) ?? "",
       color: s.host.color,
     }),
-    [],
+    [suffixById],
   );
   const {
     selected,
@@ -323,8 +332,15 @@ export function SshBroadcastPanel({
                     className="h-2.5 w-2.5 rounded-full"
                     style={{ backgroundColor: s.host.color }}
                   />
+                  {/* Initials of the name, then the number after them. Taking
+                      the initials of the two together gave "W0" for
+                      "webserver1 02", which reads as a name rather than as a
+                      second session. */}
                   <span className="font-mono text-[10px] leading-none">
                     {wordInitials(s.host.label)}
+                    <span className="text-muted-foreground">
+                      {(suffixById.get(s.id) ?? "").trim()}
+                    </span>
                   </span>
                 </button>
               ) : (
@@ -354,6 +370,11 @@ export function SshBroadcastPanel({
                   />
                   <span className="min-w-0 truncate" title={railTooltip(s.host)}>
                     {s.host.label}
+                    {/* Dimmed, like every other rail that numbers sessions: the
+                        number is not part of the machine's name. */}
+                    <span className="text-muted-foreground">
+                      {suffixById.get(s.id)}
+                    </span>
                   </span>
                   {/* Marked, never filtered (D-067): the session takes the
                       keystrokes fine, but the command may not be valid in that
@@ -485,6 +506,16 @@ export function SshBroadcastPanel({
                             : undefined;
                         const color = live?.color ?? r.color;
                         const label = live?.label ?? r.label;
+                        // A run reloaded from the database has the number
+                        // inside its stored label. Recover it by taking off the
+                        // live name it begins with, rather than by matching
+                        // something shaped like " 02" on the end: a host can
+                        // genuinely be called "rack 02".
+                        const suffix =
+                          r.suffix ||
+                          (live && r.label.startsWith(live.label)
+                            ? r.label.slice(live.label.length)
+                            : "");
                         return (
                           <div
                             key={i}
@@ -501,6 +532,9 @@ export function SshBroadcastPanel({
                             />
                             <span className="min-w-0 truncate font-medium">
                               {label}
+                              <span className="font-normal text-muted-foreground">
+                                {suffix}
+                              </span>
                             </span>
                             <span className="ml-auto font-mono text-xs text-muted-foreground">
                               {r.ok ? "sent (see Terminals tab)" : r.message}
@@ -551,9 +585,12 @@ export function SshBroadcastPanel({
         onOpenChange={setConfirmOpen}
         command={command.trim()}
         hits={guardHits}
+        // Numbered here too, so a dialog listing where a destructive command is
+        // about to run does not print one machine twice and look like it has
+        // repeated itself.
         hostLabels={sessions
           .filter((s) => selected.has(s.id))
-          .map((s) => s.host.label)
+          .map((s) => s.host.label + (suffixById.get(s.id) ?? ""))
           .sort()}
         onConfirmed={() => {
           dispatch(command.trim());

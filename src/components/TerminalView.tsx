@@ -1099,7 +1099,26 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
               Amber is the in-between the ratio is good for: the last probe
               missed, but the host has been answering within the window, which
               is a flap rather than an outage and reads differently from a
-              machine that has been dark the whole time. */}
+              machine that has been dark the whole time.
+
+              Green has two readings, and saying which is which is the one thing
+              this pill got wrong. Answering because the host never went down is
+              not the same news as answering because it came back, and after a
+              `reboot` the first is what you get: the shell is killed before
+              sshd is, so the pane drops to this banner while the port is still
+              open and the pill goes green on a machine that is about to
+              disappear. An operator who knows the sequence reads it correctly
+              and waits; everyone else reads "already back, that was fast" and
+              is then annoyed when it turns amber ten seconds later.
+
+              So the words differ even though the colour does not. Before
+              anything has missed, the pill says the host is *still* answering,
+              which is a report on a machine that has not gone yet. The ratio
+              goes with it, because until something misses it is always n/n at
+              100% and a figure that cannot say anything else is decoration.
+              Once a probe has missed, the numbers mean something again and the
+              pill switches to "back", which is the word that was wanted all
+              along. */}
           {reachability !== null && (
             <span
               className={cn(
@@ -1113,14 +1132,18 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
               {...hint(
                 reachability.pending
                   ? "Checking whether this host's SSH port is accepting connections. It turns green when Reconnect will work."
-                  : reachability.last
-                    ? `This host is answering on its SSH port now, so Reconnect should work. ${reachability.ok} of the last ${reachability.total} checks answered.`
-                    : `This host is not answering on its SSH port. ${reachability.ok} of the last ${reachability.total} checks answered; the pill turns green the moment one does.`,
+                  : reachability.last && !reachability.everMissed
+                    ? "This host's SSH port has answered every check since this terminal closed, so it has not gone down yet. After a reboot the port keeps answering for a few seconds before the machine actually goes; wait for this to drop before you expect it back."
+                    : reachability.last
+                      ? `This host went away and is answering again, so Reconnect should work. ${reachability.ok} of the last ${reachability.total} checks answered.`
+                      : `This host is not answering on its SSH port. ${reachability.ok} of the last ${reachability.total} checks answered; the pill turns green the moment one does.`,
               )}
             >
               {reachability.pending
                 ? "SSH ..."
-                : `SSH ${reachability.ok}/${reachability.total} ${reachability.percent}%`}
+                : reachability.last && !reachability.everMissed
+                  ? "SSH still answering"
+                  : `SSH ${reachability.last ? "back " : ""}${reachability.ok}/${reachability.total} ${reachability.percent}%`}
             </span>
           )}
           <span

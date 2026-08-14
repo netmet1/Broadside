@@ -24,6 +24,7 @@ const PENDING: Reachability = {
   percent: 0,
   last: null,
   pending: true,
+  everMissed: false,
 };
 
 export type Reachability = {
@@ -50,6 +51,29 @@ export type Reachability = {
    * green when the host is ready, and "ready" is the state of the last probe.
    */
   last: boolean | null;
+  /** Whether any probe has missed since this pane started asking.
+   *
+   * The difference between "this host never went away" and "this host went away
+   * and is back", which the port alone cannot tell you and which is the whole
+   * reason the pill misleads during a reboot. Type `reboot` and your login
+   * shell is killed first, so the pane drops to its banner while sshd is still
+   * listening and still accepting connections for another ten or twenty
+   * seconds. Every probe in that window truthfully answers "the port is open",
+   * the pill goes green, and it reads as "already back, that was fast".
+   *
+   * So the pill says which of the two it is looking at. Until something misses,
+   * it is reporting a host that has not gone down yet, and it says so.
+   *
+   * Deliberately not a promise that the machine rebooted. A pane can drop for
+   * reasons the machine knows nothing about (a network blip, a laptop lid, a
+   * shell that exited), and in every one of those this stays false forever,
+   * which is correct: nothing went away, so nothing came back.
+   *
+   * Sticky, and not part of the two-minute window: this is a fact about what
+   * has happened since probing started, not a measurement of the recent past,
+   * and a reboot that finishes and then sits there quietly for two minutes must
+   * not go back to claiming the host never left. */
+  everMissed: boolean;
 };
 
 /**
@@ -107,6 +131,10 @@ export function useReachability(
     // rather than bookkeeping to be got right, and a ref could not be cleared
     // beside the `setState` above without reaching into one during render.
     let samples: Sample[] = [];
+    // Sticky for the life of this effect, which is the life of one closed pane
+    // watching one host. Reset with everything else when the pane reconnects or
+    // moves on, see the comment above `samples`.
+    let missed = false;
 
     // `cancelled` rather than clearing the timer alone: a probe that is already
     // in flight when the pane reconnects resolves after this effect is torn
@@ -122,6 +150,7 @@ export function useReachability(
         { at: now, ok },
       ];
       samples = kept;
+      if (!ok) missed = true;
       const good = kept.filter((s) => s.ok).length;
       setState({
         ok: good,
@@ -129,6 +158,7 @@ export function useReachability(
         percent: Math.round((good / kept.length) * 100),
         last: ok,
         pending: false,
+        everMissed: missed,
       });
     };
 

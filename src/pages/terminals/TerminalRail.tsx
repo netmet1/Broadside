@@ -69,6 +69,7 @@
  */
 
 import { useRef } from "react";
+import type React from "react";
 import {
   ChevronDownIcon,
   Columns2Icon,
@@ -155,6 +156,7 @@ export function TerminalRail({
   onCloseFailed,
   hiddenCount,
   onUnhideAll,
+  launcher,
 }: {
   tabsCompact: boolean;
   toggleTabsCompact: () => void;
@@ -172,7 +174,7 @@ export function TerminalRail({
   maximizeActive: () => void;
   hideGridHeaders: boolean;
   toggleGridHeaders: () => void;
-  /** Whether the tab strip is rolled up. Grid-only, and this session only. */
+  /** Whether the tab strip is rolled up. Grid-only, and remembered. */
   tabBarHidden: boolean;
   toggleTabBar: () => void;
   customGrid: boolean;
@@ -206,6 +208,16 @@ export function TerminalRail({
   /** How many open terminals are currently taken out of the grid. */
   hiddenCount: number;
   onUnhideAll: () => void;
+  /** The "+" that opens a local shell, a profile or a serial console, handed in
+   * whole rather than rebuilt here.
+   *
+   * It belongs to the page: it reads the detected shells, the saved profiles
+   * and the live COM ports, and opening anything from it goes through the
+   * page's own guards (the how-many cap, the startup-command confirmation).
+   * None of that is rail business, and threading a dozen props through here to
+   * reassemble it would make this file responsible for a menu it has nothing to
+   * say about. So the rail owns where it sits and the page owns what it does. */
+  launcher: React.ReactNode;
 }) {
   const hint = useHint();
   const shellColors = useShellColors();
@@ -495,8 +507,8 @@ export function TerminalRail({
               onCheckedChange={toggleTabBar}
               {...hint(
                 tabBarHidden
-                  ? "The tab strip is hidden and the tiles have its row. Click to bring it back."
-                  : "The tab strip is shown. Click to hide it and give the row to the tiles.",
+                  ? "The tab strip is hidden and the tiles have its row. Click to bring it back. Remembered across restarts."
+                  : "The tab strip is shown. Click to hide it and give the row to the tiles. Remembered across restarts.",
               )}
             >
               Tab bar
@@ -859,6 +871,15 @@ export function TerminalRail({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        {/* Last in the row, and last on purpose. Sessions is the list of what
+            is open and this is how another one starts, so the pair reads left
+            to right as "what you have, and one more".
+
+            Unlike everything else here it never goes compact, because there is
+            nothing to drop: it is an icon and a chevron already. It is also the
+            only control in the rail that is never greyed. There is always a
+            local shell to open, whatever is or is not connected. */}
+        {launcher}
       </div>
     </div>
   );

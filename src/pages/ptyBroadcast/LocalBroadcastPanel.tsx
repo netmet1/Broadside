@@ -76,6 +76,9 @@ export function LocalBroadcastPanel({
   const suffixById = useMemo(() => duplicateSuffixes(sessions), [sessions]);
 
   // sessionLabel, so a renamed tab is named the same here as in the tab strip.
+  // The joined form is for the places that can only take a string: a tooltip,
+  // the confirm dialog's list. Anywhere the two can be drawn separately they
+  // are, so the number can be dimmed.
   const labelFor = useCallback(
     (s: LocalTermSession) => sessionLabel(s) + (suffixById.get(s.id) ?? ""),
     [suffixById],
@@ -84,11 +87,12 @@ export function LocalBroadcastPanel({
   const describe = useCallback(
     (s: LocalTermSession) => ({
       host_id: null,
-      label: labelFor(s),
+      label: sessionLabel(s),
+      suffix: suffixById.get(s.id) ?? "",
       color: LOCAL_COLOR,
       kind: s.shell.kind,
     }),
-    [labelFor],
+    [suffixById],
   );
 
   const {
@@ -294,7 +298,12 @@ export function LocalBroadcastPanel({
                     className="h-4 w-4 shrink-0 text-muted-foreground"
                   />
                   <span className="min-w-0 truncate" title={labelFor(s)}>
-                    {labelFor(s)}
+                    {sessionLabel(s)}
+                    {/* Dimmed, as in every other rail: it says which of two
+                        PowerShells this is, not what the shell is called. */}
+                    <span className="text-muted-foreground">
+                      {suffixById.get(s.id)}
+                    </span>
                   </span>
                 </label>
               ),
@@ -367,8 +376,16 @@ export function LocalBroadcastPanel({
                               kind={r.kind ?? ""}
                               className="h-4 w-4 shrink-0 text-muted-foreground"
                             />
+                            {/* Which shell answered. These runs are never
+                                reloaded (a local shell does not survive a
+                                restart, so neither do its results), so the
+                                number is always the one carried on the row
+                                rather than something to unpick from the name. */}
                             <span className="min-w-0 truncate font-medium">
                               {r.label}
+                              <span className="font-normal text-muted-foreground">
+                                {r.suffix}
+                              </span>
                             </span>
                             <span className="ml-auto font-mono text-xs text-muted-foreground">
                               {r.ok ? "sent (see Terminals tab)" : r.message}
