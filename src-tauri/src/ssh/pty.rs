@@ -466,6 +466,11 @@ pub async fn open<E: PtyEvents>(
     // The host's standing answer for shell integration (D-067). `Auto` is the
     // default and believes the probe.
     shell_pref: ShellIntegrationPref,
+    // Whether the login banner and the setup redraw are held back and shown as
+    // one finished screen. A terminal tab wants that; a skill run must not have
+    // it, because its engine reads this same stream and a held stream reads as a
+    // quiet one. See ssh/connect_curtain.rs.
+    first_screen: crate::ssh::connect_curtain::FirstScreen,
     cols: u32,
     rows: u32,
 ) -> AppResult<PtyOpenResult> {
@@ -546,16 +551,34 @@ pub async fn open<E: PtyEvents>(
         // terminal pane still renders every byte; this is a parallel feed.
         let mut omni = crate::omni::OmniParser::new();
 
-        // T1 (D-063): let the login banner stream, capture the real "Last
+        // T1 (D-063): let the login banner arrive, capture the real "Last
         // login:" line, then inject the integration + clear + reprinted MOTD +
         // re-echoed last-login so the session looks like a fresh login without
         // the visible setup line. Inject on capture, or after a short timeout
         // if the host prints no last-login line.
+        //
+        // "Arrive", not "stream": none of it reaches the pane. The setup line
+        // ends by clearing the screen and printing the MOTD again, so a pane
+        // shown the banner as it came would be shown it, then a blank screen,
+        // then the same thing again. The curtain holds all of that here and
+        // hands over one finished screen. See ssh/connect_curtain.rs, which also
+        // covers the two ways out: a host we send nothing to, and a `clear` that
+        // never comes.
+        let mut curtain = crate::ssh::connect_curtain::Curtain::new(first_screen);
         let mut setup_sent = false;
         let mut banner = String::new();
         let setup_timeout =
             tokio::time::sleep(std::time::Duration::from_millis(1500));
         tokio::pin!(setup_timeout);
+
+        // The curtain's own deadline, and it needs a timer of its own because
+        // the curtain can only lift on a byte arriving and the case it has to
+        // survive is no byte arriving. A shell that took the setup line and then
+        // said nothing would otherwise hold the pane on "connecting" for as long
+        // as it stayed quiet. Parked far in the future until there is something
+        // to wait for, and re-armed the moment the setup line goes out.
+        let curtain_timeout = tokio::time::sleep(std::time::Duration::from_secs(86_400));
+        tokio::pin!(curtain_timeout);
 
         loop {
             tokio::select! {
@@ -568,11 +591,35 @@ pub async fn open<E: PtyEvents>(
                             // Inject once we've captured the last-login line, or
                             // bail out if the banner is unexpectedly large.
                             if last_login.is_some() || banner.len() > 8192 {
-                                if let Some(setup) = crate::omni::shell_setup_command(
+                                let setup = crate::omni::shell_setup_command(
                                     last_login.as_deref(),
                                     effective,
-                                ) {
-                                    let _ = channel.data(setup.as_bytes()).await;
+                                );
+                                // The curtain has to be told which of the two
+                                // this is *before* the write, or the host could
+                                // answer between the two statements and be
+                                // treated as still printing its banner.
+                                match setup {
+                                    Some(setup) => {
+                                        curtain.setup_sent(Instant::now());
+                                        curtain_timeout.as_mut().reset(
+                                            tokio::time::Instant::now()
+                                                + crate::ssh::connect_curtain::CLEAR_DEADLINE,
+                                        );
+                                        let _ = channel.data(setup.as_bytes()).await;
+                                    }
+                                    // Nothing is being sent, so no redraw is
+                                    // coming and what has been held is not a
+                                    // draft of the screen, it is the screen.
+                                    None => {
+                                        let held = curtain.open_now();
+                                        if !held.is_empty() {
+                                            events.data(PtyData {
+                                                session_id: session_id.clone(),
+                                                data: held,
+                                            });
+                                        }
+                                    }
                                 }
                                 // Marked sent either way: a shell we don't write
                                 // to must not keep re-entering this branch and
@@ -581,16 +628,25 @@ pub async fn open<E: PtyEvents>(
                                 banner = String::new();
                             }
                         }
+                        // Fed the raw stream whatever the curtain is doing. The
+                        // curtain decides what a person sees; the block parser
+                        // and the sudo watcher below are reading what the host
+                        // actually said, and holding a screen back is no reason
+                        // to lie to them about it.
                         for block in omni.feed(&data[..]) {
                             events.block(PtyBlock {
                                 session_id: session_id.clone(),
                                 block,
                             });
                         }
-                        events.data(PtyData {
-                            session_id: session_id.clone(),
-                            data: data.to_vec(),
-                        });
+                        if let crate::ssh::connect_curtain::Emit::Bytes(out) =
+                            curtain.feed(Instant::now(), &data[..])
+                        {
+                            events.data(PtyData {
+                                session_id: session_id.clone(),
+                                data: out,
+                            });
+                        }
                         // Answer a sudo prompt after the bytes reach the UI so
                         // the operator sees the prompt (D-065). The password
                         // never enters the visible stream.
@@ -620,10 +676,50 @@ pub async fn open<E: PtyEvents>(
                     // No last-login arrived in time, set up without re-echoing it.
                     // A silent host reaches this arm too (it prints a menu, not a
                     // last-login line) and must still write nothing.
-                    if let Some(setup) = crate::omni::shell_setup_command(None, effective) {
-                        let _ = channel.data(setup.as_bytes()).await;
+                    //
+                    // This is also where a host that prints nothing at all ends
+                    // up, and the curtain has been holding an empty buffer for
+                    // it. Both outcomes below are the same as on the data path:
+                    // a line going out means a redraw is coming and what is held
+                    // is a draft, no line means what is held is the screen.
+                    match crate::omni::shell_setup_command(None, effective) {
+                        Some(setup) => {
+                            curtain.setup_sent(Instant::now());
+                            curtain_timeout.as_mut().reset(
+                                tokio::time::Instant::now()
+                                    + crate::ssh::connect_curtain::CLEAR_DEADLINE,
+                            );
+                            let _ = channel.data(setup.as_bytes()).await;
+                        }
+                        None => {
+                            let held = curtain.open_now();
+                            if !held.is_empty() {
+                                events.data(PtyData {
+                                    session_id: session_id.clone(),
+                                    data: held,
+                                });
+                            }
+                        }
                     }
                     setup_sent = true;
+                },
+                // The redraw never came, or came in a shape we do not recognise.
+                // Show what was held, which is what the pane would have shown
+                // all along before any of this existed. A flicker is the old
+                // behaviour; a pane that stays empty would be a new bug, and the
+                // whole point of a deadline is that this cannot become one.
+                //
+                // `is_holding` is the guard, so lifting the curtain disarms the
+                // arm: a completed sleep is ready forever, and without it this
+                // would spin.
+                _ = &mut curtain_timeout, if curtain.is_holding() => {
+                    let held = curtain.open_now();
+                    if !held.is_empty() {
+                        events.data(PtyData {
+                            session_id: session_id.clone(),
+                            data: held,
+                        });
+                    }
                 },
                 cmd = rx.recv() => match cmd {
                     Some(SessionCmd::Write(data)) => {
@@ -639,6 +735,21 @@ pub async fn open<E: PtyEvents>(
                     }
                     Some(SessionCmd::Close) | None => break,
                 },
+            }
+        }
+        // A session that ends while the curtain is still down owes the pane
+        // everything it never showed, and this is the last chance to pay it.
+        // The case is a shell that printed why it was going and then went, which
+        // is the one moment where the held bytes are the most useful thing that
+        // has ever been in that buffer. Ahead of the disconnect and the closed
+        // event, so it lands under the banner rather than after it.
+        if curtain.is_holding() {
+            let held = curtain.open_now();
+            if !held.is_empty() {
+                events.data(PtyData {
+                    session_id: session_id.clone(),
+                    data: held,
+                });
             }
         }
         let _ = handle

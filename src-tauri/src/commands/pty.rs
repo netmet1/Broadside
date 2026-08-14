@@ -81,6 +81,9 @@ pub async fn pty_open(
         auth,
         sudo_password,
         crate::ssh::ShellIntegrationPref::from_stored(host.shell_integration.as_deref()),
+        // A terminal tab: one person watching, nothing else reading, so the
+        // banner-clear-banner redraw is hidden and the pane gets one paint.
+        crate::ssh::connect_curtain::FirstScreen::Curtained,
         cols.clamp(2, 1000),
         rows.clamp(2, 1000),
     )

@@ -11,6 +11,7 @@ use common::{Fixture, PASSWORD, USER};
 use broadside_lib::ssh::pty::{
     open, PtyBlock, PtyClosed, PtyData, PtyEvents, PtyState, SudoInjected,
 };
+use broadside_lib::ssh::connect_curtain::FirstScreen;
 use broadside_lib::ssh::{probe, AuthMethod, ProbeResult, ShellIntegrationPref};
 use tokio::sync::mpsc;
 
@@ -119,6 +120,7 @@ async fn pty_shell_round_trip_and_close() {
         AuthMethod::Password(PASSWORD.to_string()),
         None,
         ShellIntegrationPref::Auto,
+        FirstScreen::Curtained,
         80,
         24,
     )
@@ -185,6 +187,7 @@ async fn pty_reopen_same_id_replaces_session() {
             AuthMethod::Password(PASSWORD.to_string()),
             None,
             ShellIntegrationPref::Auto,
+            FirstScreen::Curtained,
             80,
             24,
         )
@@ -225,6 +228,7 @@ async fn pty_remote_exit_emits_closed() {
         AuthMethod::Password(PASSWORD.to_string()),
         None,
         ShellIntegrationPref::Auto,
+        FirstScreen::Curtained,
         80,
         24,
     )
@@ -276,6 +280,7 @@ async fn pty_omni_blocks_from_bash() {
         AuthMethod::Password(PASSWORD.to_string()),
         None,
         ShellIntegrationPref::Auto,
+        FirstScreen::Curtained,
         80,
         24,
     )
