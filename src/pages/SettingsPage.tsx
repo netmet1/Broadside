@@ -394,6 +394,9 @@ export function SettingsPage({
     setMaxSessions,
     defaultTimeout,
     setDefaultTimeout,
+    bulkConfirmOver,
+    setBulkConfirmOver,
+    parsedBulkConfirmOver,
     savingPerf,
     recalibrating,
     probing,
@@ -653,6 +656,30 @@ export function SettingsPage({
             />
             <p className="text-xs text-muted-foreground">1-3600. Overridable per command.</p>
           </div>
+          {/* One number for every bulk action on the Terminals page: opening a
+              batch of local shells, Reconnect all, Disconnect all and Close
+              failed. It was a hardcoded 7, which is nobody's idea of a round
+              number and was wrong in both directions depending on the operator.
+
+              Close all is not on the list and asks every time regardless. It is
+              the one action here that can take away work in progress, and a
+              setting whose purpose is "stop asking me so often" must not be
+              able to reach it. */}
+          <div className="grid gap-1">
+            <Label htmlFor="bulk-confirm-over">Ask before acting on more than</Label>
+            <Input
+              id="bulk-confirm-over"
+              value={bulkConfirmOver}
+              onChange={(e) => setBulkConfirmOver(e.target.value)}
+              className={`w-40 font-mono text-sm ${parsedBulkConfirmOver === undefined ? "border-destructive" : ""}`}
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              1-11 sessions. Opening a batch of local shells, Reconnect all,
+              Disconnect all and Close failed confirm first past this many.
+              Close all always asks.
+            </p>
+          </div>
           <div>
             <Button
               size="sm"
@@ -660,7 +687,8 @@ export function SettingsPage({
               disabled={
                 savingPerf ||
                 parsedMaxSessions === undefined ||
-                parsedTimeout === undefined
+                parsedTimeout === undefined ||
+                parsedBulkConfirmOver === undefined
               }
             >
               {savingPerf && <Loader2Icon className="animate-spin" />}

@@ -32,6 +32,7 @@ import {
   shellWarningDismissed,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
+import { useReachability } from "@/lib/useReachability";
 import { useHint } from "@/lib/status";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
@@ -278,6 +279,14 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const scrolledUpRef = useRef(false);
   const [scrolledUp, setScrolledUp] = useState(false);
   const hint = useHint();
+
+  // Is the host back yet? Asked only while this pane sits on its Reconnect
+  // button, and only for a remote one: a local shell has no host to be waiting
+  // for, and the closed banner on a ConPTY tab means the program exited.
+  const reachability = useReachability(
+    source.type === "ssh" ? source.hostId : null,
+    phase.kind === "closed" && source.type === "ssh",
+  );
 
   // Create the terminal once.
   useEffect(() => {
@@ -1071,6 +1080,49 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           output to join them up. */}
       {phase.kind === "closed" && (
         <div className="absolute inset-x-0 bottom-0 flex items-center justify-end gap-2 border-t border-border/40 bg-background/40 px-3 py-2">
+          {/* Is the host back?
+
+              Left of the closed message, on its own plate for the same reason
+              everything else on this bar has one. It answers the question the
+              operator is sitting here to have answered, which after a reboot is
+              not "why did it go" but "can I go back yet".
+
+              The colour follows the LAST probe and the figures follow the last
+              two minutes, and the split is deliberate. The percentage is a
+              reliability read: a host that finished rebooting fifteen seconds
+              ago is five of forty probes, which is 12%, and painting that red
+              would be telling the operator the machine is down at the exact
+              moment it came back. So green means the port answered just now,
+              which is the same as saying Reconnect will work; the ratio beside
+              it says how solid that has been.
+
+              Amber is the in-between the ratio is good for: the last probe
+              missed, but the host has been answering within the window, which
+              is a flap rather than an outage and reads differently from a
+              machine that has been dark the whole time. */}
+          {reachability !== null && (
+            <span
+              className={cn(
+                "shrink-0 rounded-md border bg-background/90 px-2 py-0.5 font-mono text-xs tabular-nums",
+                reachability.last
+                  ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+                  : reachability.percent >= 40
+                    ? "border-amber-500/40 text-amber-700 dark:text-amber-300"
+                    : "border-red-500/40 text-red-600 dark:text-red-400",
+              )}
+              {...hint(
+                reachability.pending
+                  ? "Checking whether this host's SSH port is accepting connections. It turns green when Reconnect will work."
+                  : reachability.last
+                    ? `This host is answering on its SSH port now, so Reconnect should work. ${reachability.ok} of the last ${reachability.total} checks answered.`
+                    : `This host is not answering on its SSH port. ${reachability.ok} of the last ${reachability.total} checks answered; the pill turns green the moment one does.`,
+              )}
+            >
+              {reachability.pending
+                ? "SSH ..."
+                : `SSH ${reachability.ok}/${reachability.total} ${reachability.percent}%`}
+            </span>
+          )}
           <span
             className={cn(
               "min-w-0 truncate rounded-md border bg-background/90 px-2 py-0.5 text-xs",

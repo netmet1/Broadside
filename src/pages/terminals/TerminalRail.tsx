@@ -146,6 +146,7 @@ export function TerminalRail({
   onActivate,
   openIds,
   onEndSession,
+  onDisconnectAll,
   onCloseAll,
   retryableCount,
   onReconnectAll,
@@ -187,6 +188,9 @@ export function TerminalRail({
   openIds: Set<string>;
   /** End a session's shell and leave its tab where it is. */
   onEndSession: (id: string) => void;
+  /** End every live shell at once and leave all the tabs where they are: the
+   * bulk form of the per-row unplug button above. */
+  onDisconnectAll: () => void;
   onCloseAll: () => void;
   /** How many panes are sitting on a Try again / Reconnect button. One number
    * for both repairs: whatever Reconnect all would bring back is exactly what
@@ -239,6 +243,9 @@ export function TerminalRail({
   const sessionsExtras: string[] = [];
   if (retryableCount > 0) {
     sessionsExtras.push("reconnect or clear away the ones that dropped");
+  }
+  if (openIds.size >= 2) {
+    sessionsExtras.push("disconnect them all but keep the tabs");
   }
   if (gridMode && hiddenCount > 0) {
     sessionsExtras.push("put hidden ones back in the grid");
@@ -317,17 +324,27 @@ export function TerminalRail({
 
       {/* Broadcast a command to several open sessions without leaving the
           page, so the panes you are watching are the ones that answer.
-          Available in both layouts; Grid is what it is really for. */}
+          Available in both layouts; Grid is what it is really for.
+
+          Greyed below two sessions rather than removed, which is this file's
+          rule for a control that will be wanted later: broadcasting to one
+          terminal is just typing in it, and the rail costs a column of the
+          window to say so. A reader who has never had two tabs open still sees
+          the button and learns it is there, which they would not if it appeared
+          from nowhere on the day they opened a second one. */}
       <Button
         size={compact ? "icon-sm" : "sm"}
         variant={broadcastRail ? "secondary" : "outline"}
         onClick={toggleBroadcastRail}
+        disabled={sessions.length < 2}
         aria-pressed={broadcastRail}
         aria-label="Broadcast"
         {...hint(
-          broadcastRail
-            ? "Hide the broadcast rail."
-            : "Show the broadcast rail: pick sessions and type one command for all of them, watching the panes as they answer.",
+          sessions.length < 2
+            ? "Broadcast sends one command to several sessions at once. Open a second terminal and it turns on."
+            : broadcastRail
+              ? "Hide the broadcast rail."
+              : "Show the broadcast rail: pick sessions and type one command for all of them, watching the panes as they answer.",
         )}
       >
         <RadioTowerIcon className="h-3.5 w-3.5" />
@@ -767,6 +784,36 @@ export function TerminalRail({
                   Unhide all
                   <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
                     {hiddenCount}
+                  </span>
+                </DropdownMenuItem>
+              )}
+
+              {/* The bulk form of the unplug button on every row above, and it
+                  sits here rather than up with the repairs because it is not
+                  one: those two are about tabs that have already lost their
+                  shells, and this one takes shells away.
+
+                  Two sessions is where it appears, because at one it is the row
+                  button with extra steps -- the unplug is right there, four
+                  pixels from the session it belongs to, and a second control
+                  doing the same thing to the same tab is only a way to make the
+                  menu longer.
+
+                  Above Close all deliberately, in the order somebody works
+                  through them: disconnecting keeps the scrollback and the tabs,
+                  so it is the reversible half of the pair and belongs in front
+                  of the one that throws everything away. */}
+              {openIds.size >= 2 && (
+                <DropdownMenuItem
+                  onSelect={onDisconnectAll}
+                  {...hint(
+                    `End the shell on all ${openIds.size} connected sessions and keep every tab. What each printed stays on screen, and each pane offers Reconnect.`,
+                  )}
+                >
+                  <UnplugIcon />
+                  Disconnect all
+                  <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
+                    {openIds.size}
                   </span>
                 </DropdownMenuItem>
               )}

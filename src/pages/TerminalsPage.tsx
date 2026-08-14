@@ -75,7 +75,10 @@ import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { TerminalRail } from "@/pages/terminals/TerminalRail";
 import { useGridFocus } from "@/pages/terminals/useGridFocus";
 import type { SearchOptions } from "@/lib/search";
-import { getAppSettings } from "@/lib/tauri/settings";
+import {
+  DEFAULT_BULK_CONFIRM_OVER,
+  getAppSettings,
+} from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
@@ -85,18 +88,14 @@ const TABS_COMPACT_KEY = "terminal-tabs-compact";
  * survives a restart, like the layout and grid-title prefs. */
 const BROADCAST_RAIL_KEY = "terminal-broadcast-rail";
 
-/** Opening more than this many local shells at once first asks for confirmation:
- * a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
- * the common "a handful at once" case (up to 7) stays friction-free.
+/** A profile with a startup command gets a far stricter threshold than the
+ * configured one: every copy runs that command again, and two accidental runs
+ * of a deploy script are a different kind of accident than two idle prompts.
+ * Anything past one asks, whatever the setting says.
  *
- * Shared with the Sessions menu's **Reconnect all**, which is the other action
- * on this page that can start a lot of things from one click. Deliberately one
- * number: an operator who has learned where "that's a lot" sits should not have
- * to learn it twice. */
-const BULK_SHELL_WARN = 7;
-/** A profile with a startup command gets a far stricter threshold: every copy
- * runs that command again, and two accidental runs of a deploy script are a
- * different kind of accident than two idle prompts. Anything past one asks. */
+ * Not configurable for that reason. The setting exists so an operator who opens
+ * eight shells at a time stops being asked about eight shells; it was never
+ * about how many times a deploy script should silently run. */
 const BULK_STARTUP_WARN = 1;
 
 /** Fallback cap on the bulk-open count when the settings probe hasn't answered
@@ -342,6 +341,13 @@ export function TerminalsPage({
   // the input can be cleared while typing; parsed/clamped at open time.
   const [shellCount, setShellCount] = useState("1");
   const [maxShells, setMaxShells] = useState(DEFAULT_MAX_SHELLS);
+  // Above how many at once every bulk action on this page asks first. Read from
+  // the same settings fetch as the cap above, and re-read on every visit, which
+  // is what makes a change in Settings apply without a restart: leaving that
+  // page to come back here is the only route to using it.
+  const [bulkConfirmOver, setBulkConfirmOver] = useState(
+    DEFAULT_BULK_CONFIRM_OVER,
+  );
   useEffect(() => {
     if (!visible) return;
     getAppSettings()
@@ -351,6 +357,7 @@ export function TerminalsPage({
           s.local_probe?.suggested_max_sessions ??
           DEFAULT_MAX_SHELLS;
         setMaxShells(Math.max(1, cap));
+        setBulkConfirmOver(s.bulk_confirm_over);
       })
       .catch(() => {});
   }, [visible]);
@@ -383,14 +390,16 @@ export function TerminalsPage({
         Math.max(Number.isFinite(parsed) ? parsed : 1, 1),
         maxShells,
       );
-      const warnAt = opts?.startupCommand ? BULK_STARTUP_WARN : BULK_SHELL_WARN;
+      const warnAt = opts?.startupCommand
+        ? BULK_STARTUP_WARN
+        : bulkConfirmOver;
       if (n > warnAt) {
         setBulkConfirm({ shell, count: n, opts });
       } else {
         openShells(shell, n, opts);
       }
     },
-    [shellCount, maxShells, openShells],
+    [shellCount, maxShells, openShells, bulkConfirmOver],
   );
 
   // Saved launch profiles (localStorage), re-read whenever the page is shown so
@@ -1284,14 +1293,16 @@ export function TerminalsPage({
         .map((s) => s.id),
     [sessions, phases],
   );
-  // Past a handful, Reconnect all asks first, at the same threshold and for the
-  // same reason as opening that many local shells: this is the one bulk repair
-  // that *starts* something. Close failed touches only shells that are already
-  // gone, but a full grid that dropped when a VPN did is a lot of tabs wearing a
-  // Reconnect button, and one click on the wrong row would put that many
-  // handshakes on the wire at once. The threshold is shared with the launcher
-  // deliberately, so "how many is a lot" is one answer on this page rather than
-  // two that can drift apart.
+  // Past the configured threshold, Reconnect all asks first, for the same
+  // reason as opening that many local shells: this is the one bulk repair that
+  // *starts* something, and a full grid that dropped when a VPN did is a lot of
+  // tabs wearing a Reconnect button. One click on the wrong row would put that
+  // many handshakes on the wire at once. The threshold is shared with the
+  // launcher deliberately, so "how many is a lot" is one answer on this page
+  // rather than several that can drift apart, and it is a setting rather than a
+  // constant because the right answer differs per operator: it used to be a
+  // hardcoded 7, which was too low for anyone with a rack and too high for
+  // anyone with three machines.
   const [reconnectAllOpen, setReconnectAllOpen] = useState(false);
   // One pass, no stagger. Each retry is a state bump that React batches, and the
   // connects that follow are no heavier than the launcher's own "open N at
@@ -1301,15 +1312,46 @@ export function TerminalsPage({
     setReconnectAllOpen(false);
   };
   const requestReconnectAll = () => {
-    if (retryableIds.length > BULK_SHELL_WARN) setReconnectAllOpen(true);
+    if (retryableIds.length > bulkConfirmOver) setReconnectAllOpen(true);
     else reconnectAll();
   };
-  // The other answer to the same set. Close all asks first because it can take
-  // away work in progress; this cannot, since every tab it touches has already
-  // lost its shell, so a confirmation would only be a step between the operator
-  // and a tidy-up they have already decided on.
+  // The other answer to the same set, and it is on the same threshold now
+  // rather than acting immediately.
+  //
+  // It used to ask nothing at all, on the grounds that every tab it touches has
+  // already lost its shell, so there is nothing running to interrupt. That is
+  // still true, and it is still the mildest thing in this menu. What is also
+  // true is that the tabs carry scrollback, and the last thing twenty panes
+  // printed before they dropped is often the only record of why -- which is
+  // exactly what somebody wants five seconds after clearing them away. At two
+  // or three tabs that does not need a dialog; at twenty it does, and twenty is
+  // what this number is for.
+  const [closeFailedOpen, setCloseFailedOpen] = useState(false);
   const closeFailed = () => {
     for (const id of retryableIds) closeSession(id);
+    setCloseFailedOpen(false);
+  };
+  const requestCloseFailed = () => {
+    if (retryableIds.length > bulkConfirmOver) setCloseFailedOpen(true);
+    else closeFailed();
+  };
+
+  // End every live shell and keep every tab: the bulk form of the unplug button
+  // on each row of the Sessions menu. Reversible in the way that matters, since
+  // the scrollback stays and each pane offers Reconnect, which is why it sits
+  // above Close all rather than beside it.
+  //
+  // Guarded on the same threshold, and it is the member of the family that most
+  // needs one: unlike Close failed it takes away shells that are working, and a
+  // shell that is working may well be running something.
+  const [disconnectAllOpen, setDisconnectAllOpen] = useState(false);
+  const disconnectAll = () => {
+    for (const id of openIds) endSession(id);
+    setDisconnectAllOpen(false);
+  };
+  const requestDisconnectAll = () => {
+    if (openIds.size > bulkConfirmOver) setDisconnectAllOpen(true);
+    else disconnectAll();
   };
 
   // Close-all guard rail (T-…): confirm before tearing down every session.
@@ -1572,10 +1614,11 @@ export function TerminalsPage({
         onActivate={gridFocus.activateDeliberately}
         openIds={openIds}
         onEndSession={endSession}
+        onDisconnectAll={requestDisconnectAll}
         onCloseAll={() => setCloseAllOpen(true)}
         retryableCount={retryableIds.length}
         onReconnectAll={requestReconnectAll}
-        onCloseFailed={closeFailed}
+        onCloseFailed={requestCloseFailed}
         hiddenCount={excludedFromGrid.size}
         onUnhideAll={clearGridExcluded}
       />
@@ -2242,7 +2285,13 @@ export function TerminalsPage({
           costs width (of which there is plenty) and not the vertical space the
           terminals want. */}
       <div className="flex min-h-0 flex-1">
-      {broadcastRail && (
+      {/* The stored preference AND something to broadcast to. Below two
+          sessions the rail's button is greyed, so a rail left open would be one
+          the operator could not put away; and a column of window given over to
+          picking targets is not worth it when there is one target. The choice
+          itself is untouched, so the rail comes back by itself the moment a
+          second terminal opens. */}
+      {broadcastRail && sessions.length >= 2 && (
         <div className="w-56 shrink-0">
           <BroadcastRail
             sessions={sessions}
@@ -2600,6 +2649,63 @@ export function TerminalsPage({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={reconnectAll}>
               Reconnect {retryableIds.length}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Destructive, though it is the mildest thing in the menu that is: no
+          shell is interrupted, because every one of these is already gone. What
+          goes is the scrollback, and on a batch this size that is usually the
+          only surviving account of why they all dropped at once. */}
+      <AlertDialog open={closeFailedOpen} onOpenChange={setCloseFailedOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close that many tabs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This closes{" "}
+              <span className="font-semibold text-foreground">
+                all {retryableIds.length}
+              </span>{" "}
+              tabs that dropped or were refused. Nothing is running in them, so
+              nothing is interrupted, but what each printed before it went goes
+              with it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={closeFailed}>
+              Close {retryableIds.length}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Destructive in the sense that matters here: these shells are alive and
+          may be running something, and ending them does not ask the program
+          inside first. The tabs and their scrollback all survive, which is what
+          separates this from Close all and what the wording leans on. */}
+      <AlertDialog
+        open={disconnectAllOpen}
+        onOpenChange={setDisconnectAllOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect that many sessions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This ends the shell on{" "}
+              <span className="font-semibold text-foreground">
+                all {openIds.size}
+              </span>{" "}
+              connected sessions. Anything still running in them stops. The tabs
+              stay, everything they printed stays on screen, and each pane
+              offers Reconnect.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={disconnectAll}>
+              Disconnect {openIds.size}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

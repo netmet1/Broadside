@@ -36,14 +36,18 @@ import {
 } from "@/components/ui/select";
 import {
   type AuthInput,
+  DEFAULT_PROBE_INTERVAL_SECS,
   type Host,
   type HostInput,
+  MAX_PROBE_INTERVAL_SECS,
+  MIN_PROBE_INTERVAL_SECS,
   checkPrivateKey,
   clearHostCredentials,
   createHost,
   errorMessage,
   pathIsFile,
   setHostCredentials,
+  setHostProbeInterval,
   setHostShellIntegration,
   setSudoPassword,
   setSudoSameAsLogin,
@@ -239,6 +243,13 @@ export function HostFormPanel({
   const [shellPref, setShellPref] = useState<ShellIntegrationPref>(
     host?.shell_integration ?? "auto",
   );
+  /** How often a closed pane asks this host whether it is back. Outside the
+   * form schema for the same reason as `shellPref`: saved through its own
+   * command. Held as a number rather than the field's text because the control
+   * is a select, so there is no half-typed state to represent. */
+  const [probeInterval, setProbeInterval] = useState<number>(
+    host?.probe_interval_secs ?? DEFAULT_PROBE_INTERVAL_SECS,
+  );
 
   const {
     register,
@@ -338,6 +349,7 @@ export function HostFormPanel({
     setSudoAction("keep");
     setKeyEncrypted(null);
     setShellPref(host?.shell_integration ?? "auto");
+    setProbeInterval(host?.probe_interval_secs ?? DEFAULT_PROBE_INTERVAL_SECS);
     reset(valuesFromHost(host, defaultColor));
   }, [host, defaultColor, reset]);
 
@@ -380,6 +392,9 @@ export function HostFormPanel({
   const selectedColor = watch("color");
   const authMethod = watch("authMethod");
   const sudoSameAsLogin = watch("sudoSameAsLogin");
+  // Named in the reconnect-check note, so it follows the field as it is typed:
+  // a host on a non-standard port should not be told its panes will probe 22.
+  const portValue = watch("port");
 
   const hasSudo = host?.has_sudo_password ?? false;
   // Whether the effective auth method is password (so "same as SSH
@@ -485,6 +500,16 @@ export function HostFormPanel({
       // changed, so an unrelated edit never touches the column.
       if (shellPref !== (host?.shell_integration ?? "auto")) {
         saved = await setHostShellIntegration(saved.id, shellPref);
+      }
+
+      // Same shape, same reason. `null` when the operator left it on the
+      // default, so a host that was never given an answer keeps following the
+      // default if the default ever moves, rather than being pinned to whatever
+      // it happened to be on the day the host was added.
+      const wantInterval =
+        probeInterval === DEFAULT_PROBE_INTERVAL_SECS ? null : probeInterval;
+      if (wantInterval !== (host?.probe_interval_secs ?? null)) {
+        saved = await setHostProbeInterval(saved.id, wantInterval);
       }
 
       // Credential writes are skipped entirely while admin-locked (the fields
@@ -1085,6 +1110,58 @@ export function HostFormPanel({
             about sudo, and sitting between the sudo status line and the sudo
             password field it read as part of them. The verdict is read-only
             (it is what the last connect saw), but the answer to it is not. */}
+        {/* How often a pane that has lost this host asks whether it is back.
+            Shown when adding as well as editing, unlike the shell block above:
+            that one is mostly a read-out of what the last connection found, and
+            a host nobody has connected to has nothing to say. This is a plain
+            preference with a sensible default, and the moment it is most wanted
+            is the moment a host is added, which is usually the moment somebody
+            is about to reboot it. */}
+        <div className="mt-6 max-w-4xl rounded-xl border border-border/50 bg-muted/20 p-5">
+          <Label
+            htmlFor="probe-interval"
+            className="mb-3 block text-sm font-semibold"
+          >
+            Reconnect check{" "}
+            <span className="text-xs font-normal text-muted-foreground">
+              (how often a closed terminal asks this host whether it is back)
+            </span>
+          </Label>
+          <div className="grid gap-2">
+            <Select
+              value={String(probeInterval)}
+              onValueChange={(v) => setProbeInterval(Number(v))}
+            >
+              <SelectTrigger id="probe-interval" className="w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from(
+                  { length: MAX_PROBE_INTERVAL_SECS - MIN_PROBE_INTERVAL_SECS + 1 },
+                  (_, i) => MIN_PROBE_INTERVAL_SECS + i,
+                ).map((secs) => (
+                  <SelectItem key={secs} value={String(secs)}>
+                    Every {secs} second{secs === 1 ? "" : "s"}
+                    {secs === DEFAULT_PROBE_INTERVAL_SECS ? " (default)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Worth saying plainly, because "is it back" and "does it answer a
+                ping" are not the same question and the difference is the whole
+                point. A rebooting Linux box answers ICMP some tens of seconds
+                before sshd binds, so a pill that went green on a ping would go
+                green while Reconnect still fails. */}
+            <p className="text-xs text-muted-foreground">
+              Runs only while a terminal for this host is sitting closed, and
+              stops when the tab is closed or reconnected. It opens a connection
+              to port {portValue || 22} rather than pinging, so it turns
+              green when Reconnect will actually work rather than when the
+              machine first answers.
+            </p>
+          </div>
+        </div>
+
         {host && (
           <div className="mt-6 max-w-4xl rounded-xl border border-border/50 bg-muted/20 p-5">
             <Label className="mb-3 block text-sm font-semibold">

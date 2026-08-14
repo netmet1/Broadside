@@ -45,7 +45,7 @@ export const SECTION_TITLES = [
  * Keep them lowercase; the filter lowercases the query.
  */
 export const SECTION_KEYWORDS: Record<string, string> = {
-  Performance: "sessions limit concurrent max how many cpu cores memory ram probe suggested capacity timeout slow",
+  Performance: "sessions limit concurrent max how many cpu cores memory ram probe suggested capacity timeout slow confirm ask first guard threshold bulk are you sure reconnect all disconnect all close failed close all too many stop asking me",
   "Network probe": "ping latency reachable test hosts responds round trip ms speed check offline",
   "Destructive command guard": "rm dangerous confirm warning block rules pattern regex mkfs dd shutdown reboot guard rails safety typed confirmation",
   "Shortcut commands": "commands dropdown one click quick canned saved snippets scope linux windows both broadcast terminals go button",
