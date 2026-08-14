@@ -241,6 +241,18 @@ const MIGRATIONS: &[&str] = &[
     // Written by every path that finds out (test, terminal, broadcast, SFTP,
     // skill run), and cleared by the first one that connects.
     "ALTER TABLE hosts ADD COLUMN connect_failed_at TEXT;",
+    // 21: how often to ask this host whether it is back, in seconds, NULL
+    // meaning the default of 3.
+    //
+    // Read by the reachability probe a pane runs while it sits closed, which is
+    // the one thing in the app that repeats on a timer against a machine that
+    // may be mid-reboot. Per host because the answer depends on the host and not
+    // on the operator: a switch on the desk can be asked every second without
+    // anyone noticing, and a box across a satellite link should not be asked
+    // that often. Held to 1-10 by the setter for the same reason the guard
+    // threshold is capped -- a probe interval nobody can see is still a probe
+    // interval, and there is no useful answer outside that range.
+    "ALTER TABLE hosts ADD COLUMN probe_interval_secs INTEGER;",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -474,6 +486,73 @@ mod tests {
         )
         .unwrap();
         assert!(hosts::get(&conn, host.id).unwrap().connect_failed_at.is_some());
+    }
+
+    #[test]
+    fn a_probe_interval_survives_an_edit_and_stays_in_range() {
+        // Migration 21, on a database that already has host rows: an existing
+        // host upgrades to "no answer", which reads as the default rather than
+        // as zero. Getting that wrong would give every upgraded host a probe
+        // interval of nought seconds, i.e. a spin loop against a machine that
+        // is already having a bad day.
+        let conn = database_at_version(20);
+        conn.execute(
+            "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at)
+             VALUES ('web01', 'example.test', 22, 'joe', '#aabbcc', 'then', 'then')",
+            [],
+        )
+        .unwrap();
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        let host = &hosts::list_all(&conn).unwrap()[0];
+        assert_eq!(host.probe_interval_secs, None, "unset, not zero");
+
+        hosts::set_probe_interval(&conn, host.id, Some(7)).unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().probe_interval_secs, Some(7));
+
+        // Out of range is clamped, not stored and not refused, in both
+        // directions and on the way back out as well as in.
+        hosts::set_probe_interval(&conn, host.id, Some(0)).unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().probe_interval_secs, Some(1));
+        hosts::set_probe_interval(&conn, host.id, Some(600)).unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().probe_interval_secs, Some(10));
+
+        // A value written straight into the column by hand still reads back
+        // inside the range, because the reader clamps too.
+        conn.execute(
+            "UPDATE hosts SET probe_interval_secs = 9000 WHERE id = ?1",
+            rusqlite::params![host.id],
+        )
+        .unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().probe_interval_secs, Some(10));
+
+        // And saving the form cannot disturb it, for the same reason
+        // `shell_integration` is kept out of `update`.
+        hosts::set_probe_interval(&conn, host.id, Some(4)).unwrap();
+        hosts::update(
+            &conn,
+            host.id,
+            hosts::HostInput {
+                label: "web01".into(),
+                hostname: "example.test".into(),
+                port: 22,
+                username: "joe".into(),
+                color: "#aabbcc".into(),
+                tag: None,
+                linux_flavor: None,
+                notes: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().probe_interval_secs, Some(4));
+
+        // None puts it back to "no answer stored", which the pane reads as the
+        // default. Not the same as storing 3: a host left alone follows the
+        // default if the default ever moves.
+        hosts::set_probe_interval(&conn, host.id, None).unwrap();
+        assert_eq!(hosts::get(&conn, host.id).unwrap().probe_interval_secs, None);
     }
 
     #[test]

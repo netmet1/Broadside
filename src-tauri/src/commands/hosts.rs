@@ -58,6 +58,59 @@ pub fn set_host_shell_integration(
     host_repo::get(&conn, id)
 }
 
+/// How often a closed pane asks this host whether it is back, 1-10 seconds,
+/// `None` for the default of 3. Its own command for the same reason as
+/// `set_host_shell_integration`: it is not part of what a CSV import knows how
+/// to say, so importing a host must not be able to state an answer for it.
+#[tauri::command]
+pub fn set_host_probe_interval(
+    id: i64,
+    secs: Option<u16>,
+    state: State<'_, DbState>,
+) -> AppResult<Host> {
+    let conn = lock(&state)?;
+    host_repo::set_probe_interval(&conn, id, secs)?;
+    host_repo::get(&conn, id)
+}
+
+/// Is this host's SSH port accepting connections?
+///
+/// The question a pane sitting on a Reconnect button is really asking, and the
+/// reason this probes the port rather than pinging: on a Linux box the network
+/// stack answers ICMP some tens of seconds before `sshd` binds, so a ping that
+/// has come back means only that the reboot has got as far as the kernel. This
+/// goes true at the moment Reconnect would work, which is the moment worth
+/// telling anyone about.
+///
+/// Deliberately async and deliberately short-timeout: it is called on a repeat
+/// from every closed pane, and a synchronous version would hold the database
+/// lock across a network round trip.
+///
+/// The timeout is bounded by the caller's interval so probes cannot pile up: a
+/// host that is down black-holes the SYN rather than refusing it, so without
+/// this a 1-second interval against a dead machine would leave a growing stack
+/// of connects each waiting out its own timeout.
+#[tauri::command]
+pub async fn probe_host_reachable(
+    id: i64,
+    state: State<'_, DbState>,
+) -> AppResult<bool> {
+    let (hostname, port, interval) = {
+        let conn = lock(&state)?;
+        let host = host_repo::get(&conn, id)?;
+        (
+            host.hostname,
+            host.port,
+            host.probe_interval_secs
+                .unwrap_or(host_repo::DEFAULT_PROBE_INTERVAL_SECS),
+        )
+    };
+    let timeout = std::time::Duration::from_millis(u64::from(interval) * 1000);
+    Ok(crate::probe::tcp_connect_ms(&hostname, port, timeout)
+        .await
+        .is_some())
+}
+
 /// Writes all hosts to a CSV or `.xlsx` file (chosen by the path's extension)
 /// that round-trips through "Import hosts…". Returns the number written.
 #[tauri::command]
