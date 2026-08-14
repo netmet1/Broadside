@@ -1716,7 +1716,14 @@ export function TerminalsPage({
               // keyboard did not, and one rule for every menu beats two.
               data-state={shellMenuOpen ? "open" : "closed"}
               {...hint("Open a local shell (PowerShell, Command Prompt, WSL)")}
-              className="flex h-7 items-center gap-0.5 rounded-md border border-input px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              // Dressed as the outline buttons it now stands next to, rather
+              // than as the tab-strip control it used to be: same height, same
+              // corner, same border and ground in both themes. It is still a
+              // hand-rolled button for the reason above, so the styling has to
+              // be copied rather than inherited from a variant. The glyphs stay
+              // muted, which is what tells it apart from the labelled buttons
+              // beside it.
+              className="flex h-7 items-center gap-0.5 rounded-[min(var(--radius-md),12px)] border border-border bg-background px-1.5 text-muted-foreground hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
             >
               <PlusIcon className="h-4 w-4" />
               <ChevronDownIcon className="h-3 w-3" />
