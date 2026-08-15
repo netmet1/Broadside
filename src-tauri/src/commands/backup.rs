@@ -33,6 +33,9 @@ pub struct RestoreReport {
     /// Trusted host keys the restore cleared, so the next connect to each host
     /// asks again.
     pub cleared_host_keys: usize,
+    /// Whether the restored file had sudo auto-fill on, in which case it was
+    /// turned back off. False when it was already off, i.e. nothing changed.
+    pub sudo_autofill_disabled: bool,
 }
 
 /// Online snapshot of the live database via `VACUUM INTO`, safe while the
@@ -146,40 +149,95 @@ pub fn restore_app_data(path: String, state: State<'_, DbState>) -> AppResult<Re
     // sweep below, which needs the tables to exist whatever version the file is.
     crate::db::bootstrap(&guard)?;
 
-    // SECURITY: everything above this line trusted a file the operator was
-    // handed. A `.db` looks like data, carries no mark of the web, and gets none
-    // of the friction an `.exe` would, so "restore the team's backup" is a
-    // plausible thing to be talked into. Most of what it brings back is data at
-    // the point of use: hosts, settings (the operator's own guard rules
-    // included), history. Two tables are not.
-    //
-    // `custom_terminals` names a program to spawn. The module that owns it
-    // trusts a stored row at launch precisely because it could not have been
-    // stored without passing its `validate` (see db/custom_terminals.rs), and
-    // this command is the writer that makes that untrue. No validation can put
-    // it back, either: a hostile row is shaped exactly like a legitimate one,
-    // since `powershell.exe` with arguments is what several real entries are, so
-    // a row reading "PowerShell 7" that quietly carries `-w hidden -c <payload>`
-    // passes every check the form applies. The honest answer is that launcher
-    // entries do not survive a restore. Re-adding them is one visit to a form,
-    // for a list most operators never populate at all, and it puts the decision
-    // to run a program back in front of the person whose machine it is.
-    //
-    // `host_keys` is the record of which key the operator agreed to trust for
-    // which host. Carried over from a file somebody else made, it pre-trusts
-    // that person's keys, and the TOFU and key-mismatch dialogs then never fire
-    // for those hosts again: the one warning that would say "this is not the
-    // machine you think it is" has been answered in advance by the file. Cleared
-    // instead, so the first connect asks. That is one dialog per host, once,
-    // which is the question those dialogs exist to ask.
-    let dropped_terminals = guard.execute("DELETE FROM custom_terminals", [])?;
-    let cleared_host_keys = guard.execute("DELETE FROM host_keys", [])?;
+    let hardening = harden_restored_db(&guard)?;
 
     let host_count = host_repo::list_all(&guard)?.len();
     Ok(RestoreReport {
         host_count,
+        dropped_terminals: hardening.dropped_terminals,
+        cleared_host_keys: hardening.cleared_host_keys,
+        sudo_autofill_disabled: hardening.sudo_autofill_disabled,
+    })
+}
+
+/// What a restore refused to carry over.
+pub(crate) struct RestoreHardening {
+    pub dropped_terminals: usize,
+    pub cleared_host_keys: usize,
+    pub sudo_autofill_disabled: bool,
+}
+
+/// Takes back the things a restored file is not allowed to decide.
+///
+/// Split out from [`restore_app_data`] so it can be tested against a database
+/// instead of a Tauri state handle: this is the security-carrying half of the
+/// command, and a test that re-implemented it would only be testing the copy.
+/// Runs after `bootstrap`, so the tables exist whatever version the file is.
+///
+/// SECURITY: everything before this point trusted a file the operator was
+/// handed. A `.db` looks like data, carries no mark of the web, and gets none
+/// of the friction an `.exe` would, so "restore the team's backup" is a
+/// plausible thing to be talked into.
+///
+/// The whole database comes across, so the question has to be asked of every
+/// table, not just the interesting one. Nine of them:
+///
+/// - `hosts`, `command_history`, `broadcast_results`, `pty_dispatch_results`,
+///   `omni_blocks`: read as data, shown as text, never executed. A planted row
+///   here is a line in a list.
+/// - `settings`: the operator's own configuration, and what a backup is for.
+///   Worth stating why it is safe rather than assuming it: user guard rules only
+///   ever *add* blocks ([`crate::guard::check_with_user`] runs every core rule
+///   first, and a user rule can only append hits), so a file can drop the
+///   operator's extra rules but cannot unblock anything the core rules catch.
+///   The one key that is not merely a preference is handled below.
+/// - `skills`: a skill's text does get typed at a host, but never without
+///   passing the destructive guard and the operator's own confirmation on the
+///   way (see `commands::skills::run_skill`), so a planted skill still has to be
+///   run on purpose and still has to get past the guard.
+/// - `custom_terminals` and `host_keys`: neither is data at the point of use.
+///
+/// `custom_terminals` names a program to spawn. The module that owns it trusts a
+/// stored row at launch precisely because it could not have been stored without
+/// passing its `validate` (see `db/custom_terminals.rs`), and a restore is the
+/// writer that makes that untrue. No validation can put it back, either: a
+/// hostile row is shaped exactly like a legitimate one, since `powershell.exe`
+/// with arguments is what several real entries are, so a row reading
+/// "PowerShell 7" that quietly carries `-w hidden -c <payload>` passes every
+/// check the form applies. The honest answer is that launcher entries do not
+/// survive a restore. Re-adding them is one visit to a form, for a list most
+/// operators never populate at all, and it puts the decision to run a program
+/// back in front of the person whose machine it is.
+///
+/// `host_keys` is the record of which key the operator agreed to trust for which
+/// host. Carried over from a file somebody else made, it pre-trusts that
+/// person's keys, and the TOFU and key-mismatch dialogs then never fire for
+/// those hosts again: the one warning that would say "this is not the machine
+/// you think it is" has been answered in advance by the file. Cleared instead,
+/// so the first connect asks. That is one dialog per host, once, which is the
+/// question those dialogs exist to ask.
+pub(crate) fn harden_restored_db(conn: &rusqlite::Connection) -> AppResult<RestoreHardening> {
+    let dropped_terminals = conn.execute("DELETE FROM custom_terminals", [])?;
+    let cleared_host_keys = conn.execute("DELETE FROM host_keys", [])?;
+
+    // The one setting that is not a preference. Sudo auto-fill decides whether
+    // stored passwords get typed into a session on the host's say-so, and the
+    // passwords it would type are the ones already on this machine, because the
+    // credential store is not in a backup and is not touched by a restore. So a
+    // file that arrives with the switch on is a file turning password injection
+    // on for credentials it never had to supply. A restore therefore never
+    // leaves it on; the operator turns it back on if they want it, which is the
+    // same deliberate act it was the first time.
+    let sudo_autofill_disabled =
+        crate::db::settings::get_bool(conn, crate::commands::settings::KEY_SUDO_AUTOFILL, true)?;
+    if sudo_autofill_disabled {
+        crate::db::settings::set(conn, crate::commands::settings::KEY_SUDO_AUTOFILL, "false")?;
+    }
+
+    Ok(RestoreHardening {
         dropped_terminals,
         cleared_host_keys,
+        sudo_autofill_disabled,
     })
 }
 
@@ -324,6 +382,10 @@ mod tests {
             [],
         )
         .unwrap();
+        // And the switch that decides whether stored passwords get typed at a
+        // host, arriving on.
+        crate::db::settings::set(&src, crate::commands::settings::KEY_SUDO_AUTOFILL, "true")
+            .unwrap();
 
         let dir = tempfile::tempdir().unwrap();
         let snap = dir.path().join("backup.db");
@@ -339,11 +401,29 @@ mod tests {
         }
         crate::db::bootstrap(&live).unwrap();
 
-        // The sweep, as `restore_app_data` runs it.
-        let dropped = live.execute("DELETE FROM custom_terminals", []).unwrap();
-        let cleared = live.execute("DELETE FROM host_keys", []).unwrap();
-        assert_eq!(dropped, 1, "the launcher entry is not carried over");
-        assert_eq!(cleared, 1, "the trusted key is not carried over");
+        // The command's own hardening step, not a re-implementation of it.
+        let report = harden_restored_db(&live).unwrap();
+        assert_eq!(
+            report.dropped_terminals, 1,
+            "the launcher entry is not carried over"
+        );
+        assert_eq!(
+            report.cleared_host_keys, 1,
+            "the trusted key is not carried over"
+        );
+        assert!(
+            report.sudo_autofill_disabled,
+            "the file had password injection on, so the restore reports turning it off"
+        );
+        assert!(
+            !crate::db::settings::get_bool(
+                &live,
+                crate::commands::settings::KEY_SUDO_AUTOFILL,
+                true
+            )
+            .unwrap(),
+            "and it really is off"
+        );
 
         assert!(
             crate::db::custom_terminals::list(&live).unwrap().is_empty(),

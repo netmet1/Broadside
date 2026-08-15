@@ -1526,9 +1526,9 @@ export function SettingsPage({
               <strong>Only restore a backup you made yourself.</strong> A backup
               file is read with the same trust as the app's own database, so one
               from somebody else can decide what your copy of Broadside knows.
-              Custom local shells and trusted host keys are the two things it is
-              never allowed to decide: neither is carried over, so a restored
-              host asks about its key on the next connect.
+              Custom local shells and trusted host keys are never carried over,
+              and sudo auto-fill is switched off, so a file cannot decide what
+              runs, what is trusted, or where a password gets typed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

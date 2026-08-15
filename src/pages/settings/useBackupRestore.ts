@@ -73,7 +73,11 @@ export function useBackupRestore() {
       // line, because both are things the operator now has to do something
       // about: an entry to re-add, or a host that will ask about its key on the
       // next connect. Silence here would read as "everything came back".
-      if (report.dropped_terminals > 0 || report.cleared_host_keys > 0) {
+      if (
+        report.dropped_terminals > 0 ||
+        report.cleared_host_keys > 0 ||
+        report.sudo_autofill_disabled
+      ) {
         const parts: string[] = [];
         if (report.dropped_terminals > 0) {
           parts.push(
@@ -88,6 +92,9 @@ export function useBackupRestore() {
               report.cleared_host_keys === 1 ? "" : "s"
             } cleared (each host will ask again)`,
           );
+        }
+        if (report.sudo_autofill_disabled) {
+          parts.push("sudo auto-fill turned off (Settings > Security)");
         }
         toast.warning(parts.join("; "));
       }

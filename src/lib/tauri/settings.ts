@@ -263,6 +263,11 @@ export type RestoreReport = {
   /** Trusted host keys the restore cleared, so the first connect to each host
    * asks again instead of trusting whatever the file said. */
   cleared_host_keys: number;
+  /** True when the restored file had sudo auto-fill on and the restore turned
+   * it back off. A backup carries no credentials, so a file arriving with that
+   * switch on would be turning password injection on for passwords already on
+   * this machine. */
+  sudo_autofill_disabled: boolean;
 };
 
 /** Restores a backup `.db` over the live database (hosts, settings, command

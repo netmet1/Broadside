@@ -2329,8 +2329,10 @@ export const SECTIONS: HelpSection[] = [
               to decide come back empty: the custom local shells you added under{" "}
               <Nav>Local shells</Nav>, because a launcher entry names a program
               to run, and your trusted host keys, because those are the answers
-              you gave to the key questions. Re-add any custom shells afterwards,
-              and expect each host to ask about its key on the first connect.
+              you gave to the key questions. Sudo auto-fill is switched off by a
+              restore for the same reason. Re-add any custom shells afterwards,
+              expect each host to ask about its key on the first connect, and
+              turn auto-fill back on if you want it.
             </li>
             <li>
               <Nav>Audit log</Nav>: turn audit recording on or off.
