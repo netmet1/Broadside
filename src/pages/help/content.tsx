@@ -2223,7 +2223,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored backup from someone else untrusted backup file",
     body: (
       <>
         <Lead>
@@ -2321,6 +2321,16 @@ export const SECTIONS: HelpSection[] = [
               vault), so a backup file cannot leak a secret. Tick{" "}
               <Nav>Also include hosts CSV</Nav> to additionally write a plain
               spreadsheet of your hosts alongside the backup.
+              <br />
+              <b>Restore only a backup you made yourself.</b> A restore replaces
+              the whole database, and Broadside reads what comes back with the
+              same trust as its own data, so a file from somebody else is a file
+              that decides what your copy knows. Two things it is never allowed
+              to decide come back empty: the custom local shells you added under{" "}
+              <Nav>Local shells</Nav>, because a launcher entry names a program
+              to run, and your trusted host keys, because those are the answers
+              you gave to the key questions. Re-add any custom shells afterwards,
+              and expect each host to ask about its key on the first connect.
             </li>
             <li>
               <Nav>Audit log</Nav>: turn audit recording on or off.

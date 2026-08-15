@@ -1496,9 +1496,11 @@ export function SettingsPage({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Restoring replaces all current hosts, settings, trusted host keys and
-          command history with the chosen backup. Saved passwords aren't in a
-          backup, so a restored host may need its password re-entered.
+          Restoring replaces all current hosts, settings and command history with
+          the chosen backup. Saved passwords aren't in a backup, so a restored
+          host may need its password re-entered. Custom local shells and trusted
+          host keys are not carried over at all, so restore only a backup you
+          made yourself.
         </p>
       </section>
       )}
@@ -1513,12 +1515,20 @@ export function SettingsPage({
           <AlertDialogHeader>
             <AlertDialogTitle>Restore from this backup?</AlertDialogTitle>
             <AlertDialogDescription>
-              This replaces <strong>all current data</strong> (hosts, settings,
-              trusted host keys and command history) with the contents of{" "}
+              This replaces <strong>all current data</strong> (hosts, settings
+              and command history) with the contents of{" "}
               <span className="font-mono">{restoreFileName}</span>. Your current
               data will be lost. Saved passwords aren't included in a backup, so
               restored hosts may need their password re-entered. Broadside will
               reload when the restore finishes.
+              <br />
+              <br />
+              <strong>Only restore a backup you made yourself.</strong> A backup
+              file is read with the same trust as the app's own database, so one
+              from somebody else can decide what your copy of Broadside knows.
+              Custom local shells and trusted host keys are the two things it is
+              never allowed to decide: neither is carried over, so a restored
+              host asks about its key on the next connect.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

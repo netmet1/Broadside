@@ -256,11 +256,21 @@ export function backupAppData(
 
 export type RestoreReport = {
   host_count: number;
+  /** Custom local-shell entries the restore refused to carry over: a launcher
+   * entry names a program to run, and a backup file is not where that decision
+   * gets made. Re-add them under Settings. */
+  dropped_terminals: number;
+  /** Trusted host keys the restore cleared, so the first connect to each host
+   * asks again instead of trusting whatever the file said. */
+  cleared_host_keys: number;
 };
 
-/** Restores a backup `.db` over the live database (hosts, settings, trusted
- * host keys, command history). This OVERWRITES all current data. Credentials
- * are never in a backup, so restored hosts may need their password re-entered.
+/** Restores a backup `.db` over the live database (hosts, settings, command
+ * history). This OVERWRITES all current data. Credentials are never in a
+ * backup, so restored hosts may need their password re-entered. Two things
+ * deliberately do NOT come back: custom local-shell entries and trusted host
+ * keys, both of which would otherwise let a file somebody else made decide what
+ * runs or what is trusted (see the backend command for the reasoning).
  * Reload the app afterwards so every page re-reads the restored database. */
 export function restoreAppData(path: string): Promise<RestoreReport> {
   return invoke<RestoreReport>("restore_app_data", { path });

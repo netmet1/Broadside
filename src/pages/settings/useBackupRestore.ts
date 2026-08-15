@@ -69,6 +69,28 @@ export function useBackupRestore() {
           report.host_count === 1 ? "host" : "hosts"
         }, reloading…`,
       );
+      // Said separately, and as a warning rather than folded into the success
+      // line, because both are things the operator now has to do something
+      // about: an entry to re-add, or a host that will ask about its key on the
+      // next connect. Silence here would read as "everything came back".
+      if (report.dropped_terminals > 0 || report.cleared_host_keys > 0) {
+        const parts: string[] = [];
+        if (report.dropped_terminals > 0) {
+          parts.push(
+            `${report.dropped_terminals} custom local shell${
+              report.dropped_terminals === 1 ? "" : "s"
+            } not restored (re-add under Settings)`,
+          );
+        }
+        if (report.cleared_host_keys > 0) {
+          parts.push(
+            `${report.cleared_host_keys} trusted host key${
+              report.cleared_host_keys === 1 ? "" : "s"
+            } cleared (each host will ask again)`,
+          );
+        }
+        toast.warning(parts.join("; "));
+      }
       setRestorePath(null);
       setTimeout(() => window.location.reload(), 700);
     } catch (e) {
