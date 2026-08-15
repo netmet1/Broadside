@@ -54,6 +54,7 @@ import {
   clearRecall,
   recallFor,
 } from "@/lib/commandHistory";
+import { setMirroredSessions } from "@/lib/mirroredSessions";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import type { SshTermSession } from "@/pages/TerminalsPage";
@@ -274,6 +275,15 @@ export function MultiTerminalPage({
     selectedRef.current = selected;
     suffixByIdRef.current = suffixById;
   });
+  // Tell the Terminals tab which of its tabs are having hand-typed work copied
+  // in here, so a pane that is being recorded says so on its own tab rather
+  // than only on this page. The published set is exactly the test the block
+  // listener below makes: the toggle AND the rail selection, because a checked
+  // host is the only kind this page takes hand-typed work from.
+  useEffect(() => {
+    setMirroredSessions(mirrorTyped ? selected : new Set<string>());
+  }, [mirrorTyped, selected]);
+
   // Per-session FIFO queue of commands WE dispatched, so a block can be tagged
   // dispatched (always shown) vs hand-typed (shown only when mirror is on).
   const pendingDispatched = useRef<Map<string, string[]>>(new Map());

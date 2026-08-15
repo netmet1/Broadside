@@ -4,6 +4,7 @@ import {
   CopyPlusIcon,
   Grid2x2Icon,
   Grid2x2XIcon,
+  LayersIcon,
   Maximize2Icon,
   PencilIcon,
   PlusIcon,
@@ -90,6 +91,7 @@ import {
   DEFAULT_BULK_CONFIRM_OVER,
   getAppSettings,
 } from "@/lib/tauri/settings";
+import { useMirroredSessions } from "@/lib/mirroredSessions";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useDismissOnOutside } from "@/lib/useDismissOnOutside";
 import { useShortcuts } from "@/lib/useShortcuts";
@@ -287,6 +289,12 @@ export function TerminalsPage({
   const launcherRef = useRef<HTMLDivElement>(null);
   const closeShellMenu = useCallback(() => setShellMenuOpen(false), []);
   useDismissOnOutside(launcherRef, shellMenuOpen, closeShellMenu);
+
+  // Sessions whose hand-typed commands MultiTerminal is copying into its log
+  // (Show Manual Activity, for the hosts checked there). Marked on the tab,
+  // because the toggle lives on a page you may not be looking at and the shell
+  // in front of you gives nothing away. See lib/mirroredSessions.
+  const mirroredSessions = useMirroredSessions();
 
   // COM ports, for the launcher's serial section. Re-read every time the menu
   // opens rather than once at startup like the shell list: a USB serial adapter
@@ -741,6 +749,15 @@ export function TerminalsPage({
         if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
           return;
         }
+        // Nor while the launcher is open. Escape belongs to whatever is on
+        // top, and a menu is on top of the strip it hangs off: clicking [+]
+        // leaves the button focused, which is inside the strip, so this
+        // listener took the key on the capture phase and stopped it dead
+        // before useDismissOnOutside's window listener could see it. The menu
+        // stayed open and the keyboard was quietly thrown back at the terminal
+        // instead (smoke 60-4 A5). One Escape closes the menu; the next one
+        // does this.
+        if (shellMenuOpen) return;
         e.preventDefault();
         e.stopPropagation();
         setChromeKeyboard(false);
@@ -760,7 +777,7 @@ export function TerminalsPage({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [visible, maximized, activeId, chromeHasFocus]);
+  }, [visible, maximized, activeId, chromeHasFocus, shellMenuOpen]);
 
   // Tab and Shift+Tab while the strip has the keyboard: wrap at both ends
   // rather than let focus escape into the grid.
@@ -2178,6 +2195,25 @@ export function TerminalsPage({
                 </span>
               );
             })()}
+            {/* This tab's hand-typed work is being copied into MultiTerminal's
+                log. Always on show, like the hidden-from-grid marker beside it
+                and unlike the hover buttons: the point of it is to be seen
+                without being looked for, by someone who never opened the page
+                the toggle lives on. MultiTerminal's own nav icon, so the two
+                read as the same thing. */}
+            {mirroredSessions.has(s.id) && renamingId !== s.id && (
+              <span
+                role="img"
+                className="shrink-0 text-sky-600 dark:text-sky-400"
+                aria-label={`${sessionLabel(s)}: commands typed here are copied to MultiTerminal`}
+                title="Show Manual Activity is on in MultiTerminal and this host is checked there, so commands typed in this tab are copied into its log."
+                {...hint(
+                  "Commands typed by hand in this tab are also being recorded in MultiTerminal (Show Manual Activity)",
+                )}
+              >
+                <LayersIcon className="h-3.5 w-3.5" />
+              </span>
+            )}
             {/* Rename a plain local shell tab for the rest of the session.
                 Profile tabs already carry the profile's name, so they're left
                 alone; SSH tabs are named by their host. */}
