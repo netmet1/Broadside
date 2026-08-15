@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
@@ -369,13 +369,16 @@ pub async fn download(
     cancel: &AtomicBool,
     on_progress: impl Fn(u64),
 ) -> AppResult<u64> {
+    // Before the session is touched, because a destination we will not write to
+    // is not worth opening the remote file for.
+    let dest = safe_local_destination(local_path)?;
     let conn = state.get(session_id)?;
     let mut src = conn
         .sftp
         .open(remote_path.to_string())
         .await
         .map_err(|e| AppError::Ssh(format!("sftp open {remote_path}: {e}")))?;
-    let mut dst = tokio::fs::File::create(local_path).await?;
+    let mut dst = tokio::fs::File::create(dest).await?;
 
     let mut buf = vec![0u8; TRANSFER_CHUNK];
     let mut total: u64 = 0;
@@ -614,6 +617,47 @@ fn safe_local_child(ldir: &Path, name: &str) -> AppResult<PathBuf> {
     Ok(ldir.join(name))
 }
 
+/// Checks the local path a download is about to write to, before anything is
+/// created.
+///
+/// SECURITY: [`safe_local_child`] guards the names `download_dir` invents for
+/// itself as it recurses, but the destination that *starts* a transfer arrives
+/// from the caller already joined, as one string, and it is built from the folder
+/// the operator is looking at plus a name the **remote host chose**: an entry
+/// name from a listing in the Commander, or a glob match on the Broadcast tab.
+/// Joining a name of `..\..\evil.exe` gives a path that climbs out of the folder
+/// the operator picked and lands wherever the host wanted, so a GET from a
+/// hostile or compromised server is an arbitrary local file write. Dropping a
+/// file in the Startup folder makes that code execution at next logon. The
+/// guarantee therefore has to be made on this side of the IPC boundary, where it
+/// covers every caller including the ones written later.
+///
+/// The rule is that a download destination may not climb. A parent-directory
+/// component is **refused, not normalised away**: normalising is precisely what
+/// the attack wants, since `…\Downloads\..\..\evil.exe` normalises to a
+/// perfectly well-formed path that is simply somewhere else. Nothing legitimate
+/// is being refused, because the Commander's local pane navigates by trimming
+/// components rather than by appending `..`, and its entries are built from a
+/// directory it has just listed.
+fn safe_local_destination(local_path: &str) -> AppResult<&Path> {
+    let path = Path::new(local_path);
+    let unsafe_dest = local_path.is_empty()
+        || local_path.contains('\0')
+        // Relative would resolve against whatever the process's working
+        // directory happens to be, which is not a place the operator chose.
+        || !path.is_absolute()
+        || path.components().any(|c| matches!(c, Component::ParentDir))
+        // A bare root or drive prefix is not a file to write, and for a
+        // directory transfer it is the whole volume.
+        || path.file_name().is_none();
+    if unsafe_dest {
+        return Err(AppError::Ssh(format!(
+            "refusing unsafe local destination {local_path:?} (possible path traversal)"
+        )));
+    }
+    Ok(path)
+}
+
 /// Recursively downloads a remote directory to `local_root` (which is created).
 /// `on_progress(files_done, bytes_done)` is called periodically + at the end.
 pub async fn download_dir(
@@ -625,6 +669,11 @@ pub async fn download_dir(
     cancel: &AtomicBool,
     on_progress: impl Fn(u64, u64),
 ) -> AppResult<TransferStats> {
+    // The root of a folder GET is named by the host too (it is the remote
+    // directory's own name, joined onto the local folder by the caller), so it
+    // gets the same check as a single file. Every name below it is
+    // `safe_local_child`'s job.
+    safe_local_destination(local_root)?;
     let conn = state.get(session_id)?;
     let mut stats = TransferStats::default();
     // Progress covers processed (transferred + skipped) files, so the bar still
@@ -770,6 +819,56 @@ mod tests {
         ] {
             assert!(
                 safe_local_child(dir, bad).is_err(),
+                "expected rejection for {bad:?}",
+            );
+        }
+    }
+
+    // Windows path semantics: `C:\…` is only an absolute path on the platform
+    // this app ships for, and these two are about exactly that shape.
+    #[test]
+    #[cfg(windows)]
+    fn safe_local_destination_accepts_what_the_commander_builds() {
+        // What the local pane actually produces: an absolute Windows path made of
+        // a folder it has listed plus an entry name. The forward-slash and
+        // trailing-name cases are here because the pane normalises neither.
+        for good in [
+            "C:\\Users\\ops\\Downloads\\report.csv",
+            "C:\\Users\\ops\\Downloads\\a b.log",
+            "C:/Users/ops/Downloads/report.csv",
+            "D:\\backups\\host-a",
+            "\\\\fileserver\\share\\report.csv",
+        ] {
+            assert!(
+                safe_local_destination(good).is_ok(),
+                "expected acceptance for {good:?}",
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn safe_local_destination_refuses_a_path_that_climbs() {
+        // The attack: a remote entry named `..\..\…` joined onto the folder the
+        // operator picked. Refused whichever separator the name used, and refused
+        // even though the result is a well-formed path, because being well-formed
+        // is exactly the problem. The relative cases are refused for a different
+        // reason: they would resolve against the process's working directory,
+        // which is nowhere the operator chose.
+        for bad in [
+            "",
+            "C:\\Users\\ops\\Downloads\\..\\..\\evil.exe",
+            "C:/Users/ops/Downloads/../../evil.exe",
+            "C:\\Users\\ops\\Downloads\\..\\..\\..\\Windows\\System32\\drivers\\etc\\hosts",
+            "C:\\Users\\ops\\Downloads\\sub\\..\\..\\evil.exe",
+            "..\\evil.exe",
+            "evil.exe",
+            "Downloads\\evil.exe",
+            "C:\\",
+            "C:\\Users\\ops\\Downloads\\name\0.txt",
+        ] {
+            assert!(
+                safe_local_destination(bad).is_err(),
                 "expected rejection for {bad:?}",
             );
         }
