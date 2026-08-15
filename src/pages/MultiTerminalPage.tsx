@@ -54,9 +54,14 @@ import {
   clearRecall,
   recallFor,
 } from "@/lib/commandHistory";
+import { setMirroredSessions } from "@/lib/mirroredSessions";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
 import type { SshTermSession } from "@/pages/TerminalsPage";
+import {
+  duplicateSuffixes,
+  sessionsSharingAHost,
+} from "@/pages/terminals/session";
 
 const MIRROR_KEY = "omni-mirror-typed";
 const HEADERS_KEY = "omni-headers";
@@ -75,6 +80,17 @@ type DisplayBlock = {
   ts: string;
   hostId: number | null;
   labelSnapshot: string;
+  /** The " 02" that says which session on that host this block came from, kept
+   * out of `labelSnapshot` rather than concatenated into it.
+   *
+   * It used to be concatenated, and that is exactly why it never appeared: the
+   * renderer prefers the host's *live* label so a host renamed mid-session
+   * re-heads its old blocks, and the live label has no number on it, so the
+   * number was thrown away every time the host still existed. Which was always.
+   *
+   * Empty for a block reloaded from the database, whose stored label has the
+   * number baked into it already; see where it is unpicked at render. */
+  suffixSnapshot: string;
   colorSnapshot: string;
   command: string | null;
   lines: string[];
@@ -134,6 +150,13 @@ export function MultiTerminalPage({
     return m;
   }, [sessions]);
 
+  // The " 02" the tab strip gives the second session on a host, so a rail of
+  // rows that all read "web-01" says which is which. It follows the label into
+  // the output blocks as well: a page whose whole job is running one command in
+  // several places has to be able to say which place a block came from, and two
+  // blocks headed the same thing cannot.
+  const suffixById = useMemo(() => duplicateSuffixes(sessions), [sessions]);
+
   // Host ids with an open terminal session, drives whether a block shows the
   // "jump to this host's terminal" icon (hidden for deleted/closed hosts).
   const openHostIds = useMemo(
@@ -162,6 +185,19 @@ export function MultiTerminalPage({
     () =>
       sessions.filter((s) => selected.has(s.id) && connectedSessions.has(s.id))
         .length,
+    [sessions, selected, connectedSessions],
+  );
+
+  // How many of the selected, connected terminals share a host with another
+  // one. Over what would actually be dispatched to, not over the whole rail:
+  // two tabs on a host are only a surprise when both are about to be run.
+  const sharedHosts = useMemo(
+    () =>
+      sessionsSharingAHost(
+        sessions.filter(
+          (s) => selected.has(s.id) && connectedSessions.has(s.id),
+        ),
+      ),
     [sessions, selected, connectedSessions],
   );
 
@@ -232,11 +268,22 @@ export function MultiTerminalPage({
   const mirrorRef = useRef(mirrorTyped);
   const sessionsByIdRef = useRef(sessionsById);
   const selectedRef = useRef(selected);
+  const suffixByIdRef = useRef(suffixById);
   useLayoutEffect(() => {
     mirrorRef.current = mirrorTyped;
     sessionsByIdRef.current = sessionsById;
     selectedRef.current = selected;
+    suffixByIdRef.current = suffixById;
   });
+  // Tell the Terminals tab which of its tabs are having hand-typed work copied
+  // in here, so a pane that is being recorded says so on its own tab rather
+  // than only on this page. The published set is exactly the test the block
+  // listener below makes: the toggle AND the rail selection, because a checked
+  // host is the only kind this page takes hand-typed work from.
+  useEffect(() => {
+    setMirroredSessions(mirrorTyped ? selected : new Set<string>());
+  }, [mirrorTyped, selected]);
+
   // Per-session FIFO queue of commands WE dispatched, so a block can be tagged
   // dispatched (always shown) vs hand-typed (shown only when mirror is on).
   const pendingDispatched = useRef<Map<string, string[]>>(new Map());
@@ -281,6 +328,7 @@ export function MultiTerminalPage({
             ts,
             hostId: sess.host.id,
             labelSnapshot: sess.host.label,
+            suffixSnapshot: suffixByIdRef.current.get(sess.id) ?? "",
             colorSnapshot: sess.host.color,
             command,
             lines: blk.lines,
@@ -298,7 +346,7 @@ export function MultiTerminalPage({
       omniBlocksAdd({
         ts,
         host_id: sess.host.id,
-        label: sess.host.label,
+        label: sess.host.label + (suffixByIdRef.current.get(sess.id) ?? ""),
         command,
         lines: blk.lines,
         exit_code: blk.exit_code,
@@ -327,7 +375,12 @@ export function MultiTerminalPage({
             dbId: s.id,
             ts: s.ts,
             hostId: s.host_id,
+            // Stored with the number already in it, which is right for a row
+            // that has to make sense on its own years later. Unpicked at
+            // render, not here: what it takes to tell the number from the name
+            // is the host's live label, and that has not loaded yet.
             labelSnapshot: s.label,
+            suffixSnapshot: "",
             colorSnapshot: HOST_UNKNOWN_COLOR,
             command: s.command,
             lines: s.lines,
@@ -584,7 +637,10 @@ export function MultiTerminalPage({
             {visibleSessions.map((s) => {
               const isConnected = connectedSessions.has(s.id);
               const color = hostsById.get(s.host.id)?.color ?? s.host.color;
-              const label = hostsById.get(s.host.id)?.label ?? s.host.label;
+              // Kept apart so the number can be dimmed rather than run into the
+              // name.
+              const name = hostsById.get(s.host.id)?.label ?? s.host.label;
+              const suffix = suffixById.get(s.id) ?? "";
               if (railCollapsed) {
                 return (
                   <button
@@ -606,8 +662,17 @@ export function MultiTerminalPage({
                       className="h-2.5 w-2.5 rounded-full"
                       style={{ backgroundColor: color }}
                     />
+                    {/* Initials of the name, then the number. Not the initials
+                        of the two together: "webserver1 02" gave "W0", which
+                        reads as a name and not as a second session, and the two
+                        rows it was meant to tell apart came out "W" and "W0".
+                        The space goes, since there is no room for it here and
+                        nothing for it to separate at this size. */}
                     <span className="font-mono text-[10px] leading-none">
-                      {wordInitials(label)}
+                      {wordInitials(name)}
+                      <span className="text-muted-foreground">
+                        {suffix.trim()}
+                      </span>
                     </span>
                   </button>
                 );
@@ -637,7 +702,12 @@ export function MultiTerminalPage({
                     className="min-w-0 truncate"
                     title={railTooltip(hostsById.get(s.host.id) ?? s.host)}
                   >
-                    {label}
+                    {name}
+                    {/* Dimmed rather than run into the name, the same as the
+                        Terminals rail and the tab strip: it is not part of what
+                        the machine is called, it says which of two sessions on
+                        it this row is. */}
+                    <span className="text-muted-foreground">{suffix}</span>
                   </span>
                   {/* The same mark the other rails carry. This page has the
                       most to lose from a shell it cannot follow -- a checked
@@ -848,11 +918,23 @@ export function MultiTerminalPage({
                   const live = b.hostId != null ? hostsById.get(b.hostId) : undefined;
                   const color = live?.color ?? b.colorSnapshot;
                   const label = live?.label ?? b.labelSnapshot;
+                  // A block reloaded from the database carries one string with
+                  // the number already inside it. Recover the number by taking
+                  // off the live name it begins with, rather than by looking
+                  // for something shaped like " 02" on the end: a host really
+                  // can be called "rack 02", and a rule that guessed would
+                  // quietly rename it every time the app started.
+                  const suffix =
+                    b.suffixSnapshot ||
+                    (live && b.labelSnapshot.startsWith(live.label)
+                      ? b.labelSnapshot.slice(live.label.length)
+                      : "");
                   return (
                     <OmniBlock
                       key={b.key}
                       color={color}
                       label={label}
+                      suffix={suffix}
                       command={b.command}
                       ts={b.ts}
                       lines={b.lines}
@@ -876,7 +958,20 @@ export function MultiTerminalPage({
           </div>
 
           {/* Composer. */}
-          <div className="flex items-end gap-2 border-t border-border/50 p-3">
+          <div className="border-t border-border/50 p-3">
+          {/* Two checked sessions on one machine, so the command runs there
+              twice. Said rather than blocked: it is a normal way to work, and a
+              dialog on every send is one nobody reads by the second week. It
+              earns its place here because the count in the placeholder is
+              terminals and the number in the operator's head is machines. */}
+          {sharedHosts > 0 && (
+            <p className="mb-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+              <CopyIcon className="h-3.5 w-3.5 shrink-0" />
+              {sharedHosts} of the selected terminals are on the same host, so
+              this will run there more than once.
+            </p>
+          )}
+          <div className="flex items-end gap-2">
             <Composer
               value={command}
               onChange={setCommand}
@@ -904,6 +999,7 @@ export function MultiTerminalPage({
               Send
             </Button>
           </div>
+          </div>
         </div>
       </div>
 
@@ -914,7 +1010,9 @@ export function MultiTerminalPage({
         hits={guardHits}
         hostLabels={sessions
           .filter((s) => selected.has(s.id) && connectedSessions.has(s.id))
-          .map((s) => s.host.label)
+          // Suffixed, so a host listed twice here reads as two sessions on one
+          // machine rather than as the dialog having repeated itself.
+          .map((s) => s.host.label + (suffixById.get(s.id) ?? ""))
           .sort()}
         onConfirmed={() => {
           dispatch(command.trim());
@@ -956,6 +1054,7 @@ const NOTICE: Record<Exclude<BlockInteractivity, "normal">, string> = {
 function OmniBlock({
   color,
   label,
+  suffix,
   command,
   ts,
   lines,
@@ -968,6 +1067,9 @@ function OmniBlock({
 }: {
   color: string;
   label: string;
+  /** The " 02" telling this block's session from another on the same host.
+   * Empty for the first, and for a host with only one session open. */
+  suffix: string;
   command: string | null;
   ts: string;
   lines: string[];
@@ -1035,6 +1137,11 @@ function OmniBlock({
         />
         <span className="min-w-0 truncate font-medium" style={{ color }}>
           {label}
+          {/* Not in the host's colour, and not in the header's weight: the
+              number is not part of the machine's name, it says which of two
+              sessions on that machine answered. Same treatment as the rail and
+              the tab strip, so the three read as one numbering scheme. */}
+          <span className="font-normal text-muted-foreground">{suffix}</span>
         </span>
         {command && (
           <code className="min-w-0 flex-1 truncate rounded bg-muted/40 px-1.5 py-0.5 font-mono text-foreground/80">

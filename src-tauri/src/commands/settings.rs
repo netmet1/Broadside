@@ -14,6 +14,8 @@ const KEY_GUARD_RULES: &str = "guard_user_rules";
 const KEY_LOCAL_PROBE: &str = "local_probe";
 const KEY_MAX_SESSIONS: &str = "max_concurrent_sessions";
 const KEY_DEFAULT_TIMEOUT: &str = "default_timeout_secs";
+/// Above how many at once a bulk action on the Terminals page asks first.
+const KEY_BULK_CONFIRM_OVER: &str = "bulk_confirm_over";
 const KEY_HELP_HINTS: &str = "help_hints_enabled";
 /// Global sudo password auto-fill toggle (D-065). Default on; off = stored sudo
 /// passwords are never injected into interactive terminals. Public so the PTY
@@ -34,6 +36,29 @@ pub const KEY_SKILL_LOG_DETAIL: &str = "skill_log_detail";
 /// How the skill log is rendered and exported. A display choice only: the file
 /// is always JSONL (see [`crate::skilllog`]).
 pub const KEY_SKILL_LOG_FORMAT: &str = "skill_log_format";
+
+/// Above how many at once a bulk action on the Terminals page asks for
+/// confirmation. Five, because that is about where "a handful" stops being one:
+/// four panes are still a thing you meant, and six is usually a typed count that
+/// got away.
+///
+/// One number for every bulk action on that page rather than one each. An
+/// operator who has learned where "that's a lot" sits should not have to learn
+/// it again per menu item, and thresholds that can drift apart do.
+pub const DEFAULT_BULK_CONFIRM_OVER: u16 = 5;
+/// The range the setting offers.
+///
+/// The floor is 1 and not 0 because 0 would mean "ask every time", including for
+/// the single session that is most of what anyone does, and a confirmation on
+/// every action is a confirmation nobody reads.
+///
+/// The ceiling is deliberately low. The setting exists to let an operator who
+/// routinely opens eight shells stop being asked about it, not to let them turn
+/// the guard off: past about a dozen the dialog is the only thing standing
+/// between a fat-fingered count and a screen full of connections, and that is
+/// exactly the case it was put there for.
+pub const MIN_BULK_CONFIRM_OVER: u16 = 1;
+pub const MAX_BULK_CONFIRM_OVER: u16 = 11;
 
 pub const DEFAULT_TERMINAL_FONT_FAMILY: &str = "Consolas, 'Cascadia Mono', monospace";
 pub const DEFAULT_TERMINAL_FONT_SIZE: u16 = 13;
@@ -144,6 +169,8 @@ pub struct AppSettings {
     /// None = follow the probe suggestion.
     pub max_concurrent_sessions: Option<usize>,
     pub default_timeout_secs: u64,
+    /// Above how many at once a bulk action on the Terminals page asks first.
+    pub bulk_confirm_over: u16,
     pub help_hints_enabled: bool,
     pub sudo_autofill_enabled: bool,
     pub core_rules: Vec<CoreRuleInfo>,
@@ -220,6 +247,7 @@ pub fn skill_log_prefs(conn: &rusqlite::Connection) -> AppResult<SkillLogPrefs> 
 pub struct AppSettingsInput {
     pub max_concurrent_sessions: Option<usize>,
     pub default_timeout_secs: u64,
+    pub bulk_confirm_over: u16,
 }
 
 pub(crate) fn load_user_rules(conn: &rusqlite::Connection) -> AppResult<Vec<UserRule>> {
@@ -256,6 +284,13 @@ pub fn get_app_settings(state: State<'_, DbState>) -> AppResult<AppSettings> {
             default_timeout_secs: settings::get(conn, KEY_DEFAULT_TIMEOUT)?
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(30),
+            // Clamped on the way out as well as on the way in, so a value put
+            // there by hand or by a build with a wider range still lands
+            // somewhere the dialog behaves sensibly.
+            bulk_confirm_over: settings::get(conn, KEY_BULK_CONFIRM_OVER)?
+                .and_then(|v| v.parse::<u16>().ok())
+                .map(|n| n.clamp(MIN_BULK_CONFIRM_OVER, MAX_BULK_CONFIRM_OVER))
+                .unwrap_or(DEFAULT_BULK_CONFIRM_OVER),
             help_hints_enabled: settings::get_bool(conn, KEY_HELP_HINTS, true)?,
             sudo_autofill_enabled: settings::get_bool(conn, KEY_SUDO_AUTOFILL, true)?,
             core_rules: guard::core_rule_infos(),
@@ -385,6 +420,14 @@ pub fn set_app_settings(
             conn,
             KEY_DEFAULT_TIMEOUT,
             &input.default_timeout_secs.clamp(1, 3600).to_string(),
+        )?;
+        settings::set(
+            conn,
+            KEY_BULK_CONFIRM_OVER,
+            &input
+                .bulk_confirm_over
+                .clamp(MIN_BULK_CONFIRM_OVER, MAX_BULK_CONFIRM_OVER)
+                .to_string(),
         )
     })
 }
@@ -405,6 +448,10 @@ pub fn reset_app_settings(
         for key in [
             KEY_MAX_SESSIONS,
             KEY_DEFAULT_TIMEOUT,
+            // Back to 5, which is stricter than anything the operator can have
+            // set it to bar the first four values: a preferences reset should
+            // land on more confirmation than it found, never less.
+            KEY_BULK_CONFIRM_OVER,
             KEY_HELP_HINTS,
             KEY_TERMINAL_FONT_FAMILY,
             KEY_TERMINAL_FONT_SIZE,
@@ -626,6 +673,29 @@ mod tests {
         assert!(core_shortcuts()
             .iter()
             .all(|c| c.scope != ShortcutScope::Serial));
+    }
+
+    #[test]
+    fn the_bulk_guard_threshold_cannot_be_set_outside_its_range() {
+        // Both directions matter, and for different reasons. The ceiling is the
+        // safety one: this setting must never be the way somebody turns the
+        // confirmation off, so a request for 500 has to come back as 11 rather
+        // than be stored and honoured. The floor stops a 0 meaning "ask about
+        // every single session", which would train the operator to click
+        // through the dialog without reading it.
+        for (asked, want) in [(0u16, 1u16), (1, 1), (5, 5), (11, 11), (12, 11), (500, 11)] {
+            assert_eq!(
+                asked.clamp(MIN_BULK_CONFIRM_OVER, MAX_BULK_CONFIRM_OVER),
+                want,
+                "asking for {asked} should store {want}"
+            );
+        }
+        // And the value an untouched database reads as is inside that range,
+        // which is what makes a fresh install behave like a configured one.
+        assert!(
+            (MIN_BULK_CONFIRM_OVER..=MAX_BULK_CONFIRM_OVER)
+                .contains(&DEFAULT_BULK_CONFIRM_OVER)
+        );
     }
 
     #[test]

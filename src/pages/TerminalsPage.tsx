@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
+  CopyPlusIcon,
   Grid2x2Icon,
   Grid2x2XIcon,
+  LayersIcon,
   Maximize2Icon,
   PencilIcon,
   PlusIcon,
@@ -23,6 +25,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   BAUD_RATES,
   DEFAULT_BAUD,
@@ -47,6 +58,7 @@ import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import {
+  duplicateSuffixes,
   labelInitials,
   sessionColor,
   sessionLabel,
@@ -75,8 +87,13 @@ import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { TerminalRail } from "@/pages/terminals/TerminalRail";
 import { useGridFocus } from "@/pages/terminals/useGridFocus";
 import type { SearchOptions } from "@/lib/search";
-import { getAppSettings } from "@/lib/tauri/settings";
+import {
+  DEFAULT_BULK_CONFIRM_OVER,
+  getAppSettings,
+} from "@/lib/tauri/settings";
+import { useMirroredSessions } from "@/lib/mirroredSessions";
 import { useHint, usePageStatus } from "@/lib/status";
+import { useDismissOnOutside } from "@/lib/useDismissOnOutside";
 import { useShortcuts } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
 
@@ -84,19 +101,17 @@ const TABS_COMPACT_KEY = "terminal-tabs-compact";
 /** "1" shows the broadcast rail beside the panes. Persisted so the choice
  * survives a restart, like the layout and grid-title prefs. */
 const BROADCAST_RAIL_KEY = "terminal-broadcast-rail";
+/** "1" rolls the tab strip away in Grid, giving its row to the tiles. */
+const TAB_BAR_HIDDEN_KEY = "terminal-tab-bar-hidden";
 
-/** Opening more than this many local shells at once first asks for confirmation:
- * a fat-fingered count shouldn't silently spawn a swarm of shells. Chosen so
- * the common "a handful at once" case (up to 7) stays friction-free.
+/** A profile with a startup command gets a far stricter threshold than the
+ * configured one: every copy runs that command again, and two accidental runs
+ * of a deploy script are a different kind of accident than two idle prompts.
+ * Anything past one asks, whatever the setting says.
  *
- * Shared with the Sessions menu's **Reconnect all**, which is the other action
- * on this page that can start a lot of things from one click. Deliberately one
- * number: an operator who has learned where "that's a lot" sits should not have
- * to learn it twice. */
-const BULK_SHELL_WARN = 7;
-/** A profile with a startup command gets a far stricter threshold: every copy
- * runs that command again, and two accidental runs of a deploy script are a
- * different kind of accident than two idle prompts. Anything past one asks. */
+ * Not configurable for that reason. The setting exists so an operator who opens
+ * eight shells at a time stops being asked about eight shells; it was never
+ * about how many times a deploy script should silently run. */
 const BULK_STARTUP_WARN = 1;
 
 /** Fallback cap on the bulk-open count when the settings probe hasn't answered
@@ -171,6 +186,8 @@ type Props = {
   /** Rename a local shell tab for the rest of this session. An empty title
    * clears the override and falls back to the derived shell/profile label. */
   onRenameSession: (id: string, title: string) => void;
+  /** A second tab on the same target, landing directly after this one. */
+  onDuplicateSession: (id: string) => void;
   /** Maximize the given terminal to fill the whole window. */
   onMaximize: (id: string) => void;
   /** Whether the terminal is currently maximized (hides the page chrome). */
@@ -212,6 +229,7 @@ export function TerminalsPage({
   onCloseSession,
   onReorder,
   onRenameSession,
+  onDuplicateSession,
   onMaximize,
   maximized,
   gridFullscreen,
@@ -269,23 +287,14 @@ export function TerminalsPage({
   // webview, unlike a Select used as an action menu).
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const launcherRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!shellMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!launcherRef.current?.contains(e.target as Node)) {
-        setShellMenuOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShellMenuOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [shellMenuOpen]);
+  const closeShellMenu = useCallback(() => setShellMenuOpen(false), []);
+  useDismissOnOutside(launcherRef, shellMenuOpen, closeShellMenu);
+
+  // Sessions whose hand-typed commands MultiTerminal is copying into its log
+  // (Show Manual Activity, for the hosts checked there). Marked on the tab,
+  // because the toggle lives on a page you may not be looking at and the shell
+  // in front of you gives nothing away. See lib/mirroredSessions.
+  const mirroredSessions = useMirroredSessions();
 
   // COM ports, for the launcher's serial section. Re-read every time the menu
   // opens rather than once at startup like the shell list: a USB serial adapter
@@ -342,6 +351,13 @@ export function TerminalsPage({
   // the input can be cleared while typing; parsed/clamped at open time.
   const [shellCount, setShellCount] = useState("1");
   const [maxShells, setMaxShells] = useState(DEFAULT_MAX_SHELLS);
+  // Above how many at once every bulk action on this page asks first. Read from
+  // the same settings fetch as the cap above, and re-read on every visit, which
+  // is what makes a change in Settings apply without a restart: leaving that
+  // page to come back here is the only route to using it.
+  const [bulkConfirmOver, setBulkConfirmOver] = useState(
+    DEFAULT_BULK_CONFIRM_OVER,
+  );
   useEffect(() => {
     if (!visible) return;
     getAppSettings()
@@ -351,6 +367,7 @@ export function TerminalsPage({
           s.local_probe?.suggested_max_sessions ??
           DEFAULT_MAX_SHELLS;
         setMaxShells(Math.max(1, cap));
+        setBulkConfirmOver(s.bulk_confirm_over);
       })
       .catch(() => {});
   }, [visible]);
@@ -383,14 +400,38 @@ export function TerminalsPage({
         Math.max(Number.isFinite(parsed) ? parsed : 1, 1),
         maxShells,
       );
-      const warnAt = opts?.startupCommand ? BULK_STARTUP_WARN : BULK_SHELL_WARN;
+      const warnAt = opts?.startupCommand
+        ? BULK_STARTUP_WARN
+        : bulkConfirmOver;
       if (n > warnAt) {
         setBulkConfirm({ shell, count: n, opts });
       } else {
         openShells(shell, n, opts);
       }
     },
-    [shellCount, maxShells, openShells],
+    [shellCount, maxShells, openShells, bulkConfirmOver],
+  );
+
+  // A duplicate that would re-run a profile's startup command, held for the
+  // confirmation. Null the rest of the time, which is almost always: an SSH tab
+  // and a plain shell both duplicate on the spot.
+  const [dupConfirm, setDupConfirm] = useState<TermSession | null>(null);
+
+  // Another tab on the same target. The guard is the same one the launcher's
+  // "how many" box uses, for the same reason and at the same threshold of one:
+  // a profile's startup command runs again in the copy, and a second `terraform
+  // apply` is a different kind of accident from a second shell. Everything else
+  // goes straight through, because a second shell on a box is the thing being
+  // made cheap here and asking about it would undo that.
+  const requestDuplicate = useCallback(
+    (s: TermSession) => {
+      if (s.type === "local" && s.startupCommand?.trim()) {
+        setDupConfirm(s);
+        return;
+      }
+      onDuplicateSession(s.id);
+    },
+    [onDuplicateSession],
   );
 
   // Saved launch profiles (localStorage), re-read whenever the page is shown so
@@ -452,27 +493,10 @@ export function TerminalsPage({
   // time, so a colour changed there has to arrive here without a restart.
   const shellColors = useShellColors();
   // Suffix for duplicate terminals to the same target: the 2nd+ get " 02", " 03",
-  // … so the tabs are distinguishable (T3). The first stays unsuffixed. Dedup key
-  // is the host (SSH) or the shell id (local), so two PowerShell tabs also count.
-  // Numbered by creation order (seq), NOT display order, so dragging a tab to a
-  // new position never reshuffles the suffixes (the names stay put as the user
-  // expects them to).
-  // A renamed tab still consumes its number so the tabs around it keep the
-  // suffixes they already had, but shows none of its own: the operator gave it
-  // an explicit name, and "Build box 02" would read as a duplicate of a tab
-  // that doesn't exist.
-  const tabSuffix = useMemo(() => {
-    const counts = new Map<string, number>();
-    const map = new Map<string, string>();
-    for (const s of [...sessions].sort((a, b) => a.seq - b.seq)) {
-      const key = s.type === "ssh" ? `ssh:${s.host.id}` : `local:${s.shell.id}`;
-      const n = (counts.get(key) ?? 0) + 1;
-      counts.set(key, n);
-      const renamed = s.type === "local" && !!s.title;
-      map.set(s.id, !renamed && n > 1 ? ` ${String(n).padStart(2, "0")}` : "");
-    }
-    return map;
-  }, [sessions]);
+  // … so the tabs are distinguishable (T3). Shared with the broadcast lists, so
+  // a tab and the row that broadcasts to it carry the same name; see
+  // ./terminals/session for why the numbering works the way it does.
+  const tabSuffix = useMemo(() => duplicateSuffixes(sessions), [sessions]);
 
   // The scrolling grid container. Declared up here rather than beside the other
   // element refs below, because the layout hook measures it: how many columns
@@ -541,6 +565,37 @@ export function TerminalsPage({
   const [tabsCompact, setTabsCompact] = useState(
     () => localStorage.getItem(TABS_COMPACT_KEY) === "1",
   );
+  // Whether the tab strip is rolled up, giving its row to the tiles. Grid only:
+  // in Tabs layout the strip is the only way to change session, so hiding it
+  // there is a way to get stuck.
+  //
+  // Persisted, like every other view preference on this page. It shipped as
+  // plain per-run state on the argument that it is asked for when the screen is
+  // full and wanted back the moment it is not, and that a cold app opening on a
+  // grid with no strip would be a puzzle nobody would connect to something they
+  // did last week. The second half of that was the real reason, and it stopped
+  // being true when the "+" launcher moved into the controls row above: rolled
+  // up on a cold start, that row still carries the layout toggle, the View menu
+  // with the Tab bar entry in it, and the only control that opens anything. So
+  // nothing is unreachable, and being the one view preference that quietly
+  // reset itself every morning was its own small surprise.
+  const [tabBarHidden, setTabBarHidden] = useState(
+    () => localStorage.getItem(TAB_BAR_HIDDEN_KEY) === "1",
+  );
+  const toggleTabBar = useCallback(
+    () =>
+      setTabBarHidden((v) => {
+        localStorage.setItem(TAB_BAR_HIDDEN_KEY, v ? "0" : "1");
+        return !v;
+      }),
+    [],
+  );
+  // Whether it is actually rolled up right now. Switching to Tabs brings the
+  // strip back without clearing the choice, so switching back to a grid rolls
+  // it up again: the same shape as the broadcast rail, which also comes back on
+  // its own when there is something to broadcast to.
+  const tabsRolledUp = gridMode && tabBarHidden;
+
   const toggleTabsCompact = useCallback(() => {
     setTabsCompact((prev) => {
       const next = !prev;
@@ -694,6 +749,15 @@ export function TerminalsPage({
         if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
           return;
         }
+        // Nor while the launcher is open. Escape belongs to whatever is on
+        // top, and a menu is on top of the strip it hangs off: clicking [+]
+        // leaves the button focused, which is inside the strip, so this
+        // listener took the key on the capture phase and stopped it dead
+        // before useDismissOnOutside's window listener could see it. The menu
+        // stayed open and the keyboard was quietly thrown back at the terminal
+        // instead (smoke 60-4 A5). One Escape closes the menu; the next one
+        // does this.
+        if (shellMenuOpen) return;
         e.preventDefault();
         e.stopPropagation();
         setChromeKeyboard(false);
@@ -713,7 +777,7 @@ export function TerminalsPage({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [visible, maximized, activeId, chromeHasFocus]);
+  }, [visible, maximized, activeId, chromeHasFocus, shellMenuOpen]);
 
   // Tab and Shift+Tab while the strip has the keyboard: wrap at both ends
   // rather than let focus escape into the grid.
@@ -1284,14 +1348,16 @@ export function TerminalsPage({
         .map((s) => s.id),
     [sessions, phases],
   );
-  // Past a handful, Reconnect all asks first, at the same threshold and for the
-  // same reason as opening that many local shells: this is the one bulk repair
-  // that *starts* something. Close failed touches only shells that are already
-  // gone, but a full grid that dropped when a VPN did is a lot of tabs wearing a
-  // Reconnect button, and one click on the wrong row would put that many
-  // handshakes on the wire at once. The threshold is shared with the launcher
-  // deliberately, so "how many is a lot" is one answer on this page rather than
-  // two that can drift apart.
+  // Past the configured threshold, Reconnect all asks first, for the same
+  // reason as opening that many local shells: this is the one bulk repair that
+  // *starts* something, and a full grid that dropped when a VPN did is a lot of
+  // tabs wearing a Reconnect button. One click on the wrong row would put that
+  // many handshakes on the wire at once. The threshold is shared with the
+  // launcher deliberately, so "how many is a lot" is one answer on this page
+  // rather than several that can drift apart, and it is a setting rather than a
+  // constant because the right answer differs per operator: it used to be a
+  // hardcoded 7, which was too low for anyone with a rack and too high for
+  // anyone with three machines.
   const [reconnectAllOpen, setReconnectAllOpen] = useState(false);
   // One pass, no stagger. Each retry is a state bump that React batches, and the
   // connects that follow are no heavier than the launcher's own "open N at
@@ -1301,15 +1367,46 @@ export function TerminalsPage({
     setReconnectAllOpen(false);
   };
   const requestReconnectAll = () => {
-    if (retryableIds.length > BULK_SHELL_WARN) setReconnectAllOpen(true);
+    if (retryableIds.length > bulkConfirmOver) setReconnectAllOpen(true);
     else reconnectAll();
   };
-  // The other answer to the same set. Close all asks first because it can take
-  // away work in progress; this cannot, since every tab it touches has already
-  // lost its shell, so a confirmation would only be a step between the operator
-  // and a tidy-up they have already decided on.
+  // The other answer to the same set, and it is on the same threshold now
+  // rather than acting immediately.
+  //
+  // It used to ask nothing at all, on the grounds that every tab it touches has
+  // already lost its shell, so there is nothing running to interrupt. That is
+  // still true, and it is still the mildest thing in this menu. What is also
+  // true is that the tabs carry scrollback, and the last thing twenty panes
+  // printed before they dropped is often the only record of why -- which is
+  // exactly what somebody wants five seconds after clearing them away. At two
+  // or three tabs that does not need a dialog; at twenty it does, and twenty is
+  // what this number is for.
+  const [closeFailedOpen, setCloseFailedOpen] = useState(false);
   const closeFailed = () => {
     for (const id of retryableIds) closeSession(id);
+    setCloseFailedOpen(false);
+  };
+  const requestCloseFailed = () => {
+    if (retryableIds.length > bulkConfirmOver) setCloseFailedOpen(true);
+    else closeFailed();
+  };
+
+  // End every live shell and keep every tab: the bulk form of the unplug button
+  // on each row of the Sessions menu. Reversible in the way that matters, since
+  // the scrollback stays and each pane offers Reconnect, which is why it sits
+  // above Close all rather than beside it.
+  //
+  // Guarded on the same threshold, and it is the member of the family that most
+  // needs one: unlike Close failed it takes away shells that are working, and a
+  // shell that is working may well be running something.
+  const [disconnectAllOpen, setDisconnectAllOpen] = useState(false);
+  const disconnectAll = () => {
+    for (const id of openIds) endSession(id);
+    setDisconnectAllOpen(false);
+  };
+  const requestDisconnectAll = () => {
+    if (openIds.size > bulkConfirmOver) setDisconnectAllOpen(true);
+    else disconnectAll();
   };
 
   // Close-all guard rail (T-…): confirm before tearing down every session.
@@ -1468,6 +1565,13 @@ export function TerminalsPage({
             // so where it landed has to be obvious; the default ring is a grey
             // at half opacity on a grey strip, and it was not.
             "terminal-chrome",
+            // There used to be a `!gridFullscreen && "relative"` here, to give
+            // the floating "+" something to hang its `top-full` on when the tab
+            // strip was rolled up. The "+" is in the rail now and the rolled-up
+            // row does not exist, so the only thing left that positions itself
+            // against this element is the fullscreen reveal tab, and in
+            // fullscreen the strip is `absolute` and already a containing block
+            // of its own.
             gridFullscreen &&
               // has-[[data-state=open]] is what keeps the strip down while a
               // menu opened from it is up, and it is not a nicety: without it
@@ -1555,6 +1659,8 @@ export function TerminalsPage({
         }}
         hideGridHeaders={hideGridHeaders}
         toggleGridHeaders={toggleGridHeaders}
+        tabBarHidden={tabBarHidden}
+        toggleTabBar={toggleTabBar}
         customGrid={customGrid}
         gridCount={gridCount}
         twoUpSplit={twoUpSplit}
@@ -1572,20 +1678,343 @@ export function TerminalsPage({
         onActivate={gridFocus.activateDeliberately}
         openIds={openIds}
         onEndSession={endSession}
+        onDisconnectAll={requestDisconnectAll}
         onCloseAll={() => setCloseAllOpen(true)}
         retryableCount={retryableIds.length}
         onReconnectAll={requestReconnectAll}
-        onCloseFailed={closeFailed}
+        onCloseFailed={requestCloseFailed}
         hiddenCount={excludedFromGrid.size}
         onUnhideAll={clearGridExcluded}
+        // The "+" that opens a local shell, a saved profile or a serial
+        // console. It lives here, at the end of the controls row, rather than
+        // at the end of the tab strip where a terminal app usually puts it.
+        //
+        // It moved because the tab strip can be rolled away. When it was down
+        // there, rolling the strip up left the "+" with nowhere to be, so it
+        // was cut out of the flow and floated over the top-right tile on an
+        // opaque plate, covering a corner of somebody's terminal for as long as
+        // the strip stayed up. That was a real cost paid in every grid, to keep
+        // a button next to tabs that were not on screen.
+        //
+        // Up here it is in one place whatever the layout is doing, and it has
+        // better neighbours: Sessions lists the sessions that exist, and this
+        // makes another one. What it opens is local, which the strip used to
+        // say by adjacency and the hint now says in words.
+        //
+        // Hand-rolled as a plain div rather than a Select or a Radix menu, and
+        // staying that way: it opens reliably, it needs no portal, and the
+        // fullscreen chrome strip reads its data-state like any other trigger.
+        launcher={
+          <div ref={launcherRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setShellMenuOpen((v) => !v)}
+              aria-label="New local shell"
+              aria-expanded={shellMenuOpen}
+              // Hand-rolled, so it has to say what Radix's triggers say for
+              // itself: the fullscreen chrome strip stays down for as long as
+              // anything inside it reports data-state="open". Hovering already
+              // held the strip for this one (the menu is a child of the strip
+              // rather than a portal, so the mouse never leaves it), but the
+              // keyboard did not, and one rule for every menu beats two.
+              data-state={shellMenuOpen ? "open" : "closed"}
+              {...hint("Open a local shell (PowerShell, Command Prompt, WSL)")}
+              // Dressed as the outline buttons it now stands next to, rather
+              // than as the tab-strip control it used to be: same height, same
+              // corner, same border and ground in both themes. It is still a
+              // hand-rolled button for the reason above, so the styling has to
+              // be copied rather than inherited from a variant. The glyphs stay
+              // muted, which is what tells it apart from the labelled buttons
+              // beside it.
+              className="flex h-7 items-center gap-0.5 rounded-[min(var(--radius-md),12px)] border border-border bg-background px-1.5 text-muted-foreground hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+            >
+              <PlusIcon className="h-4 w-4" />
+              <ChevronDownIcon className="h-3 w-3" />
+            </button>
+            {shellMenuOpen && (
+              <div className="absolute right-0 top-full z-50 mt-1 min-w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+                {localShells.length === 0 ? (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                    {shellsError
+                      ? "Couldn't list local shells. Rebuild the app and try again."
+                      : "No local shells found."}
+                  </p>
+                ) : (
+                  <>
+                    {/* How many to open at once. Picking a shell or profile below
+                        opens this many; a large batch confirms first. Capped at
+                        the max concurrent sessions from Settings. */}
+                    <div className="mb-1 flex items-center gap-2 border-b border-border/60 px-2 py-1.5">
+                      <label
+                        htmlFor="shell-count"
+                        className="text-xs text-muted-foreground"
+                      >
+                        How many
+                      </label>
+                      {/* The box is sized for the widest count it will ever hold
+                          (three digits plus the spinner), and the reset sits
+                          against it rather than out by the cap, so the pair reads
+                          as one control. */}
+                      <input
+                        id="shell-count"
+                        type="number"
+                        min={1}
+                        max={maxShells}
+                        value={shellCount}
+                        onChange={(e) => setShellCount(e.target.value)}
+                        className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center font-mono text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShellCount("1")}
+                        disabled={shellCount === "1"}
+                        aria-label="Reset the count to 1"
+                        title="Back to 1"
+                        {...hint("Set the number of copies to open back to 1")}
+                        className="-ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                      >
+                        <RotateCcwIcon className="h-3 w-3" />
+                      </button>
+                      <span className="ml-auto text-[11px] text-muted-foreground">
+                        max {maxShells}
+                      </span>
+                    </div>
+                    {enabledShells.length === 0 ? (
+                      <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                        All local shells are hidden. Enable them in Settings,
+                        Appearance.
+                      </p>
+                    ) : (
+                      enabledShells.map((sh) => (
+                        <button
+                          key={sh.id}
+                          type="button"
+                          onClick={() => requestOpenShells(sh)}
+                          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                        >
+                          <LocalShellIcon
+                            kind={sh.kind}
+                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                          />
+                          {sh.label}
+                        </button>
+                      ))
+                    )}
+
+                    {/* Saved launch profiles: a named shell + folder + optional
+                        startup command. Shown regardless of the hide-list (a
+                        profile may launch a shell hidden from the plain list) and
+                        managed inline via the editor dialog. */}
+                    <div className="mt-1 border-t border-border/60 pt-1">
+                      <div className="flex items-center justify-between px-2 py-1">
+                        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Profiles
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShellMenuOpen(false);
+                            setProfileEdit({ profile: null });
+                          }}
+                          className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                          {...hint("Create a saved shell profile")}
+                        >
+                          <PlusIcon className="h-3.5 w-3.5" /> New
+                        </button>
+                      </div>
+                      {profiles.length === 0 ? (
+                        <p className="px-2 py-1 text-xs text-muted-foreground">
+                          None yet. A profile opens a shell in a chosen folder and
+                          can run a command on start.
+                        </p>
+                      ) : (
+                        profiles.map((p) => {
+                          // A profile can outlive a removed WSL distro; flag one
+                          // whose shell isn't currently detected.
+                          const shell = localShells.find(
+                            (s) => s.id === p.shellId,
+                          );
+                          // The colour the tab will come out, so the launcher
+                          // shows the same thing the tab strip will: the
+                          // profile's own if it set one, otherwise its shell's.
+                          const profileColor =
+                            p.color || shellColors[shell?.kind ?? ""] || null;
+                          return (
+                            <div
+                              key={p.id}
+                              className="group flex items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => openProfile(p)}
+                                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                title={
+                                  shell
+                                    ? `${p.shellId}${p.cwd ? `: ${p.cwd}` : ""}`
+                                    : "This profile's shell isn't available on this machine"
+                                }
+                              >
+                                <LocalShellIcon
+                                  kind={shell?.kind ?? "cmd"}
+                                  className={cn(
+                                    "h-3.5 w-3.5 shrink-0",
+                                    !isTintable(profileColor) &&
+                                      "text-muted-foreground",
+                                  )}
+                                  style={
+                                    isTintable(profileColor)
+                                      ? { color: profileColor }
+                                      : undefined
+                                  }
+                                />
+                                <span
+                                  className={cn(
+                                    "truncate",
+                                    !shell &&
+                                      "text-muted-foreground line-through",
+                                  )}
+                                >
+                                  {p.label}
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShellMenuOpen(false);
+                                  setProfileEdit({ profile: p });
+                                }}
+                                aria-label={`Edit ${p.label}`}
+                                title="Edit profile"
+                                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                              >
+                                <PencilIcon className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteProfile(p.id)}
+                                aria-label={`Delete ${p.label}`}
+                                title="Delete profile"
+                                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-red-500 group-hover:opacity-100"
+                              >
+                                <Trash2Icon className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
+                )}
+                {/* Serial consoles. A COM port is not a shell and does not
+                    belong in the list above: nothing is spawned, there is no
+                    working directory, and the port is exclusive, so "how
+                    many" cannot apply to it. Its own group, listed fresh
+                    every time this menu opens.
+
+                    The speed sits on the row rather than above the list
+                    because it belongs to the port, not to the session you are
+                    about to start: two cables in the same machine routinely
+                    want different speeds, and what each one wanted last time
+                    is the answer you want offered. */}
+                <div className="mt-1 border-t border-border/60 pt-1">
+                  <div className="px-2 py-1">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Serial console
+                    </span>
+                  </div>
+                  {serialPorts.length === 0 ? (
+                    <p className="px-2 py-1 text-xs text-muted-foreground">
+                      No COM ports found. Plug in a console cable or USB serial
+                      adapter and open this menu again.
+                    </p>
+                  ) : (
+                    serialPorts.map((p) => {
+                      const alreadyOpen = openSerialPorts.has(p.name);
+                      return (
+                      <div
+                        key={p.name}
+                        className="group flex items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <button
+                          type="button"
+                          disabled={alreadyOpen}
+                          onClick={() => openSerial(p)}
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                          {...hint(
+                            alreadyOpen
+                              ? `${p.name} is already open in a tab. A COM port belongs to one program at a time, so close that tab before opening it again.`
+                              : `Open a terminal on ${p.name} at ${
+                                  serialBauds[p.name] ?? DEFAULT_BAUD
+                                } baud, 8N1. Nothing appears until the device says something, so press Enter if the pane looks empty.`,
+                          )}
+                        >
+                          <LocalShellIcon
+                            kind="serial"
+                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate">
+                              {p.name}
+                              {alreadyOpen && (
+                                <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
+                                  already open
+                                </span>
+                              )}
+                            </span>
+                            {p.description && (
+                              <span className="block truncate text-[11px] text-muted-foreground">
+                                {p.description}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                        {/* A native select: this menu is a hand-rolled div
+                            rather than a portalled one, so there is no focus
+                            or layering to fight. */}
+                        <select
+                          value={serialBauds[p.name] ?? DEFAULT_BAUD}
+                          disabled={alreadyOpen}
+                          onChange={(e) =>
+                            setSerialBauds((prev) => ({
+                              ...prev,
+                              [p.name]: Number(e.target.value),
+                            }))
+                          }
+                          aria-label={`Line speed for ${p.name}`}
+                          title="Line speed (baud)"
+                          className="shrink-0 rounded border border-input bg-background px-1 py-0.5 font-mono text-xs disabled:opacity-50"
+                        >
+                          {BAUD_RATES.map((b) => (
+                            <option key={b} value={b}>
+                              {b}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        }
       />
 
       {/* Tab strip on its own line below the controls. The row itself does NOT
-          scroll/clip, only the inner tab list does, so the "+" launcher's
-          dropdown (which opens downward, below the strip) isn't clipped by an
-          overflow container. (overflow-x:auto forces overflow-y to compute to
-          auto too, which silently cropped the menu and made "+" look dead.) */}
-      <div className="flex items-center gap-1 border-b border-border/50 px-2 pt-2">
+          scroll/clip, only the inner tab list does, so nothing opening
+          downward out of a tab is clipped by an overflow container.
+          (overflow-x:auto forces overflow-y to compute to auto too, which
+          silently cropped a menu and made its trigger look dead.) */}
+      {/* Rolled up, the row goes entirely: not hidden, not emptied, gone. A row
+          still in the flow with its contents hidden is a row still taking its
+          height, and the height is the whole point of rolling it away.
+          It used to leave the "+" behind, floating over the top-right tile on
+          an opaque plate. That button is in the controls row above now, so
+          there is nothing left down here that has to survive, and the row can
+          simply stop existing. */}
+      {!tabsRolledUp && (
+        <div className="flex items-center gap-1 border-b border-border/50 px-2 pt-2">
         <div
           ref={tabScrollRef}
           role="tablist"
@@ -1623,8 +2052,14 @@ export function TerminalsPage({
               ? { backgroundColor: `${tabColor}33`, borderTopColor: tabColor! }
               : { borderTopColor: "var(--foreground)" };
           return (
+          // Right-click offers the same actions the tab's own little buttons do.
+          // Deliberately the same set and no more: the buttons appear on hover,
+          // so on a strip of ten tabs they are findable only by sweeping the
+          // mouse along it, and the menu is where you go when you know what you
+          // want. Nothing here is reachable *only* from the menu.
+          <ContextMenu key={s.id}>
+          <ContextMenuTrigger asChild>
           <div
-            key={s.id}
             ref={(el) => {
               if (el) tabElRefs.current.set(s.id, el);
               else tabElRefs.current.delete(s.id);
@@ -1760,6 +2195,25 @@ export function TerminalsPage({
                 </span>
               );
             })()}
+            {/* This tab's hand-typed work is being copied into MultiTerminal's
+                log. Always on show, like the hidden-from-grid marker beside it
+                and unlike the hover buttons: the point of it is to be seen
+                without being looked for, by someone who never opened the page
+                the toggle lives on. MultiTerminal's own nav icon, so the two
+                read as the same thing. */}
+            {mirroredSessions.has(s.id) && renamingId !== s.id && (
+              <span
+                role="img"
+                className="shrink-0 text-sky-600 dark:text-sky-400"
+                aria-label={`${sessionLabel(s)}: commands typed here are copied to MultiTerminal`}
+                title="Show Manual Activity is on in MultiTerminal and this host is checked there, so commands typed in this tab are copied into its log."
+                {...hint(
+                  "Commands typed by hand in this tab are also being recorded in MultiTerminal (Show Manual Activity)",
+                )}
+              >
+                <LayersIcon className="h-3.5 w-3.5" />
+              </span>
+            )}
             {/* Rename a plain local shell tab for the rest of the session.
                 Profile tabs already carry the profile's name, so they're left
                 alone; SSH tabs are named by their host. */}
@@ -1834,6 +2288,28 @@ export function TerminalsPage({
             >
               <Maximize2Icon className="h-3.5 w-3.5" />
             </button>
+            {/* A second session on the same target, without the trip back to
+                the Hosts page and the hunt for a host that is already open in
+                front of you. Hidden until hover like its neighbours: the strip
+                is the one row on this page with no width to spare, and this is
+                a convenience rather than something anyone needs to see. */}
+            <button
+              type="button"
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
+              tabIndex={stopIndex}
+              onClick={(e) => {
+                e.stopPropagation();
+                requestDuplicate(s);
+              }}
+              aria-label={`Open another ${sessionLabel(s)}`}
+              title={
+                s.type === "ssh"
+                  ? "Open a second session on this host"
+                  : "Open another of this shell"
+              }
+            >
+              <CopyPlusIcon className="h-3.5 w-3.5" />
+            </button>
             <button
               type="button"
               className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
@@ -1847,6 +2323,50 @@ export function TerminalsPage({
               <XIcon className="h-3.5 w-3.5" />
             </button>
           </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuLabel className="max-w-56 truncate">
+              {sessionLabel(s)}
+              {tabSuffix.get(s.id)}
+            </ContextMenuLabel>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => requestDuplicate(s)}>
+              <CopyPlusIcon />
+              {s.type === "ssh" ? "Open another session" : "Open another"}
+            </ContextMenuItem>
+            {s.type === "local" && !s.profileLabel && (
+              <ContextMenuItem onSelect={() => startRename(s)}>
+                <PencilIcon />
+                Rename tab
+              </ContextMenuItem>
+            )}
+            {gridMode && (
+              <ContextMenuItem onSelect={() => toggleGridExcluded(s.id)}>
+                {excludedFromGrid.has(s.id) ? (
+                  <Grid2x2XIcon />
+                ) : (
+                  <Grid2x2Icon />
+                )}
+                {excludedFromGrid.has(s.id)
+                  ? "Show in the grid"
+                  : "Hide from the grid"}
+              </ContextMenuItem>
+            )}
+            <ContextMenuItem onSelect={() => onMaximize(s.id)}>
+              <Maximize2Icon />
+              Maximize
+              <ContextMenuShortcut>F11</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onSelect={() => closeSession(s.id)}
+              className="text-destructive focus:text-destructive"
+            >
+              <XIcon />
+              Close tab
+            </ContextMenuItem>
+          </ContextMenuContent>
+          </ContextMenu>
           );
         })}
         {sessions.length === 0 && (
@@ -1856,297 +2376,8 @@ export function TerminalsPage({
           </p>
         )}
         </div>
-        {/* "+" launcher for local shells (Windows Terminal style). A
-            self-contained dropdown (not a Select) so it opens reliably. Kept
-            OUTSIDE the scrolling tab list above so its downward menu isn't
-            clipped by that container's overflow. */}
-        <div ref={launcherRef} className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => setShellMenuOpen((v) => !v)}
-            aria-label="New local shell"
-            aria-expanded={shellMenuOpen}
-            // Hand-rolled, so it has to say what Radix's triggers say for
-            // itself: the fullscreen chrome strip stays down for as long as
-            // anything inside it reports data-state="open". Hovering already
-            // held the strip for this one (the menu is a child of the strip
-            // rather than a portal, so the mouse never leaves it), but the
-            // keyboard did not, and one rule for every menu beats two.
-            data-state={shellMenuOpen ? "open" : "closed"}
-            {...hint("Open a local shell (PowerShell, Command Prompt, WSL)")}
-            className="flex h-7 items-center gap-0.5 rounded-md border border-input px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <PlusIcon className="h-4 w-4" />
-            <ChevronDownIcon className="h-3 w-3" />
-          </button>
-          {shellMenuOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 min-w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
-              {localShells.length === 0 ? (
-                <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                  {shellsError
-                    ? "Couldn't list local shells. Rebuild the app and try again."
-                    : "No local shells found."}
-                </p>
-              ) : (
-                <>
-                  {/* How many to open at once. Picking a shell or profile below
-                      opens this many; a large batch confirms first. Capped at
-                      the max concurrent sessions from Settings. */}
-                  <div className="mb-1 flex items-center gap-2 border-b border-border/60 px-2 py-1.5">
-                    <label
-                      htmlFor="shell-count"
-                      className="text-xs text-muted-foreground"
-                    >
-                      How many
-                    </label>
-                    {/* The box is sized for the widest count it will ever hold
-                        (three digits plus the spinner), and the reset sits
-                        against it rather than out by the cap, so the pair reads
-                        as one control. */}
-                    <input
-                      id="shell-count"
-                      type="number"
-                      min={1}
-                      max={maxShells}
-                      value={shellCount}
-                      onChange={(e) => setShellCount(e.target.value)}
-                      className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center font-mono text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShellCount("1")}
-                      disabled={shellCount === "1"}
-                      aria-label="Reset the count to 1"
-                      title="Back to 1"
-                      {...hint("Set the number of copies to open back to 1")}
-                      className="-ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
-                    >
-                      <RotateCcwIcon className="h-3 w-3" />
-                    </button>
-                    <span className="ml-auto text-[11px] text-muted-foreground">
-                      max {maxShells}
-                    </span>
-                  </div>
-                  {enabledShells.length === 0 ? (
-                    <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                      All local shells are hidden. Enable them in Settings,
-                      Appearance.
-                    </p>
-                  ) : (
-                    enabledShells.map((sh) => (
-                      <button
-                        key={sh.id}
-                        type="button"
-                        onClick={() => requestOpenShells(sh)}
-                        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                      >
-                        <LocalShellIcon
-                          kind={sh.kind}
-                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                        />
-                        {sh.label}
-                      </button>
-                    ))
-                  )}
-
-                  {/* Saved launch profiles: a named shell + folder + optional
-                      startup command. Shown regardless of the hide-list (a
-                      profile may launch a shell hidden from the plain list) and
-                      managed inline via the editor dialog. */}
-                  <div className="mt-1 border-t border-border/60 pt-1">
-                    <div className="flex items-center justify-between px-2 py-1">
-                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        Profiles
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShellMenuOpen(false);
-                          setProfileEdit({ profile: null });
-                        }}
-                        className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-                        {...hint("Create a saved shell profile")}
-                      >
-                        <PlusIcon className="h-3.5 w-3.5" /> New
-                      </button>
-                    </div>
-                    {profiles.length === 0 ? (
-                      <p className="px-2 py-1 text-xs text-muted-foreground">
-                        None yet. A profile opens a shell in a chosen folder and
-                        can run a command on start.
-                      </p>
-                    ) : (
-                      profiles.map((p) => {
-                        // A profile can outlive a removed WSL distro; flag one
-                        // whose shell isn't currently detected.
-                        const shell = localShells.find(
-                          (s) => s.id === p.shellId,
-                        );
-                        // The colour the tab will come out, so the launcher
-                        // shows the same thing the tab strip will: the
-                        // profile's own if it set one, otherwise its shell's.
-                        const profileColor =
-                          p.color || shellColors[shell?.kind ?? ""] || null;
-                        return (
-                          <div
-                            key={p.id}
-                            className="group flex items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => openProfile(p)}
-                              className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                              title={
-                                shell
-                                  ? `${p.shellId}${p.cwd ? `: ${p.cwd}` : ""}`
-                                  : "This profile's shell isn't available on this machine"
-                              }
-                            >
-                              <LocalShellIcon
-                                kind={shell?.kind ?? "cmd"}
-                                className={cn(
-                                  "h-3.5 w-3.5 shrink-0",
-                                  !isTintable(profileColor) &&
-                                    "text-muted-foreground",
-                                )}
-                                style={
-                                  isTintable(profileColor)
-                                    ? { color: profileColor }
-                                    : undefined
-                                }
-                              />
-                              <span
-                                className={cn(
-                                  "truncate",
-                                  !shell &&
-                                    "text-muted-foreground line-through",
-                                )}
-                              >
-                                {p.label}
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShellMenuOpen(false);
-                                setProfileEdit({ profile: p });
-                              }}
-                              aria-label={`Edit ${p.label}`}
-                              title="Edit profile"
-                              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
-                            >
-                              <PencilIcon className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => deleteProfile(p.id)}
-                              aria-label={`Delete ${p.label}`}
-                              title="Delete profile"
-                              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-red-500 group-hover:opacity-100"
-                            >
-                              <Trash2Icon className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </>
-              )}
-              {/* Serial consoles. A COM port is not a shell and does not
-                  belong in the list above: nothing is spawned, there is no
-                  working directory, and the port is exclusive, so "how
-                  many" cannot apply to it. Its own group, listed fresh
-                  every time this menu opens.
-
-                  The speed sits on the row rather than above the list
-                  because it belongs to the port, not to the session you are
-                  about to start: two cables in the same machine routinely
-                  want different speeds, and what each one wanted last time
-                  is the answer you want offered. */}
-              <div className="mt-1 border-t border-border/60 pt-1">
-                <div className="px-2 py-1">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Serial console
-                  </span>
-                </div>
-                {serialPorts.length === 0 ? (
-                  <p className="px-2 py-1 text-xs text-muted-foreground">
-                    No COM ports found. Plug in a console cable or USB serial
-                    adapter and open this menu again.
-                  </p>
-                ) : (
-                  serialPorts.map((p) => {
-                    const alreadyOpen = openSerialPorts.has(p.name);
-                    return (
-                    <div
-                      key={p.name}
-                      className="group flex items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <button
-                        type="button"
-                        disabled={alreadyOpen}
-                        onClick={() => openSerial(p)}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
-                        {...hint(
-                          alreadyOpen
-                            ? `${p.name} is already open in a tab. A COM port belongs to one program at a time, so close that tab before opening it again.`
-                            : `Open a terminal on ${p.name} at ${
-                                serialBauds[p.name] ?? DEFAULT_BAUD
-                              } baud, 8N1. Nothing appears until the device says something, so press Enter if the pane looks empty.`,
-                        )}
-                      >
-                        <LocalShellIcon
-                          kind="serial"
-                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                        />
-                        <span className="min-w-0">
-                          <span className="block truncate">
-                            {p.name}
-                            {alreadyOpen && (
-                              <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
-                                already open
-                              </span>
-                            )}
-                          </span>
-                          {p.description && (
-                            <span className="block truncate text-[11px] text-muted-foreground">
-                              {p.description}
-                            </span>
-                          )}
-                        </span>
-                      </button>
-                      {/* A native select: this menu is a hand-rolled div
-                          rather than a portalled one, so there is no focus
-                          or layering to fight. */}
-                      <select
-                        value={serialBauds[p.name] ?? DEFAULT_BAUD}
-                        disabled={alreadyOpen}
-                        onChange={(e) =>
-                          setSerialBauds((prev) => ({
-                            ...prev,
-                            [p.name]: Number(e.target.value),
-                          }))
-                        }
-                        aria-label={`Line speed for ${p.name}`}
-                        title="Line speed (baud)"
-                        className="shrink-0 rounded border border-input bg-background px-1 py-0.5 font-mono text-xs disabled:opacity-50"
-                      >
-                        {BAUD_RATES.map((b) => (
-                          <option key={b} value={b}>
-                            {b}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          )}
         </div>
-      </div>
+      )}
       {/* The tab: the only part of the strip left on screen when it is slid
           up, and the only part of it a pointer can reach. It hangs off the
           strip's bottom edge rather than sitting inside it, so when the strip
@@ -2242,7 +2473,13 @@ export function TerminalsPage({
           costs width (of which there is plenty) and not the vertical space the
           terminals want. */}
       <div className="flex min-h-0 flex-1">
-      {broadcastRail && (
+      {/* The stored preference AND something to broadcast to. Below two
+          sessions the rail's button is greyed, so a rail left open would be one
+          the operator could not put away; and a column of window given over to
+          picking targets is not worth it when there is one target. The choice
+          itself is untouched, so the rail comes back by itself the moment a
+          second terminal opens. */}
+      {broadcastRail && sessions.length >= 2 && (
         <div className="w-56 shrink-0">
           <BroadcastRail
             sessions={sessions}
@@ -2605,6 +2842,63 @@ export function TerminalsPage({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Destructive, though it is the mildest thing in the menu that is: no
+          shell is interrupted, because every one of these is already gone. What
+          goes is the scrollback, and on a batch this size that is usually the
+          only surviving account of why they all dropped at once. */}
+      <AlertDialog open={closeFailedOpen} onOpenChange={setCloseFailedOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close that many tabs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This closes{" "}
+              <span className="font-semibold text-foreground">
+                all {retryableIds.length}
+              </span>{" "}
+              tabs that dropped or were refused. Nothing is running in them, so
+              nothing is interrupted, but what each printed before it went goes
+              with it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={closeFailed}>
+              Close {retryableIds.length}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Destructive in the sense that matters here: these shells are alive and
+          may be running something, and ending them does not ask the program
+          inside first. The tabs and their scrollback all survive, which is what
+          separates this from Close all and what the wording leans on. */}
+      <AlertDialog
+        open={disconnectAllOpen}
+        onOpenChange={setDisconnectAllOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect that many sessions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This ends the shell on{" "}
+              <span className="font-semibold text-foreground">
+                all {openIds.size}
+              </span>{" "}
+              connected sessions. Anything still running in them stops. The tabs
+              stay, everything they printed stays on screen, and each pane
+              offers Reconnect.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={disconnectAll}>
+              Disconnect {openIds.size}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog
         open={bulkConfirm !== null}
         onOpenChange={(open) => {
@@ -2658,6 +2952,45 @@ export function TerminalsPage({
               }}
             >
               Open {bulkConfirm?.count}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* The only time duplicating a tab asks anything. A copy of a profile tab
+          types the profile's startup command again, and the operator reaching
+          for the duplicate button is thinking about the shell, not about what
+          the profile does on the way in. */}
+      <AlertDialog
+        open={dupConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setDupConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run the startup command again?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Another{" "}
+              <span className="font-semibold text-foreground">
+                {dupConfirm ? sessionLabel(dupConfirm) : ""}
+              </span>{" "}
+              runs this profile's startup command in the new tab, the same as
+              opening it from the launcher would:
+              <span className="mt-2 block truncate rounded bg-muted px-2 py-1 font-mono text-xs text-foreground">
+                {dupConfirm?.type === "local" ? dupConfirm.startupCommand : ""}
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (dupConfirm) onDuplicateSession(dupConfirm.id);
+                setDupConfirm(null);
+              }}
+            >
+              Open another
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

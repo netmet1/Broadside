@@ -35,7 +35,24 @@ export type Host = {
    * connects, so the red Test button is the database's answer and not the
    * page's memory of this session. */
   connect_failed_at: string | null;
+  /** How often a closed pane asks this host whether it is back, in seconds.
+   * Null means the default, {@link DEFAULT_PROBE_INTERVAL_SECS};
+   * {@link PROBE_INTERVAL_OFF} means don't ask, and don't draw the pill.
+   * Form-written, through its own call like `shell_integration`. */
+  probe_interval_secs: number | null;
 };
+
+/** How often a closed pane asks a host whether it is back, when the host has no
+ * answer of its own. Kept in step with the Rust constant of the same name: the
+ * pane needs it to work out how many probes fit in the two-minute window it
+ * shows, and that sum has to agree with the interval actually being used. */
+export const DEFAULT_PROBE_INTERVAL_SECS = 3;
+export const MIN_PROBE_INTERVAL_SECS = 1;
+export const MAX_PROBE_INTERVAL_SECS = 10;
+/** Turned off for this host: no probing, and no pill on its closed panes. Zero
+ * rather than another null because null already means "nobody has said", which
+ * is not the same answer and must keep following the default if it moves. */
+export const PROBE_INTERVAL_OFF = 0;
 
 export type HostInput = {
   label: string;
@@ -95,6 +112,27 @@ export function setHostShellIntegration(
   pref: ShellIntegrationPref,
 ): Promise<Host> {
   return invoke<Host>("set_host_shell_integration", { id, pref });
+}
+
+/** How often a closed pane asks this host whether it is back, 1-10 seconds, or
+ * null for the default. Its own call for the same reason as the shell
+ * preference above: a CSV import has no column for it, so importing a host must
+ * leave whatever is stored alone rather than write an answer it invented. */
+export function setHostProbeInterval(
+  id: number,
+  secs: number | null,
+): Promise<Host> {
+  return invoke<Host>("set_host_probe_interval", { id, secs });
+}
+
+/** Is this host's SSH port accepting connections?
+ *
+ * What a pane sitting on a Reconnect button actually wants to know, and the
+ * reason it is a TCP connect rather than a ping: a rebooting Linux box answers
+ * ICMP tens of seconds before `sshd` binds, so a ping that has come back only
+ * says the kernel is up. This goes true when Reconnect would work. */
+export function probeHostReachable(id: number): Promise<boolean> {
+  return invoke<boolean>("probe_host_reachable", { id });
 }
 
 /** Writes all hosts to a CSV or .xlsx file (chosen by the path extension,

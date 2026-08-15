@@ -86,6 +86,8 @@ export type AppSettings = {
   /** null = follow the probe suggestion. */
   max_concurrent_sessions: number | null;
   default_timeout_secs: number;
+  /** Above how many at once a bulk action on the Terminals page asks first. */
+  bulk_confirm_over: number;
   help_hints_enabled: boolean;
   sudo_autofill_enabled: boolean;
   core_rules: CoreRuleInfo[];
@@ -125,9 +127,22 @@ export function getAppSettings(): Promise<AppSettings> {
 export function setAppSettings(input: {
   max_concurrent_sessions: number | null;
   default_timeout_secs: number;
+  bulk_confirm_over: number;
 }): Promise<void> {
   return invoke<void>("set_app_settings", { input });
 }
+
+/** Above how many at once a bulk action on the Terminals page asks first, and
+ * the range the setting offers. Kept in step with the Rust constants: the page
+ * needs the default before the settings probe has answered, or the first click
+ * after a cold start would be guarded by `undefined`.
+ *
+ * The ceiling is low on purpose. This setting exists so an operator who
+ * routinely opens eight shells stops being asked, not so the guard can be
+ * turned off. */
+export const DEFAULT_BULK_CONFIRM_OVER = 5;
+export const MIN_BULK_CONFIRM_OVER = 1;
+export const MAX_BULK_CONFIRM_OVER = 11;
 
 export function setHelpHintsEnabled(enabled: boolean): Promise<void> {
   return invoke<void>("set_help_hints_enabled", { enabled });

@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::error::{AppError, AppResult};
 
+pub mod connect_curtain;
 pub mod exec;
 pub mod pty;
 pub mod sftp;

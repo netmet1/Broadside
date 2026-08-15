@@ -36,14 +36,19 @@ import {
 } from "@/components/ui/select";
 import {
   type AuthInput,
+  DEFAULT_PROBE_INTERVAL_SECS,
   type Host,
   type HostInput,
+  MAX_PROBE_INTERVAL_SECS,
+  MIN_PROBE_INTERVAL_SECS,
+  PROBE_INTERVAL_OFF,
   checkPrivateKey,
   clearHostCredentials,
   createHost,
   errorMessage,
   pathIsFile,
   setHostCredentials,
+  setHostProbeInterval,
   setHostShellIntegration,
   setSudoPassword,
   setSudoSameAsLogin,
@@ -239,6 +244,14 @@ export function HostFormPanel({
   const [shellPref, setShellPref] = useState<ShellIntegrationPref>(
     host?.shell_integration ?? "auto",
   );
+  /** How often a closed pane asks this host whether it is back. Outside the
+   * form schema for the same reason as `shellPref`: saved through its own
+   * command. Held as a number rather than the field's text because the control
+   * is a select, so there is no half-typed state to represent. */
+  const [probeInterval, setProbeInterval] = useState<number>(
+    host?.probe_interval_secs ?? DEFAULT_PROBE_INTERVAL_SECS,
+  );
+  const probeOff = probeInterval === PROBE_INTERVAL_OFF;
 
   const {
     register,
@@ -338,6 +351,7 @@ export function HostFormPanel({
     setSudoAction("keep");
     setKeyEncrypted(null);
     setShellPref(host?.shell_integration ?? "auto");
+    setProbeInterval(host?.probe_interval_secs ?? DEFAULT_PROBE_INTERVAL_SECS);
     reset(valuesFromHost(host, defaultColor));
   }, [host, defaultColor, reset]);
 
@@ -378,8 +392,16 @@ export function HostFormPanel({
   const keyPathReg = register("keyPath");
 
   const selectedColor = watch("color");
+  // Named in the header, so it follows the field as it is typed rather than
+  // reporting the host as it was when the form opened: this form is long
+  // enough to scroll, and the one thing that should never scroll away is which
+  // host is being edited.
+  const hostnameValue = watch("hostname");
   const authMethod = watch("authMethod");
   const sudoSameAsLogin = watch("sudoSameAsLogin");
+  // Named in the reconnect-check note, so it follows the field as it is typed:
+  // a host on a non-standard port should not be told its panes will probe 22.
+  const portValue = watch("port");
 
   const hasSudo = host?.has_sudo_password ?? false;
   // Whether the effective auth method is password (so "same as SSH
@@ -487,6 +509,17 @@ export function HostFormPanel({
         saved = await setHostShellIntegration(saved.id, shellPref);
       }
 
+      // Same shape, same reason. `null` when the operator left it on the
+      // default, so a host that was never given an answer keeps following the
+      // default if the default ever moves, rather than being pinned to whatever
+      // it happened to be on the day the host was added. Off is not that: it is
+      // an answer, and it is stored as one.
+      const wantInterval =
+        probeInterval === DEFAULT_PROBE_INTERVAL_SECS ? null : probeInterval;
+      if (wantInterval !== (host?.probe_interval_secs ?? null)) {
+        saved = await setHostProbeInterval(saved.id, wantInterval);
+      }
+
       // Credential writes are skipped entirely while admin-locked (the fields
       // are ghosted, so there's nothing to write), host metadata still saves.
       if (!adminLocked) {
@@ -572,7 +605,35 @@ export function HostFormPanel({
     <section className="flex h-full flex-col bg-background">
       <header className="px-8 py-5">
         <h1 className="font-heading text-xl font-semibold tracking-tight">
-          {isEdit ? "Edit host" : "Add host"}
+          {/* Which host this is, in the one part of the panel that does not
+              scroll. Editing is where it matters: adding has nothing to name
+              yet, and "Add host - web01" would be describing a host that does
+              not exist.
+
+              The name is the hostname rather than the label, and it wears the
+              host's own colour, so the two things an operator checks before
+              typing into a form full of credentials (right machine, right
+              colour) are answered without scrolling back up. Both follow their
+              fields live, which is what makes the colour swatch legible as a
+              choice: you see what you picked on something the size of a title
+              rather than on a 12px dot.
+
+              The dash goes with an empty hostname. A title reading "Edit host
+              -" looks broken, and a half-typed hostname is a normal state for
+              a field somebody is editing. */}
+          {isEdit ? (
+            <>
+              Edit host
+              {hostnameValue?.trim() && (
+                <>
+                  {" - "}
+                  <span style={{ color: selectedColor }}>{hostnameValue}</span>
+                </>
+              )}
+            </>
+          ) : (
+            "Add host"
+          )}
         </h1>
         <p className="text-sm text-muted-foreground">
           {isEdit
@@ -605,7 +666,7 @@ export function HostFormPanel({
 
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <div className="grid gap-1">
-              <Label htmlFor="hostname">Hostname</Label>
+              <Label htmlFor="hostname">Hostname/IP</Label>
               <Input
                 id="hostname"
                 {...register("hostname")}
@@ -1085,6 +1146,114 @@ export function HostFormPanel({
             about sudo, and sitting between the sudo status line and the sudo
             password field it read as part of them. The verdict is read-only
             (it is what the last connect saw), but the answer to it is not. */}
+        {/* How often a pane that has lost this host asks whether it is back.
+            Shown when adding as well as editing, unlike the shell block above:
+            that one is mostly a read-out of what the last connection found, and
+            a host nobody has connected to has nothing to say. This is a plain
+            preference with a sensible default, and the moment it is most wanted
+            is the moment a host is added, which is usually the moment somebody
+            is about to reboot it. */}
+        <div className="mt-6 max-w-4xl rounded-xl border border-border/50 bg-muted/20 p-5">
+          <Label
+            htmlFor="probe-interval"
+            className="mb-3 block text-sm font-semibold"
+          >
+            Reconnect check{" "}
+            <span className="text-xs font-normal text-muted-foreground">
+              (how often a closed terminal asks this host whether it is back)
+            </span>
+          </Label>
+          <div className="grid gap-2">
+            {/* The dropdown holds the number and nothing else, and the unit is
+                in the label to its left rather than in a sentence built around
+                it: picking an interval is picking a number, not reading ten
+                sentences that differ by one word.
+                "(default)" rides with the value instead of trailing the row,
+                so it is visible while choosing rather than only after the
+                choice, and the row does not change width when it appears.
+                Disable is the one entry that is not a number, and it takes the
+                label with it: "Reconnect Seconds: Disable" reads as a value of
+                a quantity, which it is not. On its own the control says what it
+                is doing, and the card's own heading above still names it. */}
+            <div className="flex items-center gap-2">
+              {!probeOff && (
+                <Label
+                  htmlFor="probe-interval"
+                  className="text-sm font-normal text-muted-foreground"
+                >
+                  Reconnect Seconds
+                </Label>
+              )}
+              <Select
+                value={String(probeInterval)}
+                onValueChange={(v) => setProbeInterval(Number(v))}
+              >
+                {/* Centred, which takes both halves: the value is given the
+                    slack (`flex-1`) and told to centre in it, and a spacer the
+                    width of the chevron balances the right-hand side so the
+                    middle of the text is the middle of the control rather than
+                    the middle of what the chevron left over. */}
+                <SelectTrigger
+                  id="probe-interval"
+                  className="w-32 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:justify-center"
+                >
+                  <span className="size-4 shrink-0" aria-hidden="true" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from(
+                    { length: MAX_PROBE_INTERVAL_SECS - MIN_PROBE_INTERVAL_SECS + 1 },
+                    (_, i) => MIN_PROBE_INTERVAL_SECS + i,
+                  ).map((secs) => (
+                    <SelectItem
+                      key={secs}
+                      value={String(secs)}
+                      className="justify-center pl-8"
+                    >
+                      {secs === DEFAULT_PROBE_INTERVAL_SECS
+                        ? `${secs} (default)`
+                        : secs}
+                    </SelectItem>
+                  ))}
+                  <SelectItem
+                    value={String(PROBE_INTERVAL_OFF)}
+                    className="justify-center pl-8"
+                  >
+                    Disable
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Worth saying plainly, because "is it back" and "does it answer a
+                ping" are not the same question and the difference is the whole
+                point. A rebooting Linux box answers ICMP some tens of seconds
+                before sshd binds, so a pill that went green on a ping would go
+                green while Reconnect still fails. */}
+            {probeOff ? (
+              <p className="text-xs text-muted-foreground">
+                Closed terminals for this host will not check whether it is back,
+                and show no pill. Reconnect still works; you just have to try it
+                to find out.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Runs only while a terminal for this host is sitting closed, and
+                stops when the tab is closed or reconnected. It opens a
+                connection to port{" "}
+                {/* The port is the one part of this sentence that is about
+                    *this* host rather than about the feature, so it is lifted
+                    out of the grey and set in the same face the form uses for
+                    values. It follows the field above as it is typed. */}
+                <span className="rounded bg-foreground/10 px-1 py-0.5 font-mono text-foreground">
+                  {portValue || 22}
+                </span>{" "}
+                rather than pinging, so it turns green when Reconnect will
+                actually work rather than when the machine first answers.
+              </p>
+            )}
+          </div>
+        </div>
+
         {host && (
           <div className="mt-6 max-w-4xl rounded-xl border border-border/50 bg-muted/20 p-5">
             <Label className="mb-3 block text-sm font-semibold">

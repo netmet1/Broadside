@@ -470,6 +470,13 @@ pub async fn run_skill(
                         crate::ssh::ShellIntegrationPref::from_stored(
                             job.host.shell_integration.as_deref(),
                         ),
+                        // Raw, and it has to stay raw. The engine reads this
+                        // stream through the tap above and, on a shell with no
+                        // prompt marks, decides the login is over by the stream
+                        // going quiet. Holding the first screen back would look
+                        // exactly like quiet and it would start typing at a host
+                        // still printing its banner.
+                        crate::ssh::connect_curtain::FirstScreen::Raw,
                         cols.clamp(2, 1000),
                         rows.clamp(2, 1000),
                     )

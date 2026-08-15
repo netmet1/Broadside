@@ -69,6 +69,7 @@
  */
 
 import { useRef } from "react";
+import type React from "react";
 import {
   ChevronDownIcon,
   Columns2Icon,
@@ -131,6 +132,8 @@ export function TerminalRail({
   maximizeActive,
   hideGridHeaders,
   toggleGridHeaders,
+  tabBarHidden,
+  toggleTabBar,
   customGrid,
   gridCount,
   twoUpSplit,
@@ -146,12 +149,14 @@ export function TerminalRail({
   onActivate,
   openIds,
   onEndSession,
+  onDisconnectAll,
   onCloseAll,
   retryableCount,
   onReconnectAll,
   onCloseFailed,
   hiddenCount,
   onUnhideAll,
+  launcher,
 }: {
   tabsCompact: boolean;
   toggleTabsCompact: () => void;
@@ -169,6 +174,9 @@ export function TerminalRail({
   maximizeActive: () => void;
   hideGridHeaders: boolean;
   toggleGridHeaders: () => void;
+  /** Whether the tab strip is rolled up. Grid-only, and remembered. */
+  tabBarHidden: boolean;
+  toggleTabBar: () => void;
   customGrid: boolean;
   gridCount: number;
   twoUpSplit: "cols" | "rows";
@@ -187,6 +195,9 @@ export function TerminalRail({
   openIds: Set<string>;
   /** End a session's shell and leave its tab where it is. */
   onEndSession: (id: string) => void;
+  /** End every live shell at once and leave all the tabs where they are: the
+   * bulk form of the per-row unplug button above. */
+  onDisconnectAll: () => void;
   onCloseAll: () => void;
   /** How many panes are sitting on a Try again / Reconnect button. One number
    * for both repairs: whatever Reconnect all would bring back is exactly what
@@ -197,6 +208,16 @@ export function TerminalRail({
   /** How many open terminals are currently taken out of the grid. */
   hiddenCount: number;
   onUnhideAll: () => void;
+  /** The "+" that opens a local shell, a profile or a serial console, handed in
+   * whole rather than rebuilt here.
+   *
+   * It belongs to the page: it reads the detected shells, the saved profiles
+   * and the live COM ports, and opening anything from it goes through the
+   * page's own guards (the how-many cap, the startup-command confirmation).
+   * None of that is rail business, and threading a dozen props through here to
+   * reassemble it would make this file responsible for a menu it has nothing to
+   * say about. So the rail owns where it sits and the page owns what it does. */
+  launcher: React.ReactNode;
 }) {
   const hint = useHint();
   const shellColors = useShellColors();
@@ -239,6 +260,9 @@ export function TerminalRail({
   const sessionsExtras: string[] = [];
   if (retryableCount > 0) {
     sessionsExtras.push("reconnect or clear away the ones that dropped");
+  }
+  if (openIds.size >= 2) {
+    sessionsExtras.push("disconnect them all but keep the tabs");
   }
   if (gridMode && hiddenCount > 0) {
     sessionsExtras.push("put hidden ones back in the grid");
@@ -317,17 +341,27 @@ export function TerminalRail({
 
       {/* Broadcast a command to several open sessions without leaving the
           page, so the panes you are watching are the ones that answer.
-          Available in both layouts; Grid is what it is really for. */}
+          Available in both layouts; Grid is what it is really for.
+
+          Greyed below two sessions rather than removed, which is this file's
+          rule for a control that will be wanted later: broadcasting to one
+          terminal is just typing in it, and the rail costs a column of the
+          window to say so. A reader who has never had two tabs open still sees
+          the button and learns it is there, which they would not if it appeared
+          from nowhere on the day they opened a second one. */}
       <Button
         size={compact ? "icon-sm" : "sm"}
         variant={broadcastRail ? "secondary" : "outline"}
         onClick={toggleBroadcastRail}
+        disabled={sessions.length < 2}
         aria-pressed={broadcastRail}
         aria-label="Broadcast"
         {...hint(
-          broadcastRail
-            ? "Hide the broadcast rail."
-            : "Show the broadcast rail: pick sessions and type one command for all of them, watching the panes as they answer.",
+          sessions.length < 2
+            ? "Broadcast sends one command to several sessions at once. Open a second terminal and it turns on."
+            : broadcastRail
+              ? "Hide the broadcast rail."
+              : "Show the broadcast rail: pick sessions and type one command for all of them, watching the panes as they answer.",
         )}
       >
         <RadioTowerIcon className="h-3.5 w-3.5" />
@@ -405,7 +439,7 @@ export function TerminalRail({
             variant="outline"
             aria-label="View"
             {...hint(
-              "Fullscreen, tab labels, tile arrangement and the two reset actions.",
+              "Fullscreen, the tab bar and its labels, tile arrangement and the two reset actions.",
             )}
           >
             <SlidersHorizontalIcon className="h-3.5 w-3.5" />
@@ -456,6 +490,30 @@ export function TerminalRail({
           >
             Full tab labels
           </DropdownMenuCheckboxItem>
+
+          {/* Grid only, and gone rather than greyed outside it, which is the
+              exception the two-up flip already sets: this is not an action
+              waiting on something, it is one that cannot mean anything in Tabs.
+              The strip is the only way to change session there, so an entry
+              offering to take it away would be an entry offering to strand you.
+
+              Stated as what you have rather than as what the switch does, like
+              Full tab labels above, so the tick always means "this is on
+              screen". A "Hide tab bar" checkbox that is ticked when the tabs
+              are *not* there reads backwards every time. */}
+          {gridMode && (
+            <DropdownMenuCheckboxItem
+              checked={!tabBarHidden}
+              onCheckedChange={toggleTabBar}
+              {...hint(
+                tabBarHidden
+                  ? "The tab strip is hidden and the tiles have its row. Click to bring it back. Remembered across restarts."
+                  : "The tab strip is shown. Click to hide it and give the row to the tiles. Remembered across restarts.",
+              )}
+            >
+              Tab bar
+            </DropdownMenuCheckboxItem>
+          )}
 
           {/* The one entry that still comes and goes, and the exception proves
               the rule: everything else here is an action that exists and is
@@ -771,6 +829,36 @@ export function TerminalRail({
                 </DropdownMenuItem>
               )}
 
+              {/* The bulk form of the unplug button on every row above, and it
+                  sits here rather than up with the repairs because it is not
+                  one: those two are about tabs that have already lost their
+                  shells, and this one takes shells away.
+
+                  Two sessions is where it appears, because at one it is the row
+                  button with extra steps -- the unplug is right there, four
+                  pixels from the session it belongs to, and a second control
+                  doing the same thing to the same tab is only a way to make the
+                  menu longer.
+
+                  Above Close all deliberately, in the order somebody works
+                  through them: disconnecting keeps the scrollback and the tabs,
+                  so it is the reversible half of the pair and belongs in front
+                  of the one that throws everything away. */}
+              {openIds.size >= 2 && (
+                <DropdownMenuItem
+                  onSelect={onDisconnectAll}
+                  {...hint(
+                    `End the shell on all ${openIds.size} connected sessions and keep every tab. What each printed stays on screen, and each pane offers Reconnect.`,
+                  )}
+                >
+                  <UnplugIcon />
+                  Disconnect all
+                  <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
+                    {openIds.size}
+                  </span>
+                </DropdownMenuItem>
+              )}
+
               <DropdownMenuItem
                 onSelect={onCloseAll}
                 {...hint(
@@ -783,6 +871,15 @@ export function TerminalRail({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        {/* Last in the row, and last on purpose. Sessions is the list of what
+            is open and this is how another one starts, so the pair reads left
+            to right as "what you have, and one more".
+
+            Unlike everything else here it never goes compact, because there is
+            nothing to drop: it is an icon and a chevron already. It is also the
+            only control in the rail that is never greyed. There is always a
+            local shell to open, whatever is or is not connected. */}
+        {launcher}
       </div>
     </div>
   );

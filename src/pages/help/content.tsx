@@ -409,7 +409,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-hosts",
     title: "Hosts",
     keywords:
-      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu",
+      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first",
     body: (
       <>
         <Lead>
@@ -476,6 +476,42 @@ export const SECTIONS: HelpSection[] = [
               alone on their own, without needing this set. The setting is read
               when a terminal opens, so it applies to the next tab you open on
               that host rather than to one already running.
+            </li>
+            <li>
+              <b>Reconnect check</b>, the card above it, is for the machine you
+              have just rebooted. When a terminal on this host loses its
+              connection and drops to the banner with <Nav>Reconnect</Nav> on it,
+              a pill appears on that banner and keeps asking the host whether it
+              is back. It is red while the host is dark and turns green the
+              moment it answers, so you can watch a reboot come round instead of
+              clicking <Nav>Reconnect</Nav> every few seconds to find out.
+              <br />
+              Watch the words on it and not just the colour, because for the
+              first few seconds of a reboot the pill reads{" "}
+              <Nav>SSH still answering</Nav>. That is not the host coming back
+              impossibly fast. When you type <code>reboot</code> your login
+              shell is killed before <code>sshd</code> is, so your terminal
+              drops to this banner while the machine is still listening and will
+              go on answering for another ten or twenty seconds. Nothing has
+              gone down yet, and the pill says so in those words rather than
+              pretending not to have an answer. Once the host really goes the
+              pill turns red, and when it comes back it reads{" "}
+              <Nav>SSH back</Nav> with the figures beside it. <b>Back</b> is the
+              one that means what you are waiting for.
+              <br />
+              This setting is how often it asks, from every second to every ten,
+              three by default, or <Nav>Disable</Nav> for a host you would
+              rather were not asked at all. Disabled means no checking and no
+              pill;{" "}
+              <Nav>Reconnect</Nav> still works, you just have to try it to find
+              out. What the check does is open a connection to the host's SSH
+              port, not send a ping, and the difference is the point: a Linux
+              machine answers a ping some tens of seconds before{" "}
+              <code>sshd</code> is listening, so a pill fed by pings would go
+              green while <Nav>Reconnect</Nav> still failed. Nothing is sent to
+              the host, nothing logs in, and the checking runs only while a pane
+              of yours is sitting there closed. Reconnect the tab or close it and
+              it stops.
             </li>
             <li>
               The same mark appears wherever a host is picked: the{" "}
@@ -568,7 +604,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes",
     body: (
       <>
         <Lead>
@@ -1214,15 +1250,50 @@ export const SECTIONS: HelpSection[] = [
               sitting on a <Nav>Try again</Nav> or <Nav>Reconnect</Nav> button,
               and <Nav>Close failed</Nav> clears the same set away instead; both
               carry the count, and the count is the same number because the pane
-              you would reconnect is the pane you would give up on. Past a
-              handful it asks first, since a large batch means a burst of
-              connections going out at once. Panes still connecting are left
-              alone, and so is any pane waiting on a host key answer, since
-              neither is waiting to be reconnected.{" "}
+              you would reconnect is the pane you would give up on. Panes still
+              connecting are left alone, and so is any pane waiting on a host key
+              answer, since neither is waiting to be reconnected.{" "}
+              <Nav>Disconnect all</Nav> is the other bulk action: it ends the
+              shell on every connected session at once and keeps all the tabs,
+              which is the unplug button below applied to the lot of them.{" "}
               <Nav>Unhide all</Nav> puts every terminal you have taken out of the
-              grid back into it. Each of the three is in the menu only while
-              there is something for it to do, so a menu with none of them in it
-              is telling you nothing is wrong.
+              grid back into it. Each of these is in the menu only while there is
+              something for it to do, so a menu with none of them in it is
+              telling you nothing is wrong.
+            </li>
+            <li>
+              <b>How often you are asked "are you sure".</b> Bulk actions confirm
+              first once they would touch more than five sessions, and five is
+              only the default: <Nav>Ask before acting on more than</Nav> in{" "}
+              <Nav>Settings</Nav> under <Nav>Performance</Nav> sets it anywhere
+              from 1 to 11. One number covers the lot, so there is a single
+              answer to "how many is a lot" on this page rather than several that
+              drift apart: opening a batch of local shells from the{" "}
+              <Nav>+</Nav> launcher, <Nav>Reconnect all</Nav>,{" "}
+              <Nav>Disconnect all</Nav> and <Nav>Close failed</Nav>. Raise it if
+              you routinely work eight machines at a time and the dialog is just
+              a keystroke you have stopped reading; lower it if a burst that size
+              is never something you meant.
+              <br />
+              Two things stay outside it. <Nav>Close all</Nav> asks every single
+              time, because it is the one action here that can take away work in
+              progress, and a setting for being asked less often should not be
+              able to reach it. And a launch profile that types a startup command
+              asks past a single copy whatever the setting says, since every copy
+              runs that command again.
+            </li>
+            <li>
+              <b>A second session on the same thing.</b> Hover a tab and one of
+              the small icons on it is a copy button; right-click the tab and{" "}
+              <Nav>Open another session</Nav> does the same. It opens a fresh
+              session on that host, or another of that local shell, and lands it
+              directly after the tab it came from. Nothing is copied across:
+              it is a new shell, with its own scrollback. The pair is told apart
+              by the number the second one picks up, <code>web-01 02</code>, and
+              that number follows them into the broadcast lists.
+              <br />
+              The only time it asks first is a tab launched from a profile that
+              types a startup command, because the copy runs that command again.
             </li>
             <li>
               <b>Ending one session without losing the tab.</b> Each row of the{" "}
@@ -1237,15 +1308,40 @@ export const SECTIONS: HelpSection[] = [
               that row to end.
             </li>
             <li>
+              <b>What a reconnect looks like.</b> The pane holds the dead
+              session's last screen until the new one actually says something,
+              which is where you read why it dropped. Then the new session
+              starts at the top of a clean screen, and nothing is thrown away:
+              the old screen is pushed up into the scrollback with a divider
+              under it saying when the session ended. A tab you have reconnected
+              five times reads as a stack of five sessions rather than one long
+              run. Terminal state the old session left switched on goes with it,
+              so a session killed while <code>htop</code> or another full-screen
+              program had the display cannot hand its mouse reporting to the
+              shell you come back to.
+            </li>
+            <li>
               The controls above the tab strip are grouped so they fit whatever
               window you run Broadside in. <Nav>Tabs</Nav> / <Nav>Grid</Nav>,{" "}
               <Nav>Broadcast</Nav>, the fullscreen icon and, in Grid, the icon
               for tile title bars stay out in the open because they are the ones
               you reach for. Everything else that shapes the view lives under{" "}
               <Nav>View</Nav>: fullscreen again (with the key beside it),{" "}
-              <Nav>Full tab labels</Nav>, flipping two terminals between
-              side-by-side and top/bottom, <Nav>Reset grid</Nav> and{" "}
-              <Nav>Reset display</Nav>.
+              <Nav>Full tab labels</Nav>, <Nav>Tab bar</Nav>, flipping two
+              terminals between side-by-side and top/bottom,{" "}
+              <Nav>Reset grid</Nav> and <Nav>Reset display</Nav>.
+            </li>
+            <li>
+              <b>Rolling the tab strip away.</b> <Nav>View</Nav> &gt;{" "}
+              <Nav>Tab bar</Nav>, in Grid only, unticks the strip and gives its
+              row to the tiles. The <Nav>+</Nav> launcher does not go with it: it
+              floats over the top right corner of the grid so a new local shell
+              is still one click away. Switch back to <Nav>Tabs</Nav> and the
+              strip returns on its own, because there it is the only way to
+              change session and hiding it would strand you; switch back to Grid
+              and it rolls up again. The choice lasts for as long as the app is
+              running and is not remembered across restarts: it is something you
+              want when the screen is full, not a standing preference.
             </li>
             <li>
               <b>Greyed does not mean gone.</b> An entry that has nothing to act
@@ -1549,7 +1645,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-multiterminal",
     title: "MultiTerminal",
     keywords:
-      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror show manual activity typed composer filter tag label search find selectable connected",
+      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror show manual activity typed layers icon indicator marker recorded composer filter tag label search find selectable connected",
     body: (
       <>
         <Lead>
@@ -1578,11 +1674,29 @@ export const SECTIONS: HelpSection[] = [
               that ran. You can delete an individual block to keep the view tidy.
             </li>
             <li>
+              <b>Two sessions on one host</b> are allowed, and the rail says so
+              rather than stopping you. They are listed separately and numbered,{" "}
+              <code>web-01</code> and <code>web-01 02</code>, the same numbers
+              their tabs carry, and their blocks in the log are headed the same
+              way. If two of the sessions you have checked are on one machine, a
+              line above the composer says how many, because the count you are
+              sending to is terminals and the number you are usually thinking of
+              is machines. It is a note, not a question: a tail in one pane and
+              the work in another is a normal way to use this, and a dialog on
+              every send would be one you stopped reading.
+            </li>
+            <li>
               Turn on <Nav>Show Manual Activity</Nav> to also capture commands you
               type by hand inside a <Nav>Terminals</Nav> tab; with it off, only
               commands sent from <Nav>MultiTerminal</Nav> appear here. It follows
               the hosts you have checked in the rail, so a host you deliberately
               left unchecked stays out of the log whether you type into it or not.
+              While it is on, every tab it is capturing from carries a small{" "}
+              <Nav>layers</Nav> icon in the <Nav>Terminals</Nav> strip, the same
+              icon this page has in the sidebar. The toggle lives here and the
+              typing happens there, and a shell that is being recorded should
+              say so where you are typing rather than only on the page keeping
+              the record.
             </li>
           </Bullets>
           <H3>Block headers</H3>

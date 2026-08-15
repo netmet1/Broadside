@@ -28,6 +28,14 @@ const HISTORY_RUNS = 200;
 export type DispatchResult = {
   host_id: number | null;
   label: string;
+  /** The " 02" that says which of two sessions on one target this row is, kept
+   * out of `label` so it can be dimmed rather than read as part of the name.
+   *
+   * Joined back onto the label on the way to the database, and only there: a
+   * stored row has to make sense on its own, long after the sessions it names
+   * have gone. Unpicked again at render, where the live host name says where
+   * the name stops and the number starts. */
+  suffix?: string;
   color: string;
   kind?: string;
   ok: boolean;
@@ -187,14 +195,24 @@ export function useSessionBroadcast<T extends { id: string }>({
       // Persist the run, which also records the command in the shared recall
       // list. The rail keeps no runs of its own, so there it is the recall
       // entry alone. Either way the other composers are told to re-read.
+      //
+      // The number is folded into the label on the way out, in both paths. What
+      // is stored is read back weeks later by a log that has no sessions to ask,
+      // so "web-01" twice in one run would be a record of a command that looks
+      // like it was sent to the same machine twice for no reason. In memory the
+      // two stay apart; it is only the written form that joins them.
+      const stored = out.map((r) => ({
+        ...r,
+        label: r.label + (r.suffix ?? ""),
+      }));
       if (persist) {
-        ptyHistoryAdd({ runId, ts, command: cmd, results: out })
+        ptyHistoryAdd({ runId, ts, command: cmd, results: stored })
           .then(announceCommandHistory)
           .catch(() => {});
       } else if (sharedRecall) {
         railLogCommand(
           cmd,
-          out.map((r) => ({ id: r.host_id, label: r.label })),
+          stored.map((r) => ({ id: r.host_id, label: r.label })),
         )
           .then(announceCommandHistory)
           .catch(() => {});

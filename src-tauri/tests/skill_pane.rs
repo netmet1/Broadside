@@ -692,6 +692,10 @@ async fn drive_config(spec: Spec, cfg: SequenceConfig) -> (Ran, String) {
         AuthMethod::Password(PASSWORD.to_string()),
         Some(PASSWORD.to_string()),
         pref,
+        // A skill run, so the connect curtain stays out of it: the tap's own
+        // curtain above is the one this test is about, and the engine reads this
+        // stream raw.
+        broadside_lib::ssh::connect_curtain::FirstScreen::Raw,
         cols,
         ROWS,
     )

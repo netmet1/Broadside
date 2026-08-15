@@ -32,6 +32,7 @@ import {
   shellWarningDismissed,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
+import { useReachability } from "@/lib/useReachability";
 import { useHint } from "@/lib/status";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
@@ -104,6 +105,102 @@ function readSearchDecorations() {
     activeMatchBorder: v("--terminal-search-active-border", "#ffcc33"),
     activeMatchColorOverviewRuler: activeMatch,
   };
+}
+
+/**
+ * Terminal state a dead session could have left switched on, switched back off.
+ *
+ * A program that owns the screen turns things on at the terminal and turns them
+ * off again when it exits. A session that is killed while one is running never
+ * reaches the second half, and the modes belong to the pane rather than to the
+ * connection, so the *next* session inherits them.
+ *
+ * The mouse is the one that bites. htop asks for mouse reporting; kill the
+ * session while it is up and reconnect, and the first turn of the scroll wheel
+ * sends `ESC[<64;25;34M` at a bash prompt that never asked for it. Readline eats
+ * the escape prefix and runs the rest, so the pane fills with `64: command not
+ * found` and the shell is unusable until the tty is thrown away (smoke 60-4 D5).
+ * Every protocol and encoding xterm.js knows is named, because we do not know
+ * which one the dead program picked.
+ *
+ * `ESC[!p` is DECSTR, a soft reset, and covers the rest of it in four bytes:
+ * attributes, charsets, scroll margins, origin mode, autowrap, application
+ * cursor keys and keypad, bracketed paste, and the cursor made visible again.
+ * It is deliberately not `ESC c`, which in xterm.js throws the scrollback away,
+ * and it does not touch the mouse, which is why the line above exists.
+ */
+const CLEAR_STICKY_MODES =
+  "\x1b[?9;1000;1002;1003;1004;1005;1006;1015;1016l\x1b[!p";
+
+/** The rule the session divider is drawn with: U+2501, single width. */
+const DIVIDER_RULE = "━";
+
+/** `14:02:11`. Local, 24-hour, built by hand rather than left to
+ * `toLocaleTimeString`, which renders midnight as `24:00:00` under some
+ * hour-cycle settings. */
+function clockTime(at: number): string {
+  const d = new Date(at);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** The escape sequence that hands a reconnect a clean screen: the modes above
+ * reset, whatever the old session left on screen pushed up into the scrollback
+ * with a divider under it, and the cursor at the top of a blank one.
+ *
+ * The pane keeps a dead session's output on purpose, and on a host that takes
+ * Broadside's setup line that goes unnoticed, because the `clear` in the line
+ * wipes the screen a moment later. A host we send nothing to (a console menu on
+ * an appliance, pfSense's `rc.initial`) has no such clear, so its menu printed
+ * directly underneath the old copy and the pane read as having drawn it twice.
+ *
+ * Line feeds rather than an erase, because nothing here is worth throwing away:
+ * everything the old session printed is still there to scroll back to, which is
+ * more than a Linux host's own `clear` leaves behind (it ends in `ESC[3J`, which
+ * drops the scrollback outright). Exactly as many as there are used rows, so a
+ * short screen does not bury itself under blank ones on the way up.
+ *
+ * `endedAt` is when the old session ended, and null when there was no old
+ * session (a first connect coming back through here after a host-key dialog).
+ * With one, a stack of reconnects on the same tab reads as a stack rather than
+ * a run-on, because each screen has a line under it saying when it stopped.
+ */
+function freshScreenSequence(term: Terminal, endedAt: number | null): string {
+  // A session that died inside a full-screen program (less, htop, an installer)
+  // left the pane on the alternate screen, which has no scrollback to push
+  // anything into and would swallow the new session's output as well. Measure
+  // the normal buffer, which is the one that keeps the scrollback and the one
+  // we are about to come back to.
+  const alternate = term.buffer.active.type === "alternate";
+  const buf = alternate ? term.buffer.normal : term.buffer.active;
+  let used = 0;
+  for (let y = 0; y < term.rows; y++) {
+    if (buf.getLine(buf.baseY + y)?.translateToString(true)) used = y + 1;
+  }
+  let out = (alternate ? "\x1b[?1049l" : "") + CLEAR_STICKY_MODES;
+  // An empty screen still gets homed: the cursor can be sitting anywhere, and
+  // the new session should start at the top rather than wherever the old one
+  // stopped. Nothing to divide, either.
+  if (used === 0) return out + "\x1b[H";
+
+  const bottomRow = `\x1b[${term.rows};1H`;
+  // A line feed on the bottom row is what moves a line into the scrollback, so
+  // one per used row takes the whole screen with it.
+  out += bottomRow + "\n".repeat(used);
+  // Then the divider, written across the top of the now-blank screen and sent
+  // after it the same way. Three rows, so a pane too short to hold them without
+  // scrolling mid-write goes without; nothing that small is readable anyway.
+  if (endedAt !== null && term.rows >= 3) {
+    const rule = DIVIDER_RULE.repeat(term.cols);
+    out +=
+      // Dim, because this is Broadside talking in the middle of the host's
+      // output and it should read as a margin note rather than as something
+      // the host said.
+      `\x1b[H\x1b[2m${rule}\r\n[SESSION DISCONNECTED: ${clockTime(endedAt)}]\r\n${rule}\x1b[0m` +
+      bottomRow +
+      "\n\n\n";
+  }
+  return out + "\x1b[H";
 }
 
 type Phase =
@@ -220,6 +317,19 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const dataReadyRef = useRef<Promise<unknown> | null>(null);
   // Guards the one-time write of an adopted session's scrollback snapshot.
   const snapshotWrittenRef = useRef(false);
+  // A reconnect is waiting to start on a clean screen. Armed when the connect
+  // effect re-runs, spent by the first bytes of the new session, which is the
+  // moment that matters: doing it when Reconnect is pressed would blank the
+  // pane for the whole connect and take away the output the operator is
+  // probably still reading. See freshScreenSequence.
+  const freshScreenRef = useRef(false);
+  // When the session on screen ended, for the divider the next reconnect draws
+  // under it. Only a close sets it, not a failed connect: a reconnect that
+  // fails leaves the same dead screen sitting there, and the time worth
+  // stamping on it is still the one it stopped at. Null means nothing has ended
+  // in this pane, which is the host-key-dialog case (a first connect arriving
+  // through the same code path, with an empty screen and nothing to divide).
+  const endedAtRef = useRef<number | null>(null);
   // Deadline (performance.now) until which a leading `^L` arriving from the
   // shell is the echo of our own Reset display form feed and is dropped before
   // it is drawn. Armed by the reset effect below, disarmed by the first hit.
@@ -265,6 +375,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   } | null>(null);
   const setPhase = useCallback(
     (p: Phase) => {
+      if (p.kind === "closed") endedAtRef.current = Date.now();
       phaseRef.current = p;
       setPhaseState(p);
       onConnectionChangeRef.current?.(sessionId, p.kind === "open");
@@ -278,6 +389,14 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const scrolledUpRef = useRef(false);
   const [scrolledUp, setScrolledUp] = useState(false);
   const hint = useHint();
+
+  // Is the host back yet? Asked only while this pane sits on its Reconnect
+  // button, and only for a remote one: a local shell has no host to be waiting
+  // for, and the closed banner on a ConPTY tab means the program exited.
+  const reachability = useReachability(
+    source.type === "ssh" ? source.hostId : null,
+    phase.kind === "closed" && source.type === "ssh",
+  );
 
   // Create the terminal once.
   useEffect(() => {
@@ -509,6 +628,19 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     };
     contextMenuEl?.addEventListener("mouseup", onMouseUp);
 
+    // Everything the session says goes through here rather than to
+    // `term.write` directly, so a reconnect's clean screen cannot be missed by
+    // one of the two paths below.
+    const writeToPane = (data: Uint8Array) => {
+      if (freshScreenRef.current) {
+        freshScreenRef.current = false;
+        const endedAt = endedAtRef.current;
+        endedAtRef.current = null;
+        term.write(freshScreenSequence(term, endedAt));
+      }
+      term.write(data);
+    };
+
     const unlistenData = onPtyData(sessionId, (bytes) => {
       // Reset display sent a form feed. If a command is running in the
       // foreground the shell is not reading its keyboard, so the tty echoes
@@ -538,11 +670,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           // finishes and the shell prints its own next prompt.
           ptyWrite(sessionId, "\x7f").catch(() => {});
           const rest = bytes.subarray(2);
-          if (rest.length) term.write(rest);
+          if (rest.length) writeToPane(rest);
           return;
         }
       }
-      term.write(bytes);
+      writeToPane(bytes);
     });
     dataReadyRef.current = unlistenData;
     const unlistenClosed = onPtyClosed((closed) => {
@@ -738,6 +870,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // Connect (and reconnect after a TOFU gate is resolved).
   useEffect(() => {
     let cancelled = false;
+    // Anything but the first connect is writing into a pane that already has a
+    // screen in it. Arm the clean start here and let the first bytes spend it,
+    // so a connect that never lands leaves the old output where it was.
+    if (retryNonce > 0) freshScreenRef.current = true;
     // Pending profile startup-command injection (local shells), cleared if the
     // tab tears down or reconnects before it fires.
     let startupTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1071,6 +1207,72 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           output to join them up. */}
       {phase.kind === "closed" && (
         <div className="absolute inset-x-0 bottom-0 flex items-center justify-end gap-2 border-t border-border/40 bg-background/40 px-3 py-2">
+          {/* Is the host back?
+
+              Left of the closed message, on its own plate for the same reason
+              everything else on this bar has one. It answers the question the
+              operator is sitting here to have answered, which after a reboot is
+              not "why did it go" but "can I go back yet".
+
+              The colour follows the LAST probe and the figures follow the last
+              two minutes, and the split is deliberate. The percentage is a
+              reliability read: a host that finished rebooting fifteen seconds
+              ago is five of forty probes, which is 12%, and painting that red
+              would be telling the operator the machine is down at the exact
+              moment it came back. So green means the port answered just now,
+              which is the same as saying Reconnect will work; the ratio beside
+              it says how solid that has been.
+
+              Amber is the in-between the ratio is good for: the last probe
+              missed, but the host has been answering within the window, which
+              is a flap rather than an outage and reads differently from a
+              machine that has been dark the whole time.
+
+              Green has two readings, and saying which is which is the one thing
+              this pill got wrong. Answering because the host never went down is
+              not the same news as answering because it came back, and after a
+              `reboot` the first is what you get: the shell is killed before
+              sshd is, so the pane drops to this banner while the port is still
+              open and the pill goes green on a machine that is about to
+              disappear. An operator who knows the sequence reads it correctly
+              and waits; everyone else reads "already back, that was fast" and
+              is then annoyed when it turns amber ten seconds later.
+
+              So the words differ even though the colour does not. Before
+              anything has missed, the pill says the host is *still* answering,
+              which is a report on a machine that has not gone yet. The ratio
+              goes with it, because until something misses it is always n/n at
+              100% and a figure that cannot say anything else is decoration.
+              Once a probe has missed, the numbers mean something again and the
+              pill switches to "back", which is the word that was wanted all
+              along. */}
+          {reachability !== null && (
+            <span
+              className={cn(
+                "shrink-0 rounded-md border bg-background/90 px-2 py-0.5 font-mono text-xs tabular-nums",
+                reachability.last
+                  ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+                  : reachability.percent >= 40
+                    ? "border-amber-500/40 text-amber-700 dark:text-amber-300"
+                    : "border-red-500/40 text-red-600 dark:text-red-400",
+              )}
+              {...hint(
+                reachability.pending
+                  ? "Checking whether this host's SSH port is accepting connections. It turns green when Reconnect will work."
+                  : reachability.last && !reachability.everMissed
+                    ? "This host's SSH port has answered every check since this terminal closed, so it has not gone down yet. After a reboot the port keeps answering for a few seconds before the machine actually goes; wait for this to drop before you expect it back."
+                    : reachability.last
+                      ? `This host went away and is answering again, so Reconnect should work. ${reachability.ok} of the last ${reachability.total} checks answered.`
+                      : `This host is not answering on its SSH port. ${reachability.ok} of the last ${reachability.total} checks answered; the pill turns green the moment one does.`,
+              )}
+            >
+              {reachability.pending
+                ? "SSH ..."
+                : reachability.last && !reachability.everMissed
+                  ? "SSH still answering"
+                  : `SSH ${reachability.last ? "back " : ""}${reachability.ok}/${reachability.total} ${reachability.percent}%`}
+            </span>
+          )}
           <span
             className={cn(
               "min-w-0 truncate rounded-md border bg-background/90 px-2 py-0.5 text-xs",

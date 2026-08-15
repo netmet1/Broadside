@@ -203,6 +203,55 @@ function App() {
     setPage("terminals");
   }, [nextSeq]);
 
+  /** A second tab on whatever this one is on: another session to the same host,
+   * or another copy of the same local shell.
+   *
+   * Lands directly after the tab it came from rather than at the end of the
+   * strip, because it is a copy of that one and the pair wants reading together.
+   *
+   * Three things are deliberately not carried over. A rename, because two tabs
+   * called the same thing with no number between them is the confusion this is
+   * most likely to cause, and the duplicate falling back to its derived label
+   * picks up the " 02" suffix that tells them apart. And `adopted` /
+   * `adoptSnapshot`, because those say "this tab took over a PTY a skill run had
+   * already opened": there is exactly one of that PTY, and a copy of a tab is a
+   * new shell, not a second claim on the same one. */
+  const duplicateSession = useCallback(
+    (id: string) => {
+      const from = sessions.find((s) => s.id === id);
+      if (!from) return;
+      // Built out here, not inside the updater: `nextSeq` bumps a ref and
+      // `setActiveSessionId` is a second write, and an updater that does either
+      // is not a pure function of its argument. React is entitled to call it
+      // twice, and in development it does.
+      const copy: TermSession =
+        from.type === "ssh"
+          ? {
+              id: crypto.randomUUID(),
+              type: "ssh",
+              seq: nextSeq(),
+              host: from.host,
+            }
+          : {
+              id: crypto.randomUUID(),
+              type: "local",
+              seq: nextSeq(),
+              shell: from.shell,
+              cwd: from.cwd,
+              startupCommand: from.startupCommand,
+              profileLabel: from.profileLabel,
+              profileColor: from.profileColor,
+            };
+      setSessions((prev) => {
+        const at = prev.findIndex((s) => s.id === id);
+        if (at === -1) return prev;
+        return [...prev.slice(0, at + 1), copy, ...prev.slice(at + 1)];
+      });
+      setActiveSessionId(copy.id);
+    },
+    [sessions, nextSeq],
+  );
+
   /** Open a local shell (PowerShell / pwsh / Command Prompt / WSL) as a tab.
    * `opts` carries a saved profile's cwd / startup command / name when the open
    * came from a profile; absent for a plain shell pick. */
@@ -537,6 +586,7 @@ function App() {
           onCloseSession={closeSession}
           onReorder={reorderSessions}
           onRenameSession={renameSession}
+          onDuplicateSession={duplicateSession}
           onMaximize={maximizeTerminal}
           maximized={maximized}
           gridFullscreen={gridFullscreen}
