@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { type Host } from "@/lib/tauri/hosts";
 import { allTags, parseTags } from "@/lib/hostTags";
+import { useDismissOnOutside } from "@/lib/useDismissOnOutside";
 import { TAG_FILTER_KEY, UNTAGGED_KEY } from "@/pages/hosts/constants";
 
 /** Tag filter (#8) for the hosts table: the set of UNCHECKED tags (lowercase)
@@ -74,21 +75,8 @@ export function useHostTagFilter(hosts: Host[], sortedHosts: Host[]) {
   // Self-contained tag-filter dropdown, opened from the Tag header icon.
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const tagMenuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!tagMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!tagMenuRef.current?.contains(e.target as Node)) setTagMenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setTagMenuOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [tagMenuOpen]);
+  const closeTagMenu = useCallback(() => setTagMenuOpen(false), []);
+  useDismissOnOutside(tagMenuRef, tagMenuOpen, closeTagMenu);
 
   return {
     hiddenTags,

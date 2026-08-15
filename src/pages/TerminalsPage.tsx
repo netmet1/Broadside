@@ -91,6 +91,7 @@ import {
   getAppSettings,
 } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
+import { useDismissOnOutside } from "@/lib/useDismissOnOutside";
 import { useShortcuts } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
 
@@ -284,23 +285,8 @@ export function TerminalsPage({
   // webview, unlike a Select used as an action menu).
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const launcherRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!shellMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!launcherRef.current?.contains(e.target as Node)) {
-        setShellMenuOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShellMenuOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [shellMenuOpen]);
+  const closeShellMenu = useCallback(() => setShellMenuOpen(false), []);
+  useDismissOnOutside(launcherRef, shellMenuOpen, closeShellMenu);
 
   // COM ports, for the launcher's serial section. Re-read every time the menu
   // opens rather than once at startup like the shell list: a USB serial adapter

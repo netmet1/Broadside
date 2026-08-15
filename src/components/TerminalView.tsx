@@ -107,6 +107,43 @@ function readSearchDecorations() {
   };
 }
 
+/** The escape sequence that pushes whatever is on a pane's screen up into its
+ * scrollback and leaves the cursor at the top of a blank one.
+ *
+ * For a reconnect. The pane keeps the dead session's output on purpose, and on
+ * a host that takes Broadside's setup line that goes unnoticed, because the
+ * `clear` in the line wipes the screen a moment later. A host we send nothing
+ * to (a console menu on an appliance, pfSense's `rc.initial`) has no such
+ * clear, so its menu printed directly underneath the old copy and the pane read
+ * as having drawn it twice.
+ *
+ * Line feeds rather than an erase, because nothing here is worth throwing away:
+ * everything the old session printed is still there to scroll back to, which is
+ * more than a Linux host's own `clear` leaves behind (it ends in `ESC[3J`, which
+ * drops the scrollback outright). Exactly as many as there are used rows, so a
+ * short screen does not bury itself under blank ones on the way up.
+ */
+function pushScreenIntoScrollback(term: Terminal): string {
+  const buf = term.buffer.active;
+  // A session that died inside a full-screen program (less, htop, an installer)
+  // left the pane on the alternate screen, which has no scrollback to push
+  // anything into and would swallow the new session's output as well. Come back
+  // to the normal buffer first; its rows are unmeasurable from here, so that
+  // case pays a whole screenful.
+  if (buf.type === "alternate") {
+    return `\x1b[?1049l\x1b[${term.rows};1H${"\n".repeat(term.rows)}\x1b[H`;
+  }
+  let used = 0;
+  for (let y = 0; y < term.rows; y++) {
+    if (buf.getLine(buf.baseY + y)?.translateToString(true)) used = y + 1;
+  }
+  // An empty screen still gets homed: the cursor can be sitting anywhere, and
+  // the new session should start at the top rather than wherever the old one
+  // stopped.
+  if (used === 0) return "\x1b[H";
+  return `\x1b[${term.rows};1H${"\n".repeat(used)}\x1b[H`;
+}
+
 type Phase =
   | { kind: "connecting" }
   | { kind: "open" }
@@ -221,6 +258,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const dataReadyRef = useRef<Promise<unknown> | null>(null);
   // Guards the one-time write of an adopted session's scrollback snapshot.
   const snapshotWrittenRef = useRef(false);
+  // A reconnect is waiting to start on a clean screen. Armed when the connect
+  // effect re-runs, spent by the first bytes of the new session, which is the
+  // moment that matters: doing it when Reconnect is pressed would blank the
+  // pane for the whole connect and take away the output the operator is
+  // probably still reading. See pushScreenIntoScrollback.
+  const freshScreenRef = useRef(false);
   // Deadline (performance.now) until which a leading `^L` arriving from the
   // shell is the echo of our own Reset display form feed and is dropped before
   // it is drawn. Armed by the reset effect below, disarmed by the first hit.
@@ -518,6 +561,17 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     };
     contextMenuEl?.addEventListener("mouseup", onMouseUp);
 
+    // Everything the session says goes through here rather than to
+    // `term.write` directly, so a reconnect's clean screen cannot be missed by
+    // one of the two paths below.
+    const writeToPane = (data: Uint8Array) => {
+      if (freshScreenRef.current) {
+        freshScreenRef.current = false;
+        term.write(pushScreenIntoScrollback(term));
+      }
+      term.write(data);
+    };
+
     const unlistenData = onPtyData(sessionId, (bytes) => {
       // Reset display sent a form feed. If a command is running in the
       // foreground the shell is not reading its keyboard, so the tty echoes
@@ -547,11 +601,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           // finishes and the shell prints its own next prompt.
           ptyWrite(sessionId, "\x7f").catch(() => {});
           const rest = bytes.subarray(2);
-          if (rest.length) term.write(rest);
+          if (rest.length) writeToPane(rest);
           return;
         }
       }
-      term.write(bytes);
+      writeToPane(bytes);
     });
     dataReadyRef.current = unlistenData;
     const unlistenClosed = onPtyClosed((closed) => {
@@ -747,6 +801,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // Connect (and reconnect after a TOFU gate is resolved).
   useEffect(() => {
     let cancelled = false;
+    // Anything but the first connect is writing into a pane that already has a
+    // screen in it. Arm the clean start here and let the first bytes spend it,
+    // so a connect that never lands leaves the old output where it was.
+    if (retryNonce > 0) freshScreenRef.current = true;
     // Pending profile startup-command injection (local shells), cleared if the
     // tab tears down or reconnects before it fires.
     let startupTimer: ReturnType<typeof setTimeout> | undefined;
