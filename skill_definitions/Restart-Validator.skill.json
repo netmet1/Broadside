@@ -1,11 +1,12 @@
 {
-  "broadsideSkill": 1,
-  "name": "Restart Constellation Validator",
-  "description": "Upgrade, Clean and Bring a Constelaltion Validator Back Online",
+  "broadsideSkill": 2,
+  "name": "Restart Validator",
+  "description": "Upgrade, Clean and Bring Validator Back Up",
   "icon": null,
   "kind": "sequence",
   "config": {
     "allowTransfer": true,
+    "maxStepRepeats": 100,
     "params": [],
     "startStepId": "s1",
     "steps": [
@@ -78,8 +79,9 @@
       {
         "id": "s8",
         "kind": "expect",
-        "onMatch": "s9",
-        "onTimeout": "pause",
+        "onMatch": "s11",
+        "onTimeout": "goto",
+        "onTimeoutTarget": "s9",
         "pattern": "Discord notifications",
         "sendOnMatch": "n\\n",
         "timeoutSecs": 10
@@ -89,25 +91,26 @@
         "kind": "expect",
         "onMatch": "s10",
         "onTimeout": "pause",
-        "pattern": "start the validator",
+        "pattern": "update now",
         "sendOnMatch": "y\\n",
-        "timeoutSecs": 300
+        "timeoutSecs": 60
       },
       {
         "id": "s10",
         "kind": "expect",
-        "onMatch": "s11",
-        "onTimeout": "pause",
-        "pattern": "The validator node layer",
+        "onMatch": "s7",
+        "onTimeout": "goto",
+        "onTimeoutTarget": "s11",
+        "pattern": "wish to ",
         "sendOnMatch": "y\\n",
-        "timeoutSecs": 300
+        "timeoutSecs": 60
       },
       {
         "id": "s11",
         "kind": "expect",
         "onMatch": "s12",
         "onTimeout": "pause",
-        "pattern": "snapshot fast forward feature",
+        "pattern": "start the validator",
         "sendOnMatch": "y\\n",
         "timeoutSecs": 300
       },
@@ -116,16 +119,35 @@
         "kind": "expect",
         "onMatch": "s13",
         "onTimeout": "pause",
+        "pattern": "The validator node layer",
+        "sendOnMatch": "y\\n",
+        "timeoutSecs": 300
+      },
+      {
+        "id": "s13",
+        "kind": "expect",
+        "onMatch": "s14",
+        "onTimeout": "pause",
+        "pattern": "snapshot fast forward feature",
+        "sendOnMatch": "y\\n",
+        "timeoutSecs": 300
+      },
+      {
+        "id": "s14",
+        "kind": "expect",
+        "onMatch": "s15",
+        "onTimeout": "pause",
         "pattern": "GL1",
         "sendOnMatch": "y\\n",
         "timeoutSecs": 10
       },
       {
-        "id": "s13",
+        "id": "s15",
         "kind": "wait",
         "next": "stop",
         "seconds": 600
       }
-    ]
+    ],
+    "unlimitedStepRepeats": false
   }
 }
