@@ -6,6 +6,7 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   SendIcon,
+  TerminalIcon,
   XIcon,
 } from "lucide-react";
 
@@ -54,6 +55,7 @@ export function LocalBroadcastPanel({
   connectedSessions,
   scope,
   onManageShortcuts,
+  onJumpToSession,
   storagePrefix,
 }: {
   visible: boolean;
@@ -64,6 +66,8 @@ export function LocalBroadcastPanel({
   /** Shortcut scope for this family (Windows shells → local; WSL → ssh). */
   scope: ShortcutScope;
   onManageShortcuts: () => void;
+  /** Switch to Terminals and select this exact session. */
+  onJumpToSession: (sessionId: string) => void;
   /** Distinct localStorage key prefix so each family's rail state is separate. */
   storagePrefix: string;
 }) {
@@ -91,8 +95,18 @@ export function LocalBroadcastPanel({
       suffix: suffixById.get(s.id) ?? "",
       color: LOCAL_COLOR,
       kind: s.shell.kind,
+      sessionId: s.id,
     }),
     [suffixById],
+  );
+
+  // Open session ids in this family, drives the "go to terminal" icon on a
+  // dispatch row. These runs are never persisted (unlike the SSH panel), so
+  // a row's sessionId is only ever stale for the length of this page's
+  // lifetime: closing the tab drops it from `sessions` and the icon with it.
+  const openSessionIds = useMemo(
+    () => new Set(sessions.map((s) => s.id)),
+    [sessions],
   );
 
   const {
@@ -387,7 +401,25 @@ export function LocalBroadcastPanel({
                                 {r.suffix}
                               </span>
                             </span>
-                            <span className="ml-auto font-mono text-xs text-muted-foreground">
+                            {r.sessionId != null &&
+                              openSessionIds.has(r.sessionId) && (
+                                <button
+                                  type="button"
+                                  onClick={() => onJumpToSession(r.sessionId!)}
+                                  title="Go to this shell's terminal tab"
+                                  aria-label="Go to this shell's terminal tab"
+                                  className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                >
+                                  <TerminalIcon className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            <span
+                              className={`font-mono text-xs text-muted-foreground ${
+                                r.sessionId != null && openSessionIds.has(r.sessionId)
+                                  ? ""
+                                  : "ml-auto"
+                              }`}
+                            >
                               {r.ok ? "sent (see Terminals tab)" : r.message}
                             </span>
                           </div>

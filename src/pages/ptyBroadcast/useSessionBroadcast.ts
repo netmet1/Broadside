@@ -38,6 +38,13 @@ export type DispatchResult = {
   suffix?: string;
   color: string;
   kind?: string;
+  /** The exact session this row was dispatched to, for a per-row "go to
+   * terminal" jump. Only meaningful for local shells: they have no host id
+   * to jump by, and (unlike the SSH panel) these runs are never persisted,
+   * so a live session id in memory is always safe to carry. Left undefined
+   * on the SSH path, same as `kind`, so it never reaches the persisted
+   * `StoredPtyDispatch` backend struct. */
+  sessionId?: string;
   ok: boolean;
   message: string | null;
 };

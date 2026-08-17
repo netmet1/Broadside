@@ -64,11 +64,17 @@ export function BroadcastPage({
   visible,
   connectedHostIds,
   onManageShortcuts,
+  onOpenTerminal,
 }: {
   visible: boolean;
   /** Host ids with at least one connected terminal, drives the status dot. */
   connectedHostIds: Set<number>;
   onManageShortcuts: () => void;
+  /** Open a new terminal connection to a host (the block header's "go to
+   * terminal" icon). Broadcast runs over a one-off exec channel with no
+   * session of its own, so this always opens a fresh tab rather than
+   * reusing one that happens to be open already. */
+  onOpenTerminal: (host: Host) => void;
 }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -834,6 +840,9 @@ export function BroadcastPage({
                           running
                             ? undefined
                             : () => retryHostInRun(run.command, block.host_id)
+                        }
+                        onGoToTerminal={
+                          live ? () => onOpenTerminal(live) : undefined
                         }
                       />
                     );

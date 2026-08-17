@@ -5,6 +5,7 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   SendIcon,
+  TerminalIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -52,12 +53,15 @@ export function SshBroadcastPanel({
   sessions,
   connectedSessions,
   onManageShortcuts,
+  onJumpToHostTerminal,
 }: {
   visible: boolean;
   sessions: SshTermSession[];
   /** Session ids with a live connection, only these can receive input. */
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
+  /** Switch to Terminals and select the host's open session. */
+  onJumpToHostTerminal: (hostId: number) => void;
 }) {
   // The " 02" the tab strip gives the second session on a host. Every other
   // list that names a session numbers them from here; this panel was the one
@@ -66,6 +70,13 @@ export function SshBroadcastPanel({
   // the numbering exists to prevent, on the one screen that sends a command to
   // both at once.
   const suffixById = useMemo(() => duplicateSuffixes(sessions), [sessions]);
+  // Host ids with an open SSH session, drives the "go to terminal" icon on a
+  // dispatch row (mirrors MultiTerminal's openHostIds); a run reloaded from
+  // history can still name a host whose session has since closed.
+  const openHostIds = useMemo(
+    () => new Set(sessions.map((s) => s.host.id)),
+    [sessions],
+  );
   const describe = useCallback(
     (s: SshTermSession) => ({
       host_id: s.host.id,
@@ -536,7 +547,24 @@ export function SshBroadcastPanel({
                                 {suffix}
                               </span>
                             </span>
-                            <span className="ml-auto font-mono text-xs text-muted-foreground">
+                            {r.host_id != null && openHostIds.has(r.host_id) && (
+                              <button
+                                type="button"
+                                onClick={() => onJumpToHostTerminal(r.host_id!)}
+                                title="Go to this host's terminal tab"
+                                aria-label="Go to this host's terminal tab"
+                                className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                              >
+                                <TerminalIcon className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <span
+                              className={`font-mono text-xs text-muted-foreground ${
+                                r.host_id != null && openHostIds.has(r.host_id)
+                                  ? ""
+                                  : "ml-auto"
+                              }`}
+                            >
                               {r.ok ? "sent (see Terminals tab)" : r.message}
                             </span>
                           </div>

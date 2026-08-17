@@ -379,6 +379,20 @@ function App() {
     [sessions],
   );
 
+  /** Jump straight to a known session id: switch to the Terminals page and
+   * select it. Used by PTY Broadcast's local-shell panels, where (unlike a
+   * host) the exact session dispatched to is already known, so there is
+   * nothing to look up. A no-op if the tab has since closed. */
+  const jumpToSession = useCallback(
+    (sessionId: string) => {
+      if (!sessions.some((s) => s.id === sessionId)) return;
+      setActiveSessionId(sessionId);
+      setMaxSessionId(null);
+      setPage("terminals");
+    },
+    [sessions],
+  );
+
   const openShortcutSettings = useCallback(() => {
     setSettingsFocus("shortcuts");
     setPage("settings");
@@ -562,6 +576,7 @@ function App() {
           visible={page === "broadcast"}
           connectedHostIds={connectedHostIds}
           onManageShortcuts={openShortcutSettings}
+          onOpenTerminal={openTerminal}
         />
       </div>
       {/* PTY Broadcast stays mounted so host selection and dispatch history
@@ -572,6 +587,8 @@ function App() {
           sessions={sessions}
           connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}
+          onJumpToHostTerminal={jumpToHostTerminal}
+          onJumpToSession={jumpToSession}
         />
       </div>
       {/* Terminals stay mounted so sessions survive navigation. */}
