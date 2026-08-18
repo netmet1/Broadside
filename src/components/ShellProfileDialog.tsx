@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpenIcon } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -56,6 +56,31 @@ export function ShellProfileDialog({
   const [startupCommand, setStartupCommand] = useState("");
   const [color, setColor] = useState("");
 
+  // The native colour picker is open. It is a browser-level popup, drawn over
+  // the page and outside our DOM, and it opens *downwards* from a swatch that
+  // sits directly above the footer: it lands on Cancel and Save. The click that
+  // dismisses it then goes through to whichever button is underneath, so
+  // picking a colour and clicking away threw the half-filled form out.
+  //
+  // While it is up, a transparent shield covers the dialog and swallows exactly
+  // one click (see below). Nothing here can reach the popup, which is the point:
+  // the shield only ever guards our own controls.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const colorInputRef = useRef<HTMLInputElement>(null);
+
+  // `change` on a colour input means the popup has closed and committed, which
+  // is the one close we get told about. React's own onChange is the `input`
+  // event here and fires continuously while the popup is still up, so it cannot
+  // stand in for this. A close with no colour chosen (Escape) reports nothing
+  // at all, and the shield's own click is the backstop for that.
+  useEffect(() => {
+    const el = colorInputRef.current;
+    if (!el) return;
+    const done = () => setPickerOpen(false);
+    el.addEventListener("change", done);
+    return () => el.removeEventListener("change", done);
+  }, [open]);
+
   // Seed the form when the dialog opens (new = blank; edit = the profile).
   // Adjusted during render rather than in an effect, React's documented way to
   // reset state derived from props: an effect would paint the previous
@@ -64,6 +89,9 @@ export function ShellProfileDialog({
   const [seed, setSeed] = useState({ open, initial, shells });
   if (seed.open !== open || seed.initial !== initial || seed.shells !== shells) {
     setSeed({ open, initial, shells });
+    // Cleared either way: a shield left standing from the last time this dialog
+    // was open would eat the first click of the next one.
+    setPickerOpen(false);
     if (open) {
       setLabel(initial?.label ?? "");
       setShellId(initial?.shellId ?? shells[0]?.id ?? "");
@@ -123,6 +151,25 @@ export function ShellProfileDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
+        {/* Swallows the click that dismisses the colour popup, so it cannot
+            land on Cancel (or Save) underneath. Deliberately covers the whole
+            dialog rather than just the footer: the popup can open over any of
+            it depending on where the window sits, and "the click that puts the
+            picker away does nothing else" is a rule worth being able to state
+            in one line. It clears itself on that click, so at most one is ever
+            eaten, and it cannot reach the popup, which is not in our DOM. */}
+        {pickerOpen && (
+          <div
+            className="absolute inset-0 z-50"
+            aria-hidden="true"
+            // Not on pointerdown: clearing there would unmount the shield
+            // before the click was dispatched, and the click would find the
+            // button after all, which is the bug. preventDefault keeps the
+            // press from moving focus onto whatever is beneath.
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={() => setPickerOpen(false)}
+          />
+        )}
         <DialogHeader>
           <DialogTitle>{initial ? "Edit profile" : "New shell profile"}</DialogTitle>
           <DialogDescription>
@@ -256,9 +303,11 @@ export function ShellProfileDialog({
                   aria-hidden="true"
                 />
                 <input
+                  ref={colorInputRef}
                   type="color"
                   value={color || inheritedColor || "#3b82f6"}
                   onChange={(e) => setColor(e.target.value)}
+                  onClick={() => setPickerOpen(true)}
                   className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                   aria-label="Pick any colour"
                   title="Pick any colour"
