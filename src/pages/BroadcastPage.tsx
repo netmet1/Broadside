@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Composer } from "@/components/Composer";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
 import { ShellChip } from "@/components/ShellChip";
+import { GoToTerminalButton } from "@/components/GoToTerminalButton";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import {
   BatchTofuDialog,
@@ -692,6 +693,14 @@ export function BroadcastPage({
                       : "No connected terminal for this host"
                   }
                 />
+                {/* On every row, connected or not, because it always opens a
+                    new connection: this page's runs go over an exec channel
+                    that belongs to no session, so there is never an existing
+                    tab that is "the" one for a result. */}
+                <GoToTerminalButton
+                  mode="new"
+                  onClick={() => onOpenTerminal(h)}
+                />
               </label>
             ),
           )}
@@ -840,9 +849,6 @@ export function BroadcastPage({
                           running
                             ? undefined
                             : () => retryHostInRun(run.command, block.host_id)
-                        }
-                        onGoToTerminal={
-                          live ? () => onOpenTerminal(live) : undefined
                         }
                       />
                     );

@@ -1483,7 +1483,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-broadcast",
     title: "Broadcast",
     keywords:
-      "broadcast many hosts one command exec non-interactive output history autoscroll headers timeout guard destructive parallel concurrency rail filter tag label search find select all sort collapse go to terminal icon jump open new connection tab always opens new even if already open",
+      "broadcast many hosts one command exec non-interactive output history autoscroll headers timeout guard destructive parallel concurrency rail filter tag label search find select all sort collapse go to terminal icon on every rail row end of the row past the connection dot open new connection tab always opens a new one even if already open not a jump no icon on the block header any more collapsed rail initials",
     body: (
       <>
         <Lead>
@@ -1511,13 +1511,14 @@ export const SECTIONS: HelpSection[] = [
               you can hide the per-host headers if you prefer a compact view.
             </li>
             <li>
-              Each block's header carries a <Nav>terminal</Nav> icon. Clicking it{" "}
+              Every row in the host rail ends with a <Nav>terminal</Nav> icon,
+              just past its connection dot. Clicking it{" "}
               <strong className="font-semibold">always opens a new terminal
               connection</strong> to that host, even when one is already open,
               because a broadcast's exec results aren't tied to any session, so
-              there is nothing to jump back to. It is hidden with the headers
-              (<Nav>Headers</Nav> off), and hidden entirely once the host is
-              deleted.
+              there is nothing to jump back to. It is on every row for the same
+              reason, connected or not, and it is not drawn while the rail is
+              collapsed to initials.
             </li>
           </Bullets>
           <H3>Choosing and filtering hosts</H3>
@@ -1564,7 +1565,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-ptybroadcast",
     title: "PTY Broadcast",
     keywords:
-      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return serial console com port switches routers several consoles at once fifth tab go to terminal icon jump switch select tab dispatch row",
+      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return serial console com port switches routers several consoles at once fifth tab go to terminal icon on every rail row end of the row past the connection dot jump switch select that exact tab per session not per host works on dropped and exited rows too no icon on the dispatch report rows any more collapsed rail initials",
     body: (
       <>
         <Lead>
@@ -1626,11 +1627,13 @@ export const SECTIONS: HelpSection[] = [
               that has exited.
             </li>
             <li>
-              Every dispatch row, on every tab, carries a <Nav>terminal</Nav>{" "}
-              icon once the target is still open: it switches to{" "}
-              <Nav>Terminals</Nav> and selects that exact tab. The row hides the
-              icon once the session it names has closed, so it only ever offers
-              a jump you can actually make.
+              Every rail row, on all five tabs, ends with a{" "}
+              <Nav>terminal</Nav> icon that switches to <Nav>Terminals</Nav> and
+              selects that exact tab. By session and not by host: two rows can
+              be the same machine, and each one takes you to its own. It is on
+              the dropped and exited rows too, since their banner is usually
+              where you wanted to go, and it is not drawn while the rail is
+              collapsed to initials.
             </li>
             <li>
               There is one recall list for the whole app, shared with{" "}
@@ -1673,7 +1676,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-multiterminal",
     title: "MultiTerminal",
     keywords:
-      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror show manual activity typed layers icon indicator marker recorded composer filter tag label search find selectable connected",
+      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror show manual activity typed layers icon indicator marker recorded composer filter tag label search find selectable connected go to terminal icon moved off the block header onto the rail row end of row past the connection dot per session not per host second session 02 which tab does it open",
     body: (
       <>
         <Lead>
@@ -1732,13 +1735,19 @@ export const SECTIONS: HelpSection[] = [
             <li>
               With <Nav>Headers</Nav> on, each block has a header you can click to
               collapse or expand its output. Hover the header for a{" "}
-              <Nav>copy</Nav> icon (copies that block's output) and, when the host
-              still has an open terminal, a <Nav>terminal</Nav> icon that jumps to
-              its tab.
+              <Nav>copy</Nav> icon, which copies that block's output.
             </li>
             <li>
               With <Nav>Headers</Nav> off, blocks show output only, with no header
-              to collapse, copy or jump from.
+              to collapse or copy from.
+            </li>
+            <li>
+              To go from a block to the shell that produced it, use the{" "}
+              <Nav>terminal</Nav> icon at the end of that session's row in the
+              rail. It lives there rather than on the block because the rail
+              lists sessions: two rows can be the same machine, and each icon
+              takes you to its own tab rather than to whichever was opened
+              first.
             </li>
           </Bullets>
           <H3>Rail actions</H3>

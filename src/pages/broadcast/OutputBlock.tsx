@@ -2,7 +2,6 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   RotateCwIcon,
-  TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 
@@ -27,7 +26,6 @@ export function OutputBlock({
   onToggle,
   onReviewMismatch,
   onRetry,
-  onGoToTerminal,
 }: {
   block: Block;
   blockKey: string;
@@ -40,9 +38,6 @@ export function OutputBlock({
   /** Re-run this host with the run's command. Undefined while a run is in
    * flight (disables the per-block Retry button). */
   onRetry?: () => void;
-  /** Open a new terminal connection to this host. Undefined when the host has
-   * since been deleted (nothing to connect to), which hides the icon. */
-  onGoToTerminal?: () => void;
 }) {
   // With headers hidden there's no collapse affordance, so always show output;
   // a coloured left border keeps each host's block identifiable.
@@ -85,7 +80,6 @@ export function OutputBlock({
             summaryText={summary.text}
             toneClass={toneClass}
             onToggle={onToggle}
-            onGoToTerminal={onGoToTerminal}
           />
         )}
         {bodyShown && (
@@ -141,18 +135,17 @@ function BlockHeader({
   summaryText,
   toneClass,
   onToggle,
-  onGoToTerminal,
 }: {
   block: Block;
   summaryText: string;
   toneClass: string;
   onToggle: () => void;
-  onGoToTerminal?: () => void;
 }) {
   return (
-    <div
+    <button
+      type="button"
       onClick={onToggle}
-      className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent/40"
+      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent/40"
     >
       {block.collapsed ? (
         <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -164,24 +157,10 @@ function BlockHeader({
         style={{ backgroundColor: block.color }}
       />
       <span className="font-medium">{block.label}</span>
-      <span className="ml-auto flex items-center gap-2">
-        {onGoToTerminal && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onGoToTerminal();
-            }}
-            title="Open a new terminal connection to this host"
-            aria-label="Open a new terminal connection to this host"
-            className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <TerminalIcon className="h-3.5 w-3.5" />
-          </button>
-        )}
-        <span className={`font-mono text-xs ${toneClass}`}>{summaryText}</span>
+      <span className={`ml-auto font-mono text-xs ${toneClass}`}>
+        {summaryText}
       </span>
-    </div>
+    </button>
   );
 }
 

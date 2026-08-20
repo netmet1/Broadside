@@ -43,7 +43,6 @@ export function PtyBroadcastPage({
   sessions,
   connectedSessions,
   onManageShortcuts,
-  onJumpToHostTerminal,
   onJumpToSession,
 }: {
   visible: boolean;
@@ -51,11 +50,9 @@ export function PtyBroadcastPage({
   /** Session ids with a live connection, only these can receive input. */
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
-  /** Go-to-terminal for the SSH tab: switch to Terminals and select the
-   * host's open session. */
-  onJumpToHostTerminal: (hostId: number) => void;
-  /** Go-to-terminal for the four local-shell tabs: switch to Terminals and
-   * select this exact session. */
+  /** The rails' go-to-terminal icon: switch to Terminals and select this exact
+   * session. By session on all five tabs, SSH included: a rail row is one open
+   * terminal, and two of them can be the same machine. */
   onJumpToSession: (sessionId: string) => void;
 }) {
   const [tab, setTab] = useState<PtyTab>(readTab);
@@ -161,7 +158,7 @@ export function PtyBroadcastPage({
             sessions={sshSessions}
             connectedSessions={connectedSessions}
             onManageShortcuts={onManageShortcuts}
-            onJumpToHostTerminal={onJumpToHostTerminal}
+            onJumpToSession={onJumpToSession}
           />
         </div>
         <div className={tab === "powershell" ? "h-full" : "hidden"}>

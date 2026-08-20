@@ -5,7 +5,6 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   SendIcon,
-  TerminalIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import { ShellChip } from "@/components/ShellChip";
+import { GoToTerminalButton } from "@/components/GoToTerminalButton";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
@@ -53,15 +53,15 @@ export function SshBroadcastPanel({
   sessions,
   connectedSessions,
   onManageShortcuts,
-  onJumpToHostTerminal,
+  onJumpToSession,
 }: {
   visible: boolean;
   sessions: SshTermSession[];
   /** Session ids with a live connection, only these can receive input. */
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
-  /** Switch to Terminals and select the host's open session. */
-  onJumpToHostTerminal: (hostId: number) => void;
+  /** Switch to Terminals and select this session's tab. */
+  onJumpToSession: (sessionId: string) => void;
 }) {
   // The " 02" the tab strip gives the second session on a host. Every other
   // list that names a session numbers them from here; this panel was the one
@@ -70,13 +70,6 @@ export function SshBroadcastPanel({
   // the numbering exists to prevent, on the one screen that sends a command to
   // both at once.
   const suffixById = useMemo(() => duplicateSuffixes(sessions), [sessions]);
-  // Host ids with an open SSH session, drives the "go to terminal" icon on a
-  // dispatch row (mirrors MultiTerminal's openHostIds); a run reloaded from
-  // history can still name a host whose session has since closed.
-  const openHostIds = useMemo(
-    () => new Set(sessions.map((s) => s.host.id)),
-    [sessions],
-  );
   const describe = useCallback(
     (s: SshTermSession) => ({
       host_id: s.host.id,
@@ -406,15 +399,22 @@ export function SshBroadcastPanel({
                   />
                   <span
                     className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
-                    connectedSessions.has(s.id)
-                      ? "bg-emerald-500"
-                      : "bg-red-500/70"
-                  }`}
-                  title={
-                    connectedSessions.has(s.id) ? "Connected" : "Not connected"
-                  }
-                />
-              </label>
+                      connectedSessions.has(s.id)
+                        ? "bg-emerald-500"
+                        : "bg-red-500/70"
+                    }`}
+                    title={
+                      connectedSessions.has(s.id) ? "Connected" : "Not connected"
+                    }
+                  />
+                  {/* On every row, including the disconnected ones: this panel
+                      cannot dispatch to a dropped session, and its Reconnect
+                      button is the thing you want next. */}
+                  <GoToTerminalButton
+                    mode="jump"
+                    onClick={() => onJumpToSession(s.id)}
+                  />
+                </label>
               ),
             )}
             {sessions.length === 0 && !railCollapsed && (
@@ -547,24 +547,7 @@ export function SshBroadcastPanel({
                                 {suffix}
                               </span>
                             </span>
-                            {r.host_id != null && openHostIds.has(r.host_id) && (
-                              <button
-                                type="button"
-                                onClick={() => onJumpToHostTerminal(r.host_id!)}
-                                title="Go to this host's terminal tab"
-                                aria-label="Go to this host's terminal tab"
-                                className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                              >
-                                <TerminalIcon className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            <span
-                              className={`font-mono text-xs text-muted-foreground ${
-                                r.host_id != null && openHostIds.has(r.host_id)
-                                  ? ""
-                                  : "ml-auto"
-                              }`}
-                            >
+                            <span className="ml-auto font-mono text-xs text-muted-foreground">
                               {r.ok ? "sent (see Terminals tab)" : r.message}
                             </span>
                           </div>

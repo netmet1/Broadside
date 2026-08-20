@@ -9,7 +9,6 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   SendIcon,
-  TerminalIcon,
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
@@ -37,6 +36,7 @@ import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { useRailFilter } from "@/lib/useRailFilter";
 import { railTooltip } from "@/lib/hostTags";
 import { RailFilterControls } from "@/components/RailFilterControls";
+import { GoToTerminalButton } from "@/components/GoToTerminalButton";
 import {
   omniBlocksAdd,
   omniBlocksClear,
@@ -112,14 +112,16 @@ export function MultiTerminalPage({
   connectedSessions,
   onManageShortcuts,
   onCloseAllTerminals,
-  onJumpToHostTerminal,
+  onJumpToSession,
 }: {
   visible: boolean;
   sessions: SshTermSession[];
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
   onCloseAllTerminals: () => void;
-  onJumpToHostTerminal: (hostId: number) => void;
+  /** Select this session's tab on the Terminals page. By session and not by
+   * host: the rail lists sessions, and two of them can be the same machine. */
+  onJumpToSession: (sessionId: string) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [command, setCommand] = useState("");
@@ -157,12 +159,6 @@ export function MultiTerminalPage({
   // blocks headed the same thing cannot.
   const suffixById = useMemo(() => duplicateSuffixes(sessions), [sessions]);
 
-  // Host ids with an open terminal session, drives whether a block shows the
-  // "jump to this host's terminal" icon (hidden for deleted/closed hosts).
-  const openHostIds = useMemo(
-    () => new Set(sessions.map((s) => s.host.id)),
-    [sessions],
-  );
 
   // Gating: the tab is always present but inert until 2+ terminals are open.
   const ready = sessions.length >= 2;
@@ -731,6 +727,13 @@ export function MultiTerminalPage({
                     }`}
                     title={isConnected ? "Connected" : "Not connected"}
                   />
+                  {/* On every row, including the disconnected ones: a dropped
+                      session still has a tab, and its banner is exactly where
+                      someone reading this rail wants to be taken. */}
+                  <GoToTerminalButton
+                    mode="jump"
+                    onClick={() => onJumpToSession(s.id)}
+                  />
                 </label>
               );
             })}
@@ -943,11 +946,6 @@ export function MultiTerminalPage({
                       interactivity={b.interactivity}
                       showHeader={headers}
                       onDelete={() => deleteBlock(b)}
-                      onJumpToTerminal={
-                        b.hostId != null && openHostIds.has(b.hostId)
-                          ? () => onJumpToHostTerminal(b.hostId!)
-                          : undefined
-                      }
                     />
                   );
                 })}
@@ -1063,7 +1061,6 @@ function OmniBlock({
   interactivity,
   showHeader,
   onDelete,
-  onJumpToTerminal,
 }: {
   color: string;
   label: string;
@@ -1078,8 +1075,6 @@ function OmniBlock({
   interactivity: BlockInteractivity;
   showHeader: boolean;
   onDelete: () => void;
-  /** Provided only when the host still has an open terminal session. */
-  onJumpToTerminal?: () => void;
 }) {
   const interactive = interactivity !== "normal";
   const hasLines = lines.length > 0;
@@ -1161,20 +1156,6 @@ function OmniBlock({
               className="hidden rounded p-0.5 hover:bg-accent hover:text-foreground group-hover:inline-flex"
             >
               <CopyIcon className="h-3.5 w-3.5" />
-            </button>
-          )}
-          {onJumpToTerminal && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onJumpToTerminal();
-              }}
-              title="Go to this host's terminal tab"
-              aria-label="Go to this host's terminal tab"
-              className="hidden rounded p-0.5 hover:bg-accent hover:text-foreground group-hover:inline-flex"
-            >
-              <TerminalIcon className="h-3.5 w-3.5" />
             </button>
           )}
           {!interactive && exitCode !== null && (

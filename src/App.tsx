@@ -364,25 +364,14 @@ function App() {
     });
   }, []);
 
-  /** Jump from a MultiTerminal block to that host's live terminal: switch to the
-   * Terminals page and select the host's first open session. */
-  const jumpToHostTerminal = useCallback(
-    (hostId: number) => {
-      const sess = sessions.find(
-        (s) => s.type === "ssh" && s.host.id === hostId,
-      );
-      if (!sess) return;
-      setActiveSessionId(sess.id);
-      setMaxSessionId(null);
-      setPage("terminals");
-    },
-    [sessions],
-  );
-
   /** Jump straight to a known session id: switch to the Terminals page and
-   * select it. Used by PTY Broadcast's local-shell panels, where (unlike a
-   * host) the exact session dispatched to is already known, so there is
-   * nothing to look up. A no-op if the tab has since closed. */
+   * select it. What the go-to-terminal icon on every selection rail does
+   * (MultiTerminal, PTY Broadcast on all five of its tabs).
+   *
+   * By session and never by host, which the rails used to do: a rail row *is*
+   * one open terminal, two rows can be the same machine, and jumping by host
+   * sent both of them to whichever session happened to be first. A no-op if
+   * the tab has since closed. */
   const jumpToSession = useCallback(
     (sessionId: string) => {
       if (!sessions.some((s) => s.id === sessionId)) return;
@@ -587,7 +576,6 @@ function App() {
           sessions={sessions}
           connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}
-          onJumpToHostTerminal={jumpToHostTerminal}
           onJumpToSession={jumpToSession}
         />
       </div>
@@ -621,7 +609,7 @@ function App() {
           connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}
           onCloseAllTerminals={closeAllTerminals}
-          onJumpToHostTerminal={jumpToHostTerminal}
+          onJumpToSession={jumpToSession}
         />
       </div>
       {/* Skills stays mounted so a running skill (and its live per-host panes)
