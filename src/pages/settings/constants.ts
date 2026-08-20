@@ -21,6 +21,7 @@ export const SECTION_TITLES = [
   "Shortcut commands",
   "Appearance",
   "Custom terminals",
+  "Sessions",
   "Grid",
   "Skills",
   "Backup & Restore",
@@ -53,6 +54,8 @@ export const SECTION_KEYWORDS: Record<string, string> = {
     "theme dark light mode colour color font family size text bigger smaller zoom ctrl wheel scroll terminal font application font columns host table hide shells launcher local shells strict my font is missing inter segoe ui arial proportional variable width not in the list monospace fixed width only install a font scrollback scroll back buffer history lines kept how far can i scroll up output cut off truncated lost only 1000 lines memory per pane",
   "Custom terminals":
     "git bash msys msys2 cygwin add my own program exe application launcher path arguments browse posix bash-like command language family terminal application third party colour color tab colours tint highlight powershell command prompt wsl serial which tab am i in tell tabs apart profile colour",
+  Sessions:
+    "session timeout idle close automatically after minutes seconds inactivity abandoned forgotten tab left open overnight keep alive keepalive nat firewall state table drop connection dies silently hangs after a while frozen unresponsive terminal packet every minute why did my terminal close by itself disable turn off never close",
   Grid: "tiles layout columns rows tile size width height strict drag resize short last row stretch tall gaps split screen side by side",
   Skills:
     "skill log logging record run history remote shell history bash_history up arrow recall summary itemized debug run panel step log exit codes json text output style where to log keep commands out of history audit what did the skill do",

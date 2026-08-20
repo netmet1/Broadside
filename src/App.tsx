@@ -22,6 +22,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { isExitGuardEnabled } from "@/lib/exitGuard";
+import {
+  KEEPALIVE_SECS,
+  SESSION_PREFS_EVENT,
+  loadSessionPrefs,
+} from "@/lib/sessionPrefs";
+import { setSshKeepalive } from "@/lib/tauri/settings";
 import { HostsPage } from "@/pages/HostsPage";
 import { BroadcastPage } from "@/pages/BroadcastPage";
 import { TerminalsPage } from "@/pages/TerminalsPage";
@@ -387,6 +393,30 @@ function App() {
     setPage("settings");
   }, []);
 
+  /** What the amber line on an idle-closed pane links to. */
+  const openSessionSettings = useCallback(() => {
+    setSettingsFocus("sessions");
+    setPage("settings");
+  }, []);
+
+  // Push the keepalive preference down to the connection layer: once at
+  // startup, and again whenever Settings changes it. It is a localStorage pref
+  // (per machine, like the grid and column ones) and the SSH layer holds it in
+  // a process-wide value read at connect time, so this is the one place the two
+  // are joined up. Connections already open keep whatever they started with.
+  useEffect(() => {
+    const push = () => {
+      const { keepalive } = loadSessionPrefs();
+      setSshKeepalive(keepalive ? KEEPALIVE_SECS : 0).catch(() => {
+        // Nothing useful to say: the worst case is that sessions behave as
+        // they did before this setting existed.
+      });
+    };
+    push();
+    window.addEventListener(SESSION_PREFS_EVENT, push);
+    return () => window.removeEventListener(SESSION_PREFS_EVENT, push);
+  }, []);
+
   // Mount Settings the first time it's opened, then leave it mounted (below) so
   // re-visits are instant. We deliberately do NOT pre-warm at startup: mounting
   // this large tree is genuinely expensive, and doing it during launch (which
@@ -598,6 +628,7 @@ function App() {
           onGridFullscreen={setGridFullscreen}
           onOpenLocalShell={openLocalShell}
           onManageShortcuts={openShortcutSettings}
+          onOpenSessionSettings={openSessionSettings}
         />
       </div>
       {/* MultiTerminal stays mounted so its aggregated block log survives tab

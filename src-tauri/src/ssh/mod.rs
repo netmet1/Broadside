@@ -19,6 +19,26 @@ pub mod sudo_inject;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How often a keepalive goes out on a new connection, in seconds. Zero is off.
+///
+/// A process-wide setting rather than a per-connect argument, because it is a
+/// preference about this copy of Broadside and not about any host: threading it
+/// through every caller (terminals, exec, SFTP, skill runs) would be a lot of
+/// signature for a number that is the same everywhere. Written by
+/// `set_ssh_keepalive` when the app starts and whenever the setting changes.
+///
+/// Read at connect time, so a change reaches the next connection rather than
+/// the ones already up. russh sets the interval when the session starts and
+/// there is no supported way to move it afterwards, and reconnecting somebody's
+/// live shells to apply a preference would be a much worse trade than waiting.
+static KEEPALIVE_SECS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Set the keepalive interval for connections opened from now on. Zero is off.
+#[tauri::command]
+pub fn set_ssh_keepalive(secs: u64) {
+    KEEPALIVE_SECS.store(secs, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// How many SSH handshakes may be in flight at once, across the whole program.
 ///
 /// Opening a wall of terminals fires every connect at the same instant, and an
@@ -488,8 +508,23 @@ async fn connect_and_auth_once(
     //
     // Costs nothing in return here. SSH already batches at the packet layer,
     // and bulk transfers fill segments on their own.
+    //
+    // Keepalive, when the operator has asked for it: a small global request on
+    // a repeat, so a firewall or NAT between here and the host keeps the state
+    // table entry for this connection alive. Without it a session left at a
+    // prompt for long enough is quietly cut in the middle, and the way you find
+    // out is that a keystroke goes nowhere and the tab hangs until TCP gives up.
+    //
+    // `keepalive_max: 0` deliberately: russh's default of 3 *closes* the
+    // connection after three unanswered keepalives, which would turn a feature
+    // meant to keep sessions alive into a new way for a busy server to lose
+    // one. Broadside detects a dead connection by the connection dying, the way
+    // it always has.
+    let keepalive = KEEPALIVE_SECS.load(std::sync::atomic::Ordering::Relaxed);
     let config = Arc::new(client::Config {
         nodelay: true,
+        keepalive_interval: (keepalive > 0).then(|| Duration::from_secs(keepalive)),
+        keepalive_max: 0,
         ..Default::default()
     });
 

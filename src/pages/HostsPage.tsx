@@ -1,4 +1,5 @@
 import {
+  Fragment,
   type ReactNode,
   useCallback,
   useEffect,
@@ -62,7 +63,13 @@ import {
   exportHosts,
   listHosts,
 } from "@/lib/tauri/hosts";
-import { HIDEABLE_COLUMNS } from "@/lib/hostColumns";
+import {
+  HIDEABLE_COLUMNS,
+  HOST_COLUMNS_EVENT,
+  loadColumnOrder,
+  reorderColumns,
+  saveColumnOrder,
+} from "@/lib/hostColumns";
 import { parseTags } from "@/lib/hostTags";
 import { ShellChip } from "@/components/ShellChip";
 import { HOSTS_NAV_HINT } from "@/components/AppShell";
@@ -159,9 +166,389 @@ export function HostsPage({
     [hosts, connectedHostIds],
   );
 
+  // Column order (dragged by the header labels, persisted). The three fixed
+  // columns are not in it: the checkbox and swatch are the row's grip and the
+  // actions are its tail, so they bracket whatever order the rest are in.
+  const [colOrder, setColOrder] = useState(loadColumnOrder);
+  /** The column being dragged, and the one the cursor is over. Both null when
+   * nothing is being dragged, which is also what hides the drop marker. */
+  const [dragCol, setDragCol] = useState<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => setColOrder(loadColumnOrder());
+    window.addEventListener(HOST_COLUMNS_EVENT, read);
+    return () => window.removeEventListener(HOST_COLUMNS_EVENT, read);
+  }, []);
+  /** Every column id in render order, fixed ones included. The colgroup, the
+   * header and each row all walk this, so they cannot disagree. */
+  const orderedIds = useMemo(
+    () => ["select", "swatch", ...colOrder, "actions"],
+    [colOrder],
+  );
+
   // Drag-to-resize / double-click-to-fit columns + the hidden-column set.
   const { colWidths, hiddenCols, tableWidth, tableScrollRef, resizeHandle } =
-    useColumnResize();
+    useColumnResize(orderedIds);
+
+  /**
+   * Everything that makes a column header draggable, and a target for another
+   * one: spread onto the span wrapping each header's label.
+   *
+   * On the label and not on the whole cell, deliberately. The cell's right edge
+   * carries the resize strip, and a draggable ancestor swallows that gesture as
+   * a column drag, so dragging a column wider would move it instead. Keeping
+   * both gestures means keeping them on different elements.
+   */
+  const colDrag = (id: string) => ({
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      setDragCol(id);
+      e.dataTransfer.effectAllowed = "move";
+      // Some targets refuse a drag carrying no data at all.
+      e.dataTransfer.setData("text/plain", id);
+    },
+    onDragEnd: () => {
+      setDragCol(null);
+      setDragOverCol(null);
+    },
+    onDragOver: (e: React.DragEvent) => {
+      if (!dragCol || dragCol === id) return;
+      // Without this the drop never fires: refusing is the default for a
+      // dragover, and a target that never says otherwise never receives one.
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setDragOverCol(id);
+    },
+    onDragLeave: () => setDragOverCol((c) => (c === id ? null : c)),
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      if (dragCol) {
+        const next = reorderColumns(colOrder, dragCol, id);
+        setColOrder(next);
+        saveColumnOrder(next);
+      }
+      setDragCol(null);
+      setDragOverCol(null);
+    },
+    className: `inline-flex min-w-0 cursor-grab rounded active:cursor-grabbing${
+      dragOverCol === id && dragCol !== id
+        ? " bg-primary/20 ring-1 ring-primary/50"
+        : ""
+    }`,
+    title: "Drag to move this column",
+  });
+
+  /**
+   * Each movable column's header cell, by id.
+   *
+   * A lookup rather than a written-out sequence because the order is the
+   * user's now: the colgroup, this and the body cells all walk `colOrder`,
+   * so they cannot get out of step with one another. The cells themselves
+   * are unchanged; only what decides their position has moved.
+   */
+  const headCell = (id: string): ReactNode => {
+    switch (id) {
+      case "label":
+        return (
+          <TableHead className="relative">
+            <span {...colDrag("label")}>
+              <SortHeader
+                label="Label"
+                sortKey="label"
+                sort={sort}
+                onSort={toggleSort}
+                headHint={hint("The host's unique display name, shown in its colour, in logs, and when picking hosts")}
+              />
+            </span>
+            {resizeHandle("label")}
+          </TableHead>
+        );
+      case "status":
+        return (
+          <TableHead className={hiddenCols.has("status") ? "hidden" : "text-xs"}>
+            <span {...colDrag("status")}>
+              <SortHeader
+                label="Status"
+                display="S"
+                sortKey="status"
+                sort={sort}
+                onSort={toggleSort}
+                headHint={hint("Status (S): terminal connection. Green dot = a terminal to this host is connected; otherwise none is open")}
+              />
+            </span>
+          </TableHead>
+        );
+      case "hostname":
+        return (
+          <TableHead className="relative">
+            <span {...colDrag("hostname")}>
+              <SortHeader
+                label="Hostname"
+                sortKey="hostname"
+                sort={sort}
+                onSort={toggleSort}
+                headHint={hint("The host's address: the IP or DNS name used to connect")}
+              />
+            </span>
+            {resizeHandle("hostname")}
+          </TableHead>
+        );
+      case "port":
+        return (
+          <TableHead className={hiddenCols.has("port") ? "hidden" : "relative"}>
+            <span {...colDrag("port")}>
+              <SortHeader
+                label="Port"
+                sortKey="port"
+                sort={sort}
+                onSort={toggleSort}
+                headHint={hint("The SSH port (default 22)")}
+              />
+            </span>
+            {resizeHandle("port")}
+          </TableHead>
+        );
+      case "username":
+        return (
+          <TableHead className={hiddenCols.has("username") ? "hidden" : "relative"}>
+            <span {...colDrag("username")}>
+              <SortHeader
+                label="Username"
+                sortKey="username"
+                sort={sort}
+                onSort={toggleSort}
+                headHint={hint("The SSH login user for this host")}
+              />
+            </span>
+            {resizeHandle("username")}
+          </TableHead>
+        );
+      case "tag":
+        return (
+          <TableHead className={hiddenCols.has("tag") ? "hidden" : "relative"}>
+            <div className="flex min-w-0 items-center gap-1">
+              <span {...colDrag("tag")}>
+                <SortHeader
+                  label="Tag"
+                  sortKey="tag"
+                  sort={sort}
+                  onSort={toggleSort}
+                  headHint={hint("Tags for grouping/sorting; separate multiple with commas (e.g. prod, db)")}
+                />
+              </span>
+              <div ref={tagMenuRef} className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setTagMenuOpen((v) => !v)}
+                  aria-label="Filter by tag"
+                  aria-expanded={tagMenuOpen}
+                  className={`rounded p-0.5 ${
+                    tagFilterActive
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+                  }`}
+                  {...hint(
+                    tagFilterActive
+                      ? "Tag filter active, click to change (this session only)"
+                      : "Filter which hosts show by tag (this session only)",
+                  )}
+                >
+                  <ListFilterIcon className="h-3.5 w-3.5" />
+                </button>
+                {tagMenuOpen && (
+                  <div className="absolute left-0 top-full z-50 mt-1 max-h-72 w-52 overflow-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+                    <div className="flex items-center justify-between px-2 py-1 text-[11px] font-normal text-muted-foreground">
+                      <span>Show tags</span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="hover:text-foreground"
+                          onClick={() => setAllTagsVisible(true)}
+                        >
+                          All
+                        </button>
+                        <button
+                          type="button"
+                          className="hover:text-foreground"
+                          onClick={() => setAllTagsVisible(false)}
+                        >
+                          None
+                        </button>
+                      </div>
+                    </div>
+                    {tagOptions.length === 0 && !hasUntagged ? (
+                      <p className="px-2 py-1.5 text-xs font-normal text-muted-foreground">
+                        No tags yet.
+                      </p>
+                    ) : (
+                      <>
+                        {tagOptions.map((t) => {
+                          const key = t.toLowerCase();
+                          return (
+                            <label
+                              key={key}
+                              className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-sm font-normal hover:bg-accent"
+                            >
+                              <input
+                                type="checkbox"
+                                className="accent-primary"
+                                checked={!hiddenTags.has(key)}
+                                onChange={() => toggleTagFilter(key)}
+                              />
+                              <span className="min-w-0 truncate">{t}</span>
+                            </label>
+                          );
+                        })}
+                        {hasUntagged && (
+                          <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-sm font-normal italic text-muted-foreground hover:bg-accent">
+                            <input
+                              type="checkbox"
+                              className="accent-primary"
+                              checked={!hiddenTags.has(UNTAGGED_KEY)}
+                              onChange={() => toggleTagFilter(UNTAGGED_KEY)}
+                            />
+                            <span>(untagged)</span>
+                          </label>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            {resizeHandle("tag")}
+          </TableHead>
+        );
+      case "flavor":
+        return (
+          <TableHead className={hiddenCols.has("flavor") ? "hidden" : "relative"}>
+            <span {...colDrag("flavor")}>
+              <SortHeader
+                label="Flavor"
+                sortKey="flavor"
+                sort={sort}
+                onSort={toggleSort}
+                headHint={hint("The host's Linux distribution (icon only), set on the host form")}
+              />
+            </span>
+            {resizeHandle("flavor")}
+          </TableHead>
+        );
+      default:
+        return null;
+    }
+  };
+
+  /** The same for one row's cells. `h` is the host the row is about. */
+  const bodyCell = (h: Host, id: string): ReactNode => {
+    switch (id) {
+      case "label":
+        return (
+              <TableCell className="truncate font-medium" title={labelTooltip(h)}>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate">{h.label}</span>
+                  {/* A login shell we can't fully drive (fish, csh), one we
+                      can't drive at all (a console menu), or one we could
+                      not read. Only shown once a connect has actually
+                      reached a verdict, so an unprobed host is never
+                      flagged on a guess (X4, D-067). */}
+                  <ShellChip
+                    capability={h.shell_capability}
+                    loginShell={h.login_shell}
+                    pref={h.shell_integration}
+                  />
+                </span>
+              </TableCell>
+        );
+      case "status":
+        return (
+              <TableCell className={hiddenCols.has("status") ? "hidden" : undefined}>
+                <span
+                  className={`block h-2.5 w-2.5 rounded-full ${
+                    connectedHostIds.has(h.id)
+                      ? "bg-emerald-500"
+                      : "bg-red-500/70"
+                  }`}
+                  title={
+                    connectedHostIds.has(h.id)
+                      ? "Connected: live terminal session"
+                      : "Not connected"
+                  }
+                  aria-label={
+                    connectedHostIds.has(h.id) ? "Connected" : "Not connected"
+                  }
+                />
+              </TableCell>
+        );
+      case "hostname":
+        return (
+              <TableCell className="truncate font-mono text-xs" title={h.hostname}>
+                {h.hostname}
+              </TableCell>
+        );
+      case "port":
+        return (
+              <TableCell
+                className={
+                  hiddenCols.has("port")
+                    ? "hidden"
+                    : "truncate font-mono text-xs"
+                }
+              >
+                {h.port}
+              </TableCell>
+        );
+      case "username":
+        return (
+              <TableCell
+                className={
+                  hiddenCols.has("username")
+                    ? "hidden"
+                    : "truncate font-mono text-xs"
+                }
+                title={h.username}
+              >
+                {h.username}
+              </TableCell>
+        );
+      case "tag":
+        return (
+              <TableCell
+                className={hiddenCols.has("tag") ? "hidden" : "text-xs"}
+                title={h.tag ?? undefined}
+              >
+                {parseTags(h.tag).length === 0 ? (
+                  <span className="text-muted-foreground">-</span>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    {parseTags(h.tag).map((t) => (
+                      <span
+                        key={t}
+                        className="rounded bg-muted px-1.5 py-0.5 text-[11px] leading-tight"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </TableCell>
+        );
+      case "flavor":
+        return (
+              <TableCell
+                className={
+                  hiddenCols.has("flavor")
+                    ? "hidden"
+                    : "truncate text-xs text-muted-foreground"
+                }
+              >
+                {h.linux_flavor ?? "-"}
+              </TableCell>
+        );
+      default:
+        return null;
+    }
+  };
 
   // Column sorting (persisted for the session) + the sorted view.
   const { sort, toggleSort, sortedHosts } = useHostSort(
@@ -576,13 +963,17 @@ export function HostsPage({
       >
         <Table style={{ tableLayout: "fixed", width: tableWidth }}>
           <colgroup>
-            {COLS.map((c) => (
-              <col
-                key={c.id}
-                className={hiddenCols.has(c.id) ? "hidden" : undefined}
-                style={{ width: colWidths[c.id] ?? c.w }}
-              />
-            ))}
+            {orderedIds.map((id) => {
+              const c = COLS.find((x) => x.id === id);
+              if (!c) return null;
+              return (
+                <col
+                  key={id}
+                  className={hiddenCols.has(id) ? "hidden" : undefined}
+                  style={{ width: colWidths[id] ?? c.w }}
+                />
+              );
+            })}
           </colgroup>
           <TableHeader className="sticky top-0 z-10 bg-background">
             <TableRow>
@@ -601,157 +992,9 @@ export function HostsPage({
                 />
               </TableHead>
               <TableHead {...hint("Open a terminal to this host")} />
-              <TableHead className="relative">
-                <SortHeader
-                  label="Label"
-                  sortKey="label"
-                  sort={sort}
-                  onSort={toggleSort}
-                  headHint={hint("The host's unique display name, shown in its colour, in logs, and when picking hosts")}
-                />
-                {resizeHandle("label")}
-              </TableHead>
-              <TableHead className={hiddenCols.has("status") ? "hidden" : "text-xs"}>
-                <SortHeader
-                  label="Status"
-                  display="S"
-                  sortKey="status"
-                  sort={sort}
-                  onSort={toggleSort}
-                  headHint={hint("Status (S): terminal connection. Green dot = a terminal to this host is connected; otherwise none is open")}
-                />
-              </TableHead>
-              <TableHead className="relative">
-                <SortHeader
-                  label="Hostname"
-                  sortKey="hostname"
-                  sort={sort}
-                  onSort={toggleSort}
-                  headHint={hint("The host's address: the IP or DNS name used to connect")}
-                />
-                {resizeHandle("hostname")}
-              </TableHead>
-              <TableHead className={hiddenCols.has("port") ? "hidden" : "relative"}>
-                <SortHeader
-                  label="Port"
-                  sortKey="port"
-                  sort={sort}
-                  onSort={toggleSort}
-                  headHint={hint("The SSH port (default 22)")}
-                />
-                {resizeHandle("port")}
-              </TableHead>
-              <TableHead className={hiddenCols.has("username") ? "hidden" : "relative"}>
-                <SortHeader
-                  label="Username"
-                  sortKey="username"
-                  sort={sort}
-                  onSort={toggleSort}
-                  headHint={hint("The SSH login user for this host")}
-                />
-                {resizeHandle("username")}
-              </TableHead>
-              <TableHead className={hiddenCols.has("tag") ? "hidden" : "relative"}>
-                <div className="flex min-w-0 items-center gap-1">
-                  <SortHeader
-                    label="Tag"
-                    sortKey="tag"
-                    sort={sort}
-                    onSort={toggleSort}
-                    headHint={hint("Tags for grouping/sorting; separate multiple with commas (e.g. prod, db)")}
-                  />
-                  <div ref={tagMenuRef} className="relative shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setTagMenuOpen((v) => !v)}
-                      aria-label="Filter by tag"
-                      aria-expanded={tagMenuOpen}
-                      className={`rounded p-0.5 ${
-                        tagFilterActive
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground/70 hover:bg-accent hover:text-foreground"
-                      }`}
-                      {...hint(
-                        tagFilterActive
-                          ? "Tag filter active, click to change (this session only)"
-                          : "Filter which hosts show by tag (this session only)",
-                      )}
-                    >
-                      <ListFilterIcon className="h-3.5 w-3.5" />
-                    </button>
-                    {tagMenuOpen && (
-                      <div className="absolute left-0 top-full z-50 mt-1 max-h-72 w-52 overflow-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
-                        <div className="flex items-center justify-between px-2 py-1 text-[11px] font-normal text-muted-foreground">
-                          <span>Show tags</span>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              className="hover:text-foreground"
-                              onClick={() => setAllTagsVisible(true)}
-                            >
-                              All
-                            </button>
-                            <button
-                              type="button"
-                              className="hover:text-foreground"
-                              onClick={() => setAllTagsVisible(false)}
-                            >
-                              None
-                            </button>
-                          </div>
-                        </div>
-                        {tagOptions.length === 0 && !hasUntagged ? (
-                          <p className="px-2 py-1.5 text-xs font-normal text-muted-foreground">
-                            No tags yet.
-                          </p>
-                        ) : (
-                          <>
-                            {tagOptions.map((t) => {
-                              const key = t.toLowerCase();
-                              return (
-                                <label
-                                  key={key}
-                                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-sm font-normal hover:bg-accent"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="accent-primary"
-                                    checked={!hiddenTags.has(key)}
-                                    onChange={() => toggleTagFilter(key)}
-                                  />
-                                  <span className="min-w-0 truncate">{t}</span>
-                                </label>
-                              );
-                            })}
-                            {hasUntagged && (
-                              <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-sm font-normal italic text-muted-foreground hover:bg-accent">
-                                <input
-                                  type="checkbox"
-                                  className="accent-primary"
-                                  checked={!hiddenTags.has(UNTAGGED_KEY)}
-                                  onChange={() => toggleTagFilter(UNTAGGED_KEY)}
-                                />
-                                <span>(untagged)</span>
-                              </label>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {resizeHandle("tag")}
-              </TableHead>
-              <TableHead className={hiddenCols.has("flavor") ? "hidden" : "relative"}>
-                <SortHeader
-                  label="Flavor"
-                  sortKey="flavor"
-                  sort={sort}
-                  onSort={toggleSort}
-                  headHint={hint("The host's Linux distribution (icon only), set on the host form")}
-                />
-                {resizeHandle("flavor")}
-              </TableHead>
+              {colOrder.map((id) => (
+                <Fragment key={id}>{headCell(id)}</Fragment>
+              ))}
               <TableHead
                 className="text-right"
                 {...hint("Edit, open a terminal, or delete this host")}
@@ -811,88 +1054,9 @@ export function HostsPage({
                       aria-label={h.color}
                     />
                   </TableCell>
-                  <TableCell className="truncate font-medium" title={labelTooltip(h)}>
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate">{h.label}</span>
-                      {/* A login shell we can't fully drive (fish, csh), one we
-                          can't drive at all (a console menu), or one we could
-                          not read. Only shown once a connect has actually
-                          reached a verdict, so an unprobed host is never
-                          flagged on a guess (X4, D-067). */}
-                      <ShellChip
-                        capability={h.shell_capability}
-                        loginShell={h.login_shell}
-                        pref={h.shell_integration}
-                      />
-                    </span>
-                  </TableCell>
-                  <TableCell className={hiddenCols.has("status") ? "hidden" : undefined}>
-                    <span
-                      className={`block h-2.5 w-2.5 rounded-full ${
-                        connectedHostIds.has(h.id)
-                          ? "bg-emerald-500"
-                          : "bg-red-500/70"
-                      }`}
-                      title={
-                        connectedHostIds.has(h.id)
-                          ? "Connected: live terminal session"
-                          : "Not connected"
-                      }
-                      aria-label={
-                        connectedHostIds.has(h.id) ? "Connected" : "Not connected"
-                      }
-                    />
-                  </TableCell>
-                  <TableCell className="truncate font-mono text-xs" title={h.hostname}>
-                    {h.hostname}
-                  </TableCell>
-                  <TableCell
-                    className={
-                      hiddenCols.has("port")
-                        ? "hidden"
-                        : "truncate font-mono text-xs"
-                    }
-                  >
-                    {h.port}
-                  </TableCell>
-                  <TableCell
-                    className={
-                      hiddenCols.has("username")
-                        ? "hidden"
-                        : "truncate font-mono text-xs"
-                    }
-                    title={h.username}
-                  >
-                    {h.username}
-                  </TableCell>
-                  <TableCell
-                    className={hiddenCols.has("tag") ? "hidden" : "text-xs"}
-                    title={h.tag ?? undefined}
-                  >
-                    {parseTags(h.tag).length === 0 ? (
-                      <span className="text-muted-foreground">-</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {parseTags(h.tag).map((t) => (
-                          <span
-                            key={t}
-                            className="rounded bg-muted px-1.5 py-0.5 text-[11px] leading-tight"
-                          >
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </TableCell>
-                  <TableCell
-                    className={
-                      hiddenCols.has("flavor")
-                        ? "hidden"
-                        : "truncate text-xs text-muted-foreground"
-                    }
-                  >
-                    {h.linux_flavor ?? "-"}
-                  </TableCell>
+                  {colOrder.map((id) => (
+                    <Fragment key={id}>{bodyCell(h, id)}</Fragment>
+                  ))}
                   <TableCell className="text-right">
                     {hiddenCols.size > 0 && (
                       <Button

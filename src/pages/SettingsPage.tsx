@@ -38,7 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/tauri/hosts";
-import { HIDEABLE_COLUMNS } from "@/lib/hostColumns";
+import { HIDEABLE_COLUMNS, ORDERABLE_COLUMNS } from "@/lib/hostColumns";
 import { GENERIC_MONOSPACE, cssFontFamily } from "@/lib/monospaceFonts";
 import { DEFAULT_UI_PREFS, MAX_TERMINAL_SCROLLBACK } from "@/lib/uiPrefs";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
@@ -76,6 +76,7 @@ import {
 } from "@/pages/settings/constants";
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { GridSection } from "@/pages/settings/GridSection";
+import { SessionsSection } from "@/pages/settings/SessionsSection";
 import { CustomTerminalsSection } from "@/pages/settings/CustomTerminalsSection";
 import { SkillsSection } from "@/pages/settings/SkillsSection";
 import { useAdminLock } from "@/pages/settings/useAdminLock";
@@ -112,6 +113,8 @@ export function SettingsPage({
   const {
     hiddenCols,
     toggleColumn,
+    colOrder,
+    resetColumns,
     shells,
     disabledShells,
     toggleShell,
@@ -511,10 +514,17 @@ export function SettingsPage({
     };
   }, [syncPerfFromSettings, syncAppearanceFromSettings, onReady]);
 
-  // Deep-link scroll (e.g. "Manage shortcuts…" from Broadcast/Terminals).
+  // Deep-link scroll (e.g. "Manage shortcuts…" from Broadcast/Terminals, or
+  // the Settings link on a pane the idle timeout closed).
   useEffect(() => {
     if (focusSection === "shortcuts" && settings) {
       shortcutsSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+      onFocusConsumed?.();
+    }
+    if (focusSection === "sessions" && settings) {
+      document
+        .getElementById(sectionDomId("Sessions"))
+        ?.scrollIntoView({ behavior: "smooth" });
       onFocusConsumed?.();
     }
   }, [focusSection, settings, onFocusConsumed]);
@@ -1374,27 +1384,79 @@ export function SettingsPage({
               </Button>
             </div>
           </div>
-          <div className="grid gap-1.5">
-            <Label>Host table columns</Label>
-            <p className="text-xs text-muted-foreground">
-              Hide nice-to-have columns from the Hosts table. Label, hostname
-              and actions always show.
-            </p>
-            <div className="flex flex-wrap gap-x-5 gap-y-1.5 pt-1">
-              {HIDEABLE_COLUMNS.map((col) => (
-                <label
-                  key={col.id}
-                  className="flex cursor-pointer items-center gap-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-primary"
-                    checked={!hiddenCols.has(col.id)}
-                    onChange={(e) => toggleColumn(col.id, e.target.checked)}
-                  />
-                  {col.label}
-                </label>
-              ))}
+          {/* The two settings about the Hosts table's columns, boxed together
+              with the one button that puts them both back. They were a checkbox
+              row on their own; the order is a second thing about the same
+              table, and a Reset that quietly took in the whole Appearance
+              section would be a nasty surprise, so the box is what says what
+              the button's reach is. */}
+          <div className="grid gap-3 rounded-lg border border-border/70 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-sm">Host table columns</Label>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7"
+                onClick={() => {
+                  resetColumns();
+                  toast.success("Host table columns reset");
+                }}
+                {...hint(
+                  "Show every column again, in the order Broadside ships. Nothing else in Settings is touched.",
+                )}
+              >
+                Reset defaults
+              </Button>
+            </div>
+            <div className="grid gap-1.5">
+              <p className="text-xs text-muted-foreground">
+                Hide nice-to-have columns from the Hosts table. Label, hostname
+                and actions always show.
+              </p>
+              <div className="flex flex-wrap gap-x-5 gap-y-1.5 pt-1">
+                {HIDEABLE_COLUMNS.map((col) => (
+                  <label
+                    key={col.id}
+                    className="flex cursor-pointer items-center gap-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      className="accent-primary"
+                      checked={!hiddenCols.has(col.id)}
+                      onChange={(e) => toggleColumn(col.id, e.target.checked)}
+                    />
+                    {col.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-xs font-normal text-muted-foreground">
+                Column order
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Drag a column's name in the Hosts table to move it. The order is
+                remembered across restarts. This is what it is now:
+              </p>
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {colOrder.map((id) => {
+                  const col = ORDERABLE_COLUMNS.find((c) => c.id === id);
+                  if (!col) return null;
+                  return (
+                    <span
+                      key={id}
+                      className={`rounded border px-1.5 py-0.5 text-[11px] ${
+                        hiddenCols.has(id)
+                          ? "border-dashed border-border/60 text-muted-foreground/60"
+                          : "border-border/70"
+                      }`}
+                      title={hiddenCols.has(id) ? "Hidden" : undefined}
+                    >
+                      {col.label}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
           </div>
           <div className="grid gap-1.5">
@@ -1438,6 +1500,10 @@ export function SettingsPage({
         )}
 
       {/* Grid: Terminals grid layout (localStorage, applies on next visit). */}
+      {sectionVisible("Sessions") && sectionReady("Sessions") && (
+        <SessionsSection id={sectionDomId("Sessions")} />
+      )}
+
       {sectionVisible("Grid") && sectionReady("Grid") && (
         <GridSection id={sectionDomId("Grid")} />
       )}
