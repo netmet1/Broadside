@@ -1315,7 +1315,10 @@ export const SECTIONS: HelpSection[] = [
               paste lands in the tile the pointer is over, which is the tile
               outlined in the host's colour, because that is also the tile that
               is listening for the keyboard. Copy from one, move to another,
-              paste, press <Nav>Enter</Nav>: it runs where you are looking.
+              paste, press <Nav>Enter</Nav>: it runs where you are looking. A{" "}
+              <Nav>Pasted from clipboard</Nav> toast confirms it, and when the
+              clipboard held more than one line it says how many went in, since
+              that is the paste that can run several commands at once.
             </li>
             <li>
               <strong className="font-semibold">Find</strong> in a terminal's
