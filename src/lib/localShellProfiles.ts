@@ -85,3 +85,39 @@ export function removeProfile(
 ): ShellProfile[] {
   return profiles.filter((p) => p.id !== id);
 }
+
+/** A name for a copy of `label` that is not already taken: `X (copy)`, then
+ * `X (copy 2)`, `X (copy 3)`. Duplicating the same profile three times should
+ * give three profiles you can tell apart, not three called the same thing.
+ *
+ * Compared case-insensitively and on the trimmed name, because two profiles
+ * differing only in case are two profiles nobody can tell apart in a menu. */
+export function copyLabel(profiles: ShellProfile[], label: string): string {
+  const taken = new Set(profiles.map((p) => p.label.trim().toLowerCase()));
+  const base = `${label} (copy)`;
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${label} (copy ${n})`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
+/** Insert a copy of `id` directly after it, so the copy turns up where you were
+ * looking rather than at the bottom of a list you have scrolled away from.
+ * Returns the new list and the copy; the caller persists it. */
+export function duplicateProfile(
+  profiles: ShellProfile[],
+  id: string,
+): { profiles: ShellProfile[]; copy: ShellProfile } | null {
+  const idx = profiles.findIndex((p) => p.id === id);
+  if (idx === -1) return null;
+  const source = profiles[idx]!;
+  const copy: ShellProfile = {
+    ...source,
+    id: crypto.randomUUID(),
+    label: copyLabel(profiles, source.label),
+  };
+  const next = profiles.slice();
+  next.splice(idx + 1, 0, copy);
+  return { profiles: next, copy };
+}

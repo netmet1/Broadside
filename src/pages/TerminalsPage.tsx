@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
+  CopyIcon,
   CopyPlusIcon,
   Grid2x2Icon,
   Grid2x2XIcon,
@@ -74,6 +75,7 @@ import { isTintable } from "@/lib/terminalColors";
 import { useShellColors } from "@/lib/useShellColors";
 import {
   loadProfiles,
+  duplicateProfile,
   removeProfile,
   saveProfiles,
   upsertProfile,
@@ -103,6 +105,14 @@ const TABS_COMPACT_KEY = "terminal-tabs-compact";
 const BROADCAST_RAIL_KEY = "terminal-broadcast-rail";
 /** "1" rolls the tab strip away in Grid, giving its row to the tiles. */
 const TAB_BAR_HIDDEN_KEY = "terminal-tab-bar-hidden";
+
+/** How long a profile's delete button stays armed after the first click.
+ *
+ * Long enough that the second click is unhurried, short enough that a button
+ * left armed while you went to do something else is disarmed again by the time
+ * you come back: an armed delete you have forgotten about is the hazard the two
+ * clicks were added to remove. */
+const ARM_TIMEOUT_MS = 4_000;
 
 /** A profile with a startup command gets a far stricter threshold than the
  * configured one: every copy runs that command again, and two accidental runs
@@ -471,6 +481,45 @@ export function TerminalsPage({
     },
     [persistProfiles],
   );
+  /** Copy a profile, named so the two can be told apart, sitting directly
+   * under the one it came from. The whole point is the profiles that differ by
+   * one field: the same pwsh in a different folder, the same folder running a
+   * different command. Building the second from scratch is retyping the first. */
+  const duplicateProfileById = useCallback(
+    (id: string) => {
+      const result = duplicateProfile(loadProfiles(), id);
+      if (!result) return;
+      persistProfiles(result.profiles);
+      toast.success(`Duplicated as "${result.copy.label}"`);
+    },
+    [persistProfiles],
+  );
+
+  /**
+   * The profile whose delete button is armed, and the timer that disarms it.
+   *
+   * Delete used to go on the first click, with a saved profile and no undo
+   * behind it, sitting one row from Edit in a menu you are moving through
+   * quickly. So it now takes two: the first arms the button (it turns red and
+   * says so), the second does it. Held as an id rather than a boolean so
+   * arming one row disarms any other, and dropped after a few seconds because
+   * an armed delete you have forgotten about is the same hazard again.
+   */
+  const [armedDelete, setArmedDelete] = useState<string | null>(null);
+  const armedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armDelete = useCallback((id: string) => {
+    setArmedDelete(id);
+    if (armedTimer.current) clearTimeout(armedTimer.current);
+    armedTimer.current = setTimeout(() => setArmedDelete(null), ARM_TIMEOUT_MS);
+  }, []);
+  const disarmDelete = useCallback(() => {
+    if (armedTimer.current) clearTimeout(armedTimer.current);
+    armedTimer.current = null;
+    setArmedDelete(null);
+  }, []);
+  useEffect(() => () => {
+    if (armedTimer.current) clearTimeout(armedTimer.current);
+  }, []);
 
   // Launch a saved profile: resolve its shell among the detected ones (a profile
   // can outlive a removed WSL distro), then open with its cwd / startup / name.
@@ -1713,7 +1762,13 @@ export function TerminalsPage({
           <div ref={launcherRef} className="relative shrink-0">
             <button
               type="button"
-              onClick={() => setShellMenuOpen((v) => !v)}
+              onClick={() => {
+                // Never open the menu with a delete still armed from last time:
+                // the arm is a promise about *this* click and the next one, and
+                // it must not survive the menu it was made in.
+                disarmDelete();
+                setShellMenuOpen((v) => !v);
+              }}
               aria-label="New local shell"
               aria-expanded={shellMenuOpen}
               // Hand-rolled, so it has to say what Radix's triggers say for
@@ -1885,6 +1940,7 @@ export function TerminalsPage({
                               <button
                                 type="button"
                                 onClick={() => {
+                                  disarmDelete();
                                   setShellMenuOpen(false);
                                   setProfileEdit({ profile: p });
                                 }}
@@ -1894,12 +1950,56 @@ export function TerminalsPage({
                               >
                                 <PencilIcon className="h-3.5 w-3.5" />
                               </button>
+                              {/* The menu stays open: duplicating is what you
+                                  do when you want two or three of something,
+                                  and closing the list after each one would
+                                  make you reopen it to do the next. */}
                               <button
                                 type="button"
-                                onClick={() => deleteProfile(p.id)}
-                                aria-label={`Delete ${p.label}`}
-                                title="Delete profile"
-                                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-red-500 group-hover:opacity-100"
+                                onClick={() => {
+                                  disarmDelete();
+                                  duplicateProfileById(p.id);
+                                }}
+                                aria-label={`Duplicate ${p.label}`}
+                                title="Duplicate profile"
+                                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                              >
+                                <CopyIcon className="h-3.5 w-3.5" />
+                              </button>
+                              {/* Two clicks, not one. The first arms it and
+                                  says so; the second deletes. A profile is
+                                  saved work with no undo behind it, and this
+                                  button sits a few pixels from Edit in a menu
+                                  people move through quickly. */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (armedDelete === p.id) {
+                                    disarmDelete();
+                                    deleteProfile(p.id);
+                                  } else {
+                                    armDelete(p.id);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  if (armedDelete === p.id) disarmDelete();
+                                }}
+                                aria-label={
+                                  armedDelete === p.id
+                                    ? `Confirm deleting ${p.label}`
+                                    : `Delete ${p.label}`
+                                }
+                                title={
+                                  armedDelete === p.id
+                                    ? "Click again to delete this profile"
+                                    : "Delete profile (click twice)"
+                                }
+                                className={cn(
+                                  "shrink-0 rounded p-0.5",
+                                  armedDelete === p.id
+                                    ? "bg-destructive/15 text-red-500 opacity-100 ring-1 ring-destructive/50"
+                                    : "text-muted-foreground opacity-0 hover:bg-accent hover:text-red-500 group-hover:opacity-100",
+                                )}
                               >
                                 <Trash2Icon className="h-3.5 w-3.5" />
                               </button>
