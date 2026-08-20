@@ -3,12 +3,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listHosts, type Host } from "@/lib/tauri/hosts";
 import { RAIL_SORT_OPTIONS, sortForRail } from "@/lib/railSort";
 import { useRailFilter } from "@/lib/useRailFilter";
+import { useNodeStatus } from "@/pages/skills/useNodeStatus";
 
-/** The shared rail sorts minus online/offline: this rail lists saved hosts, not
- * open sessions, so there's no connection state to order by. */
-export const SKILL_SORT_OPTIONS = RAIL_SORT_OPTIONS.filter(
-  (o) => o.value !== "online" && o.value !== "offline",
-);
+/** The full set of rail sorts, online and offline included.
+ *
+ * They used to be stripped out here, on the grounds that this rail lists saved
+ * hosts rather than open sessions and so has no connection state to order by.
+ * It has one now: the rail asks each host whether its SSH port is answering,
+ * so "which of these can I actually run this on" is a question it can sort by,
+ * which on a page that fires a sequence at a dozen machines is the one you
+ * want before you press play. */
+export const SKILL_SORT_OPTIONS = RAIL_SORT_OPTIONS;
 
 /** Host selection for the skills rail: the page-level pattern the broadcast
  * pages use (selection + sort + tag/label filter), over saved hosts.
@@ -17,7 +22,10 @@ export const SKILL_SORT_OPTIONS = RAIL_SORT_OPTIONS.filter(
  * shell per host, drives it, and closes it. Nothing is pre-selected: the user
  * opts into every run.
  */
-export function useSkillSelection(visible: boolean) {
+export function useSkillSelection(
+  visible: boolean,
+  connectedHostIds: Set<number>,
+) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [railSort, setRailSort] = useState("az");
@@ -35,9 +43,20 @@ export function useSkillSelection(visible: boolean) {
   const filter = useRailFilter(hosts, "skills-rail-filter");
   const { matches } = filter;
 
+  const status = useNodeStatus(hosts, connectedHostIds, visible);
+
+  // "Online" for the sort means the two states you could act on right now: a
+  // terminal already open, or a port that answered. A host still being checked
+  // sorts with the offline ones, because it is not yet an answer.
   const sorted = useMemo(
-    () => sortForRail(hosts, (h) => h, railSort),
-    [hosts, railSort],
+    () =>
+      sortForRail(
+        hosts,
+        (h) => h,
+        railSort,
+        (h) => status.get(h.id) === "connected" || status.get(h.id) === "up",
+      ),
+    [hosts, railSort, status],
   );
   const visibleHosts = useMemo(
     () => sorted.filter((h) => matches(h)),
@@ -96,6 +115,7 @@ export function useSkillSelection(visible: boolean) {
 
   return {
     hosts,
+    status,
     visibleHosts,
     selected,
     selectedHosts,

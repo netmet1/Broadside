@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
@@ -38,12 +39,19 @@ import { SequenceBuilder } from "@/pages/skills/SequenceBuilder";
 import { SkillList } from "@/pages/skills/SkillList";
 import { SkillOverview } from "@/pages/skills/SkillOverview";
 import {
+  NODE_STATUS_ORDER,
+  NODE_STATUS_STYLE,
+} from "@/pages/skills/useNodeStatus";
+import {
   SKILL_SORT_OPTIONS,
   useSkillSelection,
 } from "@/pages/skills/useSkillSelection";
 import { useSkillRun } from "@/pages/skills/useSkillRun";
 import { useSkillsModel } from "@/pages/skills/useSkillsModel";
 import type { SkillDraft } from "@/pages/skills/useSequenceForm";
+
+/** Persisted collapse state for the whole rail. */
+const RAIL_COLLAPSED_KEY = "skills-rail-collapsed";
 
 /** What the main panel is showing. The run is deliberately not carried here:
  * it outlives whatever you happen to be looking at, so it lives in its own
@@ -86,16 +94,33 @@ type View =
  */
 export function SkillsPage({
   visible,
+  connectedHostIds,
   onAdoptTerminal,
 }: {
   visible: boolean;
+  /** Hosts with a connected terminal open. The strongest thing the rail's
+   * status dot can say: you are already at that machine. */
+  connectedHostIds: Set<number>;
   /** Hand a skill run's live shell to a terminal tab, adopting the exact
    * backend session. `snapshot` is the pane's scrollback as an ANSI string, so
    * the new tab opens with the run's history intact rather than empty. */
   onAdoptTerminal: (sessionId: string, host: Host, snapshot: string | null) => void;
 }) {
   const hint = useHint();
-  const sel = useSkillSelection(visible);
+  const sel = useSkillSelection(visible, connectedHostIds);
+  // Collapsible rail, persisted. The whole rail, hosts and skills together:
+  // there is no dot-and-initials view of a skill worth keeping, so this is the
+  // plain kind of collapse, out of the way and back again.
+  const [railCollapsed, setRailCollapsed] = useState(
+    () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
+  );
+  const toggleRail = useCallback(() => {
+    setRailCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(RAIL_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
   const model = useSkillsModel();
   const run = useSkillRun();
   const [view, setView] = useState<View>({ kind: "idle" });
@@ -372,11 +397,40 @@ export function SkillsPage({
 
   return (
     <div className="flex h-full min-h-0">
+      {/* Collapsed: nothing but the way back. Deliberately not a dot-and-
+          initials view like the terminal rails have; there is no useful
+          two-character form of a skill, and the ask was for the space. */}
+      {railCollapsed && (
+        <div className="flex w-9 shrink-0 flex-col items-center border-r border-border/50 py-2">
+          <button
+            type="button"
+            onClick={toggleRail}
+            className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            aria-label="Expand the rail"
+            {...hint("Bring back the host and skill rail")}
+          >
+            <PanelLeftOpenIcon className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       {/* Rail: hosts on top, skills below. */}
-      <div className="flex w-64 shrink-0 flex-col border-r border-border/50">
-        <div className="shrink-0 px-3 py-2">
+      <div
+        className={`w-64 shrink-0 flex-col border-r border-border/50 ${
+          railCollapsed ? "hidden" : "flex"
+        }`}
+      >
+        <div className="flex shrink-0 items-center gap-2 px-3 py-2">
+          <button
+            type="button"
+            onClick={toggleRail}
+            className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            aria-label="Collapse the rail"
+            {...hint("Collapse the host and skill rail out of the way")}
+          >
+            <PanelLeftCloseIcon className="h-4 w-4" />
+          </button>
           <label
-            className="flex cursor-pointer items-center gap-2 text-sm font-medium"
+            className="flex flex-1 cursor-pointer items-center gap-2 text-sm font-medium"
             {...hint("Select or deselect every listed host")}
           >
             <input
@@ -441,6 +495,18 @@ export function SkillsPage({
                   loginShell={h.login_shell}
                   pref={h.shell_integration}
                 />
+                {/* Five states, not two, and the legend below says which is
+                    which. A skill opens its own shell on each checked host, so
+                    "can this machine be reached at all" is the question worth
+                    answering before you press play rather than after. */}
+                <span
+                  className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
+                    NODE_STATUS_STYLE[sel.status.get(h.id) ?? "checking"].dot
+                  }`}
+                  title={
+                    NODE_STATUS_STYLE[sel.status.get(h.id) ?? "checking"].title
+                  }
+                />
               </label>
             ))
           )}
@@ -452,6 +518,28 @@ export function SkillsPage({
               </p>
             )}
         </div>
+
+        {/* What the dots mean. Five colours nobody was born knowing, on a page
+            where getting one wrong means running a sequence against a machine
+            that is not there, so the key is on screen rather than in the help.
+            Two columns of very small type: it has to be readable without being
+            the thing you look at. */}
+        {sel.hosts.length > 0 && (
+          <div className="grid shrink-0 grid-cols-2 gap-x-2 gap-y-0.5 border-t border-border/50 px-3 py-1.5 text-[10px] leading-tight text-muted-foreground">
+            {NODE_STATUS_ORDER.map((s) => (
+              <span
+                key={s}
+                className="flex items-center gap-1.5"
+                title={NODE_STATUS_STYLE[s].title}
+              >
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${NODE_STATUS_STYLE[s].dot}`}
+                />
+                <span className="truncate">{NODE_STATUS_STYLE[s].label}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         <SkillList
           skills={model.skills}

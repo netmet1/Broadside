@@ -1808,7 +1808,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment status dot colour legend key what do the colours mean green dark green amber red grey online offline reachable port check probe is this host up before i run sort online first collapse the rail hide the sidebar more room expand button pin a skill dropdown pinned card frozen top of the list favourite most used skill small dot beside the name save and close save cancel discard unsaved changes stay in the editor keep editing first save creates it",
     body: (
       <>
         <Lead>
@@ -2078,12 +2078,73 @@ export const SECTIONS: HelpSection[] = [
               Amber notes below the steps are advice, not errors: they never stop
               you saving or running. Only the red list does that.
             </li>
+            <li>
+              <Nav>Save</Nav> writes the skill down and leaves you in the editor,
+              which is what you want while a long sequence is still being built.{" "}
+              <Nav>Save and close</Nav> does both. On a new skill the first{" "}
+              <Nav>Save</Nav> creates it and every one after that updates it, so
+              you cannot end up with three half-finished copies.
+            </li>
+            <li>
+              <Nav>Cancel</Nav> leaves without saving, and asks first if there is
+              anything unsaved to lose. If nothing has changed since you opened
+              it (or since your last save) it just closes.
+            </li>
+          </Bullets>
+          <H3>The rail</H3>
+          <Bullets>
+            <li>
+              Each host carries a status dot, and the key to the colours sits
+              under the list. <strong className="font-semibold">Green</strong> is
+              a terminal already open to that host.{" "}
+              <strong className="font-semibold">Dark green</strong> means the
+              last check found its SSH port answering, and{" "}
+              <strong className="font-semibold">amber</strong> means it did not.{" "}
+              <strong className="font-semibold">Red</strong> is a host nothing is
+              asking about: no terminal open, and checking switched off for it on
+              the Hosts page. Grey is the moment before the first answer arrives.
+            </li>
+            <li>
+              The checking is a TCP connection to the host's SSH port, the same
+              one a reconnecting tab uses, and it runs only while you are looking
+              at this page. It asks no more often than every 15 seconds even when
+              a host is set faster than that on the Hosts page: that setting is
+              for one pane watching one machine come back, and this is every
+              saved host at once.
+            </li>
+            <li>
+              <Nav>Sort: Online first</Nav> puts the hosts you could act on right
+              now at the top, which on a rail of forty machines is the quickest
+              way to answer "what can I actually run this on". A host still being
+              checked sorts with the offline ones, because it is not yet an
+              answer.
+            </li>
+            <li>
+              The panel icon at the top of the rail collapses the whole thing,
+              hosts and skills together, leaving one button to bring it back.
+              Worth doing while you are building a long skill. It is remembered
+              across restarts.
+            </li>
           </Bullets>
           <H3>Organising them</H3>
           <Bullets>
             <li>
               The arrows on each skill in the rail move it up and down the list.
               The order is yours and it is remembered.
+            </li>
+            <li>
+              The dropdown above the skill list pins one skill to the top of the
+              rail, where it stays while the list below scrolls: the one you run
+              twenty times a day should not be wherever the scroll happens to be.
+              It starts on whichever skill is top of the list and follows that
+              position, so reordering moves it.
+            </li>
+            <li>
+              Pinning changes nothing else. The skill keeps its own place in the
+              list below, marked with a small dot, and it can still be reordered
+              from there. It is not hidden from the list, because a skill you
+              cannot see cannot be moved past, and the up and down arrows would
+              start to lie.
             </li>
             <li>
               <Nav>Clone</Nav> starts a new skill from a copy of an existing one,

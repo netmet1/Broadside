@@ -48,20 +48,24 @@ export function useSkillsModel() {
     };
   }, []);
 
-  /** Saves a new skill or updates an existing one. Resolves to true on success
-   * so the caller can close its form only when the save actually landed: the
-   * backend rejects a broken step graph here. */
+  /** Saves a new skill or updates an existing one. Resolves to the saved
+   * skill's id, or null when the save did not land: the backend rejects a
+   * broken step graph here, so a caller must not close its form (or clear its
+   * unsaved-changes mark) until this says which.
+   *
+   * The id and not just a flag, because the editor can now save without
+   * closing: after the first save of a *new* skill it has to know what it just
+   * created, or the next press of Save would create a second copy. */
   const save = useCallback(
-    async (id: number | null, input: SkillInput): Promise<boolean> => {
+    async (id: number | null, input: SkillInput): Promise<number | null> => {
       try {
-        if (id == null) await createSkill(input);
-        else await updateSkill(id, input);
+        const saved = id == null ? await createSkill(input) : await updateSkill(id, input);
         await reload();
         toast.success(id == null ? "Skill created" : "Skill saved");
-        return true;
+        return saved.id;
       } catch (e) {
         toast.error(errorMessage(e));
-        return false;
+        return null;
       }
     },
     [reload],
