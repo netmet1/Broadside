@@ -197,9 +197,9 @@ pub async fn sftp_upload(
             );
         }
     };
-    let cancel = sftp_state.begin_transfer(&session_id);
+    let (key, cancel) = sftp_state.begin_transfer(&session_id, transfer_id.as_deref());
     let result = sftp::upload(&sftp_state, &session_id, &local_path, &remote_path, &cancel, on_progress).await;
-    sftp_state.end_transfer(&session_id);
+    sftp_state.end_transfer(&key);
     let bytes = match result {
         Ok(b) => b,
         Err(e) => {
@@ -249,9 +249,9 @@ pub async fn sftp_download(
             );
         }
     };
-    let cancel = sftp_state.begin_transfer(&session_id);
+    let (key, cancel) = sftp_state.begin_transfer(&session_id, transfer_id.as_deref());
     let result = sftp::download(&sftp_state, &session_id, &remote_path, &local_path, &cancel, on_progress).await;
-    sftp_state.end_transfer(&session_id);
+    sftp_state.end_transfer(&key);
     let bytes = match result {
         Ok(b) => b,
         Err(e) => {
@@ -310,7 +310,7 @@ pub async fn sftp_upload_dir(
             },
         );
     };
-    let cancel = sftp_state.begin_transfer(&session_id);
+    let (key, cancel) = sftp_state.begin_transfer(&session_id, Some(&transfer_id));
     let result = sftp::upload_dir(
         &sftp_state,
         &session_id,
@@ -321,7 +321,7 @@ pub async fn sftp_upload_dir(
         on_progress,
     )
     .await;
-    sftp_state.end_transfer(&session_id);
+    sftp_state.end_transfer(&key);
     let stats = match result {
         Ok(s) => s,
         Err(e) => {
@@ -369,7 +369,7 @@ pub async fn sftp_download_dir(
             },
         );
     };
-    let cancel = sftp_state.begin_transfer(&session_id);
+    let (key, cancel) = sftp_state.begin_transfer(&session_id, Some(&transfer_id));
     let result = sftp::download_dir(
         &sftp_state,
         &session_id,
@@ -380,7 +380,7 @@ pub async fn sftp_download_dir(
         on_progress,
     )
     .await;
-    sftp_state.end_transfer(&session_id);
+    sftp_state.end_transfer(&key);
     let stats = match result {
         Ok(s) => s,
         Err(e) => {
@@ -402,13 +402,19 @@ pub async fn sftp_download_dir(
     Ok(stats)
 }
 
-/// Signals the session's in-flight recursive transfer to stop at the next file.
+/// Signals an in-flight transfer to stop at its next chunk. With a
+/// `transfer_id`, just that one; without, every transfer the session has in
+/// flight (what Disconnect and "cancel all" want).
 #[tauri::command]
 pub fn sftp_cancel_transfer(
     session_id: String,
+    transfer_id: Option<String>,
     sftp_state: State<'_, SftpState>,
 ) -> AppResult<()> {
-    sftp_state.signal_cancel(&session_id);
+    match transfer_id {
+        Some(tid) => sftp_state.cancel_transfer(&session_id, &tid),
+        None => sftp_state.cancel_session(&session_id),
+    }
     Ok(())
 }
 

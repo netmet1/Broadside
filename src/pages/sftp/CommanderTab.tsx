@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/select";
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
+import { useActivity } from "@/lib/activity";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { localScanDir } from "@/lib/tauri/localfs";
 import { type TransferMode, sftpScanDir } from "@/lib/tauri/sftp";
@@ -97,6 +98,15 @@ type DragItem = {
  *  Ctrl/Shift multi-select), so one drag can transfer many files at once. */
 type DragPayload = { side: PaneSide; items: DragItem[] };
 
+/** A folder that came back from the pre-flight scan big enough to ask about. */
+type PendingDir = {
+  direction: "put" | "get";
+  path: string;
+  name: string;
+  files: number;
+  bytes: number;
+};
+
 const DND_MIME = "application/x-broadside-file";
 const SPLIT_KEY = "sftp-split-pct";
 
@@ -125,14 +135,16 @@ export function CommanderTab({
     side: PaneSide;
     entry: PaneEntry;
   } | null>(null);
-  // A large folder pending confirmation before it transfers.
-  const [pendingDir, setPendingDir] = useState<{
-    direction: "put" | "get";
-    path: string;
-    name: string;
-    files: number;
-    bytes: number;
-  } | null>(null);
+  // Large folders awaiting confirmation, asked about one at a time. A queue
+  // rather than a single slot because one drag can carry several of them, and a
+  // single slot means the second folder's dialog replaces the first's and the
+  // first is silently forgotten.
+  const [pendingDirs, setPendingDirs] = useState<PendingDir[]>([]);
+  const pendingDir = pendingDirs[0] ?? null;
+  const dropPendingDir = useCallback(
+    () => setPendingDirs((prev) => prev.slice(1)),
+    [],
+  );
   // Which pane Backspace acts on, set to whichever pane was last clicked.
   const [activePane, setActivePane] = useState<PaneSide>("local");
 
@@ -198,55 +210,20 @@ export function CommanderTab({
   };
 
   // --- Transfers ---
-  const putToRemote = useCallback(
-    async (localPath: string, size?: number | null) => {
-      if (!remote.session) {
-        toast.error("Connect to a host first");
-        return;
-      }
-      // Uploads into the remote cwd + refreshes it. The size only feeds the
-      // progress bar, so a null one costs a percentage and nothing else.
-      await remote.upload(localPath, size ?? undefined);
-    },
-    [remote],
-  );
 
-  const getToLocal = useCallback(
-    async (entry: { path: string; name: string; size?: number | null }) => {
-      if (!remote.session) return;
-      if (local.cwd === null) {
-        toast.error("Open a local folder first (you're at the drive list)");
-        return;
-      }
-      await remote.download(
-        { ...entry, size: entry.size ?? undefined },
-        winJoin(local.cwd, entry.name),
-      );
-      local.refresh();
-    },
-    [remote, local],
-  );
-
-  // Actually runs a folder transfer (after any confirmation). `totals` seed the
+  // Puts a folder in the queue (after any confirmation). `totals` seed the
   // progress bar (from the pre-flight scan).
-  const runDirTransfer = useCallback(
-    async (
+  const queueDirTransfer = useCallback(
+    (
       direction: "put" | "get",
       path: string,
       name: string,
       totals: { files: number; bytes: number },
     ) => {
       if (direction === "put") {
-        await remote.uploadDir(path, mode, totals);
-      } else {
-        if (local.cwd === null) return;
-        await remote.downloadDir(
-          { path, name },
-          winJoin(local.cwd, name),
-          mode,
-          totals,
-        );
-        local.refresh();
+        remote.uploadDir(path, mode, totals);
+      } else if (local.cwd !== null) {
+        remote.downloadDir({ path, name }, winJoin(local.cwd, name), mode, totals);
       }
     },
     [remote, local, mode],
@@ -256,14 +233,7 @@ export function CommanderTab({
   const handleDirDrop = useCallback(
     async (direction: "put" | "get", path: string, name: string) => {
       const session = remote.session;
-      if (!session) {
-        toast.error("Connect to a host first");
-        return;
-      }
-      if (direction === "get" && local.cwd === null) {
-        toast.error("Open a local folder first (you're at the drive list)");
-        return;
-      }
+      if (!session) return;
       const t = toast.loading(`Scanning ${name}…`);
       let files: number;
       let bytes: number;
@@ -281,37 +251,83 @@ export function CommanderTab({
       }
       toast.dismiss(t);
       if (isLargeTransfer(files, bytes)) {
-        setPendingDir({ direction, path, name, files, bytes });
+        setPendingDirs((prev) => [
+          ...prev,
+          { direction, path, name, files, bytes },
+        ]);
       } else {
-        void runDirTransfer(direction, path, name, { files, bytes });
+        queueDirTransfer(direction, path, name, { files, bytes });
       }
     },
-    [remote, local, runDirTransfer],
+    [remote, queueDirTransfer],
   );
 
   // A file/folder dropped onto a pane came from the *other* side, so it's a
   // transfer into this pane's directory.
+  //
+  // Files go straight into the transfer queue, which runs a few at a time and
+  // holds the rest. Folders follow, one scan after another, because a scan is a
+  // question the far end has to answer and a big one may need confirming before
+  // it can join the queue at all.
   const onDropInto = useCallback(
     async (side: PaneSide, payload: DragPayload) => {
       if (payload.side === side) return;
       const direction = side === "remote" ? "put" : "get";
-      // Transfer the dropped items one at a time, a single SFTP session can't
-      // safely run several uploads/downloads concurrently.
+      // Checked once for the whole drop, not once per item: twenty files with
+      // nowhere to go should say so once.
+      if (!remote.session) {
+        toast.error("Connect to a host first");
+        return;
+      }
+      const localCwd = local.cwd;
+      if (direction === "get" && localCwd === null) {
+        toast.error("Open a local folder first (you're at the drive list)");
+        return;
+      }
       for (const item of payload.items) {
-        if (item.kind === "dir") {
-          await handleDirDrop(direction, item.path, item.name);
-        } else if (side === "remote") {
-          await putToRemote(item.path, item.size);
-        } else {
-          await getToLocal({
-            path: item.path,
-            name: item.name,
-            size: item.size,
-          });
+        if (item.kind === "dir") continue;
+        if (side === "remote") {
+          // The size only feeds the progress bar, so a null one costs a
+          // percentage and nothing else.
+          remote.upload(item.path, item.size ?? undefined);
+        } else if (localCwd !== null) {
+          remote.download(
+            { path: item.path, name: item.name, size: item.size ?? undefined },
+            winJoin(localCwd, item.name),
+          );
         }
       }
+      for (const item of payload.items) {
+        if (item.kind !== "dir") continue;
+        await handleDirDrop(direction, item.path, item.name);
+      }
     },
-    [handleDirDrop, putToRemote, getToLocal],
+    [handleDirDrop, remote, local],
+  );
+
+  // The local listing is re-read once the transfer queue empties (the remote
+  // half is the hook's own job). Latched on the sequence number so navigating
+  // during a transfer, which gives `refresh` a new identity, is not mistaken
+  // for the queue draining.
+  const localRefresh = local.refresh;
+  const idleSeq = remote.idleSeq;
+  const handledIdle = useRef(0);
+  useEffect(() => {
+    if (idleSeq === handledIdle.current) return;
+    handledIdle.current = idleSeq;
+    localRefresh();
+  }, [idleSeq, localRefresh]);
+
+  // Say so on the status bar while transfers are running, so leaving the tab
+  // does not leave the operator wondering whether anything is still happening.
+  const inFlight = remote.transfers.length;
+  useActivity(
+    "sftp-commander",
+    inFlight === 0
+      ? null
+      : inFlight === 1
+        ? "SFTP transfer in progress"
+        : `SFTP: ${inFlight} transfers in progress`,
   );
 
   const submitNewFolder = () => {
@@ -431,12 +447,17 @@ export function CommanderTab({
         </div>
       </div>
 
-      {/* Live progress for a transfer, folder or single file. Cancel reaches
-          both: sftp_upload and sftp_download take the same per-session cancel
-          flag the recursive walk does, so a large single file is as stoppable
-          as a folder is. */}
-      {remote.transfer && (
-        <TransferBar transfer={remote.transfer} onCancel={remote.cancelTransfer} />
+      {/* Live progress, one row per transfer under way, with whatever is still
+          waiting counted underneath. The rail grows as transfers start and
+          shrinks as they finish. Cancel reaches every kind of transfer:
+          sftp_upload and sftp_download take the same per-transfer cancel flag
+          the recursive walk does, so a large single file is as stoppable as a
+          folder is. */}
+      {remote.transfers.length > 0 && (
+        <TransferStack
+          transfers={remote.transfers}
+          onCancel={remote.cancelTransfer}
+        />
       )}
 
       {/* New-folder dialog (both sides) */}
@@ -515,10 +536,11 @@ export function CommanderTab({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Large-folder confirmation (recursive transfer gate) */}
+      {/* Large-folder confirmation (recursive transfer gate). One dialog at a
+          time, taken off the front of the queue as each is answered. */}
       <AlertDialog
         open={pendingDir !== null}
-        onOpenChange={(o) => !o && setPendingDir(null)}
+        onOpenChange={(o) => !o && dropPendingDir()}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -556,13 +578,13 @@ export function CommanderTab({
             <AlertDialogAction
               onClick={() => {
                 if (pendingDir)
-                  void runDirTransfer(
+                  queueDirTransfer(
                     pendingDir.direction,
                     pendingDir.path,
                     pendingDir.name,
                     { files: pendingDir.files, bytes: pendingDir.bytes },
                   );
-                setPendingDir(null);
+                dropPendingDir();
               }}
             >
               {pendingDir?.direction === "put" ? "Upload" : "Download"}{" "}
@@ -908,15 +930,61 @@ function FilePane({
   );
 }
 
-/** Bottom bar showing live progress of a transfer + Cancel. Covers both a
- *  recursive folder and a single file; the file counter is what tells them
- *  apart on screen. */
-function TransferBar({
+/**
+ * Bottom rail showing every transfer under way, one bar each, plus a count of
+ * what is still waiting for a slot.
+ *
+ * It grows a row when a transfer starts and loses one when it finishes, so a
+ * drop of several files reads as several bars settling down to none. Only the
+ * running ones get a bar: the queue is capped, so the height is bounded whether
+ * three files were dropped or three hundred, and a hundred identical bars
+ * reading 0% would say less than one line saying how many are left.
+ */
+function TransferStack({
+  transfers,
+  onCancel,
+}: {
+  transfers: ActiveTransfer[];
+  onCancel: (transferId?: string) => void;
+}) {
+  const hint = useHint();
+  const running = transfers.filter((t) => t.status === "running");
+  const queued = transfers.length - running.length;
+  return (
+    <div className="shrink-0 space-y-1.5 border-t border-border/50 px-3 py-2">
+      {running.map((t) => (
+        <TransferRow key={t.transferId} transfer={t} onCancel={onCancel} />
+      ))}
+      {queued > 0 && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="tabular-nums">
+            {queued} more {queued === 1 ? "transfer" : "transfers"} waiting
+          </span>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="ml-auto text-destructive"
+            onClick={() => onCancel()}
+            {...hint("Stop every transfer and clear the ones still waiting")}
+          >
+            <XIcon />
+            Cancel all
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One transfer's row: what it is, how far along, and a way to stop it. Covers
+ *  both a recursive folder and a single file; the file counter is what tells
+ *  them apart on screen. */
+function TransferRow({
   transfer,
   onCancel,
 }: {
   transfer: ActiveTransfer;
-  onCancel: () => void;
+  onCancel: (transferId?: string) => void;
 }) {
   const [cancelling, setCancelling] = useState(false);
   const pct =
@@ -931,14 +999,14 @@ function TransferBar({
   // then vanish. The bytes are the story here; let them have the room.
   const single = transfer.filesTotal === 1;
   return (
-    <div className="shrink-0 border-t border-border/50 px-3 py-2">
+    <div>
       <div className="mb-1 flex items-center gap-2 text-xs">
-        <Loader2Icon className="h-3.5 w-3.5 animate-spin text-primary" />
-        <span className="font-medium">
+        <Loader2Icon className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+        <span className="min-w-0 truncate font-medium">
           {transfer.direction === "put" ? "Uploading" : "Downloading"}{" "}
           <span className="font-mono">{transfer.name}</span>
         </span>
-        <span className="tabular-nums text-muted-foreground">
+        <span className="shrink-0 tabular-nums text-muted-foreground">
           {!single && (
             <>
               {transfer.filesDone}
@@ -952,11 +1020,11 @@ function TransferBar({
         <Button
           variant="ghost"
           size="xs"
-          className="ml-auto text-destructive"
+          className="ml-auto shrink-0 text-destructive"
           disabled={cancelling}
           onClick={() => {
             setCancelling(true);
-            onCancel();
+            onCancel(transfer.transferId);
           }}
         >
           <XIcon />

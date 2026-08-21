@@ -16,14 +16,14 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use russh::client::Handle;
 use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::error::{AppError, AppResult};
 
@@ -120,18 +120,32 @@ struct SftpConn {
     sftp: SftpSession,
 }
 
+/// Identifies one in-flight transfer: the session it belongs to, and the id the
+/// frontend gave it. Both halves are needed, because two sessions choose their
+/// transfer ids independently and a disconnect has to find every transfer
+/// belonging to the session it is closing.
+pub type TransferKey = (String, String);
+
 /// Live SFTP sessions keyed by the frontend-supplied session id. Clone-cheap
 /// (shared maps). Dropping the last `Arc` for a session closes its connection.
 ///
-/// `cancels` holds a per-session cancellation flag while a recursive transfer is
-/// running: a transfer task keeps its own `Arc<SftpConn>`, so removing the
-/// session from `conns` does NOT stop an in-flight walk, the loop instead polls
-/// this flag each file and stops cooperatively when it's set (by an explicit
-/// cancel or by disconnect).
+/// `cancels` holds one cancellation flag per *in-flight transfer*: a transfer
+/// task keeps its own `Arc<SftpConn>`, so removing the session from `conns` does
+/// NOT stop an in-flight walk, the loop instead polls its flag between files and
+/// chunks and stops cooperatively when it's set (by an explicit cancel or by
+/// disconnect).
+///
+/// Per transfer rather than per session because the Commander now runs several
+/// at once down one session. A per-session flag would be replaced by whichever
+/// transfer started last, and removed by whichever finished first, so a cancel
+/// would reach one of them and silently miss the rest.
 #[derive(Default, Clone)]
 pub struct SftpState {
     conns: Arc<Mutex<HashMap<String, Arc<SftpConn>>>>,
-    cancels: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    cancels: Arc<Mutex<HashMap<TransferKey, Arc<AtomicBool>>>>,
+    /// Serial number for transfers that arrive without an id of their own, so
+    /// two of them can never end up sharing a flag.
+    next_anon: Arc<AtomicU64>,
 }
 
 impl SftpState {
@@ -150,33 +164,52 @@ impl SftpState {
         self.conns.lock().unwrap().insert(session_id, Arc::new(conn));
     }
 
-    /// Deregisters a session; dropping its `Arc` tears the connection down. Any
+    /// Deregisters a session; dropping its `Arc` tears the connection down. Every
     /// in-flight transfer for the session is signalled to stop first.
     pub fn remove(&self, session_id: &str) {
-        self.signal_cancel(session_id);
+        self.cancel_session(session_id);
         self.conns.lock().unwrap().remove(session_id);
     }
 
-    /// Begins a cancellation scope for a session's transfer and returns the flag
-    /// the transfer loop polls. Replaces any previous flag (fresh = not cancelled).
-    pub fn begin_transfer(&self, session_id: &str) -> Arc<AtomicBool> {
+    /// Begins a cancellation scope for one transfer and returns the key to end it
+    /// with plus the flag its loop polls. A transfer with no id of its own gets a
+    /// private serial number, so it is still cancellable as part of its session
+    /// and still independent of its neighbours.
+    pub fn begin_transfer(
+        &self,
+        session_id: &str,
+        transfer_id: Option<&str>,
+    ) -> (TransferKey, Arc<AtomicBool>) {
+        let id = match transfer_id {
+            Some(id) => id.to_string(),
+            None => format!("anon:{}", self.next_anon.fetch_add(1, Ordering::Relaxed)),
+        };
+        let key = (session_id.to_string(), id);
         let flag = Arc::new(AtomicBool::new(false));
-        self.cancels
-            .lock()
-            .unwrap()
-            .insert(session_id.to_string(), flag.clone());
-        flag
+        self.cancels.lock().unwrap().insert(key.clone(), flag.clone());
+        (key, flag)
     }
 
     /// Ends a transfer's cancellation scope.
-    pub fn end_transfer(&self, session_id: &str) {
-        self.cancels.lock().unwrap().remove(session_id);
+    pub fn end_transfer(&self, key: &TransferKey) {
+        self.cancels.lock().unwrap().remove(key);
     }
 
-    /// Signals any in-flight transfer for the session to stop at the next file.
-    pub fn signal_cancel(&self, session_id: &str) {
-        if let Some(flag) = self.cancels.lock().unwrap().get(session_id) {
+    /// Signals one transfer to stop at its next chunk. A transfer that has
+    /// already finished, or was never started, is silently nothing to do.
+    pub fn cancel_transfer(&self, session_id: &str, transfer_id: &str) {
+        let key = (session_id.to_string(), transfer_id.to_string());
+        if let Some(flag) = self.cancels.lock().unwrap().get(&key) {
             flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Signals every in-flight transfer belonging to a session to stop.
+    pub fn cancel_session(&self, session_id: &str) {
+        for (key, flag) in self.cancels.lock().unwrap().iter() {
+            if key.0 == session_id {
+                flag.store(true, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -306,10 +339,49 @@ pub async fn remove(
     }
 }
 
-/// Chunk size for streamed single-file transfers. Streaming (rather than
-/// buffering the whole file in RAM) keeps memory flat under bounded-parallel
-/// broadcast transfers and lets us report byte progress as we go.
+/// Chunk size for streamed transfers. Streaming (rather than buffering the whole
+/// file in RAM) keeps memory flat however many transfers are in flight, and lets
+/// us report byte progress as we go.
 const TRANSFER_CHUNK: usize = 64 * 1024;
+
+/// Copies a stream in [`TRANSFER_CHUNK`] pieces, polling `cancel` between them
+/// and reporting the running byte count no more often than [`PROGRESS_INTERVAL`].
+/// Returns the bytes copied and whether it stopped early because it was
+/// cancelled.
+///
+/// One place for the chunk loop, because there are four of them: a single file
+/// each way, and each file inside a recursive folder walk. The folder walk used
+/// to read whole files into memory instead, which was survivable while one
+/// transfer ran at a time and is not now that several do.
+async fn copy_stream<R, W>(
+    src: &mut R,
+    dst: &mut W,
+    cancel: &AtomicBool,
+    mut on_bytes: impl FnMut(u64),
+) -> std::io::Result<(u64, bool)>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut buf = vec![0u8; TRANSFER_CHUNK];
+    let mut total: u64 = 0;
+    let mut last_tick = Instant::now();
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Ok((total, true));
+        }
+        let n = src.read(&mut buf).await?;
+        if n == 0 {
+            return Ok((total, false));
+        }
+        dst.write_all(&buf[..n]).await?;
+        total += n as u64;
+        if last_tick.elapsed() >= PROGRESS_INTERVAL {
+            on_bytes(total);
+            last_tick = Instant::now();
+        }
+    }
+}
 
 /// Uploads a local file to `remote_path`, streaming in chunks. Returns the byte
 /// count transferred. `on_progress(bytes_done)` is called periodically + at the
@@ -330,26 +402,9 @@ pub async fn upload(
         .await
         .map_err(|e| AppError::Ssh(format!("sftp create {remote_path}: {e}")))?;
 
-    let mut buf = vec![0u8; TRANSFER_CHUNK];
-    let mut total: u64 = 0;
-    let mut last_tick = Instant::now();
-    loop {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        let n = src.read(&mut buf).await?;
-        if n == 0 {
-            break;
-        }
-        dst.write_all(&buf[..n])
-            .await
-            .map_err(|e| AppError::Ssh(format!("sftp write {remote_path}: {e}")))?;
-        total += n as u64;
-        if last_tick.elapsed() >= PROGRESS_INTERVAL {
-            on_progress(total);
-            last_tick = Instant::now();
-        }
-    }
+    let (total, _) = copy_stream(&mut src, &mut dst, cancel, &on_progress)
+        .await
+        .map_err(|e| AppError::Ssh(format!("sftp upload {remote_path}: {e}")))?;
     // Flush + close the remote file so the write is durable before we return.
     dst.shutdown()
         .await
@@ -380,27 +435,9 @@ pub async fn download(
         .map_err(|e| AppError::Ssh(format!("sftp open {remote_path}: {e}")))?;
     let mut dst = tokio::fs::File::create(dest).await?;
 
-    let mut buf = vec![0u8; TRANSFER_CHUNK];
-    let mut total: u64 = 0;
-    let mut last_tick = Instant::now();
-    loop {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        let n = src
-            .read(&mut buf)
-            .await
-            .map_err(|e| AppError::Ssh(format!("sftp read {remote_path}: {e}")))?;
-        if n == 0 {
-            break;
-        }
-        dst.write_all(&buf[..n]).await?;
-        total += n as u64;
-        if last_tick.elapsed() >= PROGRESS_INTERVAL {
-            on_progress(total);
-            last_tick = Instant::now();
-        }
-    }
+    let (total, _) = copy_stream(&mut src, &mut dst, cancel, &on_progress)
+        .await
+        .map_err(|e| AppError::Ssh(format!("sftp download {remote_path}: {e}")))?;
     dst.flush().await?;
     on_progress(total);
     Ok(total)
@@ -564,23 +601,36 @@ pub async fn upload_dir(
         };
 
         done_files += 1;
-        done_bytes += item.size;
         if write {
-            let data = tokio::fs::read(&item.abs).await?;
+            let mut src = tokio::fs::File::open(&item.abs).await?;
             let mut file = conn
                 .sftp
                 .create(remote_path.clone())
                 .await
                 .map_err(|e| AppError::Ssh(format!("sftp create {remote_path}: {e}")))?;
-            file.write_all(&data)
-                .await
-                .map_err(|e| AppError::Ssh(format!("sftp write {remote_path}: {e}")))?;
+            // Bytes are counted as they go rather than added in one jump when the
+            // file lands, so the bar moves during a single large file instead of
+            // sitting still and then leaping. `base`/`files_now` are copies, so
+            // the closure isn't borrowing counters the loop is about to change.
+            let base = done_bytes;
+            let files_now = done_files;
+            let (n, stopped) = copy_stream(&mut src, &mut file, cancel, |n| {
+                on_progress(files_now, base + n)
+            })
+            .await
+            .map_err(|e| AppError::Ssh(format!("sftp upload {remote_path}: {e}")))?;
             file.shutdown()
                 .await
                 .map_err(|e| AppError::Ssh(format!("sftp finalize {remote_path}: {e}")))?;
+            done_bytes = base + n;
             stats.files += 1;
-            stats.bytes += data.len() as u64;
+            stats.bytes += n;
+            if stopped {
+                stats.cancelled = true;
+                break;
+            }
         } else {
+            done_bytes += item.size;
             stats.skipped += 1;
         }
         if last_tick.elapsed() >= PROGRESS_INTERVAL {
@@ -726,7 +776,6 @@ pub async fn download_dir(
             };
 
             done_files += 1;
-            done_bytes += md.size.unwrap_or(0);
             if write {
                 let rp = entry.path();
                 let mut file = conn
@@ -734,14 +783,28 @@ pub async fn download_dir(
                     .open(rp.clone())
                     .await
                     .map_err(|e| AppError::Ssh(format!("sftp open {rp}: {e}")))?;
-                let mut buf = Vec::new();
-                file.read_to_end(&mut buf)
-                    .await
-                    .map_err(|e| AppError::Ssh(format!("sftp read {rp}: {e}")))?;
-                tokio::fs::write(&child_local, &buf).await?;
+                let mut dst = tokio::fs::File::create(&child_local).await?;
+                // Counted as it streams, so the bar moves during one large file
+                // rather than jumping when it lands. `base`/`files_now` are
+                // copies, so the closure isn't borrowing counters the loop is
+                // about to change.
+                let base = done_bytes;
+                let files_now = done_files;
+                let (n, stopped) = copy_stream(&mut file, &mut dst, cancel, |b| {
+                    on_progress(files_now, base + b)
+                })
+                .await
+                .map_err(|e| AppError::Ssh(format!("sftp download {rp}: {e}")))?;
+                dst.flush().await?;
+                done_bytes = base + n;
                 stats.files += 1;
-                stats.bytes += buf.len() as u64;
+                stats.bytes += n;
+                if stopped {
+                    stats.cancelled = true;
+                    break 'walk;
+                }
             } else {
+                done_bytes += md.size.unwrap_or(0);
                 stats.skipped += 1;
             }
             if last_tick.elapsed() >= PROGRESS_INTERVAL {

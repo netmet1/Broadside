@@ -105,9 +105,16 @@ export function sftpDisconnect(sessionId: string): Promise<void> {
   return invoke<void>("sftp_disconnect", { sessionId });
 }
 
-/** Signals the session's in-flight recursive transfer to stop at the next file. */
-export function sftpCancelTransfer(sessionId: string): Promise<void> {
-  return invoke<void>("sftp_cancel_transfer", { sessionId });
+/** Signals an in-flight transfer to stop at its next chunk. With a `transferId`,
+ *  just that one; without, everything the session has in flight. */
+export function sftpCancelTransfer(
+  sessionId: string,
+  transferId?: string,
+): Promise<void> {
+  return invoke<void>("sftp_cancel_transfer", {
+    sessionId,
+    transferId: transferId ?? null,
+  });
 }
 
 /** File count + total bytes for a directory (scan result / transfer result).

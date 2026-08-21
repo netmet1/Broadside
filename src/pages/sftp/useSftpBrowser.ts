@@ -19,6 +19,7 @@ import {
   onSftpTransferProgress,
 } from "@/lib/tauri/sftp";
 import {
+  TRANSFER_CONCURRENCY,
   baseName,
   formatSize,
   isSessionGone,
@@ -33,16 +34,29 @@ type Session = {
   cwd: string;
 };
 
-/** Progress for an in-flight recursive folder transfer. Totals come from the
- *  pre-flight scan (0 if unknown); the running counts arrive via events. */
+/** One transfer in the stack, running or still waiting for a slot. Totals come
+ *  from the listing (a file) or the pre-flight scan (a folder), and are 0 when
+ *  unknown; the running counts arrive via events. */
 export type ActiveTransfer = {
   transferId: string;
   direction: "put" | "get";
   name: string;
+  /** "queued" until a worker picks it up, then "running". */
+  status: "queued" | "running";
   filesDone: number;
   filesTotal: number;
   bytesDone: number;
   bytesTotal: number;
+};
+
+/** A transfer waiting for a slot: its id, and the call to make when it gets
+ *  one. `run` reports its own outcome (it is the only thing that knows what to
+ *  say); `cancelled()` tells it whether the user pulled this one, which the
+ *  single-file calls need because a cancelled transfer comes back with the bytes
+ *  it managed rather than with an error. */
+type TransferJob = {
+  transferId: string;
+  run: (cancelled: () => boolean) => Promise<void>;
 };
 
 /**
@@ -58,9 +72,12 @@ export function useSftpBrowser(visible: boolean) {
   // Connecting (opening the session) vs listing (navigating an open session).
   const [connecting, setConnecting] = useState(false);
   const [listing, setListing] = useState(false);
-  const [busy, setBusy] = useState(false); // mkdir / upload / download / delete
-  // Live progress for the in-flight recursive folder transfer (null when idle).
-  const [transfer, setTransfer] = useState<ActiveTransfer | null>(null);
+  const [opBusy, setOpBusy] = useState(false); // mkdir / delete
+  // Everything in flight or waiting, in the order it was asked for.
+  const [transfers, setTransfers] = useState<ActiveTransfer[]>([]);
+  // Bumped each time the queue empties, so both panes can be re-listed once at
+  // the end instead of after every file.
+  const [idleSeq, setIdleSeq] = useState(0);
 
   // Trust dialogs, same shape as useHostConnTest.
   const [tofu, setTofu] = useState<{ host: Host; key: PresentedKey } | null>(
@@ -75,21 +92,43 @@ export function useSftpBrowser(visible: boolean) {
   // A monotonically-increasing id keyed per host so a stale in-flight connect
   // can't clobber a newer session.
   const connectSeq = useRef(0);
-  // The live session id (or null), lets an async transfer tell whether its
-  // session is still current before refreshing (it may have been disconnected).
-  const currentSessionId = useRef<string | null>(null);
-  useEffect(() => {
-    currentSessionId.current = session?.sessionId ?? null;
-  }, [session]);
+  // The transfer queue: jobs waiting for a slot, how many slots are taken, and
+  // which transfers the user has pulled. Refs rather than state, because the
+  // workers read them between awaits and must see the live values, not the ones
+  // that were current when the worker started.
+  const queueRef = useRef<TransferJob[]>([]);
+  const workersRef = useRef(0);
+  const cancelledRef = useRef<Set<string>>(new Set());
 
-  // Fold live transfer-progress events into the active transfer (matched by id).
+  /**
+   * Empties the queue: whatever had not started is simply forgotten (nothing is
+   * open for it at the far end, so there is nothing to stop), and whatever is
+   * already running is noted as cancelled so its toast says so rather than
+   * claiming a partial transfer finished.
+   *
+   * It does not signal the backend. The two callers do that differently: a
+   * cancel-all asks it to stop the transfers, a disconnect takes the session
+   * away and the backend stops them on the way out.
+   */
+  const abandonQueue = useCallback(() => {
+    const queued = new Set(queueRef.current.map((j) => j.transferId));
+    queueRef.current = [];
+    for (const t of transfers) {
+      if (!queued.has(t.transferId)) cancelledRef.current.add(t.transferId);
+    }
+    setTransfers((prev) => prev.filter((t) => !queued.has(t.transferId)));
+  }, [transfers]);
+
+  // Fold live transfer-progress events into the matching transfer.
   useEffect(() => {
     const unlisten = onSftpTransferProgress((e) => {
-      setTransfer((t) =>
-        t && t.transferId === e.transfer_id
-          ? { ...t, filesDone: e.files_done, bytesDone: e.bytes_done }
-          : t,
-      );
+      setTransfers((prev) => {
+        const i = prev.findIndex((t) => t.transferId === e.transfer_id);
+        if (i < 0) return prev;
+        const next = [...prev];
+        next[i] = { ...next[i], filesDone: e.files_done, bytesDone: e.bytes_done };
+        return next;
+      });
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -195,27 +234,99 @@ export function useSftpBrowser(visible: boolean) {
   const disconnect = useCallback(() => {
     if (!session) return;
     connectSeq.current += 1; // cancel any in-flight connect
+    // Nothing queued survives losing the session it was going to use, and what
+    // is already running is stopped by the backend as the session is removed.
+    abandonQueue();
     void sftpDisconnect(session.sessionId).catch(() => {
       // Best-effort: the session may already be gone.
     });
     setSession(null);
     setEntries([]);
-  }, [session]);
+  }, [session, abandonQueue]);
 
   /** Runs a file op with the busy flag + toast/refresh boilerplate. */
   const runOp = useCallback(
     async (fn: () => Promise<void>) => {
-      setBusy(true);
+      setOpBusy(true);
       try {
         await fn();
       } catch (e) {
         toast.error(errorMessage(e));
       } finally {
-        setBusy(false);
+        setOpBusy(false);
       }
     },
     [],
   );
+
+  /**
+   * Adds a transfer to the queue and makes sure something is working on it.
+   *
+   * It appears in the stack as queued straight away, so dropping twenty files
+   * reads as twenty things about to happen rather than four things and silence.
+   * Workers are the same shape as the Broadcast tab's fan-out: each one takes
+   * the next job until the queue is empty, so the cap is a count of workers
+   * rather than a scheduler.
+   */
+  const enqueue = useCallback(
+    (
+      transfer: Omit<ActiveTransfer, "status" | "filesDone" | "bytesDone">,
+      run: TransferJob["run"],
+    ) => {
+      setTransfers((prev) => [
+        ...prev,
+        { ...transfer, status: "queued", filesDone: 0, bytesDone: 0 },
+      ]);
+      queueRef.current.push({ transferId: transfer.transferId, run });
+
+      while (
+        workersRef.current < TRANSFER_CONCURRENCY &&
+        queueRef.current.length > 0
+      ) {
+        workersRef.current += 1;
+        void (async () => {
+          for (;;) {
+            // Safe with concurrent workers: no await between the length check
+            // and the shift.
+            const job = queueRef.current.shift();
+            if (!job) break;
+            setTransfers((prev) =>
+              prev.map((t) =>
+                t.transferId === job.transferId ? { ...t, status: "running" } : t,
+              ),
+            );
+            try {
+              await job.run(() => cancelledRef.current.has(job.transferId));
+            } catch (e) {
+              toast.error(errorMessage(e));
+            } finally {
+              cancelledRef.current.delete(job.transferId);
+              setTransfers((prev) =>
+                prev.filter((t) => t.transferId !== job.transferId),
+              );
+            }
+          }
+          workersRef.current -= 1;
+          // The last worker to leave found the queue empty, so everything asked
+          // for is done and the listings can be brought up to date once.
+          if (workersRef.current === 0) setIdleSeq((n) => n + 1);
+        })();
+      }
+    },
+    [],
+  );
+
+  // Re-list the remote side when the queue drains: an upload put files there,
+  // and a folder GET may have been cancelled part-way. Latched on the sequence
+  // number rather than run on every change, because `refresh` takes a new
+  // identity whenever the session or cwd changes and that is not a reason to
+  // list again.
+  const handledIdle = useRef(0);
+  useEffect(() => {
+    if (idleSeq === handledIdle.current) return;
+    handledIdle.current = idleSeq;
+    refresh();
+  }, [idleSeq, refresh]);
 
   const mkdir = useCallback(
     (name: string) => {
@@ -231,115 +342,125 @@ export function useSftpBrowser(visible: boolean) {
   );
 
   /**
-   * Uploads one file into the remote cwd, with a progress bar.
+   * Queues one file for upload into the remote cwd, with a progress bar.
    *
    * `size` is the file's length from the listing we already have, and is what
    * makes the bar a percentage rather than a pulse. It is optional because not
    * every caller has it; without it the bar still appears and still counts the
    * bytes as they go, it just cannot say how far along they are.
    *
-   * The backend has always emitted per-chunk progress for a single file when
-   * given a transfer id. Commander passed one for folders and not for files,
-   * so a folder had a bar and the 7MB file next to it had nothing to look at
-   * for the same twenty seconds.
+   * The destination is the cwd at the moment it was asked for, not the one it
+   * eventually runs in, because where the file was dropped is what the user
+   * meant and they are free to navigate while it waits.
    */
   const upload = useCallback(
-    (localPath: string, size?: number): Promise<void> => {
-      if (!session) return Promise.resolve();
+    (localPath: string, size?: number) => {
+      if (!session) return;
       const name = baseName(localPath);
       const remotePath = posixJoin(session.cwd, name);
       const transferId = crypto.randomUUID();
-      setTransfer({
-        transferId,
-        direction: "put",
-        name,
-        filesDone: 0,
-        // One file, so the bar drops the file counter and shows bytes alone.
-        // A single-file progress event reports files_done: 0 throughout (there
-        // is no file to have finished until the whole thing has), so a "0/1
-        // files" that only ever reads 0/1 would be worse than saying nothing.
-        filesTotal: 1,
-        bytesDone: 0,
-        bytesTotal: size ?? 0,
-      });
-      return runOp(async () => {
-        const bytes = await sftpUpload({
-          hostId: session.host.id,
-          sessionId: session.sessionId,
-          localPath,
-          remotePath,
+      enqueue(
+        {
           transferId,
-        });
-        toast.success(`Uploaded ${name} (${formatSize(bytes)})`);
-        await list(session.sessionId, session.cwd);
-      }).finally(() => setTransfer(null));
+          direction: "put",
+          name,
+          // One file, so the bar drops the file counter and shows bytes alone.
+          // A single-file progress event reports files_done: 0 throughout (there
+          // is no file to have finished until the whole thing has), so a "0/1
+          // files" that only ever reads 0/1 would be worse than saying nothing.
+          filesTotal: 1,
+          bytesTotal: size ?? 0,
+        },
+        async (cancelled) => {
+          const bytes = await sftpUpload({
+            hostId: session.host.id,
+            sessionId: session.sessionId,
+            localPath,
+            remotePath,
+            transferId,
+          });
+          // A cancelled single file comes back with the bytes it managed rather
+          // than an error, so only the queue knows it was pulled.
+          if (cancelled()) {
+            toast.warning(
+              `Upload cancelled: ${name} (${formatSize(bytes)} transferred)`,
+            );
+          } else {
+            toast.success(`Uploaded ${name} (${formatSize(bytes)})`);
+          }
+        },
+      );
     },
-    [session, runOp, list],
+    [session, enqueue],
   );
 
-  /** Downloads one remote file, with a progress bar. See `upload` for why the
-   *  size is optional and what it buys. */
+  /** Queues one remote file for download. See `upload` for why the size is
+   *  optional and what it buys. */
   const download = useCallback(
     (
       entry: { path: string; name: string; size?: number },
       localPath: string,
-    ): Promise<void> => {
-      if (!session) return Promise.resolve();
+    ) => {
+      if (!session) return;
       const transferId = crypto.randomUUID();
-      setTransfer({
-        transferId,
-        direction: "get",
-        name: entry.name,
-        filesDone: 0,
-        filesTotal: 1,
-        bytesDone: 0,
-        bytesTotal: entry.size ?? 0,
-      });
-      return runOp(async () => {
-        const bytes = await sftpDownload({
-          hostId: session.host.id,
-          sessionId: session.sessionId,
-          remotePath: entry.path,
-          localPath,
+      enqueue(
+        {
           transferId,
-        });
-        toast.success(`Downloaded ${entry.name} (${formatSize(bytes)})`);
-      }).finally(() => setTransfer(null));
+          direction: "get",
+          name: entry.name,
+          filesTotal: 1,
+          bytesTotal: entry.size ?? 0,
+        },
+        async (cancelled) => {
+          const bytes = await sftpDownload({
+            hostId: session.host.id,
+            sessionId: session.sessionId,
+            remotePath: entry.path,
+            localPath,
+            transferId,
+          });
+          if (cancelled()) {
+            toast.warning(
+              `Download cancelled: ${entry.name} (${formatSize(bytes)} transferred)`,
+            );
+          } else {
+            toast.success(`Downloaded ${entry.name} (${formatSize(bytes)})`);
+          }
+        },
+      );
     },
-    [session, runOp],
+    [session, enqueue],
   );
 
-  /** Recursively uploads a local folder into the remote cwd (as `<name>/`),
+  /** Queues a recursive folder upload into the remote cwd (as `<name>/`),
    *  publishing live progress. `totals` (from the pre-flight scan) seed the bar. */
   const uploadDir = useCallback(
     (
       localPath: string,
       mode: TransferMode,
       totals?: { files: number; bytes: number },
-    ): Promise<void> => {
-      if (!session) return Promise.resolve();
+    ) => {
+      if (!session) return;
       const name = baseName(localPath);
       const remotePath = posixJoin(session.cwd, name);
       const transferId = crypto.randomUUID();
-      setTransfer({
-        transferId,
-        direction: "put",
-        name,
-        filesDone: 0,
-        filesTotal: totals?.files ?? 0,
-        bytesDone: 0,
-        bytesTotal: totals?.bytes ?? 0,
-      });
-      setBusy(true);
-      return sftpUploadDir({
-        hostId: session.host.id,
-        sessionId: session.sessionId,
-        localPath,
-        remotePath,
-        transferId,
-        mode,
-      })
-        .then(async (stats) => {
+      enqueue(
+        {
+          transferId,
+          direction: "put",
+          name,
+          filesTotal: totals?.files ?? 0,
+          bytesTotal: totals?.bytes ?? 0,
+        },
+        async () => {
+          const stats = await sftpUploadDir({
+            hostId: session.host.id,
+            sessionId: session.sessionId,
+            localPath,
+            remotePath,
+            transferId,
+            mode,
+          });
           const skip = stats.skipped > 0 ? `, ${stats.skipped} skipped` : "";
           if (stats.cancelled) {
             toast.warning(
@@ -350,23 +471,13 @@ export function useSftpBrowser(visible: boolean) {
               `Uploaded folder ${name} (${stats.files} files, ${formatSize(stats.bytes)}${skip})`,
             );
           }
-          // Refresh so partial/complete results show, unless the session is
-          // already gone (e.g. cancelled via Disconnect).
-          if (currentSessionId.current === session.sessionId)
-            await list(session.sessionId, session.cwd);
-        })
-        .catch((e) => {
-          toast.error(errorMessage(e));
-        })
-        .finally(() => {
-          setBusy(false);
-          setTransfer(null);
-        });
+        },
+      );
     },
-    [session, list],
+    [session, enqueue],
   );
 
-  /** Recursively downloads a remote folder to `localPath` (a `<name>` dir),
+  /** Queues a recursive folder download to `localPath` (a `<name>` dir),
    *  publishing live progress. */
   const downloadDir = useCallback(
     (
@@ -374,28 +485,26 @@ export function useSftpBrowser(visible: boolean) {
       localPath: string,
       mode: TransferMode,
       totals?: { files: number; bytes: number },
-    ): Promise<void> => {
-      if (!session) return Promise.resolve();
+    ) => {
+      if (!session) return;
       const transferId = crypto.randomUUID();
-      setTransfer({
-        transferId,
-        direction: "get",
-        name: entry.name,
-        filesDone: 0,
-        filesTotal: totals?.files ?? 0,
-        bytesDone: 0,
-        bytesTotal: totals?.bytes ?? 0,
-      });
-      setBusy(true);
-      return sftpDownloadDir({
-        hostId: session.host.id,
-        sessionId: session.sessionId,
-        remotePath: entry.path,
-        localPath,
-        transferId,
-        mode,
-      })
-        .then((stats) => {
+      enqueue(
+        {
+          transferId,
+          direction: "get",
+          name: entry.name,
+          filesTotal: totals?.files ?? 0,
+          bytesTotal: totals?.bytes ?? 0,
+        },
+        async () => {
+          const stats = await sftpDownloadDir({
+            hostId: session.host.id,
+            sessionId: session.sessionId,
+            remotePath: entry.path,
+            localPath,
+            transferId,
+            mode,
+          });
           const skip = stats.skipped > 0 ? `, ${stats.skipped} skipped` : "";
           if (stats.cancelled) {
             toast.warning(
@@ -406,26 +515,46 @@ export function useSftpBrowser(visible: boolean) {
               `Downloaded folder ${entry.name} (${stats.files} files, ${formatSize(stats.bytes)}${skip})`,
             );
           }
-        })
-        .catch((e) => {
-          toast.error(errorMessage(e));
-        })
-        .finally(() => {
-          setBusy(false);
-          setTransfer(null);
-        });
+        },
+      );
     },
-    [session],
+    [session, enqueue],
   );
 
-  /** Signals the in-flight recursive transfer to stop at the next file. */
-  const cancelTransfer = useCallback(() => {
-    if (session) {
-      void sftpCancelTransfer(session.sessionId).catch(() => {
-        // Best-effort; the transfer may already be finishing.
-      });
-    }
-  }, [session]);
+  /**
+   * Stops a transfer: one by id, or all of them with no id.
+   *
+   * A transfer that has not started yet has nothing open at the far end, so
+   * cancelling it is simply dropping it off the list. One that is running is
+   * signalled and stops at its next chunk, keeping whatever it has already
+   * written; the id is remembered so that when it comes back with a byte count
+   * rather than an error, the toast says cancelled instead of done.
+   */
+  const cancelTransfer = useCallback(
+    (transferId?: string) => {
+      if (!session) return;
+      if (transferId) {
+        const queued = queueRef.current.some((j) => j.transferId === transferId);
+        if (queued) {
+          queueRef.current = queueRef.current.filter(
+            (j) => j.transferId !== transferId,
+          );
+          setTransfers((prev) =>
+            prev.filter((t) => t.transferId !== transferId),
+          );
+          return;
+        }
+        cancelledRef.current.add(transferId);
+        void sftpCancelTransfer(session.sessionId, transferId).catch(() => {
+          // Best-effort; the transfer may already be finishing.
+        });
+        return;
+      }
+      abandonQueue();
+      void sftpCancelTransfer(session.sessionId).catch(() => {});
+    },
+    [session, abandonQueue],
+  );
 
   const remove = useCallback(
     (entry: { path: string; name: string; kind: string }) => {
@@ -445,8 +574,11 @@ export function useSftpBrowser(visible: boolean) {
     entries,
     connecting,
     listing,
-    busy,
-    transfer,
+    // One flag for "this pane is mid-something", covering both a one-shot op
+    // and anything in the transfer queue.
+    busy: opBusy || transfers.length > 0,
+    transfers,
+    idleSeq,
     connect,
     navigate,
     goUp,

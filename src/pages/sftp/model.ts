@@ -103,6 +103,24 @@ export function winJoin(dir: string, name: string): string {
   return dir.endsWith("\\") || dir.endsWith("/") ? `${dir}${name}` : `${dir}\\${name}`;
 }
 
+/**
+ * How many Commander transfers run at once. Anything past this waits.
+ *
+ * The cap is not about bandwidth, which is shared however many are in flight,
+ * because everything here goes down one SFTP session and that is one SSH
+ * channel. It is about round trips: a file is read in 64KB requests, each one
+ * waited for, so a single file can never beat 64KB per round trip no matter how
+ * fat the link is. Four at once means four requests outstanding instead of one,
+ * which is where the difference on a distant host comes from, and why it barely
+ * shows on a LAN where the round trip is already nothing.
+ *
+ * Four rather than more because every extra stream pushes the others further
+ * back behind it, and the SFTP client gives up on a request that goes ten
+ * seconds unanswered. Four is also what the Broadcast tab allows itself in
+ * hosts, so there is one number to remember rather than two.
+ */
+export const TRANSFER_CONCURRENCY = 4;
+
 // --- Recursive folder-transfer warning thresholds. Above either one, the user
 // must confirm the put/get before Broadside executes it. ---
 export const WARN_FILES = 100;
