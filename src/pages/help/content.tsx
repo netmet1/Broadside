@@ -1801,7 +1801,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer status bar still going other tab in progress spinner",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner",
     body: (
       <>
         <Lead>
@@ -1833,9 +1833,17 @@ export const SECTIONS: HelpSection[] = [
               along the bottom gains a row as each one starts and loses it as each
               one finishes, with a line underneath counting whatever is still
               queued. Each row has its own <Nav>Cancel</Nav>, and there is a{" "}
-              <Nav>Cancel all</Nav> for the queue. Cancelling keeps what has
-              already arrived, so a stopped file is left part-written and
-              transferring it again replaces it.
+              <Nav>Cancel all</Nav> for the queue.
+            </li>
+            <li>
+              Cancelling leaves only whole files. Files that had already finished
+              stay; the one that was part-way through is deleted, because a
+              half-written file carrying the right name looks like the real thing
+              and nothing about it says it is short. The same applies when a
+              transfer fails rather than being cancelled. Note that a file being
+              <em>overwritten</em> cannot be brought back this way: it was
+              emptied the moment it was opened for writing, so cancelling leaves
+              you with neither the old copy nor the new one.
             </li>
             <li>
               Several at once is faster on a distant host and barely different on

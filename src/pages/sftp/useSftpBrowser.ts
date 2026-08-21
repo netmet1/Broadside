@@ -49,14 +49,13 @@ export type ActiveTransfer = {
   bytesTotal: number;
 };
 
-/** A transfer waiting for a slot: its id, and the call to make when it gets
- *  one. `run` reports its own outcome (it is the only thing that knows what to
- *  say); `cancelled()` tells it whether the user pulled this one, which the
- *  single-file calls need because a cancelled transfer comes back with the bytes
- *  it managed rather than with an error. */
+/** A transfer waiting for a slot: its id, and the call to make when it gets one.
+ *  `run` reports its own outcome, since it is the only thing that knows what to
+ *  say. A cancelled transfer is not an error: the backend comes back normally,
+ *  saying it stopped early and that it has removed the part-written file. */
 type TransferJob = {
   transferId: string;
-  run: (cancelled: () => boolean) => Promise<void>;
+  run: () => Promise<void>;
 };
 
 /**
@@ -92,32 +91,28 @@ export function useSftpBrowser(visible: boolean) {
   // A monotonically-increasing id keyed per host so a stale in-flight connect
   // can't clobber a newer session.
   const connectSeq = useRef(0);
-  // The transfer queue: jobs waiting for a slot, how many slots are taken, and
-  // which transfers the user has pulled. Refs rather than state, because the
-  // workers read them between awaits and must see the live values, not the ones
-  // that were current when the worker started.
+  // The transfer queue: the jobs waiting for a slot and how many slots are
+  // taken. Refs rather than state, because the workers read them between awaits
+  // and must see the live values, not the ones that were current when the
+  // worker started.
   const queueRef = useRef<TransferJob[]>([]);
   const workersRef = useRef(0);
-  const cancelledRef = useRef<Set<string>>(new Set());
 
   /**
-   * Empties the queue: whatever had not started is simply forgotten (nothing is
-   * open for it at the far end, so there is nothing to stop), and whatever is
-   * already running is noted as cancelled so its toast says so rather than
-   * claiming a partial transfer finished.
+   * Drops everything still waiting for a slot. Nothing is open at the far end
+   * for a transfer that never started, so there is nothing to stop and nothing
+   * to say about it: it simply never happened.
    *
-   * It does not signal the backend. The two callers do that differently: a
-   * cancel-all asks it to stop the transfers, a disconnect takes the session
-   * away and the backend stops them on the way out.
+   * It does not touch what is already running. The two callers deal with those
+   * differently: a cancel-all asks the backend to stop them, a disconnect takes
+   * the session away and the backend stops them on the way out. Either way each
+   * one reports its own outcome when it unwinds.
    */
   const abandonQueue = useCallback(() => {
     const queued = new Set(queueRef.current.map((j) => j.transferId));
     queueRef.current = [];
-    for (const t of transfers) {
-      if (!queued.has(t.transferId)) cancelledRef.current.add(t.transferId);
-    }
     setTransfers((prev) => prev.filter((t) => !queued.has(t.transferId)));
-  }, [transfers]);
+  }, []);
 
   // Fold live transfer-progress events into the matching transfer.
   useEffect(() => {
@@ -296,11 +291,10 @@ export function useSftpBrowser(visible: boolean) {
               ),
             );
             try {
-              await job.run(() => cancelledRef.current.has(job.transferId));
+              await job.run();
             } catch (e) {
               toast.error(errorMessage(e));
             } finally {
-              cancelledRef.current.delete(job.transferId);
               setTransfers((prev) =>
                 prev.filter((t) => t.transferId !== job.transferId),
               );
@@ -371,22 +365,21 @@ export function useSftpBrowser(visible: boolean) {
           filesTotal: 1,
           bytesTotal: size ?? 0,
         },
-        async (cancelled) => {
-          const bytes = await sftpUpload({
+        async () => {
+          const r = await sftpUpload({
             hostId: session.host.id,
             sessionId: session.sessionId,
             localPath,
             remotePath,
             transferId,
           });
-          // A cancelled single file comes back with the bytes it managed rather
-          // than an error, so only the queue knows it was pulled.
-          if (cancelled()) {
-            toast.warning(
-              `Upload cancelled: ${name} (${formatSize(bytes)} transferred)`,
-            );
+          // No byte count on a cancel: the part-written file has been removed,
+          // so those bytes crossed the wire and then went nowhere, and a number
+          // beside the word "cancelled" reads like something was kept.
+          if (r.cancelled) {
+            toast.warning(`Upload cancelled: ${name} (partial file removed)`);
           } else {
-            toast.success(`Uploaded ${name} (${formatSize(bytes)})`);
+            toast.success(`Uploaded ${name} (${formatSize(r.bytes)})`);
           }
         },
       );
@@ -411,20 +404,20 @@ export function useSftpBrowser(visible: boolean) {
           filesTotal: 1,
           bytesTotal: entry.size ?? 0,
         },
-        async (cancelled) => {
-          const bytes = await sftpDownload({
+        async () => {
+          const r = await sftpDownload({
             hostId: session.host.id,
             sessionId: session.sessionId,
             remotePath: entry.path,
             localPath,
             transferId,
           });
-          if (cancelled()) {
+          if (r.cancelled) {
             toast.warning(
-              `Download cancelled: ${entry.name} (${formatSize(bytes)} transferred)`,
+              `Download cancelled: ${entry.name} (partial file removed)`,
             );
           } else {
-            toast.success(`Downloaded ${entry.name} (${formatSize(bytes)})`);
+            toast.success(`Downloaded ${entry.name} (${formatSize(r.bytes)})`);
           }
         },
       );
@@ -544,7 +537,6 @@ export function useSftpBrowser(visible: boolean) {
           );
           return;
         }
-        cancelledRef.current.add(transferId);
         void sftpCancelTransfer(session.sessionId, transferId).catch(() => {
           // Best-effort; the transfer may already be finishing.
         });

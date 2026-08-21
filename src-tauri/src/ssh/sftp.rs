@@ -383,9 +383,52 @@ where
     }
 }
 
-/// Uploads a local file to `remote_path`, streaming in chunks. Returns the byte
-/// count transferred. `on_progress(bytes_done)` is called periodically + at the
-/// end; `cancel` is polled between chunks so the transfer stops cooperatively.
+/// Throws away a local destination a transfer did not finish writing.
+///
+/// A part-written file carrying the name of the file the operator asked for is
+/// worse than nothing there at all: it looks like the file, nothing about it
+/// says it is short, and the next thing to read it gets a truncated answer with
+/// no error. So a transfer that stops early takes its destination with it, and
+/// only whole files are ever left behind. There is no resume, so there is
+/// nothing the stump could have been kept for.
+///
+/// The handle is taken by value and flushed before it is dropped, because
+/// tokio's file writes finish on a background task and Windows will not unlink a
+/// file that is still open.
+///
+/// Note the one thing this cannot give back. A destination that already existed
+/// was truncated the moment it was opened for writing, so the old contents were
+/// gone before the first byte of the new ones arrived. Removing the stump is the
+/// best that is left, not a way of putting the old file back.
+async fn discard_local(mut file: tokio::fs::File, path: &Path) {
+    let _ = file.flush().await;
+    drop(file);
+    let _ = tokio::fs::remove_file(path).await;
+}
+
+/// The remote half of [`discard_local`]: closes the handle, then unlinks.
+async fn discard_remote(conn: &SftpConn, mut file: russh_sftp::client::fs::File, path: &str) {
+    let _ = file.shutdown().await;
+    drop(file);
+    let _ = conn.sftp.remove_file(path.to_string()).await;
+}
+
+/// What a single-file transfer did.
+///
+/// `cancelled` means it was stopped part-way, and therefore that the destination
+/// has been removed: the bytes it reports crossed the wire but none of them were
+/// kept. Callers show that rather than a byte count, because a count of bytes
+/// that no longer exist anywhere reads like a partial success.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct FileTransfer {
+    pub bytes: u64,
+    pub cancelled: bool,
+}
+
+/// Uploads a local file to `remote_path`, streaming in chunks. `on_progress` is
+/// called periodically + at the end; `cancel` is polled between chunks so the
+/// transfer stops cooperatively, and a stopped or failed upload removes the
+/// part-written remote file.
 pub async fn upload(
     state: &SftpState,
     session_id: &str,
@@ -393,7 +436,7 @@ pub async fn upload(
     remote_path: &str,
     cancel: &AtomicBool,
     on_progress: impl Fn(u64),
-) -> AppResult<u64> {
+) -> AppResult<FileTransfer> {
     let conn = state.get(session_id)?;
     let mut src = tokio::fs::File::open(local_path).await?;
     let mut dst = conn
@@ -402,20 +445,37 @@ pub async fn upload(
         .await
         .map_err(|e| AppError::Ssh(format!("sftp create {remote_path}: {e}")))?;
 
-    let (total, _) = copy_stream(&mut src, &mut dst, cancel, &on_progress)
-        .await
-        .map_err(|e| AppError::Ssh(format!("sftp upload {remote_path}: {e}")))?;
-    // Flush + close the remote file so the write is durable before we return.
-    dst.shutdown()
-        .await
-        .map_err(|e| AppError::Ssh(format!("sftp finalize {remote_path}: {e}")))?;
-    on_progress(total);
-    Ok(total)
+    match copy_stream(&mut src, &mut dst, cancel, &on_progress).await {
+        Ok((bytes, false)) => {
+            // Flush + close the remote file so the write is durable before we
+            // return.
+            dst.shutdown()
+                .await
+                .map_err(|e| AppError::Ssh(format!("sftp finalize {remote_path}: {e}")))?;
+            on_progress(bytes);
+            Ok(FileTransfer {
+                bytes,
+                cancelled: false,
+            })
+        }
+        Ok((bytes, true)) => {
+            discard_remote(&conn, dst, remote_path).await;
+            Ok(FileTransfer {
+                bytes,
+                cancelled: true,
+            })
+        }
+        Err(e) => {
+            discard_remote(&conn, dst, remote_path).await;
+            Err(AppError::Ssh(format!("sftp upload {remote_path}: {e}")))
+        }
+    }
 }
 
-/// Downloads `remote_path` to a local file, streaming in chunks. Returns the
-/// byte count transferred. `on_progress(bytes_done)` is called periodically + at
-/// the end; `cancel` is polled between chunks so the transfer stops cooperatively.
+/// Downloads `remote_path` to a local file, streaming in chunks. `on_progress`
+/// is called periodically + at the end; `cancel` is polled between chunks so the
+/// transfer stops cooperatively, and a stopped or failed download removes the
+/// part-written local file.
 pub async fn download(
     state: &SftpState,
     session_id: &str,
@@ -423,7 +483,7 @@ pub async fn download(
     local_path: &str,
     cancel: &AtomicBool,
     on_progress: impl Fn(u64),
-) -> AppResult<u64> {
+) -> AppResult<FileTransfer> {
     // Before the session is touched, because a destination we will not write to
     // is not worth opening the remote file for.
     let dest = safe_local_destination(local_path)?;
@@ -435,12 +495,27 @@ pub async fn download(
         .map_err(|e| AppError::Ssh(format!("sftp open {remote_path}: {e}")))?;
     let mut dst = tokio::fs::File::create(dest).await?;
 
-    let (total, _) = copy_stream(&mut src, &mut dst, cancel, &on_progress)
-        .await
-        .map_err(|e| AppError::Ssh(format!("sftp download {remote_path}: {e}")))?;
-    dst.flush().await?;
-    on_progress(total);
-    Ok(total)
+    match copy_stream(&mut src, &mut dst, cancel, &on_progress).await {
+        Ok((bytes, false)) => {
+            dst.flush().await?;
+            on_progress(bytes);
+            Ok(FileTransfer {
+                bytes,
+                cancelled: false,
+            })
+        }
+        Ok((bytes, true)) => {
+            discard_local(dst, dest).await;
+            Ok(FileTransfer {
+                bytes,
+                cancelled: true,
+            })
+        }
+        Err(e) => {
+            discard_local(dst, dest).await;
+            Err(AppError::Ssh(format!("sftp download {remote_path}: {e}")))
+        }
+    }
 }
 
 /// Creates `path` and any missing ancestors on the remote (like `mkdir -p`).
@@ -614,20 +689,34 @@ pub async fn upload_dir(
             // the closure isn't borrowing counters the loop is about to change.
             let base = done_bytes;
             let files_now = done_files;
-            let (n, stopped) = copy_stream(&mut src, &mut file, cancel, |n| {
+            let copied = copy_stream(&mut src, &mut file, cancel, |n| {
                 on_progress(files_now, base + n)
             })
-            .await
-            .map_err(|e| AppError::Ssh(format!("sftp upload {remote_path}: {e}")))?;
-            file.shutdown()
-                .await
-                .map_err(|e| AppError::Ssh(format!("sftp finalize {remote_path}: {e}")))?;
-            done_bytes = base + n;
-            stats.files += 1;
-            stats.bytes += n;
-            if stopped {
-                stats.cancelled = true;
-                break;
+            .await;
+            match copied {
+                Ok((n, false)) => {
+                    file.shutdown().await.map_err(|e| {
+                        AppError::Ssh(format!("sftp finalize {remote_path}: {e}"))
+                    })?;
+                    done_bytes = base + n;
+                    stats.files += 1;
+                    stats.bytes += n;
+                }
+                // Stopped part-way through this one. It is a stump, so it is
+                // removed, and it counts as neither transferred nor skipped: the
+                // files reported are the whole ones that were left behind.
+                Ok((_, true)) => {
+                    discard_remote(&conn, file, &remote_path).await;
+                    done_files -= 1;
+                    stats.cancelled = true;
+                    break;
+                }
+                Err(e) => {
+                    discard_remote(&conn, file, &remote_path).await;
+                    return Err(AppError::Ssh(format!(
+                        "sftp upload {remote_path}: {e}"
+                    )));
+                }
             }
         } else {
             done_bytes += item.size;
@@ -790,18 +879,30 @@ pub async fn download_dir(
                 // about to change.
                 let base = done_bytes;
                 let files_now = done_files;
-                let (n, stopped) = copy_stream(&mut file, &mut dst, cancel, |b| {
+                let copied = copy_stream(&mut file, &mut dst, cancel, |b| {
                     on_progress(files_now, base + b)
                 })
-                .await
-                .map_err(|e| AppError::Ssh(format!("sftp download {rp}: {e}")))?;
-                dst.flush().await?;
-                done_bytes = base + n;
-                stats.files += 1;
-                stats.bytes += n;
-                if stopped {
-                    stats.cancelled = true;
-                    break 'walk;
+                .await;
+                match copied {
+                    Ok((n, false)) => {
+                        dst.flush().await?;
+                        done_bytes = base + n;
+                        stats.files += 1;
+                        stats.bytes += n;
+                    }
+                    // Stopped part-way through this one. It is a stump, so it is
+                    // removed, and it counts as neither transferred nor skipped:
+                    // the files reported are the whole ones left behind.
+                    Ok((_, true)) => {
+                        discard_local(dst, &child_local).await;
+                        done_files -= 1;
+                        stats.cancelled = true;
+                        break 'walk;
+                    }
+                    Err(e) => {
+                        discard_local(dst, &child_local).await;
+                        return Err(AppError::Ssh(format!("sftp download {rp}: {e}")));
+                    }
                 }
             } else {
                 done_bytes += md.size.unwrap_or(0);
