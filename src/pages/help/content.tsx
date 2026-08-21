@@ -316,7 +316,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-overview",
     title: "Overview and getting started",
     keywords:
-      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout seven seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key session timeout 30m reminder fourth item bottom bar timeout is on open on a different tab start page startup tab dialog closed when i clicked outside lost my work clicked off the dialog modal disappeared click outside does not close toast history help sub headers subheadings contents list indented",
+      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout seven seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key session timeout 30m reminder fourth item bottom bar timeout is on open on a different tab start page startup tab dialog closed when i clicked outside lost my work clicked off the dialog modal disappeared click outside does not close toast history help sub headers subheadings contents list indented spinner in the status bar what is it doing something still running background work other tab activity in progress sftp transfer keeps spinning",
     body: (
       <>
         <Lead>
@@ -359,6 +359,11 @@ export const SECTIONS: HelpSection[] = [
               Every message that pops up in the bottom corner (a toast) is also
               kept in <Nav>Logs</Nav> &rarr; <Nav>Toasts History</Nav>, so one
               that went by too fast can be read again.
+            </li>
+            <li>
+              A spinner in the status bar with a short line such as{" "}
+              <Nav>SFTP transfer in progress</Nav> means work is still running on
+              another tab. It stays until that work finishes.
             </li>
             <li>
               The app version is shown next to the Broadside name at the top of
@@ -1796,7 +1801,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer status bar still going other tab in progress spinner",
     body: (
       <>
         <Lead>
@@ -1822,6 +1827,22 @@ export const SECTIONS: HelpSection[] = [
               Select several items as in Windows Explorer (<Nav>Ctrl+click</Nav>{" "}
               for individual files, <Nav>Shift+click</Nav> for a range), then drag
               any of them to transfer the whole selection.
+            </li>
+            <li>
+              A few transfer at a time and the rest wait their turn, so the bar
+              along the bottom gains a row as each one starts and loses it as each
+              one finishes, with a line underneath counting whatever is still
+              queued. Each row has its own <Nav>Cancel</Nav>, and there is a{" "}
+              <Nav>Cancel all</Nav> for the queue. Cancelling keeps what has
+              already arrived, so a stopped file is left part-written and
+              transferring it again replaces it.
+            </li>
+            <li>
+              Several at once is faster on a distant host and barely different on
+              your own network. Everything shares one connection, so the gain is
+              not extra bandwidth: it is that a file is fetched in small pieces,
+              each one waited for, and waiting for four files at once is quicker
+              than waiting for them one after another.
             </li>
             <li>
               You can make a new folder on either side and delete items. Local
