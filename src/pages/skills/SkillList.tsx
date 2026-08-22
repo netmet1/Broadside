@@ -18,16 +18,6 @@ import { cn } from "@/lib/utils";
 import { useHint } from "@/lib/status";
 import { parseSequence, type Skill } from "@/lib/tauri/skills";
 
-/**
- * The pinned card's ground: rgb(37 70 49), picked by eye and asked for by
- * number, so it is written as the number.
- *
- * Not a Tailwind emerald. The palette's neighbouring steps are either lighter
- * than this or nearly black, and the whole job of the card is to be one
- * particular green in a rail of greys.
- */
-const PINNED_CARD_BG = "rgb(37 70 49)";
-
 /** How a skill's run is doing, when the run on this page is that skill's. */
 type RunState = {
   skillId: number;
@@ -179,16 +169,16 @@ export function SkillList({
       {showPicker && (
         <div
           className={cn(
-            // `dark` on the card itself, not just a dark colour. The class
-            // redefines the theme's tokens for everything inside it, so the
-            // muted detail line, the ghost buttons and their hovers all come
-            // out readable on this ground in the light theme too. Painting
-            // only the background would have left dark text on dark green
-            // there, and the card is one specific green in both themes.
-            "dark shrink-0 border-y border-white/10 px-2 py-1.5 text-foreground",
+            // One green per theme rather than one green for both. A fixed
+            // colour dark enough to sit in the dark theme has to drag the text
+            // on top of it along, which turns the card into a dark island in a
+            // light page; a pair costs two class names and lets each theme
+            // keep its own foreground. Dark takes emerald-950, about as dark
+            // as green gets before it stops reading as green at all against a
+            // near-black rail. Light takes the same hue from the other end.
+            "shrink-0 border-y border-emerald-600/30 bg-emerald-100 px-2 py-1.5 dark:border-emerald-400/20 dark:bg-emerald-950",
             selectedId === picked.id && "ring-1 ring-primary/50",
           )}
-          style={{ backgroundColor: PINNED_CARD_BG }}
         >
           {/* The dropdown is the card's title: what it says is what the card
               is showing, and changing it swaps the card. Two controls saying
@@ -203,9 +193,9 @@ export function SkillList({
           >
             {skills.map((s) => (
               // The popup is drawn by the browser, not by us, and it takes its
-              // colours from the options rather than from the card behind
-              // them: without these it opens as a white list in the light
-              // theme with white text in it.
+              // colours from the options rather than from the transparent
+              // control or the card behind it. Without these the dark theme
+              // opens a white list and puts near-white text in it.
               <option key={s.id} value={s.id} className="bg-popover text-popover-foreground">
                 {s.name}
               </option>
