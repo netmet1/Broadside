@@ -2136,20 +2136,28 @@ export const SECTIONS: HelpSection[] = [
               The order is yours and it is remembered.
             </li>
             <li>
-              The dropdown above the skill list pins one skill to the top of the
-              rail, where it stays while the list below scrolls: the one you run
-              twenty times a day should not be wherever the scroll happens to be.
-              It starts on whichever skill is top of the list and follows that
-              position, so reordering moves it.
+              The green card above the skill list pins one skill to the top of
+              the rail, where it stays while the list below scrolls: the one you
+              run twenty times a day should not be wherever the scroll happens
+              to be. Its title is a dropdown of every skill, so what the card is
+              showing and how you change it are the same control. It starts on
+              whichever skill is top of the list and follows that position, so
+              reordering moves it.
             </li>
             <li>
-              A pinned skill sits on a green card and leaves the list below
-              while it is up there, rather than appearing twice in a rail this
-              narrow. Nothing else about the list changes: no default moves,
-              nothing is reordered, and the arrows still step past whatever is
-              actually on screen. The one thing you cannot do is reorder the
-              pinned skill itself. Point the dropdown at something else and it
-              rejoins the list, in its own place, with its arrows back.
+              A pinned skill leaves the list below while it is on the card,
+              rather than appearing twice in a rail this narrow. Nothing else
+              about the list changes: no default moves, nothing is reordered,
+              and the arrows still step past whatever is actually on screen. The
+              one thing you cannot do is reorder the pinned skill itself. Point
+              the dropdown at something else and it rejoins the list, in its own
+              place, with its arrows back.
+            </li>
+            <li>
+              The card's title is a dropdown rather than a name you can click,
+              so the flow map moved to a button: the small branching icon on the
+              card, at the left of its row of controls. It is the same thing
+              clicking a skill's name does in the list.
             </li>
             <li>
               <Nav>Clone</Nav> starts a new skill from a copy of an existing one,

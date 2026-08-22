@@ -10,12 +10,23 @@ import {
   PlusIcon,
   Trash2Icon,
   UploadIcon,
+  WorkflowIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useHint } from "@/lib/status";
 import { parseSequence, type Skill } from "@/lib/tauri/skills";
+
+/**
+ * The pinned card's ground: rgb(37 70 49), picked by eye and asked for by
+ * number, so it is written as the number.
+ *
+ * Not a Tailwind emerald. The palette's neighbouring steps are either lighter
+ * than this or nearly black, and the whole job of the card is to be one
+ * particular green in a rail of greys.
+ */
+const PINNED_CARD_BG = "rgb(37 70 49)";
 
 /** How a skill's run is doing, when the run on this page is that skill's. */
 type RunState = {
@@ -152,10 +163,10 @@ export function SkillList({
         </div>
       </div>
 
-      {/* Pick one skill and keep it in reach: the dropdown is the card's title,
-          and the card under it stays put while the list below scrolls. The one
-          you run twenty times a day is otherwise wherever the list happens to
-          have scrolled to.
+      {/* Pick one skill and keep it in reach: one card, titled by the dropdown
+          that chooses what is on it, staying put while the list below scrolls.
+          The one you run twenty times a day is otherwise wherever the list
+          happens to have scrolled to.
 
           The pinned skill leaves the list while it is up here. It was left in
           place at first, marked with a dot, so that the reorder arrows could
@@ -166,44 +177,52 @@ export function SkillList({
           the pinned skill itself: pick another and it comes back to the list
           with its arrows. */}
       {showPicker && (
-        <>
-          <div className="shrink-0 px-3 pb-2">
-            <select
-              value={picked.id}
-              onChange={(e) => setPickedId(Number(e.target.value))}
-              aria-label="Pin a skill above the list"
-              className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus-visible:border-ring"
-            >
-              {skills.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {/* Deep green, so the card reads as a fixture rather than as the
-              first row of the list it sits above. Dark mode gets the very dark
-              green asked for; light mode gets the same hue at the other end of
-              the scale, because a near-black block there would take the row's
-              text with it. */}
-          <div
-            className={cn(
-              "shrink-0 border-y border-emerald-600/40 bg-emerald-100 px-2 py-1.5 dark:border-emerald-500/25 dark:bg-emerald-950",
-              selectedId === picked.id && "ring-1 ring-primary/50",
-            )}
+        <div
+          className={cn(
+            // `dark` on the card itself, not just a dark colour. The class
+            // redefines the theme's tokens for everything inside it, so the
+            // muted detail line, the ghost buttons and their hovers all come
+            // out readable on this ground in the light theme too. Painting
+            // only the background would have left dark text on dark green
+            // there, and the card is one specific green in both themes.
+            "dark shrink-0 border-y border-white/10 px-2 py-1.5 text-foreground",
+            selectedId === picked.id && "ring-1 ring-primary/50",
+          )}
+          style={{ backgroundColor: PINNED_CARD_BG }}
+        >
+          {/* The dropdown is the card's title: what it says is what the card
+              is showing, and changing it swaps the card. Two controls saying
+              the same skill's name, one above the other, was a row of a
+              sixteen-rem rail spent on repeating itself. */}
+          <select
+            value={picked.id}
+            onChange={(e) => setPickedId(Number(e.target.value))}
+            aria-label="Pinned skill"
+            title={picked.name}
+            className="-mx-1 w-full cursor-pointer rounded bg-transparent px-1 text-sm font-medium outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
-            <SkillRow
-              skill={picked}
-              prev={null}
-              next={null}
-              showReorder={false}
-              runState={runState}
-              watching={watching}
-              canRun={canRun}
-              actions={actions}
-            />
-          </div>
-        </>
+            {skills.map((s) => (
+              // The popup is drawn by the browser, not by us, and it takes its
+              // colours from the options rather than from the card behind
+              // them: without these it opens as a white list in the light
+              // theme with white text in it.
+              <option key={s.id} value={s.id} className="bg-popover text-popover-foreground">
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <SkillRow
+            skill={picked}
+            prev={null}
+            next={null}
+            showReorder={false}
+            showName={false}
+            runState={runState}
+            watching={watching}
+            canRun={canRun}
+            actions={actions}
+          />
+        </div>
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -249,6 +268,7 @@ function SkillRow({
   prev,
   next,
   showReorder,
+  showName = true,
   runState,
   watching,
   canRun,
@@ -264,6 +284,11 @@ function SkillRow({
   /** False on the pinned card: it is one skill out of its list, so up and down
    * have nothing to mean there. */
   showReorder: boolean;
+  /** False on the pinned card, where the dropdown above is already the skill's
+   * name. Clicking the name is how you reach a skill's flow map, so the card
+   * gets that as a button instead: without it the pinned skill would be the
+   * one skill on the page with no way through to its flow. */
+  showName?: boolean;
   runState: RunState;
   watching: boolean;
   canRun: boolean;
@@ -282,15 +307,17 @@ function SkillRow({
 
   return (
     <>
-      <button
-        type="button"
-        className="flex w-full items-center gap-1.5 text-left text-sm"
-        title={s.name}
-        onClick={() => actions.onOpen(s)}
-        {...hint(`Open "${s.name}" to see its flow`)}
-      >
-        <span className="min-w-0 truncate">{s.name}</span>
-      </button>
+      {showName && (
+        <button
+          type="button"
+          className="flex w-full items-center gap-1.5 text-left text-sm"
+          title={s.name}
+          onClick={() => actions.onOpen(s)}
+          {...hint(`Open "${s.name}" to see its flow`)}
+        >
+          <span className="min-w-0 truncate">{s.name}</span>
+        </button>
+      )}
       <div className="flex items-center gap-1.5 pr-1 text-[10px] text-muted-foreground">
         <span className="shrink-0">
           {steps} {steps === 1 ? "step" : "steps"}
@@ -349,6 +376,20 @@ function SkillRow({
               <ChevronDownIcon className="h-3.5 w-3.5" />
             </Button>
           </>
+        )}
+        {/* The card's stand-in for clicking the name, in the space the list
+            rows give their arrows. */}
+        {!showName && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 shrink-0 p-0"
+            onClick={() => actions.onOpen(s)}
+            aria-label={`Open ${s.name}`}
+            {...hint(`Open "${s.name}" to see its flow`)}
+          >
+            <WorkflowIcon className="h-3.5 w-3.5" />
+          </Button>
         )}
         <span className="flex-1" />
         {status !== null ? (
