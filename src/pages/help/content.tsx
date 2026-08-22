@@ -1808,7 +1808,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment status dot colour legend key what do the colours mean green dark green amber red grey online offline reachable port check probe is this host up before i run sort online first collapse the rail hide the sidebar more room expand button pin a skill dropdown pinned card frozen top of the list favourite most used skill green card dark green background missing from the list disappeared from the list where did my skill go cannot move the pinned skill arrows greyed save and close save cancel discard unsaved changes stay in the editor keep editing first save creates it",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment status dot colour legend key what do the colours mean green dark green amber red grey online offline reachable port check probe is this host up before i run sort online first collapse the rail hide the sidebar more room expand button pin a skill dropdown pinned card frozen top of the list favourite most used skill green tint highlight moved to another skill which one am i working on missing from the list disappeared from the list where did my skill go cannot move the pinned skill arrows greyed save and close save cancel discard unsaved changes stay in the editor keep editing first save creates it",
     body: (
       <>
         <Lead>
@@ -2136,16 +2136,23 @@ export const SECTIONS: HelpSection[] = [
               The order is yours and it is remembered.
             </li>
             <li>
-              The green card above the skill list pins one skill to the top of
-              the rail, where it stays while the list below scrolls: the one you
-              run twenty times a day should not be wherever the scroll happens
-              to be. Its title is a dropdown of every skill, so what the card is
+              The card above the skill list pins one skill to the top of the
+              rail, where it stays while the list below scrolls: the one you run
+              twenty times a day should not be wherever the scroll happens to
+              be. Its title is a dropdown of every skill, so what the card is
               showing and how you change it are the same control. It starts on
               whichever skill is top of the list and follows that position, so
               reordering moves it.
             </li>
             <li>
-              A pinned skill leaves the list below while it is on the card,
+              The faint green tint marks the skill in hand. It starts on the
+              card, and it moves: open a skill from the list and the tint goes
+              down to that row, so the rail never shows two skills dressed as
+              the current one. Change the dropdown and it comes back up, because
+              choosing what is pinned is choosing what you are working on.
+            </li>
+            <li>
+              The pinned skill leaves the list below while it is on the card,
               rather than appearing twice in a rail this narrow. Nothing else
               about the list changes: no default moves, nothing is reordered,
               and the arrows still step past whatever is actually on screen. The

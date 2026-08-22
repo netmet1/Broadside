@@ -18,6 +18,20 @@ import { cn } from "@/lib/utils";
 import { useHint } from "@/lib/status";
 import { parseSequence, type Skill } from "@/lib/tauri/skills";
 
+/**
+ * The mark on the skill in hand: a wash of emerald over whatever is behind it,
+ * with a border of the same hue.
+ *
+ * One class for both themes, and a translucent one. A solid green dark enough
+ * to belong in the dark theme has to bring its own foreground along, which
+ * makes the card an island rather than part of the page; and both of the solid
+ * greens tried before this shouted, which is the wrong volume for something
+ * that is only saying "this one". Ten per cent over the rail is a tint you
+ * notice without reading it as a warning, and it lands the same way at either
+ * end of the theme because it is mostly the background underneath.
+ */
+const TINT = "border-emerald-500/25 bg-emerald-500/10";
+
 /** How a skill's run is doing, when the run on this page is that skill's. */
 type RunState = {
   skillId: number;
@@ -94,6 +108,22 @@ export function SkillList({
   onSwap: (a: Skill, b: Skill) => void;
 }) {
   const hint = useHint();
+
+  /**
+   * Whether the tint has followed you down into the list.
+   *
+   * The green marks the skill in hand, and the card is where that starts.
+   * Open one from the list and the tint goes with you, off the card and onto
+   * that row, so the rail never shows two skills dressed as the current one.
+   * Touch the dropdown and it comes back up: choosing what is pinned is
+   * choosing what you are working on.
+   *
+   * Set where the click happens rather than derived from `selectedId`, because
+   * opening the row you already had open has to bring the tint back down and a
+   * selection that did not change cannot say so.
+   */
+  const [tintInList, setTintInList] = useState(false);
+
   const actions: RowActions = {
     onRun,
     onWatch,
@@ -103,6 +133,22 @@ export function SkillList({
     onExport,
     onDelete,
     onSwap,
+  };
+  /** The card and the list rows differ in one thing: where opening a skill
+   * leaves the tint. Everything else they do is identical. */
+  const cardActions: RowActions = {
+    ...actions,
+    onOpen: (s) => {
+      setTintInList(false);
+      onOpen(s);
+    },
+  };
+  const listActions: RowActions = {
+    ...actions,
+    onOpen: (s) => {
+      setTintInList(true);
+      onOpen(s);
+    },
   };
 
   /**
@@ -124,6 +170,13 @@ export function SkillList({
   /** The list as displayed: everything except the skill on the card. It is
    * already on screen, above, and a rail this narrow cannot spare the row. */
   const listed = showPicker ? skills.filter((s) => s.id !== picked.id) : skills;
+
+  /** The row wearing the tint, if any. Falls back to the card when the tint's
+   * row is gone: deleted, or just pinned and so lifted out of the list. */
+  const tintedRow =
+    showPicker && tintInList && listed.some((s) => s.id === selectedId)
+      ? selectedId
+      : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-border/50">
@@ -169,14 +222,10 @@ export function SkillList({
       {showPicker && (
         <div
           className={cn(
-            // One green per theme rather than one green for both. A fixed
-            // colour dark enough to sit in the dark theme has to drag the text
-            // on top of it along, which turns the card into a dark island in a
-            // light page; a pair costs two class names and lets each theme
-            // keep its own foreground. Dark takes emerald-950, about as dark
-            // as green gets before it stops reading as green at all against a
-            // near-black rail. Light takes the same hue from the other end.
-            "shrink-0 border-y border-emerald-600/30 bg-emerald-100 px-2 py-1.5 dark:border-emerald-400/20 dark:bg-emerald-950",
+            "shrink-0 border-y px-2 py-1.5",
+            tintedRow === null
+              ? TINT
+              : "border-border/50 bg-muted/30 dark:bg-muted/20",
             selectedId === picked.id && "ring-1 ring-primary/50",
           )}
         >
@@ -186,7 +235,12 @@ export function SkillList({
               sixteen-rem rail spent on repeating itself. */}
           <select
             value={picked.id}
-            onChange={(e) => setPickedId(Number(e.target.value))}
+            onChange={(e) => {
+              setPickedId(Number(e.target.value));
+              // Choosing what is pinned is choosing what you are working on,
+              // so the tint comes back up here from wherever it had got to.
+              setTintInList(false);
+            }}
             aria-label="Pinned skill"
             title={picked.name}
             className="-mx-1 w-full cursor-pointer rounded bg-transparent px-1 text-sm font-medium outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -210,7 +264,7 @@ export function SkillList({
             runState={runState}
             watching={watching}
             canRun={canRun}
-            actions={actions}
+            actions={cardActions}
           />
         </div>
       )}
@@ -228,11 +282,19 @@ export function SkillList({
           listed.map((s, i) => (
             <div
               key={s.id}
-              className={`group mb-1 rounded-md px-2 py-1.5 ${
-                selectedId === s.id
-                  ? "bg-accent/40 ring-1 ring-primary/50"
-                  : "hover:bg-accent/40"
-              }`}
+              className={cn(
+                "group mb-1 rounded-md border border-transparent px-2 py-1.5",
+                // The tint replaces the accent wash rather than sitting on top
+                // of it: two backgrounds on one row is a muddier colour, not a
+                // louder signal. The ring stays either way, because it is the
+                // ring that says "open", not the fill.
+                tintedRow === s.id
+                  ? TINT
+                  : selectedId === s.id
+                    ? "bg-accent/40"
+                    : "hover:bg-accent/40",
+                selectedId === s.id && "ring-1 ring-primary/50",
+              )}
             >
               <SkillRow
                 skill={s}
@@ -242,7 +304,7 @@ export function SkillList({
                 runState={runState}
                 watching={watching}
                 canRun={canRun}
-                actions={actions}
+                actions={listActions}
               />
             </div>
           ))
