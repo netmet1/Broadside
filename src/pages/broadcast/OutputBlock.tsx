@@ -10,6 +10,7 @@ import { type ExecResult } from "@/lib/tauri/broadcast";
 import { type Matcher } from "@/lib/search";
 import type { PresentedKey } from "@/lib/tauri/ssh";
 import { HighlightedLine, HighlightedText } from "@/components/Highlight";
+import { railSrc } from "@/lib/railHover";
 import {
   type Block,
   type FindData,
@@ -60,7 +61,10 @@ export function OutputBlock({
     const matchingLines = filteredLines(result, filterMatcher);
     if (matchingLines.length === 0) {
       return (
-        <div className="flex items-center gap-2 rounded-md border border-border/30 px-3 py-1.5 text-xs text-muted-foreground">
+        <div
+          {...railSrc(block.host_id)}
+          className="flex items-center gap-2 rounded-md border border-border/30 px-3 py-1.5 text-xs text-muted-foreground"
+        >
           <span
             className="h-2 w-2 shrink-0 rounded-full opacity-50"
             style={{ backgroundColor: block.color }}
@@ -71,6 +75,7 @@ export function OutputBlock({
     }
     return (
       <div
+        {...railSrc(block.host_id)}
         className="overflow-hidden rounded-md border border-border/40"
         style={tintBorder}
       >
@@ -104,6 +109,7 @@ export function OutputBlock({
 
   return (
     <div
+      {...railSrc(block.host_id)}
       className="overflow-hidden rounded-md border border-border/40"
       style={tintBorder}
     >

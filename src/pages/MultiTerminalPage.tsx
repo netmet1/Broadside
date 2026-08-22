@@ -35,6 +35,12 @@ import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { useRailFilter } from "@/lib/useRailFilter";
 import { railTooltip } from "@/lib/hostTags";
+import {
+  RAIL_LINK_CLASS,
+  railRow,
+  railSrc,
+  useRailHoverLink,
+} from "@/lib/railHover";
 import { RailFilterControls } from "@/components/RailFilterControls";
 import { GoToTerminalButton } from "@/components/GoToTerminalButton";
 import {
@@ -77,6 +83,10 @@ type DisplayBlock = {
   key: string;
   /** Persisted-row id (set once omni_blocks_add resolves); null until then. */
   dbId: number | null;
+  /** The session that produced this block, so hovering it can light that rail
+   * row. Null for a block reloaded from the database: its session belongs to a
+   * run of the app that has ended, and there is no row left for it. */
+  sessionId: string | null;
   ts: string;
   hostId: number | null;
   labelSnapshot: string;
@@ -145,6 +155,9 @@ export function MultiTerminalPage({
   const hint = useHint();
   const shortcuts = useShortcuts(visible);
   const outputRef = useRef<HTMLDivElement>(null);
+  // Hovering a block lights the rail row of the session that produced it.
+  const pageRef = useRef<HTMLDivElement>(null);
+  const railHover = useRailHoverLink(pageRef);
 
   const sessionsById = useMemo(() => {
     const m = new Map<string, SshTermSession>();
@@ -321,6 +334,7 @@ export function MultiTerminalPage({
           {
             key,
             dbId: null,
+            sessionId: sess.id,
             ts,
             hostId: sess.host.id,
             labelSnapshot: sess.host.label,
@@ -369,6 +383,7 @@ export function MultiTerminalPage({
           stored.map((s) => ({
             key: crypto.randomUUID(),
             dbId: s.id,
+            sessionId: null,
             ts: s.ts,
             hostId: s.host_id,
             // Stored with the number already in it, which is right for a row
@@ -575,7 +590,7 @@ export function MultiTerminalPage({
   const hasOutput = blocks.length > 0;
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={pageRef} className="flex h-full flex-col">
       {!ready && (
         <div className="shrink-0 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
           Open at least 2 terminals (from the Hosts page) to use MultiTerminal.
@@ -642,13 +657,19 @@ export function MultiTerminalPage({
                   <button
                     key={s.id}
                     type="button"
+                    {...railRow(s.id)}
                     onClick={() => isConnected && toggleSession(s.id)}
                     disabled={sending || !isConnected}
+                    // Name and number first: two rows on one machine are two
+                    // sets of the same initials at this width, and which of
+                    // them this is is the question being asked.
                     title={
-                      railTooltip(hostsById.get(s.host.id) ?? s.host) +
-                      (isConnected ? "" : "\n(disconnected)")
+                      railTooltip(
+                        hostsById.get(s.host.id) ?? s.host,
+                        name + suffix,
+                      ) + (isConnected ? "" : "\n(disconnected)")
                     }
-                    className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 ${
+                    className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 ${RAIL_LINK_CLASS} ${
                       isConnected
                         ? "cursor-pointer hover:bg-accent/50"
                         : "cursor-not-allowed opacity-50"
@@ -676,8 +697,9 @@ export function MultiTerminalPage({
               return (
                 <label
                   key={s.id}
+                  {...railRow(s.id)}
                   title={isConnected ? undefined : "Disconnected: reconnect the terminal to dispatch to it"}
-                  className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                  className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${RAIL_LINK_CLASS} ${
                     isConnected
                       ? "cursor-pointer hover:bg-accent/50"
                       : "cursor-not-allowed opacity-50"
@@ -907,7 +929,11 @@ export function MultiTerminalPage({
 
           {/* Block log. */}
           <div className="relative flex min-h-0 flex-1 flex-col">
-          <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div
+            ref={outputRef}
+            {...railHover}
+            className="min-h-0 flex-1 overflow-y-auto p-4"
+          >
             {!hasOutput ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 {ready
@@ -935,6 +961,7 @@ export function MultiTerminalPage({
                   return (
                     <OmniBlock
                       key={b.key}
+                      railId={b.sessionId}
                       color={color}
                       label={label}
                       suffix={suffix}
@@ -1050,6 +1077,7 @@ const NOTICE: Record<Exclude<BlockInteractivity, "normal">, string> = {
 
 /** One completion-ordered, host-tinted output block. */
 function OmniBlock({
+  railId,
   color,
   label,
   suffix,
@@ -1062,6 +1090,10 @@ function OmniBlock({
   showHeader,
   onDelete,
 }: {
+  /** The session this came from, so hovering the block lights its rail row.
+   * Null once that session is gone, which includes every block reloaded from
+   * a previous run of the app. */
+  railId: string | null;
   color: string;
   label: string;
   /** The " 02" telling this block's session from another on the same host.
@@ -1092,6 +1124,7 @@ function OmniBlock({
 
   return (
     <div
+      {...railSrc(railId)}
       className="group relative rounded-md border border-border/40 pl-3"
       style={{
         borderLeftColor: color,

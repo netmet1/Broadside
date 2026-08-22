@@ -59,6 +59,7 @@ import { useBroadcastRail } from "@/pages/broadcast/useBroadcastRail";
 import { useOutputSearch } from "@/pages/broadcast/useOutputSearch";
 import { useRailFilter } from "@/lib/useRailFilter";
 import { railTooltip } from "@/lib/hostTags";
+import { RAIL_LINK_CLASS, railRow, useRailHoverLink } from "@/lib/railHover";
 import { RailFilterControls } from "@/components/RailFilterControls";
 
 export function BroadcastPage({
@@ -121,6 +122,9 @@ export function BroadcastPage({
 
   const hint = useHint();
   const shortcuts = useShortcuts(visible);
+  // Hovering a result block lights the rail row of the host it came from.
+  const pageRef = useRef<HTMLDivElement>(null);
+  const railHover = useRailHoverLink(pageRef);
 
   usePageStatus(
     hosts.length > 0
@@ -550,7 +554,7 @@ export function BroadcastPage({
   const hasOutput = runs.length > 0;
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={pageRef} className="flex h-full flex-col">
       {/* Static reminder of the exec-channel contract (D-002). */}
       <div className="shrink-0 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
         Use Broadcast for commands that run and finish on their own. Use the
@@ -627,13 +631,16 @@ export function BroadcastPage({
               <button
                 key={h.id}
                 type="button"
+                {...railRow(h.id)}
                 onClick={() => toggleHost(h.id)}
                 disabled={running}
+                // Label first: the row is down to a dot and two initials here,
+                // so the name is the thing the tooltip is being asked for.
                 title={
-                  railTooltip(h) +
+                  railTooltip(h, h.label) +
                   (connectedHostIds.has(h.id) ? "" : "\n(no connected terminal)")
                 }
-                className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 ${
+                className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 ${RAIL_LINK_CLASS} ${
                   selected.has(h.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""
                 }`}
               >
@@ -648,7 +655,8 @@ export function BroadcastPage({
             ) : (
               <label
                 key={h.id}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+                {...railRow(h.id)}
+                className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50 ${RAIL_LINK_CLASS}`}
               >
                 <input
                   type="checkbox"
@@ -801,6 +809,7 @@ export function BroadcastPage({
         <div
           ref={outputRef}
           onScroll={onOutputScroll}
+          {...railHover}
           className="min-h-0 flex-1 overflow-y-auto p-4"
         >
           {!hasOutput && (

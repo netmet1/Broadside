@@ -1483,7 +1483,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-broadcast",
     title: "Broadcast",
     keywords:
-      "broadcast many hosts one command exec non-interactive output history autoscroll headers timeout guard destructive parallel concurrency rail filter tag label search find select all sort collapse go to terminal icon on every rail row end of the row past the connection dot open new connection tab always opens a new one even if already open not a jump no icon on the block header any more collapsed rail initials",
+      "broadcast many hosts one command exec non-interactive output history autoscroll headers timeout guard destructive parallel concurrency rail filter tag label search find select all sort collapse go to terminal icon on every rail row end of the row past the connection dot open new connection tab always opens a new one even if already open not a jump no icon on the block header any more collapsed rail initials icon only on hover appears when pointer on the row hidden until hovered hover a result block lights highlights the host row in the rail two way link collapsed tooltip leads with the label name first then address and tags",
     body: (
       <>
         <Lead>
@@ -1512,13 +1512,23 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               Every row in the host rail ends with a <Nav>terminal</Nav> icon,
-              just past its connection dot. Clicking it{" "}
+              just past its connection dot. It appears when the pointer is on
+              that row, so a rail at rest is a list of names rather than a
+              column of buttons. Clicking it{" "}
               <strong className="font-semibold">always opens a new terminal
               connection</strong> to that host, even when one is already open,
               because a broadcast's exec results aren't tied to any session, so
               there is nothing to jump back to. It is on every row for the same
               reason, connected or not, and it is not drawn while the rail is
               collapsed to initials.
+            </li>
+            <li>
+              The other direction works too: hover a result block and the host
+              it came from lights up in the rail. Useful once a run has filled
+              the page and the block you are reading is a long way from the row
+              that produced it. Hovering the output never opens anything, and it
+              does not summon the terminal icon; only the pointer being on the
+              row itself does that.
             </li>
           </Bullets>
           <H3>Choosing and filtering hosts</H3>
@@ -1529,6 +1539,14 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Select all</Nav> box, and its collapse state is remembered. No
               hosts are selected by default; you choose the targets for each
               broadcast.
+            </li>
+            <li>
+              On every collapsed rail in the app, hovering a row names it. The
+              tooltip leads with the label and then gives the address and any
+              tags, because two initials are exactly the thing you are hovering
+              to resolve. An expanded row is already showing its label, so there
+              the tooltip stays out of the way and gives only the address and
+              tags.
             </li>
             <li>
               Two filters narrow the rail: a <Nav>Find by label…</Nav> box that
@@ -1565,7 +1583,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-ptybroadcast",
     title: "PTY Broadcast",
     keywords:
-      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return serial console com port switches routers several consoles at once fifth tab go to terminal icon on every rail row end of the row past the connection dot jump switch select that exact tab per session not per host works on dropped and exited rows too no icon on the dispatch report rows any more collapsed rail initials",
+      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return serial console com port switches routers several consoles at once fifth tab go to terminal icon on every rail row end of the row past the connection dot jump switch select that exact tab per session not per host works on dropped and exited rows too no icon on the dispatch report rows any more collapsed rail initials icon only on hover appears when pointer on the row hidden until hovered hover a dispatch report row lights highlights that session in the rail reloaded run lights nothing collapsed tooltip leads with the label and the 02 number",
     body: (
       <>
         <Lead>
@@ -1630,10 +1648,18 @@ export const SECTIONS: HelpSection[] = [
               Every rail row, on all five tabs, ends with a{" "}
               <Nav>terminal</Nav> icon that switches to <Nav>Terminals</Nav> and
               selects that exact tab. By session and not by host: two rows can
-              be the same machine, and each one takes you to its own. It is on
-              the dropped and exited rows too, since their banner is usually
-              where you wanted to go, and it is not drawn while the rail is
-              collapsed to initials.
+              be the same machine, and each one takes you to its own. It shows
+              while the pointer is on its row. It is on the dropped and exited
+              rows too, since their banner is usually where you wanted to go,
+              and it is not drawn while the rail is collapsed to initials.
+            </li>
+            <li>
+              Hovering a row of the dispatch report lights the rail row it
+              reports on, which is how you find one session among a dozen
+              identically named ones. A report reloaded from a previous run of
+              the app lights nothing: those sessions ended when the app closed,
+              and pointing at a different one on the same machine would be a
+              guess.
             </li>
             <li>
               There is one recall list for the whole app, shared with{" "}
@@ -1676,7 +1702,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-multiterminal",
     title: "MultiTerminal",
     keywords:
-      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror show manual activity typed layers icon indicator marker recorded composer filter tag label search find selectable connected go to terminal icon moved off the block header onto the rail row end of row past the connection dot per session not per host second session 02 which tab does it open",
+      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror show manual activity typed layers icon indicator marker recorded composer filter tag label search find selectable connected go to terminal icon moved off the block header onto the rail row end of row past the connection dot per session not per host second session 02 which tab does it open icon only on hover appears when pointer on the row hidden until hovered hover a block lights highlights the session that produced it in the rail which of the two web-01 rows was that reloaded block lights nothing collapsed tooltip leads with the label and the 02 number",
     body: (
       <>
         <Lead>
@@ -1744,10 +1770,18 @@ export const SECTIONS: HelpSection[] = [
             <li>
               To go from a block to the shell that produced it, use the{" "}
               <Nav>terminal</Nav> icon at the end of that session's row in the
-              rail. It lives there rather than on the block because the rail
-              lists sessions: two rows can be the same machine, and each icon
-              takes you to its own tab rather than to whichever was opened
-              first.
+              rail; it appears while the pointer is on the row. It lives there
+              rather than on the block because the rail lists sessions: two rows
+              can be the same machine, and each icon takes you to its own tab
+              rather than to whichever was opened first.
+            </li>
+            <li>
+              To find that row in the first place, hover the block: the session
+              that produced it lights up in the rail. This is the answer to
+              "which of these two <Nav>web-01</Nav> rows was that?", which the
+              block header cannot give you on its own. A block reloaded from
+              before the last restart lights nothing, because the session it
+              came from no longer exists.
             </li>
           </Bullets>
           <H3>Rail actions</H3>
