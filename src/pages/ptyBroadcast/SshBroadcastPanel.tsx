@@ -116,6 +116,17 @@ export function SshBroadcastPanel({
   // Hovering a report row lights the rail row of the session it reports on.
   const pageRef = useRef<HTMLDivElement>(null);
   const railHover = useRailHoverLink(pageRef);
+  // The name the rail is showing for a session, which is also what a report row
+  // falls back to once its session id means nothing (a run reloaded from the
+  // database, or a terminal closed and opened again). Resolved through the live
+  // host and not through the snapshot the session opened with, because that is
+  // what the report rows resolve too and the two halves have to agree.
+  const railNameFor = useCallback(
+    (s: SshTermSession) =>
+      (hostsById.get(s.host.id)?.label ?? s.host.label) +
+      (suffixById.get(s.id) ?? ""),
+    [hostsById, suffixById],
+  );
 
   // Collapsible session rail (mirrors MultiTerminal's O1), persisted.
   const [railCollapsed, setRailCollapsed] = useState(
@@ -329,7 +340,7 @@ export function SshBroadcastPanel({
                 <button
                   key={s.id}
                   type="button"
-                  {...railRow(s.id)}
+                  {...railRow(s.id, railNameFor(s))}
                   onClick={() => toggleSession(s.id)}
                   disabled={sending || !connectedSessions.has(s.id)}
                   // Name and number first: two sessions on one machine collapse
@@ -366,13 +377,15 @@ export function SshBroadcastPanel({
               ) : (
                 <label
                   key={s.id}
-                  {...railRow(s.id)}
+                  {...railRow(s.id, railNameFor(s))}
                   title={
                     connectedSessions.has(s.id)
                       ? undefined
                       : "Disconnected: reconnect the terminal to dispatch to it"
                   }
-                  className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${RAIL_LINK_CLASS} ${
+                  // `relative` for the go-to-terminal icon, which sits out of
+                  // the flow until the row is hovered or focused.
+                  className={`group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${RAIL_LINK_CLASS} ${
                     connectedSessions.has(s.id)
                       ? "cursor-pointer hover:bg-accent/50"
                       : "cursor-not-allowed opacity-60"
@@ -551,7 +564,11 @@ export function SshBroadcastPanel({
                         return (
                           <div
                             key={i}
-                            {...railSrc(r.sessionId)}
+                            // Session first, then the name the rail shows for
+                            // it: a run reloaded from the database has no live
+                            // session id, and the name is what puts it back in
+                            // touch with the rail.
+                            {...railSrc(r.sessionId, label + suffix)}
                             className="flex items-center gap-2 rounded-md border border-border/40 px-3 py-1.5 text-sm"
                           >
                             {r.ok ? (

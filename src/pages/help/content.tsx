@@ -1659,9 +1659,10 @@ export const SECTIONS: HelpSection[] = [
               Hovering a row of the dispatch report lights the rail row it
               reports on, which is how you find one session among a dozen
               identically named ones. A report reloaded from a previous run of
-              the app lights nothing: those sessions ended when the app closed,
-              and pointing at a different one on the same machine would be a
-              guess.
+              the app has no live session to point at, so it falls back to the
+              name: if a terminal on the rail is called the same thing, that row
+              lights. Nothing lights when nothing on the rail carries that name
+              any more.
             </li>
             <li>
               There is one recall list for the whole app, shared with{" "}
@@ -1781,9 +1782,11 @@ export const SECTIONS: HelpSection[] = [
               To find that row in the first place, hover the block: the session
               that produced it lights up in the rail. This is the answer to
               "which of these two <Nav>web-01</Nav> rows was that?", which the
-              block header cannot give you on its own. A block reloaded from
-              before the last restart lights nothing, because the session it
-              came from no longer exists.
+              block header cannot give you on its own. A block from before the
+              last restart has no live session to point at, so it falls back to
+              the name it is captioned with, and lights the row called the same
+              thing if one is open. Nothing lights when no row carries that name
+              any more.
             </li>
           </Bullets>
           <H3>Rail actions</H3>

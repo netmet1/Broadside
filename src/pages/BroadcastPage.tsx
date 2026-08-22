@@ -656,7 +656,9 @@ export function BroadcastPage({
               <label
                 key={h.id}
                 {...railRow(h.id)}
-                className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50 ${RAIL_LINK_CLASS}`}
+                // `relative` for the go-to-terminal icon, which sits out of the
+                // flow until the row is hovered or focused.
+                className={`group relative flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50 ${RAIL_LINK_CLASS}`}
               >
                 <input
                   type="checkbox"

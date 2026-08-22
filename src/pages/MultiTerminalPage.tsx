@@ -85,7 +85,8 @@ type DisplayBlock = {
   dbId: number | null;
   /** The session that produced this block, so hovering it can light that rail
    * row. Null for a block reloaded from the database: its session belongs to a
-   * run of the app that has ended, and there is no row left for it. */
+   * run of the app that has ended. Such a block is matched to a row by the name
+   * it is captioned with instead. */
   sessionId: string | null;
   ts: string;
   hostId: number | null;
@@ -657,7 +658,7 @@ export function MultiTerminalPage({
                   <button
                     key={s.id}
                     type="button"
-                    {...railRow(s.id)}
+                    {...railRow(s.id, name + suffix)}
                     onClick={() => isConnected && toggleSession(s.id)}
                     disabled={sending || !isConnected}
                     // Name and number first: two rows on one machine are two
@@ -697,9 +698,11 @@ export function MultiTerminalPage({
               return (
                 <label
                   key={s.id}
-                  {...railRow(s.id)}
+                  {...railRow(s.id, name + suffix)}
                   title={isConnected ? undefined : "Disconnected: reconnect the terminal to dispatch to it"}
-                  className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${RAIL_LINK_CLASS} ${
+                  // `relative` for the go-to-terminal icon, which sits out of
+                  // the flow until the row is hovered or focused.
+                  className={`group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${RAIL_LINK_CLASS} ${
                     isConnected
                       ? "cursor-pointer hover:bg-accent/50"
                       : "cursor-not-allowed opacity-50"
@@ -1091,8 +1094,8 @@ function OmniBlock({
   onDelete,
 }: {
   /** The session this came from, so hovering the block lights its rail row.
-   * Null once that session is gone, which includes every block reloaded from
-   * a previous run of the app. */
+   * Null once that session is gone, which includes every block reloaded from a
+   * previous run of the app; those fall back to the label below. */
   railId: string | null;
   color: string;
   label: string;
@@ -1124,7 +1127,10 @@ function OmniBlock({
 
   return (
     <div
-      {...railSrc(railId)}
+      // Session first, then the name the rail is showing for it: the id is gone
+      // for anything reloaded from a previous run of the app, and the name is
+      // what puts those blocks back in touch with the rail.
+      {...railSrc(railId, label + suffix)}
       className="group relative rounded-md border border-border/40 pl-3"
       style={{
         borderLeftColor: color,

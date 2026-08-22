@@ -14,16 +14,25 @@ import { TerminalIcon } from "lucide-react";
  * wrong on one of them.
  *
  * It is drawn only while the pointer is on its own row, so every row in the
- * rail needs `group` on it, and it takes no space at all until then: a rail at
- * rest ends in a straight column of connection dots against the right-hand
- * edge, and the dot steps aside to let the icon in. The dot moving is the point
- * of doing it this way rather than reserving the space, which is the other
- * option and the one that keeps the dot still while the pointer sweeps past.
+ * rail needs `group` **and `relative`** on it, and it takes no space at all
+ * until then: a rail at rest ends in a straight column of connection dots
+ * against the right-hand edge, and the dot steps aside to let the icon in. The
+ * dot moving is the point of doing it this way rather than reserving the space,
+ * which is the other option and the one that keeps the dot still while the
+ * pointer sweeps past.
  *
- * `group-focus-within` is not decoration. A `display: none` button cannot be
- * focused, so on hover alone the icon would drop out of the tab order
- * altogether. Tabbing to the row's own checkbox lights the row instead, which
- * puts the button back in the document, and the next Tab reaches it.
+ * Hidden by going **out of the flow**, not by `display: none`, and that is a
+ * keyboard decision rather than a visual one. A row's icon has to be reachable
+ * by Tab, and a button that is not in the document cannot be tabbed to, so with
+ * `display: none` the icon existed only where focus had already arrived: Tab
+ * down the rail visited every icon (focus was on the row above, which drew it),
+ * and Shift+Tab back up visited none of them (the row above had no focus yet,
+ * so there was nothing there to land on). An absolutely positioned, transparent
+ * button is in the tab order at all times and is never focused while invisible,
+ * because focus anywhere in the row puts it back in the flow. `right-1` is what
+ * keeps it inside the rail while it is out of the flow, since a rail that
+ * scrolls vertically will grow a horizontal scrollbar for anything hanging past
+ * its edge, visible or not.
  */
 export function GoToTerminalButton({
   mode,
@@ -58,7 +67,7 @@ export function GoToTerminalButton({
       }}
       title={label}
       aria-label={label}
-      className={`hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground group-hover:inline-flex group-focus-within:inline-flex ${
+      className={`absolute right-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground pointer-events-none group-hover:pointer-events-auto group-hover:static group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:static group-focus-within:opacity-100 ${
         pushRight ? "ml-auto" : ""
       }`}
     >

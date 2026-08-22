@@ -270,7 +270,7 @@ export function LocalBroadcastPanel({
                 <button
                   key={s.id}
                   type="button"
-                  {...railRow(s.id)}
+                  {...railRow(s.id, labelFor(s))}
                   onClick={() => toggleSession(s.id)}
                   disabled={sending || !connectedSessions.has(s.id)}
                   title={
@@ -289,13 +289,15 @@ export function LocalBroadcastPanel({
               ) : (
                 <label
                   key={s.id}
-                  {...railRow(s.id)}
+                  {...railRow(s.id, labelFor(s))}
                   title={
                     connectedSessions.has(s.id)
                       ? undefined
                       : "This shell has exited, so nothing can be typed into it"
                   }
-                  className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${RAIL_LINK_CLASS} ${
+                  // `relative` for the go-to-terminal icon, which sits out of
+                  // the flow until the row is hovered or focused.
+                  className={`group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${RAIL_LINK_CLASS} ${
                     connectedSessions.has(s.id)
                       ? "cursor-pointer hover:bg-accent/50"
                       : "cursor-not-allowed opacity-60"
@@ -392,7 +394,10 @@ export function LocalBroadcastPanel({
                         {run.results.map((r, i) => (
                           <div
                             key={i}
-                            {...railSrc(r.sessionId)}
+                            // Shell first, then the name the rail shows for it,
+                            // which is what answers after that shell has been
+                            // closed and another opened in its place.
+                            {...railSrc(r.sessionId, r.label + (r.suffix ?? ""))}
                             className="flex items-center gap-2 rounded-md border border-border/40 px-3 py-1.5 text-sm"
                           >
                             {r.ok ? (
