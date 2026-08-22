@@ -1513,8 +1513,9 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Every row in the host rail ends with a <Nav>terminal</Nav> icon,
               just past its connection dot. It appears when the pointer is on
-              that row, so a rail at rest is a list of names rather than a
-              column of buttons. Clicking it{" "}
+              that row, and the connection dot steps aside to let it in, so a
+              rail at rest is a straight column of dots against the edge rather
+              than a column of buttons. Clicking it{" "}
               <strong className="font-semibold">always opens a new terminal
               connection</strong> to that host, even when one is already open,
               because a broadcast's exec results aren't tied to any session, so
@@ -1649,9 +1650,10 @@ export const SECTIONS: HelpSection[] = [
               <Nav>terminal</Nav> icon that switches to <Nav>Terminals</Nav> and
               selects that exact tab. By session and not by host: two rows can
               be the same machine, and each one takes you to its own. It shows
-              while the pointer is on its row. It is on the dropped and exited
-              rows too, since their banner is usually where you wanted to go,
-              and it is not drawn while the rail is collapsed to initials.
+              while the pointer is on its row, with the connection dot stepping
+              aside for it. It is on the dropped and exited rows too, since
+              their banner is usually where you wanted to go, and it is not
+              drawn while the rail is collapsed to initials.
             </li>
             <li>
               Hovering a row of the dispatch report lights the rail row it

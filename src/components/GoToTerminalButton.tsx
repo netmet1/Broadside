@@ -14,14 +14,16 @@ import { TerminalIcon } from "lucide-react";
  * wrong on one of them.
  *
  * It is drawn only while the pointer is on its own row, so every row in the
- * rail needs `group` on it. Faded rather than hidden, for two reasons. Removing
- * it from the layout would shuffle the connection dot sideways every time the
- * pointer crossed a row. And an invisible element cannot be tabbed to, so
- * `hidden` would take the button out of the keyboard's reach entirely; at zero
- * opacity it keeps its place in the tab order and `focus-visible` brings it
- * back. Nothing is lost by leaving it clickable while faded, either: the
- * pointer cannot be on the button without being on the row, and being on the
- * row is what makes it visible.
+ * rail needs `group` on it, and it takes no space at all until then: a rail at
+ * rest ends in a straight column of connection dots against the right-hand
+ * edge, and the dot steps aside to let the icon in. The dot moving is the point
+ * of doing it this way rather than reserving the space, which is the other
+ * option and the one that keeps the dot still while the pointer sweeps past.
+ *
+ * `group-focus-within` is not decoration. A `display: none` button cannot be
+ * focused, so on hover alone the icon would drop out of the tab order
+ * altogether. Tabbing to the row's own checkbox lights the row instead, which
+ * puts the button back in the document, and the next Tab reaches it.
  */
 export function GoToTerminalButton({
   mode,
@@ -56,7 +58,7 @@ export function GoToTerminalButton({
       }}
       title={label}
       aria-label={label}
-      className={`shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 ${
+      className={`hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground group-hover:inline-flex group-focus-within:inline-flex ${
         pushRight ? "ml-auto" : ""
       }`}
     >
