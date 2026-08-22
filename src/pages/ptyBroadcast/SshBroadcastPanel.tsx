@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import { ShellChip } from "@/components/ShellChip";
+import { GoToTerminalButton } from "@/components/GoToTerminalButton";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
@@ -20,6 +21,12 @@ import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { RAIL_SORT_OPTIONS, sortForRail } from "@/lib/railSort";
 import { useRailFilter } from "@/lib/useRailFilter";
 import { railTooltip } from "@/lib/hostTags";
+import {
+  RAIL_LINK_CLASS,
+  railRow,
+  railSrc,
+  useRailHoverLink,
+} from "@/lib/railHover";
 import { RailFilterControls } from "@/components/RailFilterControls";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
@@ -52,12 +59,15 @@ export function SshBroadcastPanel({
   sessions,
   connectedSessions,
   onManageShortcuts,
+  onJumpToSession,
 }: {
   visible: boolean;
   sessions: SshTermSession[];
   /** Session ids with a live connection, only these can receive input. */
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
+  /** Switch to Terminals and select this session's tab. */
+  onJumpToSession: (sessionId: string) => void;
 }) {
   // The " 02" the tab strip gives the second session on a host. Every other
   // list that names a session numbers them from here; this panel was the one
@@ -103,6 +113,20 @@ export function SshBroadcastPanel({
   const hint = useHint();
   const shortcuts = useShortcuts(visible);
   const outputRef = useRef<HTMLDivElement>(null);
+  // Hovering a report row lights the rail row of the session it reports on.
+  const pageRef = useRef<HTMLDivElement>(null);
+  const railHover = useRailHoverLink(pageRef);
+  // The name the rail is showing for a session, which is also what a report row
+  // falls back to once its session id means nothing (a run reloaded from the
+  // database, or a terminal closed and opened again). Resolved through the live
+  // host and not through the snapshot the session opened with, because that is
+  // what the report rows resolve too and the two halves have to agree.
+  const railNameFor = useCallback(
+    (s: SshTermSession) =>
+      (hostsById.get(s.host.id)?.label ?? s.host.label) +
+      (suffixById.get(s.id) ?? ""),
+    [hostsById, suffixById],
+  );
 
   // Collapsible session rail (mirrors MultiTerminal's O1), persisted.
   const [railCollapsed, setRailCollapsed] = useState(
@@ -238,7 +262,7 @@ export function SshBroadcastPanel({
   const hasOutput = runs.length > 0;
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={pageRef} className="flex h-full flex-col">
       <div className="shrink-0 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
         Sends the command to every checked terminal session as if typed there.
         Results appear in each tab on the Terminals page.
@@ -316,15 +340,22 @@ export function SshBroadcastPanel({
                 <button
                   key={s.id}
                   type="button"
+                  {...railRow(s.id, railNameFor(s))}
                   onClick={() => toggleSession(s.id)}
                   disabled={sending || !connectedSessions.has(s.id)}
+                  // Name and number first: two sessions on one machine collapse
+                  // to the same initials here, and telling them apart is the
+                  // whole reason to hover.
                   title={
-                    railTooltip(s.host) +
+                    railTooltip(
+                      s.host,
+                      s.host.label + (suffixById.get(s.id) ?? ""),
+                    ) +
                     (connectedSessions.has(s.id)
                       ? ""
                       : "\n(disconnected: reconnect the terminal to dispatch to it)")
                   }
-                  className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${
+                  className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${RAIL_LINK_CLASS} ${
                     selected.has(s.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""
                   }`}
                 >
@@ -346,12 +377,15 @@ export function SshBroadcastPanel({
               ) : (
                 <label
                   key={s.id}
+                  {...railRow(s.id, railNameFor(s))}
                   title={
                     connectedSessions.has(s.id)
                       ? undefined
                       : "Disconnected: reconnect the terminal to dispatch to it"
                   }
-                  className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                  // `relative` for the go-to-terminal icon, which sits out of
+                  // the flow until the row is hovered or focused.
+                  className={`group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${RAIL_LINK_CLASS} ${
                     connectedSessions.has(s.id)
                       ? "cursor-pointer hover:bg-accent/50"
                       : "cursor-not-allowed opacity-60"
@@ -395,15 +429,22 @@ export function SshBroadcastPanel({
                   />
                   <span
                     className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
-                    connectedSessions.has(s.id)
-                      ? "bg-emerald-500"
-                      : "bg-red-500/70"
-                  }`}
-                  title={
-                    connectedSessions.has(s.id) ? "Connected" : "Not connected"
-                  }
-                />
-              </label>
+                      connectedSessions.has(s.id)
+                        ? "bg-emerald-500"
+                        : "bg-red-500/70"
+                    }`}
+                    title={
+                      connectedSessions.has(s.id) ? "Connected" : "Not connected"
+                    }
+                  />
+                  {/* On every row, including the disconnected ones: this panel
+                      cannot dispatch to a dropped session, and its Reconnect
+                      button is the thing you want next. */}
+                  <GoToTerminalButton
+                    mode="jump"
+                    onClick={() => onJumpToSession(s.id)}
+                  />
+                </label>
               ),
             )}
             {sessions.length === 0 && !railCollapsed && (
@@ -474,7 +515,11 @@ export function SshBroadcastPanel({
             />
           </div>
           <div className="relative flex min-h-0 flex-1 flex-col">
-          <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div
+            ref={outputRef}
+            {...railHover}
+            className="min-h-0 flex-1 overflow-y-auto p-4"
+          >
             {!hasOutput ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Select sessions, type a command, press Enter. The command is
@@ -519,6 +564,11 @@ export function SshBroadcastPanel({
                         return (
                           <div
                             key={i}
+                            // Session first, then the name the rail shows for
+                            // it: a run reloaded from the database has no live
+                            // session id, and the name is what puts it back in
+                            // touch with the rail.
+                            {...railSrc(r.sessionId, label + suffix)}
                             className="flex items-center gap-2 rounded-md border border-border/40 px-3 py-1.5 text-sm"
                           >
                             {r.ok ? (

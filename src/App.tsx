@@ -364,15 +364,18 @@ function App() {
     });
   }, []);
 
-  /** Jump from a MultiTerminal block to that host's live terminal: switch to the
-   * Terminals page and select the host's first open session. */
-  const jumpToHostTerminal = useCallback(
-    (hostId: number) => {
-      const sess = sessions.find(
-        (s) => s.type === "ssh" && s.host.id === hostId,
-      );
-      if (!sess) return;
-      setActiveSessionId(sess.id);
+  /** Jump straight to a known session id: switch to the Terminals page and
+   * select it. What the go-to-terminal icon on every selection rail does
+   * (MultiTerminal, PTY Broadcast on all five of its tabs).
+   *
+   * By session and never by host, which the rails used to do: a rail row *is*
+   * one open terminal, two rows can be the same machine, and jumping by host
+   * sent both of them to whichever session happened to be first. A no-op if
+   * the tab has since closed. */
+  const jumpToSession = useCallback(
+    (sessionId: string) => {
+      if (!sessions.some((s) => s.id === sessionId)) return;
+      setActiveSessionId(sessionId);
       setMaxSessionId(null);
       setPage("terminals");
     },
@@ -562,6 +565,7 @@ function App() {
           visible={page === "broadcast"}
           connectedHostIds={connectedHostIds}
           onManageShortcuts={openShortcutSettings}
+          onOpenTerminal={openTerminal}
         />
       </div>
       {/* PTY Broadcast stays mounted so host selection and dispatch history
@@ -572,6 +576,7 @@ function App() {
           sessions={sessions}
           connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}
+          onJumpToSession={jumpToSession}
         />
       </div>
       {/* Terminals stay mounted so sessions survive navigation. */}
@@ -604,7 +609,7 @@ function App() {
           connectedSessions={connectedSessions}
           onManageShortcuts={openShortcutSettings}
           onCloseAllTerminals={closeAllTerminals}
-          onJumpToHostTerminal={jumpToHostTerminal}
+          onJumpToSession={jumpToSession}
         />
       </div>
       {/* Skills stays mounted so a running skill (and its live per-host panes)

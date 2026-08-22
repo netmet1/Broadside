@@ -249,7 +249,9 @@ export function BroadcastTab({
                   type="button"
                   onClick={() => b.toggleHost(h.id)}
                   disabled={b.running}
-                  title={railTooltip(h)}
+                  // Label first, as on every other collapsed rail: the row is
+                  // down to a dot and two initials.
+                  title={railTooltip(h, h.label)}
                   className={cn(
                     "mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50",
                     b.selected.has(h.id) ? "bg-accent/40 ring-1 ring-primary/50" : "",

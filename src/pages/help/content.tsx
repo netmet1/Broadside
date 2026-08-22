@@ -604,7 +604,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes advanced grid settings collapsed section starting number seed default unchecking auto lands on your own numbers 80x24 classic terminal size reset defaults just the advanced section",
     body: (
       <>
         <Lead>
@@ -1134,6 +1134,18 @@ export const SECTIONS: HelpSection[] = [
               is untouched and stays exactly what you set.
             </li>
             <li>
+              Unchecking a field's <Nav>Auto</Nav> box has to start it at some
+              number, and by default that is 3 columns / 80x24, the classic
+              terminal size. The collapsed <Nav>Advanced</Nav> section at the
+              foot of <Nav>Settings → Grid</Nav> lets you change what that
+              starting number is for each of the three fields, so unchecking{" "}
+              <Nav>Auto</Nav> lands on your own numbers instead. It only sets
+              where a field starts once you take it off <Nav>Auto</Nav>; it does
+              not move anything already pinned. <Nav>Reset defaults</Nav> there
+              puts those three starting numbers back to 3 / 80 / 24 without
+              touching anything else in the section.
+            </li>
+            <li>
               When the terminals do not divide evenly into columns, the last row
               is short and something has to fill the gap.{" "}
               <Nav>Short last row</Nav> in <Nav>Settings → Grid</Nav> decides
@@ -1471,7 +1483,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-broadcast",
     title: "Broadcast",
     keywords:
-      "broadcast many hosts one command exec non-interactive output history autoscroll headers timeout guard destructive parallel concurrency rail filter tag label search find select all sort collapse",
+      "broadcast many hosts one command exec non-interactive output history autoscroll headers timeout guard destructive parallel concurrency rail filter tag label search find select all sort collapse go to terminal icon on every rail row end of the row past the connection dot open new connection tab always opens a new one even if already open not a jump no icon on the block header any more collapsed rail initials icon only on hover appears when pointer on the row hidden until hovered hover a result block lights highlights the host row in the rail two way link collapsed tooltip leads with the label name first then address and tags",
     body: (
       <>
         <Lead>
@@ -1498,6 +1510,27 @@ export const SECTIONS: HelpSection[] = [
               area keeps your history and follows new output as it arrives, and
               you can hide the per-host headers if you prefer a compact view.
             </li>
+            <li>
+              Every row in the host rail ends with a <Nav>terminal</Nav> icon,
+              just past its connection dot. It appears when the pointer is on
+              that row, and the connection dot steps aside to let it in, so a
+              rail at rest is a straight column of dots against the edge rather
+              than a column of buttons. Clicking it{" "}
+              <strong className="font-semibold">always opens a new terminal
+              connection</strong> to that host, even when one is already open,
+              because a broadcast's exec results aren't tied to any session, so
+              there is nothing to jump back to. It is on every row for the same
+              reason, connected or not, and it is not drawn while the rail is
+              collapsed to initials.
+            </li>
+            <li>
+              The other direction works too: hover a result block and the host
+              it came from lights up in the rail. Useful once a run has filled
+              the page and the block you are reading is a long way from the row
+              that produced it. Hovering the output never opens anything, and it
+              does not summon the terminal icon; only the pointer being on the
+              row itself does that.
+            </li>
           </Bullets>
           <H3>Choosing and filtering hosts</H3>
           <Bullets>
@@ -1507,6 +1540,14 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Select all</Nav> box, and its collapse state is remembered. No
               hosts are selected by default; you choose the targets for each
               broadcast.
+            </li>
+            <li>
+              On every collapsed rail in the app, hovering a row names it. The
+              tooltip leads with the label and then gives the address and any
+              tags, because two initials are exactly the thing you are hovering
+              to resolve. An expanded row is already showing its label, so there
+              the tooltip stays out of the way and gives only the address and
+              tags.
             </li>
             <li>
               Two filters narrow the rail: a <Nav>Find by label…</Nav> box that
@@ -1543,7 +1584,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-ptybroadcast",
     title: "PTY Broadcast",
     keywords:
-      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return serial console com port switches routers several consoles at once fifth tab",
+      "pty broadcast type every open terminal interactive live shells mirror keystrokes difference rail filter tag label search select all tabs ssh powershell command prompt cmd wsl local fan out danger banner confirm carriage return serial console com port switches routers several consoles at once fifth tab go to terminal icon on every rail row end of the row past the connection dot jump switch select that exact tab per session not per host works on dropped and exited rows too no icon on the dispatch report rows any more collapsed rail initials icon only on hover appears when pointer on the row hidden until hovered hover a dispatch report row lights highlights that session in the rail reloaded run lights nothing collapsed tooltip leads with the label and the 02 number",
     body: (
       <>
         <Lead>
@@ -1605,6 +1646,25 @@ export const SECTIONS: HelpSection[] = [
               that has exited.
             </li>
             <li>
+              Every rail row, on all five tabs, ends with a{" "}
+              <Nav>terminal</Nav> icon that switches to <Nav>Terminals</Nav> and
+              selects that exact tab. By session and not by host: two rows can
+              be the same machine, and each one takes you to its own. It shows
+              while the pointer is on its row, with the connection dot stepping
+              aside for it. It is on the dropped and exited rows too, since
+              their banner is usually where you wanted to go, and it is not
+              drawn while the rail is collapsed to initials.
+            </li>
+            <li>
+              Hovering a row of the dispatch report lights the rail row it
+              reports on, which is how you find one session among a dozen
+              identically named ones. A report reloaded from a previous run of
+              the app has no live session to point at, so it falls back to the
+              name: if a terminal on the rail is called the same thing, that row
+              lights. Nothing lights when nothing on the rail carries that name
+              any more.
+            </li>
+            <li>
               There is one recall list for the whole app, shared with{" "}
               <Nav>Broadcast</Nav>, <Nav>MultiTerminal</Nav> and the broadcast
               rail on{" "}
@@ -1645,7 +1705,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-multiterminal",
     title: "MultiTerminal",
     keywords:
-      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror show manual activity typed layers icon indicator marker recorded composer filter tag label search find selectable connected",
+      "multiterminal aggregate combined output color tint per host block log delete two open compare rail select clear results command history close all headers collapse copy jump mirror show manual activity typed layers icon indicator marker recorded composer filter tag label search find selectable connected go to terminal icon moved off the block header onto the rail row end of row past the connection dot per session not per host second session 02 which tab does it open icon only on hover appears when pointer on the row hidden until hovered hover a block lights highlights the session that produced it in the rail which of the two web-01 rows was that reloaded block lights nothing collapsed tooltip leads with the label and the 02 number",
     body: (
       <>
         <Lead>
@@ -1704,13 +1764,29 @@ export const SECTIONS: HelpSection[] = [
             <li>
               With <Nav>Headers</Nav> on, each block has a header you can click to
               collapse or expand its output. Hover the header for a{" "}
-              <Nav>copy</Nav> icon (copies that block's output) and, when the host
-              still has an open terminal, a <Nav>terminal</Nav> icon that jumps to
-              its tab.
+              <Nav>copy</Nav> icon, which copies that block's output.
             </li>
             <li>
               With <Nav>Headers</Nav> off, blocks show output only, with no header
-              to collapse, copy or jump from.
+              to collapse or copy from.
+            </li>
+            <li>
+              To go from a block to the shell that produced it, use the{" "}
+              <Nav>terminal</Nav> icon at the end of that session's row in the
+              rail; it appears while the pointer is on the row. It lives there
+              rather than on the block because the rail lists sessions: two rows
+              can be the same machine, and each icon takes you to its own tab
+              rather than to whichever was opened first.
+            </li>
+            <li>
+              To find that row in the first place, hover the block: the session
+              that produced it lights up in the rail. This is the answer to
+              "which of these two <Nav>web-01</Nav> rows was that?", which the
+              block header cannot give you on its own. A block from before the
+              last restart has no live session to point at, so it falls back to
+              the name it is captioned with, and lights the row called the same
+              thing if one is open. Nothing lights when no row carries that name
+              any more.
             </li>
           </Bullets>
           <H3>Rail actions</H3>

@@ -43,12 +43,17 @@ export function PtyBroadcastPage({
   sessions,
   connectedSessions,
   onManageShortcuts,
+  onJumpToSession,
 }: {
   visible: boolean;
   sessions: TermSession[];
   /** Session ids with a live connection, only these can receive input. */
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
+  /** The rails' go-to-terminal icon: switch to Terminals and select this exact
+   * session. By session on all five tabs, SSH included: a rail row is one open
+   * terminal, and two of them can be the same machine. */
+  onJumpToSession: (sessionId: string) => void;
 }) {
   const [tab, setTab] = useState<PtyTab>(readTab);
   useEffect(() => {
@@ -153,6 +158,7 @@ export function PtyBroadcastPage({
             sessions={sshSessions}
             connectedSessions={connectedSessions}
             onManageShortcuts={onManageShortcuts}
+            onJumpToSession={onJumpToSession}
           />
         </div>
         <div className={tab === "powershell" ? "h-full" : "hidden"}>
@@ -163,6 +169,7 @@ export function PtyBroadcastPage({
             connectedSessions={connectedSessions}
             scope="local"
             onManageShortcuts={onManageShortcuts}
+            onJumpToSession={onJumpToSession}
             storagePrefix="pty-broadcast-powershell"
           />
         </div>
@@ -174,6 +181,7 @@ export function PtyBroadcastPage({
             connectedSessions={connectedSessions}
             scope="local"
             onManageShortcuts={onManageShortcuts}
+            onJumpToSession={onJumpToSession}
             storagePrefix="pty-broadcast-cmd"
           />
         </div>
@@ -185,6 +193,7 @@ export function PtyBroadcastPage({
             connectedSessions={connectedSessions}
             scope="ssh"
             onManageShortcuts={onManageShortcuts}
+            onJumpToSession={onJumpToSession}
             storagePrefix="pty-broadcast-wsl"
           />
         </div>
@@ -200,6 +209,7 @@ export function PtyBroadcastPage({
             // ships knows what is on the other end of a console cable.
             scope="serial"
             onManageShortcuts={onManageShortcuts}
+            onJumpToSession={onJumpToSession}
             storagePrefix="pty-broadcast-serial"
           />
         </div>

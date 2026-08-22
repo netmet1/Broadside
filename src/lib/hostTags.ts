@@ -28,17 +28,27 @@ export function firstTag(tag: string | null | undefined): string {
 /** The mouse-over text for a host row on the selection rails: the endpoint
  * (hostname, plus a non-default port) then each tag, one per line. The label is
  * already the row's visible text, so repeating it in the tooltip is wasted;
- * this surfaces what the label doesn't show. */
-export function railTooltip(host: {
-  hostname: string;
-  port?: number;
-  tag?: string | null;
-}): string {
+ * this surfaces what the label doesn't show.
+ *
+ * Except when the row is not showing it. A collapsed rail is down to a dot and
+ * two initials, and initials are exactly the thing you hover a row to resolve,
+ * so the collapsed rails pass the label in `lead` and it goes on the first
+ * line, above the endpoint. Rails that number their rows pass the number with
+ * it: "web-01 02" is the answer to which row this is, and "web-01" is only half
+ * of it. */
+export function railTooltip(
+  host: {
+    hostname: string;
+    port?: number;
+    tag?: string | null;
+  },
+  lead?: string,
+): string {
   const endpoint =
     host.port && host.port !== 22
       ? `${host.hostname}:${host.port}`
       : host.hostname;
-  return [endpoint, ...parseTags(host.tag)].join("\n");
+  return [...(lead ? [lead] : []), endpoint, ...parseTags(host.tag)].join("\n");
 }
 
 /** The de-duplicated union of every tag across the given `tag` fields, sorted

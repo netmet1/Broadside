@@ -17,6 +17,9 @@ const ITEM_COLS_KEY = "terminal-grid-item-cols";
 const ITEM_ROWS_KEY = "terminal-grid-item-rows";
 const STRICT_KEY = "terminal-grid-strict";
 const ROW_FILL_KEY = "terminal-grid-row-fill";
+const SEED_COLS_KEY = "terminal-grid-seed-cols";
+const SEED_ITEM_COLS_KEY = "terminal-grid-seed-item-cols";
+const SEED_ITEM_ROWS_KEY = "terminal-grid-seed-item-rows";
 
 /** Fired on this window whenever any grid pref is written.
  *
@@ -165,5 +168,80 @@ export function loadGridStrict(): boolean {
 
 export function saveGridStrict(v: boolean): void {
   localStorage.setItem(STRICT_KEY, v ? "1" : "0");
+  announce();
+}
+
+/* ------------------------------------------------------------------ *
+ * Seed defaults (Settings -> Grid -> Advanced): what a field starts at
+ * the moment its own Auto checkbox is unchecked and it needs a first
+ * number to show. Factory-shipped these are 3 / 80 / 24 (80x24 is the
+ * classic terminal size); Advanced lets an operator change what "first
+ * number" means without touching the pinned values themselves, which
+ * keep their own per-field Auto toggle in the main section.
+ * ------------------------------------------------------------------ */
+
+export const FACTORY_SEED_COLS = 3;
+export const FACTORY_SEED_ITEM_COLS = 80;
+export const FACTORY_SEED_ITEM_ROWS = 24;
+
+export type GridSeeds = {
+  cols: number;
+  itemCols: number;
+  itemRows: number;
+};
+
+function clampInt(raw: string | null, fallback: number, min: number, max: number): number {
+  if (raw === null) return fallback;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(n, min), max);
+}
+
+export function loadGridSeeds(): GridSeeds {
+  return {
+    cols: clampInt(
+      localStorage.getItem(SEED_COLS_KEY),
+      FACTORY_SEED_COLS,
+      GRID_COLS_MIN,
+      GRID_COLS_MAX,
+    ),
+    itemCols: clampInt(
+      localStorage.getItem(SEED_ITEM_COLS_KEY),
+      FACTORY_SEED_ITEM_COLS,
+      GRID_ITEM_COLS_MIN,
+      GRID_ITEM_COLS_MAX,
+    ),
+    itemRows: clampInt(
+      localStorage.getItem(SEED_ITEM_ROWS_KEY),
+      FACTORY_SEED_ITEM_ROWS,
+      GRID_ITEM_ROWS_MIN,
+      GRID_ITEM_ROWS_MAX,
+    ),
+  };
+}
+
+export function saveGridSeedCols(v: number): void {
+  writeSeed(SEED_COLS_KEY, v, GRID_COLS_MIN, GRID_COLS_MAX);
+}
+export function saveGridSeedItemCols(v: number): void {
+  writeSeed(SEED_ITEM_COLS_KEY, v, GRID_ITEM_COLS_MIN, GRID_ITEM_COLS_MAX);
+}
+export function saveGridSeedItemRows(v: number): void {
+  writeSeed(SEED_ITEM_ROWS_KEY, v, GRID_ITEM_ROWS_MIN, GRID_ITEM_ROWS_MAX);
+}
+
+function writeSeed(key: string, v: number, min: number, max: number): void {
+  const clamped = Math.min(Math.max(Math.round(v), min), max);
+  localStorage.setItem(key, String(clamped));
+  announce();
+}
+
+/** Back to the factory 3 / 80 / 24, Advanced's own reset button. Does not
+ * touch anything else in Grid settings: strict, row fill, or a value
+ * already pinned in the main section. */
+export function resetGridSeeds(): void {
+  localStorage.removeItem(SEED_COLS_KEY);
+  localStorage.removeItem(SEED_ITEM_COLS_KEY);
+  localStorage.removeItem(SEED_ITEM_ROWS_KEY);
   announce();
 }

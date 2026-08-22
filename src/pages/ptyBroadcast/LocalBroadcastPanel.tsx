@@ -23,6 +23,13 @@ import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/Composer";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
 import { ShortcutBar } from "@/components/ShortcutBar";
+import { GoToTerminalButton } from "@/components/GoToTerminalButton";
+import {
+  RAIL_LINK_CLASS,
+  railRow,
+  railSrc,
+  useRailHoverLink,
+} from "@/lib/railHover";
 import type { ShortcutScope } from "@/lib/tauri/settings";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useShortcuts } from "@/lib/useShortcuts";
@@ -54,6 +61,7 @@ export function LocalBroadcastPanel({
   connectedSessions,
   scope,
   onManageShortcuts,
+  onJumpToSession,
   storagePrefix,
 }: {
   visible: boolean;
@@ -64,6 +72,8 @@ export function LocalBroadcastPanel({
   /** Shortcut scope for this family (Windows shells → local; WSL → ssh). */
   scope: ShortcutScope;
   onManageShortcuts: () => void;
+  /** Switch to Terminals and select this exact session. */
+  onJumpToSession: (sessionId: string) => void;
   /** Distinct localStorage key prefix so each family's rail state is separate. */
   storagePrefix: string;
 }) {
@@ -117,6 +127,9 @@ export function LocalBroadcastPanel({
   const hint = useHint();
   const shortcuts = useShortcuts(visible);
   const outputRef = useRef<HTMLDivElement>(null);
+  // Hovering a report row lights the rail row of the shell it reports on.
+  const pageRef = useRef<HTMLDivElement>(null);
+  const railHover = useRailHoverLink(pageRef);
 
   const [railCollapsed, setRailCollapsed] = useState(
     () => localStorage.getItem(railKey) === "1",
@@ -196,7 +209,7 @@ export function LocalBroadcastPanel({
   );
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={pageRef} className="flex h-full flex-col">
       {/* Persistent danger banner, this types into real local shells. */}
       <div className="flex shrink-0 items-center gap-2 border-b border-yellow-400/70 bg-yellow-50 px-4 py-1.5 text-xs text-yellow-800 dark:border-yellow-500/30 dark:bg-yellow-500/10 dark:text-yellow-300/90">
         <AlertTriangleIcon className="h-3.5 w-3.5 shrink-0" />
@@ -257,13 +270,14 @@ export function LocalBroadcastPanel({
                 <button
                   key={s.id}
                   type="button"
+                  {...railRow(s.id, labelFor(s))}
                   onClick={() => toggleSession(s.id)}
                   disabled={sending || !connectedSessions.has(s.id)}
                   title={
                     labelFor(s) +
                     (connectedSessions.has(s.id) ? "" : "\n(shell has exited)")
                   }
-                  className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${
+                  className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${RAIL_LINK_CLASS} ${
                     selected.has(s.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""
                   }`}
                 >
@@ -275,12 +289,15 @@ export function LocalBroadcastPanel({
               ) : (
                 <label
                   key={s.id}
+                  {...railRow(s.id, labelFor(s))}
                   title={
                     connectedSessions.has(s.id)
                       ? undefined
                       : "This shell has exited, so nothing can be typed into it"
                   }
-                  className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                  // `relative` for the go-to-terminal icon, which sits out of
+                  // the flow until the row is hovered or focused.
+                  className={`group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${RAIL_LINK_CLASS} ${
                     connectedSessions.has(s.id)
                       ? "cursor-pointer hover:bg-accent/50"
                       : "cursor-not-allowed opacity-60"
@@ -305,6 +322,14 @@ export function LocalBroadcastPanel({
                       {suffixById.get(s.id)}
                     </span>
                   </span>
+                  {/* These rows carry no connection dot (an exited shell is
+                      ghosted instead), so the icon takes the right-hand edge
+                      itself and lands where the other rails put it. */}
+                  <GoToTerminalButton
+                    mode="jump"
+                    pushRight
+                    onClick={() => onJumpToSession(s.id)}
+                  />
                 </label>
               ),
             )}
@@ -343,7 +368,11 @@ export function LocalBroadcastPanel({
             />
           </div>
           <div className="relative flex min-h-0 flex-1 flex-col">
-            <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div
+              ref={outputRef}
+              {...railHover}
+              className="min-h-0 flex-1 overflow-y-auto p-4"
+            >
               {!hasOutput ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   Select shells, type a command, press Enter. You confirm, then
@@ -365,6 +394,10 @@ export function LocalBroadcastPanel({
                         {run.results.map((r, i) => (
                           <div
                             key={i}
+                            // Shell first, then the name the rail shows for it,
+                            // which is what answers after that shell has been
+                            // closed and another opened in its place.
+                            {...railSrc(r.sessionId, r.label + (r.suffix ?? ""))}
                             className="flex items-center gap-2 rounded-md border border-border/40 px-3 py-1.5 text-sm"
                           >
                             {r.ok ? (

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Composer } from "@/components/Composer";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
 import { ShellChip } from "@/components/ShellChip";
+import { GoToTerminalButton } from "@/components/GoToTerminalButton";
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
 import {
   BatchTofuDialog,
@@ -58,17 +59,24 @@ import { useBroadcastRail } from "@/pages/broadcast/useBroadcastRail";
 import { useOutputSearch } from "@/pages/broadcast/useOutputSearch";
 import { useRailFilter } from "@/lib/useRailFilter";
 import { railTooltip } from "@/lib/hostTags";
+import { RAIL_LINK_CLASS, railRow, useRailHoverLink } from "@/lib/railHover";
 import { RailFilterControls } from "@/components/RailFilterControls";
 
 export function BroadcastPage({
   visible,
   connectedHostIds,
   onManageShortcuts,
+  onOpenTerminal,
 }: {
   visible: boolean;
   /** Host ids with at least one connected terminal, drives the status dot. */
   connectedHostIds: Set<number>;
   onManageShortcuts: () => void;
+  /** Open a new terminal connection to a host (the block header's "go to
+   * terminal" icon). Broadcast runs over a one-off exec channel with no
+   * session of its own, so this always opens a fresh tab rather than
+   * reusing one that happens to be open already. */
+  onOpenTerminal: (host: Host) => void;
 }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -114,6 +122,9 @@ export function BroadcastPage({
 
   const hint = useHint();
   const shortcuts = useShortcuts(visible);
+  // Hovering a result block lights the rail row of the host it came from.
+  const pageRef = useRef<HTMLDivElement>(null);
+  const railHover = useRailHoverLink(pageRef);
 
   usePageStatus(
     hosts.length > 0
@@ -543,7 +554,7 @@ export function BroadcastPage({
   const hasOutput = runs.length > 0;
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={pageRef} className="flex h-full flex-col">
       {/* Static reminder of the exec-channel contract (D-002). */}
       <div className="shrink-0 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
         Use Broadcast for commands that run and finish on their own. Use the
@@ -620,13 +631,16 @@ export function BroadcastPage({
               <button
                 key={h.id}
                 type="button"
+                {...railRow(h.id)}
                 onClick={() => toggleHost(h.id)}
                 disabled={running}
+                // Label first: the row is down to a dot and two initials here,
+                // so the name is the thing the tooltip is being asked for.
                 title={
-                  railTooltip(h) +
+                  railTooltip(h, h.label) +
                   (connectedHostIds.has(h.id) ? "" : "\n(no connected terminal)")
                 }
-                className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 ${
+                className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 hover:bg-accent/50 ${RAIL_LINK_CLASS} ${
                   selected.has(h.id) ? "bg-accent/40 ring-1 ring-primary/50" : ""
                 }`}
               >
@@ -641,7 +655,10 @@ export function BroadcastPage({
             ) : (
               <label
                 key={h.id}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+                {...railRow(h.id)}
+                // `relative` for the go-to-terminal icon, which sits out of the
+                // flow until the row is hovered or focused.
+                className={`group relative flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50 ${RAIL_LINK_CLASS}`}
               >
                 <input
                   type="checkbox"
@@ -685,6 +702,14 @@ export function BroadcastPage({
                       ? "Connected: a terminal to this host is open"
                       : "No connected terminal for this host"
                   }
+                />
+                {/* On every row, connected or not, because it always opens a
+                    new connection: this page's runs go over an exec channel
+                    that belongs to no session, so there is never an existing
+                    tab that is "the" one for a result. */}
+                <GoToTerminalButton
+                  mode="new"
+                  onClick={() => onOpenTerminal(h)}
                 />
               </label>
             ),
@@ -786,6 +811,7 @@ export function BroadcastPage({
         <div
           ref={outputRef}
           onScroll={onOutputScroll}
+          {...railHover}
           className="min-h-0 flex-1 overflow-y-auto p-4"
         >
           {!hasOutput && (

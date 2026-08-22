@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useHint } from "@/lib/status";
@@ -13,20 +15,21 @@ import {
   GRID_ITEM_ROWS_MIN,
   GRID_PREFS_EVENT,
   loadGridPrefs,
+  loadGridSeeds,
   loadGridStrict,
   loadRowFill,
+  resetGridSeeds,
   saveGridCols,
   saveGridItemCols,
   saveGridItemRows,
+  saveGridSeedCols,
+  saveGridSeedItemCols,
+  saveGridSeedItemRows,
   saveGridStrict,
   saveRowFill,
+  type GridSeeds,
   type RowFill,
 } from "@/lib/gridPrefs";
-
-/** Sensible starting values when a field is switched off "auto". */
-const DEFAULT_COLS = 3;
-const DEFAULT_ITEM_COLS = 80;
-const DEFAULT_ITEM_ROWS = 24;
 
 /**
  * Settings -> Grid. Pins the Terminals grid layout: how many tiles sit across
@@ -42,6 +45,8 @@ export function GridSection({ id }: { id: string }) {
   const [itemRows, setItemRows] = useState(fieldState(initial.itemRows));
   const [strict, setStrict] = useState(loadGridStrict);
   const [rowFill, setRowFill] = useState<RowFill>(loadRowFill);
+  const [seeds, setSeeds] = useState<GridSeeds>(loadGridSeeds);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const hint = useHint();
 
   // With strict off, a drag in the Terminals grid writes the tile size here, so
@@ -55,13 +60,14 @@ export function GridSection({ id }: { id: string }) {
     setItemRows(fieldState(p.itemRows));
     setStrict(loadGridStrict());
     setRowFill(loadRowFill());
+    setSeeds(loadGridSeeds());
     // The setters are listed although React guarantees their identity is stable
     // and `[]` would behave identically. The compiler cannot know that
     // guarantee, so an empty array reads to it as a dependency list that does
     // not match what the body uses, and it gives up optimizing the whole
     // component rather than risk a stale closure. Naming them costs nothing and
     // keeps the file compilable.
-  }, [setCols, setItemCols, setItemRows, setStrict, setRowFill]);
+  }, [setCols, setItemCols, setItemRows, setStrict, setRowFill, setSeeds]);
   useEffect(() => {
     window.addEventListener(GRID_PREFS_EVENT, reload);
     return () => window.removeEventListener(GRID_PREFS_EVENT, reload);
@@ -116,7 +122,7 @@ export function GridSection({ id }: { id: string }) {
           hint="How many terminals sit side by side. Auto uses one column, or two on a wide window. Trimmed to the number of terminals open."
           min={GRID_COLS_MIN}
           max={GRID_COLS_MAX}
-          defaultValue={DEFAULT_COLS}
+          defaultValue={seeds.cols}
           state={cols}
           setState={setCols}
           onCommit={saveGridCols}
@@ -127,7 +133,7 @@ export function GridSection({ id }: { id: string }) {
           hint="Each tile's width in characters. When fixed widths overflow the window the grid scrolls horizontally."
           min={GRID_ITEM_COLS_MIN}
           max={GRID_ITEM_COLS_MAX}
-          defaultValue={DEFAULT_ITEM_COLS}
+          defaultValue={seeds.itemCols}
           state={itemCols}
           setState={setItemCols}
           onCommit={saveGridItemCols}
@@ -138,7 +144,7 @@ export function GridSection({ id }: { id: string }) {
           hint="Each tile's height in character rows. Extra tiles scroll vertically."
           min={GRID_ITEM_ROWS_MIN}
           max={GRID_ITEM_ROWS_MAX}
-          defaultValue={DEFAULT_ITEM_ROWS}
+          defaultValue={seeds.itemRows}
           state={itemRows}
           setState={setItemRows}
           onCommit={saveGridItemRows}
@@ -178,6 +184,78 @@ export function GridSection({ id }: { id: string }) {
             tall tile is taller than the other, so where you have set that
             dimension by hand the gap stays.
           </p>
+        </div>
+        <div className="border-t border-border/50 pt-3">
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((o) => !o)}
+            className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+            aria-expanded={advancedOpen}
+          >
+            {advancedOpen ? (
+              <ChevronDownIcon className="h-4 w-4 shrink-0" />
+            ) : (
+              <ChevronRightIcon className="h-4 w-4 shrink-0" />
+            )}
+            Advanced
+          </button>
+          {advancedOpen && (
+            <div className="mt-3 space-y-4">
+              <p className="max-w-md text-xs text-muted-foreground">
+                Columns across, Item width and Item height each start at one of
+                these numbers the moment their own Auto box above is unchecked.
+                Change them to make unchecking Auto land on your own numbers
+                instead of the factory 3 columns / 80x24 (the classic terminal
+                size).
+              </p>
+              <SeedField
+                label="Columns across, default"
+                unit="tiles"
+                min={GRID_COLS_MIN}
+                max={GRID_COLS_MAX}
+                value={seeds.cols}
+                onCommit={(v) => {
+                  setSeeds((s) => ({ ...s, cols: v }));
+                  saveGridSeedCols(v);
+                }}
+              />
+              <SeedField
+                label="Item width, default"
+                unit="columns"
+                min={GRID_ITEM_COLS_MIN}
+                max={GRID_ITEM_COLS_MAX}
+                value={seeds.itemCols}
+                onCommit={(v) => {
+                  setSeeds((s) => ({ ...s, itemCols: v }));
+                  saveGridSeedItemCols(v);
+                }}
+              />
+              <SeedField
+                label="Item height, default"
+                unit="rows"
+                min={GRID_ITEM_ROWS_MIN}
+                max={GRID_ITEM_ROWS_MAX}
+                value={seeds.itemRows}
+                onCommit={(v) => {
+                  setSeeds((s) => ({ ...s, itemRows: v }));
+                  saveGridSeedItemRows(v);
+                }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  resetGridSeeds();
+                  setSeeds(loadGridSeeds());
+                }}
+                {...hint(
+                  "Reset just the three defaults above, back to 3 columns / 80x24. Does not touch Columns across, Item width or Item height themselves.",
+                )}
+              >
+                Reset defaults
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -290,6 +368,66 @@ function GridField({
       <p className="text-xs text-muted-foreground">
         {hint} {min}-{max}.
       </p>
+    </div>
+  );
+}
+
+/** An Advanced field: always a pinned number (no Auto toggle), edited as free
+ * text so a value mid-edit (or briefly out of range) doesn't fight the input,
+ * same invalid-border treatment as GridField. */
+function SeedField({
+  label,
+  unit,
+  min,
+  max,
+  value,
+  onCommit,
+}: {
+  label: string;
+  unit: string;
+  min: number;
+  max: number;
+  value: number;
+  onCommit: (v: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  // Adjusted during render rather than in an effect (React's documented way to
+  // reset state derived from a prop): an external change (the reload listener,
+  // or the Reset button) has to overwrite whatever is mid-edit here, and a
+  // render-phase update converges in the same pass rather than flashing the
+  // stale text for a frame first.
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setText(String(value));
+  }
+  const invalid = parseField(text, min, max) === null;
+
+  const onText = (t: string) => {
+    setText(t);
+    const parsed = parseField(t, min, max);
+    if (parsed !== null) onCommit(parsed);
+  };
+
+  return (
+    <div className="grid gap-1.5">
+      <Label>{label}</Label>
+      <div className="flex items-center gap-3">
+        <Input
+          type="number"
+          inputMode="numeric"
+          value={text}
+          min={min}
+          max={max}
+          onChange={(e) => onText(e.target.value)}
+          aria-label={label}
+          className={`w-28 font-mono text-sm ${invalid ? "border-destructive" : ""}`}
+        />
+        <span className="text-xs text-muted-foreground">{unit}</span>
+        <span className="text-xs text-muted-foreground">
+          {min}-{max}
+        </span>
+      </div>
     </div>
   );
 }

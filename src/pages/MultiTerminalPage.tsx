@@ -9,7 +9,6 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   SendIcon,
-  TerminalIcon,
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
@@ -36,7 +35,14 @@ import { type GuardHit, checkDestructive } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { useRailFilter } from "@/lib/useRailFilter";
 import { railTooltip } from "@/lib/hostTags";
+import {
+  RAIL_LINK_CLASS,
+  railRow,
+  railSrc,
+  useRailHoverLink,
+} from "@/lib/railHover";
 import { RailFilterControls } from "@/components/RailFilterControls";
+import { GoToTerminalButton } from "@/components/GoToTerminalButton";
 import {
   omniBlocksAdd,
   omniBlocksClear,
@@ -77,6 +83,11 @@ type DisplayBlock = {
   key: string;
   /** Persisted-row id (set once omni_blocks_add resolves); null until then. */
   dbId: number | null;
+  /** The session that produced this block, so hovering it can light that rail
+   * row. Null for a block reloaded from the database: its session belongs to a
+   * run of the app that has ended. Such a block is matched to a row by the name
+   * it is captioned with instead. */
+  sessionId: string | null;
   ts: string;
   hostId: number | null;
   labelSnapshot: string;
@@ -112,14 +123,16 @@ export function MultiTerminalPage({
   connectedSessions,
   onManageShortcuts,
   onCloseAllTerminals,
-  onJumpToHostTerminal,
+  onJumpToSession,
 }: {
   visible: boolean;
   sessions: SshTermSession[];
   connectedSessions: Set<string>;
   onManageShortcuts: () => void;
   onCloseAllTerminals: () => void;
-  onJumpToHostTerminal: (hostId: number) => void;
+  /** Select this session's tab on the Terminals page. By session and not by
+   * host: the rail lists sessions, and two of them can be the same machine. */
+  onJumpToSession: (sessionId: string) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [command, setCommand] = useState("");
@@ -143,6 +156,9 @@ export function MultiTerminalPage({
   const hint = useHint();
   const shortcuts = useShortcuts(visible);
   const outputRef = useRef<HTMLDivElement>(null);
+  // Hovering a block lights the rail row of the session that produced it.
+  const pageRef = useRef<HTMLDivElement>(null);
+  const railHover = useRailHoverLink(pageRef);
 
   const sessionsById = useMemo(() => {
     const m = new Map<string, SshTermSession>();
@@ -157,12 +173,6 @@ export function MultiTerminalPage({
   // blocks headed the same thing cannot.
   const suffixById = useMemo(() => duplicateSuffixes(sessions), [sessions]);
 
-  // Host ids with an open terminal session, drives whether a block shows the
-  // "jump to this host's terminal" icon (hidden for deleted/closed hosts).
-  const openHostIds = useMemo(
-    () => new Set(sessions.map((s) => s.host.id)),
-    [sessions],
-  );
 
   // Gating: the tab is always present but inert until 2+ terminals are open.
   const ready = sessions.length >= 2;
@@ -325,6 +335,7 @@ export function MultiTerminalPage({
           {
             key,
             dbId: null,
+            sessionId: sess.id,
             ts,
             hostId: sess.host.id,
             labelSnapshot: sess.host.label,
@@ -373,6 +384,7 @@ export function MultiTerminalPage({
           stored.map((s) => ({
             key: crypto.randomUUID(),
             dbId: s.id,
+            sessionId: null,
             ts: s.ts,
             hostId: s.host_id,
             // Stored with the number already in it, which is right for a row
@@ -579,7 +591,7 @@ export function MultiTerminalPage({
   const hasOutput = blocks.length > 0;
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={pageRef} className="flex h-full flex-col">
       {!ready && (
         <div className="shrink-0 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
           Open at least 2 terminals (from the Hosts page) to use MultiTerminal.
@@ -646,13 +658,19 @@ export function MultiTerminalPage({
                   <button
                     key={s.id}
                     type="button"
+                    {...railRow(s.id, name + suffix)}
                     onClick={() => isConnected && toggleSession(s.id)}
                     disabled={sending || !isConnected}
+                    // Name and number first: two rows on one machine are two
+                    // sets of the same initials at this width, and which of
+                    // them this is is the question being asked.
                     title={
-                      railTooltip(hostsById.get(s.host.id) ?? s.host) +
-                      (isConnected ? "" : "\n(disconnected)")
+                      railTooltip(
+                        hostsById.get(s.host.id) ?? s.host,
+                        name + suffix,
+                      ) + (isConnected ? "" : "\n(disconnected)")
                     }
-                    className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 ${
+                    className={`mb-1 flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 ${RAIL_LINK_CLASS} ${
                       isConnected
                         ? "cursor-pointer hover:bg-accent/50"
                         : "cursor-not-allowed opacity-50"
@@ -680,8 +698,11 @@ export function MultiTerminalPage({
               return (
                 <label
                   key={s.id}
+                  {...railRow(s.id, name + suffix)}
                   title={isConnected ? undefined : "Disconnected: reconnect the terminal to dispatch to it"}
-                  className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                  // `relative` for the go-to-terminal icon, which sits out of
+                  // the flow until the row is hovered or focused.
+                  className={`group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${RAIL_LINK_CLASS} ${
                     isConnected
                       ? "cursor-pointer hover:bg-accent/50"
                       : "cursor-not-allowed opacity-50"
@@ -730,6 +751,13 @@ export function MultiTerminalPage({
                       isConnected ? "bg-emerald-500" : "bg-red-500/70"
                     }`}
                     title={isConnected ? "Connected" : "Not connected"}
+                  />
+                  {/* On every row, including the disconnected ones: a dropped
+                      session still has a tab, and its banner is exactly where
+                      someone reading this rail wants to be taken. */}
+                  <GoToTerminalButton
+                    mode="jump"
+                    onClick={() => onJumpToSession(s.id)}
                   />
                 </label>
               );
@@ -904,7 +932,11 @@ export function MultiTerminalPage({
 
           {/* Block log. */}
           <div className="relative flex min-h-0 flex-1 flex-col">
-          <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div
+            ref={outputRef}
+            {...railHover}
+            className="min-h-0 flex-1 overflow-y-auto p-4"
+          >
             {!hasOutput ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 {ready
@@ -932,6 +964,7 @@ export function MultiTerminalPage({
                   return (
                     <OmniBlock
                       key={b.key}
+                      railId={b.sessionId}
                       color={color}
                       label={label}
                       suffix={suffix}
@@ -943,11 +976,6 @@ export function MultiTerminalPage({
                       interactivity={b.interactivity}
                       showHeader={headers}
                       onDelete={() => deleteBlock(b)}
-                      onJumpToTerminal={
-                        b.hostId != null && openHostIds.has(b.hostId)
-                          ? () => onJumpToHostTerminal(b.hostId!)
-                          : undefined
-                      }
                     />
                   );
                 })}
@@ -1052,6 +1080,7 @@ const NOTICE: Record<Exclude<BlockInteractivity, "normal">, string> = {
 
 /** One completion-ordered, host-tinted output block. */
 function OmniBlock({
+  railId,
   color,
   label,
   suffix,
@@ -1063,8 +1092,11 @@ function OmniBlock({
   interactivity,
   showHeader,
   onDelete,
-  onJumpToTerminal,
 }: {
+  /** The session this came from, so hovering the block lights its rail row.
+   * Null once that session is gone, which includes every block reloaded from a
+   * previous run of the app; those fall back to the label below. */
+  railId: string | null;
   color: string;
   label: string;
   /** The " 02" telling this block's session from another on the same host.
@@ -1078,8 +1110,6 @@ function OmniBlock({
   interactivity: BlockInteractivity;
   showHeader: boolean;
   onDelete: () => void;
-  /** Provided only when the host still has an open terminal session. */
-  onJumpToTerminal?: () => void;
 }) {
   const interactive = interactivity !== "normal";
   const hasLines = lines.length > 0;
@@ -1097,6 +1127,10 @@ function OmniBlock({
 
   return (
     <div
+      // Session first, then the name the rail is showing for it: the id is gone
+      // for anything reloaded from a previous run of the app, and the name is
+      // what puts those blocks back in touch with the rail.
+      {...railSrc(railId, label + suffix)}
       className="group relative rounded-md border border-border/40 pl-3"
       style={{
         borderLeftColor: color,
@@ -1161,20 +1195,6 @@ function OmniBlock({
               className="hidden rounded p-0.5 hover:bg-accent hover:text-foreground group-hover:inline-flex"
             >
               <CopyIcon className="h-3.5 w-3.5" />
-            </button>
-          )}
-          {onJumpToTerminal && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onJumpToTerminal();
-              }}
-              title="Go to this host's terminal tab"
-              aria-label="Go to this host's terminal tab"
-              className="hidden rounded p-0.5 hover:bg-accent hover:text-foreground group-hover:inline-flex"
-            >
-              <TerminalIcon className="h-3.5 w-3.5" />
             </button>
           )}
           {!interactive && exitCode !== null && (

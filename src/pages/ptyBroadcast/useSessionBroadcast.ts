@@ -38,6 +38,11 @@ export type DispatchResult = {
   suffix?: string;
   color: string;
   kind?: string;
+  /** The session this row reports on, so hovering it can light that rail row.
+   * Filled in by the send loop rather than by `describe`, since both panels
+   * want it and neither has to think about it. Absent on a run reloaded from
+   * the database: those sessions belonged to a previous run of the app. */
+  sessionId?: string;
   ok: boolean;
   message: string | null;
 };
@@ -177,7 +182,7 @@ export function useSessionBroadcast<T extends { id: string }>({
       const targets = sessions.filter((s) => selected.has(s.id));
       const out: DispatchResult[] = [];
       for (const s of targets) {
-        const id = describe(s);
+        const id = { ...describe(s), sessionId: s.id };
         if (!connectedSessions.has(s.id)) {
           out.push({ ...id, ok: false, message: "session is not connected" });
           continue;
@@ -201,10 +206,15 @@ export function useSessionBroadcast<T extends { id: string }>({
       // so "web-01" twice in one run would be a record of a command that looks
       // like it was sent to the same machine twice for no reason. In memory the
       // two stay apart; it is only the written form that joins them.
-      const stored = out.map((r) => ({
-        ...r,
-        label: r.label + (r.suffix ?? ""),
-      }));
+      // The session id goes no further than this run. It is a handle on
+      // something living, meaningless the moment the app restarts, and a stored
+      // row full of ids that can never match anything again is worse than a row
+      // without them.
+      const stored = out.map((r) => {
+        const row = { ...r, label: r.label + (r.suffix ?? "") };
+        delete row.sessionId;
+        return row;
+      });
       if (persist) {
         ptyHistoryAdd({ runId, ts, command: cmd, results: stored })
           .then(announceCommandHistory)
