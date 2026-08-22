@@ -177,6 +177,9 @@ export function SkillList({
     showPicker && tintInList && listed.some((s) => s.id === selectedId)
       ? selectedId
       : null;
+  /** The card is the skill in hand, which is also what makes its title open on
+   * one click rather than two. */
+  const cardIsCurrent = tintedRow === null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-border/50">
@@ -223,7 +226,7 @@ export function SkillList({
         <div
           className={cn(
             "shrink-0 border-y px-2 py-1.5",
-            tintedRow === null
+            cardIsCurrent
               ? TINT
               : "border-border/50 bg-muted/30 dark:bg-muted/20",
             selectedId === picked.id && "ring-1 ring-primary/50",
@@ -232,7 +235,15 @@ export function SkillList({
           {/* The dropdown is the card's title: what it says is what the card
               is showing, and changing it swaps the card. Two controls saying
               the same skill's name, one above the other, was a row of a
-              sixteen-rem rail spent on repeating itself. */}
+              sixteen-rem rail spent on repeating itself.
+
+              Two clicks when the card is not the one in hand. The first only
+              brings the tint back and takes focus; the second opens the list.
+              The title of a card you are not looking at is a wide, easy target
+              sitting directly above the skill list, and a stray click on it
+              should not put a menu over the rail. Once the card is the current
+              one it opens on a single click like anything else, because by
+              then you meant it. */}
           <select
             value={picked.id}
             onChange={(e) => {
@@ -241,9 +252,24 @@ export function SkillList({
               // so the tint comes back up here from wherever it had got to.
               setTintInList(false);
             }}
+            onMouseDown={(e) => {
+              if (cardIsCurrent) return;
+              // Chromium opens the picker on mousedown, so this is where it
+              // has to be stopped. Doing so also swallows the focus the click
+              // would have moved, hence taking it by hand: the second click
+              // needs a focused control to be the second click of a pair.
+              e.preventDefault();
+              e.currentTarget.focus();
+              setTintInList(false);
+            }}
             aria-label="Pinned skill"
             title={picked.name}
             className="-mx-1 w-full cursor-pointer rounded bg-transparent px-1 text-sm font-medium outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            {...hint(
+              cardIsCurrent
+                ? "Choose which skill is pinned here"
+                : "Bring the pinned card back into focus. Click again to choose a skill.",
+            )}
           >
             {skills.map((s) => (
               // The popup is drawn by the browser, not by us, and it takes its
