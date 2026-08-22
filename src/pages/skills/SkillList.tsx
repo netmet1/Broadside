@@ -308,6 +308,23 @@ export function SkillList({
           listed.map((s, i) => (
             <div
               key={s.id}
+              // Double-click anywhere on the row that is not a control pins it.
+              // The dropdown is the deliberate route and stays the only one
+              // that lists every skill at once; this is the quick one, for the
+              // skill already under the pointer. The controls row is excluded
+              // because a double-click there is two presses of a button, and
+              // Delete twice must never also mean "and pin it".
+              onDoubleClick={(e) => {
+                if ((e.target as HTMLElement).closest("[data-row-controls]")) {
+                  return;
+                }
+                setPickedId(s.id);
+                // Same as the dropdown: pinning is choosing what you are
+                // working on, so the tint goes up to the card with it. The row
+                // is about to leave the list anyway, but saying so here keeps
+                // the two routes to the pin doing the identical thing.
+                setTintInList(false);
+              }}
               className={cn(
                 "group mb-1 rounded-md border border-transparent px-2 py-1.5",
                 // The tint replaces the accent wash rather than sitting on top
@@ -391,7 +408,9 @@ function SkillRow({
           className="flex w-full items-center gap-1.5 text-left text-sm"
           title={s.name}
           onClick={() => actions.onOpen(s)}
-          {...hint(`Open "${s.name}" to see its flow`)}
+          {...hint(
+            `Open "${s.name}" to see its flow. Double-click to pin it to the card.`,
+          )}
         >
           <span className="min-w-0 truncate">{s.name}</span>
         </button>
@@ -427,8 +446,13 @@ function SkillRow({
       </div>
       {/* The controls get their own row rather than sharing the name's.
           Four buttons in a 16rem rail left the name a few characters
-          wide, which is the one thing you actually read. */}
-      <div className="mt-0.5 flex items-center gap-0.5">
+          wide, which is the one thing you actually read.
+
+          Marked so the row above can tell a double-click meant for it from two
+          presses of a button inside it. An attribute rather than the handler
+          stopping the event on each button, because that would be nine places
+          to remember and one of them would eventually be forgotten. */}
+      <div data-row-controls className="mt-0.5 flex items-center gap-0.5">
         {showReorder && (
           <>
             <Button
