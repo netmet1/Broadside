@@ -1808,7 +1808,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment status dot colour legend key what do the colours mean green dark green amber red grey online offline reachable port check probe is this host up before i run sort online first collapse the rail hide the sidebar more room expand button pin a skill dropdown pinned card frozen top of the list favourite most used skill small dot beside the name save and close save cancel discard unsaved changes stay in the editor keep editing first save creates it",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment status dot colour legend key what do the colours mean green dark green amber red grey online offline reachable port check probe is this host up before i run sort online first collapse the rail hide the sidebar more room expand button pin a skill dropdown pinned card frozen top of the list favourite most used skill green card dark green background missing from the list disappeared from the list where did my skill go cannot move the pinned skill arrows greyed save and close save cancel discard unsaved changes stay in the editor keep editing first save creates it",
     body: (
       <>
         <Lead>
@@ -2115,9 +2115,12 @@ export const SECTIONS: HelpSection[] = [
             <li>
               <Nav>Sort: Online first</Nav> puts the hosts you could act on right
               now at the top, which on a rail of forty machines is the quickest
-              way to answer "what can I actually run this on". A host still being
-              checked sorts with the offline ones, because it is not yet an
-              answer.
+              way to answer "what can I actually run this on". The two greens
+              are ranked, not lumped together: hosts with a terminal already
+              open come first, then the ones whose port answered. Amber, red and
+              grey follow, level with each other, and within any group the order
+              is by name. A host still being checked sorts with the offline
+              ones, because it is not yet an answer.
             </li>
             <li>
               The panel icon at the top of the rail collapses the whole thing,
@@ -2140,11 +2143,13 @@ export const SECTIONS: HelpSection[] = [
               position, so reordering moves it.
             </li>
             <li>
-              Pinning changes nothing else. The skill keeps its own place in the
-              list below, marked with a small dot, and it can still be reordered
-              from there. It is not hidden from the list, because a skill you
-              cannot see cannot be moved past, and the up and down arrows would
-              start to lie.
+              A pinned skill sits on a green card and leaves the list below
+              while it is up there, rather than appearing twice in a rail this
+              narrow. Nothing else about the list changes: no default moves,
+              nothing is reordered, and the arrows still step past whatever is
+              actually on screen. The one thing you cannot do is reorder the
+              pinned skill itself. Point the dropdown at something else and it
+              rejoins the list, in its own place, with its arrows back.
             </li>
             <li>
               <Nav>Clone</Nav> starts a new skill from a copy of an existing one,

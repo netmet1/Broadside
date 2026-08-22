@@ -39,7 +39,9 @@ export function useBroadcastRail(
   const [railSort, setRailSort] = useState("az");
   const railHosts = useMemo(
     () =>
-      sortForRail(hosts, (h) => h, railSort, (h) => connectedHostIds.has(h.id)),
+      sortForRail(hosts, (h) => h, railSort, (h) =>
+        connectedHostIds.has(h.id) ? 1 : 0,
+      ),
     [hosts, railSort, connectedHostIds],
   );
   // When the rail is ordered by tag, surface each host's tag in the row so the

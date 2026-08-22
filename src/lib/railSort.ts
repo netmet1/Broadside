@@ -46,13 +46,19 @@ const byTag = (a: HostLike, b: HostLike, factor: 1 | -1) => {
 
 /** Returns a new array of `items` sorted per `sort`. `get` pulls the sortable
  * host fields out of each item (identity for a Host, `s => s.host` for a
- * session). `isOnline` (optional) reports whether an item has a live
- * connection: required for the "online"/"offline" sorts. */
+ * session). `rank` (optional) scores how available an item is, higher being
+ * better: required for the "online"/"offline" sorts.
+ *
+ * A score rather than a yes/no, because "online" is not one state everywhere.
+ * The broadcast rails know two, connected or not, and hand back 1 and 0. The
+ * skills rail knows five, and a terminal already open is a better answer than
+ * a port that merely replied, so it wants those two apart at the top instead
+ * of tipped into the same bucket. */
 export function sortForRail<T>(
   items: T[],
   get: (item: T) => HostLike,
   sort: string,
-  isOnline?: (item: T) => boolean,
+  rank?: (item: T) => number,
 ): T[] {
   const arr = [...items];
   arr.sort((a, b) => {
@@ -72,9 +78,10 @@ export function sortForRail<T>(
         );
       case "online":
       case "offline": {
-        const oa = isOnline?.(a) ? 1 : 0;
-        const ob = isOnline?.(b) ? 1 : 0;
-        // Online-first puts connected items at the top; offline-first inverts.
+        const oa = rank?.(a) ?? 0;
+        const ob = rank?.(b) ?? 0;
+        // Online-first puts the most available at the top; offline-first
+        // inverts it, ties fall through to name order.
         if (oa !== ob) return sort === "online" ? ob - oa : oa - ob;
         return byLabel(ha, hb);
       }

@@ -84,17 +84,25 @@ export function useSkillsModel() {
     [reload],
   );
 
-  /** Moves one skill up or down the rail by one place.
+  /** Swaps two skills' places in the rail.
+   *
+   * Two ids rather than "this one, one place up". The list on screen is no
+   * longer the whole list: the pinned skill is lifted out of it, so the row
+   * under the pin has a neighbour above it that is not its neighbour in here.
+   * A direction can only ever mean the adjacent index, which would swap a row
+   * with something invisible and look like the arrow did nothing. The caller
+   * can see what is on screen, so it names both ends and this just does as it
+   * is told.
    *
    * The list is updated first and persisted after, rather than reloading:
    * pressing an arrow four times in a row should feel like four moves, not four
    * round trips, and the order written is exactly the order already on screen.
    * A failed write reloads to put the rail back to the truth. */
-  const move = useCallback(
-    async (id: number, direction: -1 | 1) => {
-      const from = skills.findIndex((s) => s.id === id);
-      const to = from + direction;
-      if (from < 0 || to < 0 || to >= skills.length) return;
+  const swap = useCallback(
+    async (aId: number, bId: number) => {
+      const from = skills.findIndex((s) => s.id === aId);
+      const to = skills.findIndex((s) => s.id === bId);
+      if (from < 0 || to < 0 || from === to) return;
       const next = [...skills];
       [next[from], next[to]] = [next[to]!, next[from]!];
       setSkills(next);
@@ -108,5 +116,5 @@ export function useSkillsModel() {
     [skills, reload],
   );
 
-  return { skills, loading, reload, save, remove, move };
+  return { skills, loading, reload, save, remove, swap };
 }

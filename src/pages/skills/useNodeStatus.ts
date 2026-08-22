@@ -201,6 +201,27 @@ export const NODE_STATUS_STYLE: Record<
   },
 };
 
+/**
+ * How good an answer each status is, for **Online first** and its inverse.
+ * Higher sorts nearer the top under Online first; equal scores fall back to
+ * name order.
+ *
+ * Three tiers, not five. A terminal already open outranks a port that merely
+ * answered, because the rail is read top down and "I am already on that
+ * machine" is the better answer of the two: they were one bucket and the
+ * brighter green landed wherever the alphabet put it. Below those, the three
+ * ways of not being available are deliberately level with each other. Amber
+ * and red are different *reasons* rather than different degrees, and a host
+ * still being checked sits with them because it is not yet an answer at all.
+ */
+export const NODE_SORT_RANK: Record<NodeStatus, number> = {
+  connected: 2,
+  up: 1,
+  down: 0,
+  unprobed: 0,
+  checking: 0,
+};
+
 /** Legend order: the two greens, then the two ways of being unavailable, then
  * the transient one. Reads top to bottom as good news to bad. */
 export const NODE_STATUS_ORDER: NodeStatus[] = [

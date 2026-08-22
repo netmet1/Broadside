@@ -34,7 +34,7 @@ type RowActions = {
   onClone: (skill: Skill) => void;
   onExport: (skill: Skill) => void;
   onDelete: (skill: Skill) => void;
-  onMove: (skill: Skill, direction: -1 | 1) => void;
+  onSwap: (a: Skill, b: Skill) => void;
 };
 
 /** The rail's bottom half: every saved skill, with run / edit / delete. */
@@ -54,7 +54,7 @@ export function SkillList({
   onImport,
   onExport,
   onDelete,
-  onMove,
+  onSwap,
 }: {
   skills: Skill[];
   loading: boolean;
@@ -88,8 +88,9 @@ export function SkillList({
   onImport: () => void;
   onExport: (skill: Skill) => void;
   onDelete: (skill: Skill) => void;
-  /** Moves a skill one place up (-1) or down (1) the rail. */
-  onMove: (skill: Skill, direction: -1 | 1) => void;
+  /** Exchanges two skills' places in the rail. The arrows work it out from the
+   * list as displayed, which is not the whole list once a skill is pinned. */
+  onSwap: (a: Skill, b: Skill) => void;
 }) {
   const hint = useHint();
   const actions: RowActions = {
@@ -100,7 +101,7 @@ export function SkillList({
     onClone,
     onExport,
     onDelete,
-    onMove,
+    onSwap,
   };
 
   /**
@@ -118,6 +119,10 @@ export function SkillList({
   // One skill is not a choice, and the card would be that same row twice in a
   // rail that has none to spare.
   const showPicker = skills.length > 1 && picked !== null;
+
+  /** The list as displayed: everything except the skill on the card. It is
+   * already on screen, above, and a rail this narrow cannot spare the row. */
+  const listed = showPicker ? skills.filter((s) => s.id !== picked.id) : skills;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-border/50">
@@ -152,10 +157,14 @@ export function SkillList({
           you run twenty times a day is otherwise wherever the list happens to
           have scrolled to.
 
-          It changes nothing about the list: no default moves, nothing is
-          reordered, and the skill keeps its own place below. Hiding it there
-          was the alternative and it makes the reorder arrows lie, since a skill
-          you cannot see cannot be moved past. */}
+          The pinned skill leaves the list while it is up here. It was left in
+          place at first, marked with a dot, so that the reorder arrows could
+          still move it and nothing had to be moved past a row that was not
+          drawn. In use it just read as the same skill twice in a rail sixteen
+          rems wide. So it goes, the arrows below swap visible neighbours
+          instead of adjacent ones, and the one thing given up is reordering
+          the pinned skill itself: pick another and it comes back to the list
+          with its arrows. */}
       {showPicker && (
         <>
           <div className="shrink-0 px-3 pb-2">
@@ -172,13 +181,22 @@ export function SkillList({
               ))}
             </select>
           </div>
-          <div className="shrink-0 border-y border-primary/30 bg-primary/5 px-2 py-1.5">
+          {/* Deep green, so the card reads as a fixture rather than as the
+              first row of the list it sits above. Dark mode gets the very dark
+              green asked for; light mode gets the same hue at the other end of
+              the scale, because a near-black block there would take the row's
+              text with it. */}
+          <div
+            className={cn(
+              "shrink-0 border-y border-emerald-600/40 bg-emerald-100 px-2 py-1.5 dark:border-emerald-500/25 dark:bg-emerald-950",
+              selectedId === picked.id && "ring-1 ring-primary/50",
+            )}
+          >
             <SkillRow
               skill={picked}
-              index={0}
-              total={skills.length}
+              prev={null}
+              next={null}
               showReorder={false}
-              pinned={false}
               runState={runState}
               watching={watching}
               canRun={canRun}
@@ -198,7 +216,7 @@ export function SkillList({
             them. Press New to build one.
           </p>
         ) : (
-          skills.map((s, i) => (
+          listed.map((s, i) => (
             <div
               key={s.id}
               className={`group mb-1 rounded-md px-2 py-1.5 ${
@@ -209,10 +227,9 @@ export function SkillList({
             >
               <SkillRow
                 skill={s}
-                index={i}
-                total={skills.length}
+                prev={listed[i - 1] ?? null}
+                next={listed[i + 1] ?? null}
                 showReorder
-                pinned={showPicker && picked.id === s.id}
                 runState={runState}
                 watching={watching}
                 canRun={canRun}
@@ -229,25 +246,24 @@ export function SkillList({
 /** One skill: its name, what it is, and what you can do to it. */
 function SkillRow({
   skill: s,
-  index: i,
-  total,
+  prev,
+  next,
   showReorder,
-  pinned,
   runState,
   watching,
   canRun,
   actions,
 }: {
   skill: Skill;
-  /** Where this skill sits in the list, for the reorder arrows' end stops. */
-  index: number;
-  total: number;
+  /** The rows either side of this one *as drawn*, which the arrows trade
+   * places with. Null at the ends of the list, which is what stops them. Rows
+   * rather than an index, because the list drawn skips the pinned skill and an
+   * index into it would not say who the neighbour actually is. */
+  prev: Skill | null;
+  next: Skill | null;
   /** False on the pinned card: it is one skill out of its list, so up and down
    * have nothing to mean there. */
   showReorder: boolean;
-  /** This row is the one the dropdown is pointing at, and so is also on the
-   * card above. Marked rather than hidden. */
-  pinned: boolean;
   runState: RunState;
   watching: boolean;
   canRun: boolean;
@@ -273,13 +289,6 @@ function SkillRow({
         onClick={() => actions.onOpen(s)}
         {...hint(`Open "${s.name}" to see its flow`)}
       >
-        {pinned && (
-          <span
-            className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-            title="Pinned above"
-            aria-hidden="true"
-          />
-        )}
         <span className="min-w-0 truncate">{s.name}</span>
       </button>
       <div className="flex items-center gap-1.5 pr-1 text-[10px] text-muted-foreground">
@@ -321,8 +330,8 @@ function SkillRow({
               variant="ghost"
               size="sm"
               className="h-6 w-5 shrink-0 p-0"
-              disabled={i === 0}
-              onClick={() => actions.onMove(s, -1)}
+              disabled={prev === null}
+              onClick={() => prev && actions.onSwap(s, prev)}
               aria-label={`Move ${s.name} up`}
               {...hint(`Move "${s.name}" up the list`)}
             >
@@ -332,8 +341,8 @@ function SkillRow({
               variant="ghost"
               size="sm"
               className="h-6 w-5 shrink-0 p-0"
-              disabled={i === total - 1}
-              onClick={() => actions.onMove(s, 1)}
+              disabled={next === null}
+              onClick={() => next && actions.onSwap(s, next)}
               aria-label={`Move ${s.name} down`}
               {...hint(`Move "${s.name}" down the list`)}
             >

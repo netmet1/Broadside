@@ -210,7 +210,7 @@ export function SshBroadcastPanel({
         sessions,
         (s) => s.host,
         railSort,
-        (s) => connectedSessions.has(s.id),
+        (s) => (connectedSessions.has(s.id) ? 1 : 0),
       ),
     [sessions, railSort, connectedSessions],
   );

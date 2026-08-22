@@ -565,7 +565,7 @@ export function SkillsPage({
           onImport={startImport}
           onExport={exportOne}
           onDelete={setPendingDelete}
-          onMove={(skill, direction) => void model.move(skill.id, direction)}
+          onSwap={(a, b) => void model.swap(a.id, b.id)}
         />
 
         {/* Emergency stop lives here, ghosted until a run is live. */}

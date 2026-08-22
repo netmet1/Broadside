@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listHosts, type Host } from "@/lib/tauri/hosts";
 import { RAIL_SORT_OPTIONS, sortForRail } from "@/lib/railSort";
 import { useRailFilter } from "@/lib/useRailFilter";
-import { useNodeStatus } from "@/pages/skills/useNodeStatus";
+import { NODE_SORT_RANK, useNodeStatus } from "@/pages/skills/useNodeStatus";
 
 /** The full set of rail sorts, online and offline included.
  *
@@ -45,16 +45,16 @@ export function useSkillSelection(
 
   const status = useNodeStatus(hosts, connectedHostIds, visible);
 
-  // "Online" for the sort means the two states you could act on right now: a
-  // terminal already open, or a port that answered. A host still being checked
-  // sorts with the offline ones, because it is not yet an answer.
+  // "Online" for the sort is a ladder, not a yes or no: a terminal already
+  // open, then a port that answered, then everything else. NODE_SORT_RANK says
+  // why, next to the statuses it scores.
   const sorted = useMemo(
     () =>
       sortForRail(
         hosts,
         (h) => h,
         railSort,
-        (h) => status.get(h.id) === "connected" || status.get(h.id) === "up",
+        (h) => NODE_SORT_RANK[status.get(h.id) ?? "checking"],
       ),
     [hosts, railSort, status],
   );

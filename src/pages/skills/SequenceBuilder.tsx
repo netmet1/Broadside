@@ -703,9 +703,14 @@ export function SequenceBuilder({
         {/* Three, not two. Building a long sequence is a session's worth of
             work, and the only way to write it down used to be the button that
             also threw you back to the list: you saved by leaving, then went
-            back in to carry on. Save now keeps you where you are. */}
+            back in to carry on. Save now keeps you where you are.
+
+            The solid one is Save and close, not Save. Save is the button you
+            press over and over while you work; Save and close is the one that
+            ends the job, and the filled button should be the way out. */}
         <div className="flex items-center gap-2">
           <Button
+            variant="outline"
             onClick={() => void save(false)}
             disabled={f.problems.length > 0}
             {...hint(
@@ -717,7 +722,6 @@ export function SequenceBuilder({
             Save
           </Button>
           <Button
-            variant="outline"
             onClick={() => void save(true)}
             disabled={f.problems.length > 0}
             {...hint("Save, and go back to what you were looking at")}
