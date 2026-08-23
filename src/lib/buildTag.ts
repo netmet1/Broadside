@@ -11,7 +11,7 @@
  * if there is one (`"47"`, then `"47-2"`, `"47-3"`, ...). Set it to the empty
  * string for a real release, where the version alone is the whole truth.
  */
-export const BUILD_TAG = "62-6";
+export const BUILD_TAG = "62-7";
 
 /** The version as it should be shown to a human: the manifest version, plus the
  * build tag when this is a test build. Empty in, empty out, so a version that

@@ -1808,7 +1808,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment status dot colour legend key what do the colours mean green dark green amber red grey online offline reachable port check probe is this host up before i run sort online first collapse the rail hide the sidebar more room expand button pin a skill dropdown pinned card frozen top of the list favourite most used skill green tint highlight moved to another skill which one am i working on dropdown will not open first click does nothing two clicks to open the pinned list missing from the list disappeared from the list where did my skill go cannot move the pinned skill arrows greyed double click to pin double clicking a skill quicker way to pin save and close save cancel discard unsaved changes stay in the editor keep editing first save creates it",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment status dot colour legend key what do the colours mean green dark green amber red grey online offline reachable port check probe is this host up before i run sort online first collapse the rail hide the sidebar more room expand button pin a skill dropdown pinned card frozen top of the list favourite most used skill green tint highlight moved to another skill which one am i working on dropdown will not open first click does nothing two clicks to open the pinned list missing from the list disappeared from the list where did my skill go cannot move the pinned skill arrows greyed double click to pin double clicking a skill quicker way to pin pinning shows the flow flow does not follow the dropdown outline left behind highlight on the wrong skill ring stuck on a row nothing selected but still highlighted save and close save cancel discard unsaved changes stay in the editor keep editing first save creates it",
     body: (
       <>
         <Lead>
@@ -2154,19 +2154,28 @@ export const SECTIONS: HelpSection[] = [
               you hit.
             </li>
             <li>
-              The faint green tint marks the skill in hand. It starts on the
-              card, and it moves: open a skill from the list and the tint goes
-              down to that row, so the rail never shows two skills dressed as
-              the current one. Change the dropdown and it comes back up, because
-              choosing what is pinned is choosing what you are working on.
+              Pinning a skill also shows it: change the dropdown, or
+              double-click a row, and that skill's flow map opens on the right.
+              Choosing what is pinned is choosing what you are working on, so
+              the panel goes with the choice rather than waiting for a second
+              click.
+            </li>
+            <li>
+              The faint green tint marks the skill in hand, which is always the
+              one on screen. It sits on the card while the card's skill is what
+              you are looking at, and goes down to a row when you open one from
+              the list, so the rail never shows two skills dressed as the
+              current one. Nothing is left marked behind it: the tint and the
+              highlight around the open skill are the same thing said twice, and
+              they move together.
             </li>
             <li>
               While the tint is down in the list, the card's title takes two
-              clicks: the first brings the tint back to the card, and only the
-              second opens the list of skills. It is a wide target sitting right
-              above the skill list and a stray click on it should not drop a
-              menu over the rail. Once the card is the one in hand it opens on a
-              single click, as normal.
+              clicks: the first brings the card's skill back on screen and the
+              tint with it, and only the second opens the list of skills. It is
+              a wide target sitting right above the skill list and a stray click
+              on it should not drop a menu over the rail. Once the card is the
+              one in hand it opens on a single click, as normal.
             </li>
             <li>
               The pinned skill leaves the list below while it is on the card,
@@ -2179,9 +2188,12 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               The card's title is a dropdown rather than a name you can click,
-              so the flow map moved to a button: the small branching icon on the
+              so the flow map also has a button: the small branching icon on the
               card, at the left of its row of controls. It is the same thing
-              clicking a skill's name does in the list.
+              clicking a skill's name does in the list. Pinning already opens
+              the flow, so this is the way back to it after you have been into
+              the editor or over to a run: the dropdown is already pointing at
+              the skill, and pointing it there again does nothing.
             </li>
             <li>
               <Nav>Clone</Nav> starts a new skill from a copy of an existing one,

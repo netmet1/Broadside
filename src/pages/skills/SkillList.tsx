@@ -109,21 +109,6 @@ export function SkillList({
 }) {
   const hint = useHint();
 
-  /**
-   * Whether the tint has followed you down into the list.
-   *
-   * The green marks the skill in hand, and the card is where that starts.
-   * Open one from the list and the tint goes with you, off the card and onto
-   * that row, so the rail never shows two skills dressed as the current one.
-   * Touch the dropdown and it comes back up: choosing what is pinned is
-   * choosing what you are working on.
-   *
-   * Set where the click happens rather than derived from `selectedId`, because
-   * opening the row you already had open has to bring the tint back down and a
-   * selection that did not change cannot say so.
-   */
-  const [tintInList, setTintInList] = useState(false);
-
   const actions: RowActions = {
     onRun,
     onWatch,
@@ -133,22 +118,6 @@ export function SkillList({
     onExport,
     onDelete,
     onSwap,
-  };
-  /** The card and the list rows differ in one thing: where opening a skill
-   * leaves the tint. Everything else they do is identical. */
-  const cardActions: RowActions = {
-    ...actions,
-    onOpen: (s) => {
-      setTintInList(false);
-      onOpen(s);
-    },
-  };
-  const listActions: RowActions = {
-    ...actions,
-    onOpen: (s) => {
-      setTintInList(true);
-      onOpen(s);
-    },
   };
 
   /**
@@ -171,15 +140,36 @@ export function SkillList({
    * already on screen, above, and a rail this narrow cannot spare the row. */
   const listed = showPicker ? skills.filter((s) => s.id !== picked.id) : skills;
 
-  /** The row wearing the tint, if any. Falls back to the card when the tint's
-   * row is gone: deleted, or just pinned and so lifted out of the list. */
+  /**
+   * The row wearing the tint, if any: the skill on screen, when that is one of
+   * the rows below rather than the card.
+   *
+   * Read off the selection rather than remembered separately. The green says
+   * "this is the one in hand" and the panel on the right is showing it, so the
+   * two are the same fact and only one of them should be stored. Keeping a
+   * second copy is what let them drift: pinning moved the green up to the card
+   * and left the ring behind on a list row that was no longer anything in
+   * particular. Every route to the card opens the card's skill now, which is
+   * what makes deriving it possible: there is no longer a way to become the
+   * current one without also becoming the one on screen.
+   *
+   * Falls back to the card when the selection is not a row: nothing open, or a
+   * skill deleted, or the pinned one, which has no row while it is pinned.
+   */
   const tintedRow =
-    showPicker && tintInList && listed.some((s) => s.id === selectedId)
-      ? selectedId
-      : null;
+    showPicker && listed.some((s) => s.id === selectedId) ? selectedId : null;
   /** The card is the skill in hand, which is also what makes its title open on
    * one click rather than two. */
   const cardIsCurrent = tintedRow === null;
+
+  /** Pin a skill and show it. Pinning is a statement about what you are working
+   * on, so the flow map comes with it rather than waiting for a second click on
+   * the card. One function for both routes to the pin, the dropdown and the
+   * double-click, so the two cannot end up meaning different things. */
+  const pin = (s: Skill) => {
+    setPickedId(s.id);
+    onOpen(s);
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-border/50">
@@ -237,9 +227,9 @@ export function SkillList({
               the same skill's name, one above the other, was a row of a
               sixteen-rem rail spent on repeating itself.
 
-              Two clicks when the card is not the one in hand. The first only
-              brings the tint back and takes focus; the second opens the list.
-              The title of a card you are not looking at is a wide, easy target
+              Two clicks when the card is not the one in hand. The first shows
+              the card's skill and takes focus; the second opens the list. The
+              title of a card you are not looking at is a wide, easy target
               sitting directly above the skill list, and a stray click on it
               should not put a menu over the rail. Once the card is the current
               one it opens on a single click like anything else, because by
@@ -247,10 +237,10 @@ export function SkillList({
           <select
             value={picked.id}
             onChange={(e) => {
-              setPickedId(Number(e.target.value));
+              const next = skills.find((s) => s.id === Number(e.target.value));
               // Choosing what is pinned is choosing what you are working on,
-              // so the tint comes back up here from wherever it had got to.
-              setTintInList(false);
+              // so the flow map and the tint both come up here with it.
+              if (next) pin(next);
             }}
             onMouseDown={(e) => {
               if (cardIsCurrent) return;
@@ -260,7 +250,10 @@ export function SkillList({
               // needs a focused control to be the second click of a pair.
               e.preventDefault();
               e.currentTarget.focus();
-              setTintInList(false);
+              // What makes the card the current one, which is also what lets
+              // the second click through. The pin is not moving, so this is the
+              // open on its own rather than the whole of `pin`.
+              onOpen(picked);
             }}
             aria-label="Pinned skill"
             title={picked.name}
@@ -268,7 +261,7 @@ export function SkillList({
             {...hint(
               cardIsCurrent
                 ? "Choose which skill is pinned here"
-                : "Bring the pinned card back into focus. Click again to choose a skill.",
+                : `Show "${picked.name}" and bring the card back into focus. Click again to choose a different skill.`,
             )}
           >
             {skills.map((s) => (
@@ -290,7 +283,7 @@ export function SkillList({
             runState={runState}
             watching={watching}
             canRun={canRun}
-            actions={cardActions}
+            actions={actions}
           />
         </div>
       )}
@@ -318,19 +311,15 @@ export function SkillList({
                 if ((e.target as HTMLElement).closest("[data-row-controls]")) {
                   return;
                 }
-                setPickedId(s.id);
-                // Same as the dropdown: pinning is choosing what you are
-                // working on, so the tint goes up to the card with it. The row
-                // is about to leave the list anyway, but saying so here keeps
-                // the two routes to the pin doing the identical thing.
-                setTintInList(false);
+                pin(s);
               }}
               className={cn(
                 "group mb-1 rounded-md border border-transparent px-2 py-1.5",
                 // The tint replaces the accent wash rather than sitting on top
                 // of it: two backgrounds on one row is a muddier colour, not a
-                // louder signal. The ring stays either way, because it is the
-                // ring that says "open", not the fill.
+                // louder signal. The grey wash is what a selected row still
+                // gets in a rail holding a single skill, where there is no card
+                // and so nothing for a tint to mean.
                 tintedRow === s.id
                   ? TINT
                   : selectedId === s.id
@@ -347,7 +336,7 @@ export function SkillList({
                 runState={runState}
                 watching={watching}
                 canRun={canRun}
-                actions={listActions}
+                actions={actions}
               />
             </div>
           ))
@@ -381,8 +370,8 @@ function SkillRow({
   showReorder: boolean;
   /** False on the pinned card, where the dropdown above is already the skill's
    * name. Clicking the name is how you reach a skill's flow map, so the card
-   * gets that as a button instead: without it the pinned skill would be the
-   * one skill on the page with no way through to its flow. */
+   * gets that as a button instead: pinning a skill opens its flow, but nothing
+   * else on the card would bring you back to it afterwards. */
   showName?: boolean;
   runState: RunState;
   watching: boolean;
@@ -480,7 +469,14 @@ function SkillRow({
           </>
         )}
         {/* The card's stand-in for clicking the name, in the space the list
-            rows give their arrows. */}
+            rows give their arrows.
+
+            Pinning a skill now opens its flow as well, so this is no longer the
+            only way in. It is the way back: once the card is the current one
+            its title opens the dropdown on a single click, and pointing that
+            dropdown at the skill it is already pointing at raises no event. Go
+            from the card's flow into the editor, or over to a run, and this is
+            what returns you. */}
         {!showName && (
           <Button
             variant="ghost"
