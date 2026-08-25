@@ -616,7 +616,11 @@ function App() {
           survive tab switches. A run can last as long as an apt upgrade, and
           unmounting would tear down the xterm panes mid-run. */}
       <div className={page === "skills" ? "block h-full" : "hidden"}>
-        <SkillsPage visible={page === "skills"} onAdoptTerminal={adoptTerminal} />
+        <SkillsPage
+          visible={page === "skills"}
+          connectedHostIds={connectedHostIds}
+          onAdoptTerminal={adoptTerminal}
+        />
       </div>
       {/* SFTP stays mounted so an open browser session survives navigation. */}
       <div className={page === "sftp" ? "block h-full" : "hidden"}>

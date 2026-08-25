@@ -48,20 +48,24 @@ export function useSkillsModel() {
     };
   }, []);
 
-  /** Saves a new skill or updates an existing one. Resolves to true on success
-   * so the caller can close its form only when the save actually landed: the
-   * backend rejects a broken step graph here. */
+  /** Saves a new skill or updates an existing one. Resolves to the saved
+   * skill's id, or null when the save did not land: the backend rejects a
+   * broken step graph here, so a caller must not close its form (or clear its
+   * unsaved-changes mark) until this says which.
+   *
+   * The id and not just a flag, because the editor can now save without
+   * closing: after the first save of a *new* skill it has to know what it just
+   * created, or the next press of Save would create a second copy. */
   const save = useCallback(
-    async (id: number | null, input: SkillInput): Promise<boolean> => {
+    async (id: number | null, input: SkillInput): Promise<number | null> => {
       try {
-        if (id == null) await createSkill(input);
-        else await updateSkill(id, input);
+        const saved = id == null ? await createSkill(input) : await updateSkill(id, input);
         await reload();
         toast.success(id == null ? "Skill created" : "Skill saved");
-        return true;
+        return saved.id;
       } catch (e) {
         toast.error(errorMessage(e));
-        return false;
+        return null;
       }
     },
     [reload],
@@ -80,17 +84,25 @@ export function useSkillsModel() {
     [reload],
   );
 
-  /** Moves one skill up or down the rail by one place.
+  /** Swaps two skills' places in the rail.
+   *
+   * Two ids rather than "this one, one place up". The list on screen is no
+   * longer the whole list: the pinned skill is lifted out of it, so the row
+   * under the pin has a neighbour above it that is not its neighbour in here.
+   * A direction can only ever mean the adjacent index, which would swap a row
+   * with something invisible and look like the arrow did nothing. The caller
+   * can see what is on screen, so it names both ends and this just does as it
+   * is told.
    *
    * The list is updated first and persisted after, rather than reloading:
    * pressing an arrow four times in a row should feel like four moves, not four
    * round trips, and the order written is exactly the order already on screen.
    * A failed write reloads to put the rail back to the truth. */
-  const move = useCallback(
-    async (id: number, direction: -1 | 1) => {
-      const from = skills.findIndex((s) => s.id === id);
-      const to = from + direction;
-      if (from < 0 || to < 0 || to >= skills.length) return;
+  const swap = useCallback(
+    async (aId: number, bId: number) => {
+      const from = skills.findIndex((s) => s.id === aId);
+      const to = skills.findIndex((s) => s.id === bId);
+      if (from < 0 || to < 0 || from === to) return;
       const next = [...skills];
       [next[from], next[to]] = [next[to]!, next[from]!];
       setSkills(next);
@@ -104,5 +116,5 @@ export function useSkillsModel() {
     [skills, reload],
   );
 
-  return { skills, loading, reload, save, remove, move };
+  return { skills, loading, reload, save, remove, swap };
 }

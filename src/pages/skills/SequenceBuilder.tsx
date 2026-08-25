@@ -11,6 +11,16 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,8 +71,10 @@ export function SequenceBuilder({
    * editing: `editing` is both the source and the save target there. Nothing is
    * written until Create, so a clone can be abandoned by cancelling. */
   template?: SkillDraft | null;
-  /** Resolves true when the save landed: the backend refuses a broken graph. */
-  onSave: (id: number | null, input: SkillInput) => Promise<boolean>;
+  /** Resolves to the saved skill's id, or null when the save did not land: the
+   * backend refuses a broken graph. The id matters for Save-without-closing on
+   * a new skill, which has to know what it just created. */
+  onSave: (id: number | null, input: SkillInput) => Promise<number | null>;
   onCancel: () => void;
 }) {
   const hint = useHint();
@@ -159,9 +171,43 @@ export function SequenceBuilder({
   // skills define a couple of inputs once and rarely touch them after.
   const [inputsOpen, setInputsOpen] = useState(false);
 
-  const save = async () => {
+  /**
+   * What the next save writes to: the skill being edited, or the one this
+   * editor created a moment ago.
+   *
+   * Save no longer closes, so a new skill can be saved twice, and the second
+   * press has to update the first press's row rather than create another. The
+   * form is keyed on open (see SkillsPage), so this starts fresh every visit
+   * and cannot carry a previous skill's id into a new one.
+   */
+  const [savedId, setSavedId] = useState<number | null>(editing?.id ?? null);
+  /** The form as it stood when it was opened, or when it was last saved.
+   * Compared with the form now to answer "is there anything to lose", which is
+   * the only question Cancel needs to ask. */
+  const [baseline, setBaseline] = useState(() => JSON.stringify(f.toInput()));
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+
+  /** Saves, and closes only if asked. Returns nothing: the buttons below are
+   * the only callers and neither has anything to do afterwards. */
+  const save = async (thenClose: boolean) => {
     if (f.problems.length > 0) return;
-    if (await onSave(editing?.id ?? null, f.toInput())) onCancel();
+    const input = f.toInput();
+    const id = await onSave(savedId, input);
+    // Refused by the backend. The editor stays exactly as it is, with the
+    // toast saying why, rather than closing over the top of the problem.
+    if (id == null) return;
+    setSavedId(id);
+    setBaseline(JSON.stringify(input));
+    if (thenClose) onCancel();
+  };
+
+  /** Cancel, but not over the top of unsaved work. */
+  const cancel = () => {
+    if (JSON.stringify(f.toInput()) !== baseline) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onCancel();
   };
 
   return (
@@ -654,15 +700,64 @@ export function SequenceBuilder({
           </div>
         )}
 
+        {/* Three, not two. Building a long sequence is a session's worth of
+            work, and the only way to write it down used to be the button that
+            also threw you back to the list: you saved by leaving, then went
+            back in to carry on. Save now keeps you where you are.
+
+            The solid one is Save and close, not Save. Save is the button you
+            press over and over while you work; Save and close is the one that
+            ends the job, and the filled button should be the way out. */}
         <div className="flex items-center gap-2">
-          <Button onClick={save} disabled={f.problems.length > 0}>
-            {editing ? "Save changes" : "Create skill"}
+          <Button
+            variant="outline"
+            onClick={() => void save(false)}
+            disabled={f.problems.length > 0}
+            {...hint(
+              savedId == null
+                ? "Write this skill down and stay in the editor"
+                : "Save your changes and stay in the editor",
+            )}
+          >
+            Save
           </Button>
-          <Button variant="outline" onClick={onCancel}>
+          <Button
+            onClick={() => void save(true)}
+            disabled={f.problems.length > 0}
+            {...hint("Save, and go back to what you were looking at")}
+          >
+            Save and close
+          </Button>
+          <Button
+            variant="outline"
+            onClick={cancel}
+            {...hint("Leave the editor. You'll be asked first if there is anything unsaved.")}
+          >
             Cancel
           </Button>
+          {savedId != null && !editing && (
+            <span className="text-xs text-muted-foreground">
+              Saved. Further saves update it.
+            </span>
+          )}
         </div>
       </div>
+
+      <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard your changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This editor has changes that have not been saved. Leaving now
+              throws them away.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction onClick={onCancel}>Discard</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

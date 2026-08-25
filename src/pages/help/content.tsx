@@ -1808,7 +1808,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-skills",
     title: "Skills",
     keywords:
-      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment",
+      "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment status dot colour legend key what do the colours mean green dark green amber red grey online offline reachable port check probe is this host up before i run sort online first collapse the rail hide the sidebar more room expand button pin a skill dropdown pinned card frozen top of the list favourite most used skill green tint highlight moved to another skill which one am i working on dropdown will not open first click does nothing two clicks to open the pinned list missing from the list disappeared from the list where did my skill go cannot move the pinned skill arrows greyed double click to pin double clicking a skill quicker way to pin pinning shows the flow flow does not follow the dropdown outline left behind highlight on the wrong skill ring stuck on a row nothing selected but still highlighted save and close save cancel discard unsaved changes stay in the editor keep editing first save creates it",
     body: (
       <>
         <Lead>
@@ -2078,12 +2078,122 @@ export const SECTIONS: HelpSection[] = [
               Amber notes below the steps are advice, not errors: they never stop
               you saving or running. Only the red list does that.
             </li>
+            <li>
+              <Nav>Save</Nav> writes the skill down and leaves you in the editor,
+              which is what you want while a long sequence is still being built.{" "}
+              <Nav>Save and close</Nav> does both. On a new skill the first{" "}
+              <Nav>Save</Nav> creates it and every one after that updates it, so
+              you cannot end up with three half-finished copies.
+            </li>
+            <li>
+              <Nav>Cancel</Nav> leaves without saving, and asks first if there is
+              anything unsaved to lose. If nothing has changed since you opened
+              it (or since your last save) it just closes.
+            </li>
+          </Bullets>
+          <H3>The rail</H3>
+          <Bullets>
+            <li>
+              Each host carries a status dot, and the key to the colours sits
+              under the list. <strong className="font-semibold">Green</strong> is
+              a terminal already open to that host.{" "}
+              <strong className="font-semibold">Dark green</strong> means the
+              last check found its SSH port answering, and{" "}
+              <strong className="font-semibold">amber</strong> means it did not.{" "}
+              <strong className="font-semibold">Red</strong> is a host nothing is
+              asking about: no terminal open, and checking switched off for it on
+              the Hosts page. Grey is the moment before the first answer arrives.
+            </li>
+            <li>
+              The checking is a TCP connection to the host's SSH port, the same
+              one a reconnecting tab uses, and it runs only while you are looking
+              at this page. It asks no more often than every 15 seconds even when
+              a host is set faster than that on the Hosts page: that setting is
+              for one pane watching one machine come back, and this is every
+              saved host at once.
+            </li>
+            <li>
+              <Nav>Sort: Online first</Nav> puts the hosts you could act on right
+              now at the top, which on a rail of forty machines is the quickest
+              way to answer "what can I actually run this on". The two greens
+              are ranked, not lumped together: hosts with a terminal already
+              open come first, then the ones whose port answered. Amber, red and
+              grey follow, level with each other, and within any group the order
+              is by name. A host still being checked sorts with the offline
+              ones, because it is not yet an answer.
+            </li>
+            <li>
+              The panel icon at the top of the rail collapses the whole thing,
+              hosts and skills together, leaving one button to bring it back.
+              Worth doing while you are building a long skill. It is remembered
+              across restarts.
+            </li>
           </Bullets>
           <H3>Organising them</H3>
           <Bullets>
             <li>
               The arrows on each skill in the rail move it up and down the list.
               The order is yours and it is remembered.
+            </li>
+            <li>
+              The card above the skill list pins one skill to the top of the
+              rail, where it stays while the list below scrolls: the one you run
+              twenty times a day should not be wherever the scroll happens to
+              be. Its title is a dropdown of every skill, so what the card is
+              showing and how you change it are the same control. It starts on
+              whichever skill is top of the list and follows that position, so
+              reordering moves it.
+            </li>
+            <li>
+              <strong className="font-semibold">
+                Double-click a skill in the list to pin it
+              </strong>
+              , which saves going up to the dropdown for the one already under
+              your pointer. Anywhere on the row will do except its row of
+              buttons, where a double-click is simply two presses of whatever
+              you hit.
+            </li>
+            <li>
+              Pinning a skill also shows it: change the dropdown, or
+              double-click a row, and that skill's flow map opens on the right.
+              Choosing what is pinned is choosing what you are working on, so
+              the panel goes with the choice rather than waiting for a second
+              click.
+            </li>
+            <li>
+              The faint green tint marks the skill in hand, which is always the
+              one on screen. It sits on the card while the card's skill is what
+              you are looking at, and goes down to a row when you open one from
+              the list, so the rail never shows two skills dressed as the
+              current one. Nothing is left marked behind it: the tint and the
+              highlight around the open skill are the same thing said twice, and
+              they move together.
+            </li>
+            <li>
+              While the tint is down in the list, the card's title takes two
+              clicks: the first brings the card's skill back on screen and the
+              tint with it, and only the second opens the list of skills. It is
+              a wide target sitting right above the skill list and a stray click
+              on it should not drop a menu over the rail. Once the card is the
+              one in hand it opens on a single click, as normal.
+            </li>
+            <li>
+              The pinned skill leaves the list below while it is on the card,
+              rather than appearing twice in a rail this narrow. Nothing else
+              about the list changes: no default moves, nothing is reordered,
+              and the arrows still step past whatever is actually on screen. The
+              one thing you cannot do is reorder the pinned skill itself. Point
+              the dropdown at something else and it rejoins the list, in its own
+              place, with its arrows back.
+            </li>
+            <li>
+              The card's title is a dropdown rather than a name you can click,
+              so the flow map also has a button: the small branching icon on the
+              card, at the left of its row of controls. It is the same thing
+              clicking a skill's name does in the list. Pinning already opens
+              the flow, so this is the way back to it after you have been into
+              the editor or over to a run: the dropdown is already pointing at
+              the skill, and pointing it there again does nothing.
             </li>
             <li>
               <Nav>Clone</Nav> starts a new skill from a copy of an existing one,
