@@ -512,7 +512,15 @@ function App() {
   // The one template that opens itself. Read once, at launch, and acted on
   // before anything is on screen: `launch` makes the tabs and stops, `connect`
   // goes on to open the shells.
+  //
+  // Latched, because "once per run" is the whole contract and an effect is not
+  // that on its own: StrictMode runs setup, cleanup and setup again on the same
+  // instance in development, and a template that opens twice is twelve tabs
+  // instead of six. The ref survives that, which `alive` alone does not.
+  const startupDone = useRef(false);
   useEffect(() => {
+    if (startupDone.current) return;
+    startupDone.current = true;
     let alive = true;
     startupTemplate()
       .then(async (t) => {
