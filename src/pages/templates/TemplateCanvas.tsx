@@ -7,7 +7,13 @@ import {
   loadRowFill,
   type RowFill,
 } from "@/lib/gridPrefs";
-import { defaultGridStyle, fitsTwoUp, tileSpan, twoUpThresholdPx } from "@/lib/gridShape";
+import {
+  TILE_BORDER_X,
+  defaultGridStyle,
+  fitsTwoUp,
+  tileSpan,
+  twoUpThresholdPx,
+} from "@/lib/gridShape";
 import { measureTerminalCell } from "@/lib/terminalCell";
 import { useHint } from "@/lib/status";
 import type { TemplateItem } from "@/lib/tauri/templates";
@@ -119,12 +125,31 @@ export function TemplateCanvas({
   // The boxes actually drawn: the template, plus the empty one the next session
   // goes in. A full template has nowhere for that to be, so it loses it.
   const boxCount = full ? items.length : items.length + 1;
+
+  // How many columns the real grid would use, worked out the way it works it
+  // out. A pinned count wins and is trimmed to the number of tiles; a pinned
+  // tile *width* means as many as fit, which this pane can answer because it is
+  // the same width class as the grid pane; otherwise it is the measured one or
+  // two.
+  const tileWidthPx =
+    gridPrefs.itemCols != null
+      ? Math.round(gridPrefs.itemCols * cell.cellW) + TILE_BORDER_X
+      : null;
   const cols =
     gridPrefs.cols != null
       ? Math.min(gridPrefs.cols, Math.max(boxCount, 1))
-      : twoUpFits
-        ? 2
-        : 1;
+      : tileWidthPx != null && paneW > 0
+        ? Math.max(1, Math.floor((paneW + gapPx) / (tileWidthPx + gapPx)))
+        : twoUpFits
+          ? 2
+          : 1;
+
+  // A dimension the operator pinned by hand is not one the short-row fill may
+  // stretch (D4), so the gap stays where a size was asked for. Said here as
+  // well as in the grid, or the preview would close a hole the real thing
+  // leaves open.
+  const spanCols = gridPrefs.itemCols == null;
+  const spanRows = gridPrefs.itemRows == null;
 
   const gridStyle = defaultGridStyle({
     count: boxCount,
@@ -168,8 +193,8 @@ export function TemplateCanvas({
               count: boxCount,
               cols,
               rowFill,
-              spanCols: true,
-              spanRows: true,
+              spanCols,
+              spanRows,
             });
             return (
               <div
@@ -270,8 +295,8 @@ export function TemplateCanvas({
                 count: boxCount,
                 cols,
                 rowFill,
-                spanCols: true,
-                spanRows: true,
+                spanCols,
+                spanRows,
               })}
               className={cn(
                 "flex min-h-0 flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-center text-muted-foreground",
