@@ -21,6 +21,16 @@ import {
   type GridPrefs,
   type RowFill,
 } from "@/lib/gridPrefs";
+import {
+  GRID_FLOOR_COLS,
+  GRID_MIN_TILE_ROWS,
+  TILE_BORDER_X,
+  TILE_BORDER_Y,
+  defaultGridStyle,
+  fitsTwoUp,
+  tileSpan as tileSpanFor,
+  twoUpThresholdPx,
+} from "@/lib/gridShape";
 import { measureTerminalCell } from "@/lib/terminalCell";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import type { TermSession } from "@/pages/terminals/session";
@@ -30,41 +40,13 @@ const LAYOUT_KEY = "terminal-layout";
  * look survives a restart. */
 const GRID_HIDE_HEADERS_KEY = "terminal-grid-hide-headers";
 
-/** Minimum tile width, in characters, when a fixed column count is set but the
- * item width is auto. Keeps a big column count from shaving tiles to slivers.
- * Past this the grid overflows and scrolls horizontally instead. */
-const GRID_FLOOR_COLS = 24;
-/** Narrowest a tile of the *default* grid may get before the grid gives up a
- * column and stacks instead, in characters. Deliberately far above
- * GRID_FLOOR_COLS: that one floors a column count the operator pinned by hand,
- * and what they asked for should be honoured almost to the point of absurdity;
- * this one is the grid choosing on their behalf, so it should choose something
- * you can read. */
-const GRID_MIN_TILE_COLS = 48;
-/** Slack over the two-column threshold before the second column comes back.
- * Dropping one removes the pane's vertical scrollbar, which widens the content
- * box by roughly this much, and without the margin that alone could put the
- * pane back over the line and the layout would sit there flipping. */
-const GRID_COLS_HYSTERESIS_PX = 16;
-/** Per-tile chrome added to the character-derived pixel size: the 1px border on
- * each side (X), and the border plus the grid pane header (Y). Approximate: fit
- * rounds a container to whole cells, so the result lands within ~1 col/row. */
-export const TILE_BORDER_X = 2;
-export const TILE_BORDER_Y = 2;
-
-/** Legible minimum tile height, in rows **of the terminal font**. Rows fill the
- * pane when few (so a maximized window has no dead space) but never shrink
- * below this, overflowing to a vertical scroll when many.
- *
- * Deliberately not a rem length. `rem` follows the *app* font size (see
- * UiPrefsProvider, which writes it onto the root element) and a terminal cell
- * does not, so a tile floored in rem and a row track floored in px drift apart
- * the moment the app font leaves 16px: at 20px the tile's min-height was 320px
- * inside a 256px track, and since the minimum of a `minmax()` is a fixed length
- * the track never grew to hold it. Every tile spilled 64px into the row below
- * and the error accumulated down the grid, so the tiles overlapped. One number,
- * computed from the metrics it is actually about, cannot do that. */
-const GRID_MIN_TILE_ROWS = 13;
+/* The tile geometry these two use (minimum widths, the border allowance, the
+ * two-up threshold and the hysteresis on it) lives in lib/gridShape, because
+ * the Templates editor draws a preview of the same grid and a second copy of
+ * this arithmetic would eventually disagree with this one. Re-exported here so
+ * useGridResize, which converts a dragged pixel size back into characters, has
+ * not had to learn a new import. */
+export { TILE_BORDER_X, TILE_BORDER_Y };
 
 /** The real height of a tile's title bar. Also not a constant: the header is
  * `py-1` plus a `text-sm` line box plus 3px of border, all of which scale with
@@ -402,9 +384,7 @@ export function useGridLayout({
   // tiles at the floor, the gap between them, and the pane's own `p-2` on both
   // sides, because `clientWidth` counts padding in.
   const [twoUpFits, setTwoUpFits] = useState(true);
-  const twoUpThreshold =
-    2 * (Math.round(GRID_MIN_TILE_COLS * cell.cellW) + TILE_BORDER_X) +
-    3 * gapPx;
+  const twoUpThreshold = twoUpThresholdPx(cell.cellW, gapPx);
   // Adjusted during render rather than in an effect: the pane's measured width
   // arrives from a ResizeObserver, and deciding the column count a frame later
   // means laying the grid out once at the old count and then again, which is a
@@ -419,9 +399,7 @@ export function useGridLayout({
   // render-phase dispatch instead re-runs the component unconditionally, caps
   // at 25 passes and throws "Too many re-renders". A functional updater that
   // returns the same boolean does not save you; it is never consulted in time.
-  const wantsTwoUp = twoUpFits
-    ? paneW >= twoUpThreshold
-    : paneW >= twoUpThreshold + GRID_COLS_HYSTERESIS_PX;
+  const wantsTwoUp = fitsTwoUp(paneW, twoUpThreshold, twoUpFits);
   if (paneW !== 0 && wantsTwoUp !== twoUpFits) setTwoUpFits(wantsTwoUp);
 
   // The real column count, for both the layout and the short-row fill, which
@@ -437,36 +415,24 @@ export function useGridLayout({
   }, [gridMode, pinnedCols, customGrid, gridPrefs.itemCols, twoUpFits]);
 
   const gridStyle = useMemo<React.CSSProperties | undefined>(() => {
-    // The default (auto/auto/auto) grid at three or more tiles. Its rows used
-    // to be left implicit, which meant
-    // `auto`: every row sized to the tile's own floor and stayed there.
-    // Growing the window then bought nothing but dead space below the last row,
-    // because nothing ever asked the rows to take it. Same track as the custom
-    // grid's auto height below, and for the same reason: rows share the pane
-    // when they fit, and hold the legible floor and scroll when they don't.
-    // The default grid. Its columns used to be a Tailwind class
-    // (`grid-cols-1 lg:grid-cols-2`) and so a media query on the *window*,
-    // which could not see the pane it was actually laying out. They are inline
-    // now, off the same measurement `effectiveCols` reports, so the tracks and
-    // the short-row fill can never be told different things.
+    // The default (auto/auto/auto) grid. Its columns used to be a Tailwind class
+    // (`grid-cols-1 lg:grid-cols-2`) and so a media query on the *window*, which
+    // could not see the pane it was actually laying out. They come off the same
+    // measurement `effectiveCols` reports, so the tracks and the short-row fill
+    // can never be told different things.
+    //
+    // The tracks themselves are in lib/gridShape, along with the short-row fill
+    // below, so the Templates editor's preview of a launch is laid out by the
+    // same arithmetic as the launch.
     if (!customGrid) {
       if (!gridMode) return undefined;
-      // One terminal fills the pane and two split it, whatever any Grid setting
-      // says: those are the two cases where the point is to see one or two
-      // machines as large as the pane allows. Two stack when the pane cannot
-      // hold them side by side, or when the top/bottom flip asks for it.
-      if (gridCount <= 1) {
-        return { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(0, 1fr)" };
-      }
-      if (gridCount === 2) {
-        return twoUpSplit === "cols" && twoUpFits
-          ? { gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gridTemplateRows: "minmax(0, 1fr)" }
-          : { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "repeat(2, minmax(0, 1fr))" };
-      }
-      return {
-        gridTemplateColumns: `repeat(${effectiveCols ?? 1}, minmax(0, 1fr))`,
-        gridAutoRows: `minmax(${tileMinH}px, 1fr)`,
-      };
+      return defaultGridStyle({
+        count: gridCount,
+        cols: effectiveCols,
+        twoUpSplit,
+        twoUpFits,
+        tileMinH,
+      });
     }
     const style: React.CSSProperties = {};
     const widthPx =
@@ -522,53 +488,22 @@ export function useGridLayout({
     return m;
   }, [gridTiles, displayIndex]);
 
-  // Filling a last row that isn't full. Three tiles in two columns leaves a
-  // tile-shaped hole at the bottom right, and this is what goes in it.
-  //
-  //  stretch:  the tiles on the short row widen to share the whole width. The
-  //            leftmost takes the odd column when it doesn't divide evenly.
-  //  tall:     the tile *above* the gap grows down into it, giving a
-  //            full-height tile in the last column. Only when exactly one space
-  //            is left: with a wider gap there is no single tile above it, so
-  //            it falls back to stretching.
-  //  gaps:     nothing. Every tile keeps its own cell.
-  //
-  // Placement is left to CSS grid's own auto-flow, which follows the `order`
-  // the tiles carry. A tall tile occupies its second row before the short row
-  // is reached, so the tiles after it fill in beside it without being told to.
-  //
-  // Both fills make a tile a different size from its neighbours, so neither is
-  // allowed to argue with a size you pinned (D4): a stretched tile is wider
-  // than the item width, a tall one is taller than the item height. Where the
-  // dimension is set by hand, the gap stays; what you asked for wins.
+  // Filling a last row that isn't full: see lib/gridShape's `tileSpan`, which
+  // is where the three fills and their reasoning live. The two flags below are
+  // this hook's contribution to it, and say the same thing twice on two axes: a
+  // dimension the operator pinned by hand is not one the fill may stretch (D4).
   const spanCols = gridPrefs.itemCols == null;
   const spanRows = gridPrefs.itemRows == null;
   const tileSpan = useCallback(
-    (slot: number): React.CSSProperties | undefined => {
-      if (rowFill === "gaps") return undefined;
-      const cols = effectiveCols;
-      if (cols == null || cols < 2 || gridCount <= cols) return undefined;
-      const rows = Math.ceil(gridCount / cols);
-      const lastRowStart = (rows - 1) * cols;
-      const lastRowCount = gridCount - lastRowStart;
-      const gap = cols - lastRowCount;
-      if (gap <= 0) return undefined;
-
-      if (rowFill === "tall" && gap === 1) {
-        // The tile directly above the hole: the last one on the row before.
-        return spanRows && slot === lastRowStart - 1
-          ? { gridRow: "span 2" }
-          : undefined;
-      }
-
-      if (!spanCols || slot < lastRowStart) return undefined;
-      // Share `cols` columns between `lastRowCount` tiles, the remainder going
-      // to the leftmost ones so the row ends flush.
-      const nth = slot - lastRowStart;
-      const span =
-        Math.floor(cols / lastRowCount) + (nth < cols % lastRowCount ? 1 : 0);
-      return span > 1 ? { gridColumn: `span ${span}` } : undefined;
-    },
+    (slot: number): React.CSSProperties | undefined =>
+      tileSpanFor({
+        slot,
+        count: gridCount,
+        cols: effectiveCols,
+        rowFill,
+        spanCols,
+        spanRows,
+      }),
     [rowFill, effectiveCols, gridCount, spanCols, spanRows],
   );
 
