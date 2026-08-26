@@ -14,6 +14,7 @@ pub mod omni_history;
 pub mod pty_history;
 pub mod settings;
 pub mod skills;
+pub mod templates;
 
 pub struct DbState(pub Mutex<Connection>);
 
@@ -255,6 +256,32 @@ const MIGRATIONS: &[&str] = &[
     // in that range and is not clamped into it: it is the one value that means
     // something other than a period, so the setter admits it by name.
     "ALTER TABLE hosts ADD COLUMN probe_interval_secs INTEGER;",
+    // 22: session templates. A saved arrangement of terminal sessions, opened
+    // again in one action from the Hosts tab and edited on the Templates tab.
+    //
+    // In the database rather than in localStorage with the launcher's other
+    // preferences, because a template is listed in a table, carries a flag the
+    // app reads before the first page is drawn, and has export and import. A
+    // shell profile has none of those and stays where it is.
+    //
+    // `items_json` is a JSON array of session references (host, local shell or
+    // saved profile) in the order they open, and it is the whole content of a
+    // template: no layout is stored, so the grid always follows the operator's
+    // own Grid settings. `startup` is 'off' | 'launch' | 'connect', and at most
+    // one row is ever anything but 'off' (see templates::clear_other_startups).
+    //
+    // A host reference holds label, hostname, port and username so a file can
+    // be matched on another machine. It is a reference, not a credential:
+    // nothing here is a secret, as with skills and command history (D-011).
+    "CREATE TABLE IF NOT EXISTS templates (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL,
+        color       TEXT NOT NULL DEFAULT '',
+        items_json  TEXT NOT NULL DEFAULT '[]',
+        startup     TEXT NOT NULL DEFAULT 'off',
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    );",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -676,6 +703,50 @@ mod tests {
             .map(|s| s.name)
             .collect();
         assert_eq!(names, vec!["Apple", "mango", "zebra"]);
+    }
+
+    #[test]
+    fn an_existing_database_gains_templates_without_losing_hosts() {
+        // Migration 22, on a database that already has host rows. Same shape as
+        // the skills upgrade above, and worth repeating for this one in
+        // particular: templates hold host *references*, so the thing an
+        // operator would most fear losing is exactly what this must not touch.
+        let mut conn = database_at_version(21);
+        conn.execute(
+            "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at)
+             VALUES ('web01', 'example.test', 22, 'joe', '#aabbcc', 'then', 'then')",
+            [],
+        )
+        .unwrap();
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        // The host is still there, unchanged.
+        let hosts_now = hosts::list_all(&conn).unwrap();
+        assert_eq!(hosts_now.len(), 1);
+        assert_eq!(hosts_now[0].label, "web01");
+        // And the new table works, holding a reference to that same host.
+        templates::create(
+            &mut conn,
+            &templates::TemplateInput {
+                name: "after upgrade".into(),
+                color: String::new(),
+                items: vec![templates::TemplateItem::Host {
+                    host_id: Some(hosts_now[0].id),
+                    reference: templates::HostRef {
+                        label: "web01".into(),
+                        hostname: "example.test".into(),
+                        port: 22,
+                        username: "joe".into(),
+                    },
+                }],
+                startup: templates::STARTUP_OFF.into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(templates::list(&conn).unwrap().len(), 1);
+        assert_eq!(hosts::list_all(&conn).unwrap().len(), 1);
     }
 
     #[test]

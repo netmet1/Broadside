@@ -279,6 +279,14 @@ pub fn run() {
             commands::skills::skill_send_input,
             commands::skills::skill_detach,
             commands::skills::skill_close_run,
+            commands::templates::list_templates,
+            commands::templates::get_template,
+            commands::templates::startup_template,
+            commands::templates::create_template,
+            commands::templates::update_template,
+            commands::templates::delete_template,
+            commands::templates::export_template,
+            commands::templates::read_template_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
