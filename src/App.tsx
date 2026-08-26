@@ -23,6 +23,18 @@ import {
 } from "@/components/ui/alert-dialog";
 import { isExitGuardEnabled } from "@/lib/exitGuard";
 import { HostsPage } from "@/pages/HostsPage";
+import { TemplatesPage, type TemplateFocus } from "@/pages/TemplatesPage";
+import {
+  planTemplateLaunch,
+  type LaunchPlan,
+  type LaunchSession,
+} from "@/lib/templateLaunch";
+import {
+  BUSY_TEMPLATE_ITEMS,
+  startupTemplate,
+  type Template,
+} from "@/lib/tauri/templates";
+import type { HelpSectionId } from "@/pages/help/sections";
 import { BroadcastPage } from "@/pages/BroadcastPage";
 import { TerminalsPage } from "@/pages/TerminalsPage";
 import {
@@ -53,6 +65,7 @@ import { StatusProvider } from "@/components/StatusProvider";
 import { UiPrefsProvider } from "@/components/UiPrefsProvider";
 import {
   type Host,
+  errorMessage,
   isCredentialsUnlocked,
   requiresMasterPassword,
 } from "@/lib/tauri/hosts";
@@ -78,6 +91,13 @@ function App() {
   );
   // Set when "Manage shortcuts…" is picked, Settings scrolls there on open.
   const [settingsFocus, setSettingsFocus] = useState<string | null>(null);
+  // Which help section a link on another tab asked for. One-shot: consumed by
+  // the Help page on the mount it causes, then cleared.
+  const [helpFocus, setHelpFocus] = useState<HelpSectionId | null>(null);
+  // Which template the Templates tab should load, from Add or Edit on the Hosts
+  // tab. Carries a serial rather than being cleared, so pressing Edit on the
+  // same row twice opens it twice.
+  const [templateFocus, setTemplateFocus] = useState<TemplateFocus | null>(null);
   // Latch: once Settings has been opened it stays mounted (hidden) like the
   // other heavy pages, so re-visiting it doesn't pay the ~5s cost of remounting
   // its large Radix tree every time. The lazy chunk still loads only on first
@@ -382,6 +402,148 @@ function App() {
     [sessions],
   );
 
+  /* ------------------------------------------------------------------ *
+   * Templates. A template is a list of references; opening one resolves
+   * them now (lib/templateLaunch) and then goes through exactly the same
+   * session-making path as the Hosts tab and the "+" launcher. There is
+   * one way to open a terminal in this application, and a template is not
+   * a second one.
+   * ------------------------------------------------------------------ */
+
+  /** Turn a resolved plan into tabs. `connect` false makes every pane mount
+   * onto its Reconnect button instead of opening a shell, which is what a
+   * template set to "open the tabs at startup" asks for. */
+  const launchTemplate = useCallback(
+    (sessions: LaunchSession[], place: "front" | "end", connect: boolean) => {
+      if (sessions.length === 0) return;
+      const made: TermSession[] = sessions.map((s) =>
+        s.type === "ssh"
+          ? {
+              id: crypto.randomUUID(),
+              type: "ssh" as const,
+              seq: nextSeq(),
+              host: s.host,
+              startClosed: !connect,
+            }
+          : {
+              id: crypto.randomUUID(),
+              type: "local" as const,
+              seq: nextSeq(),
+              shell: s.shell,
+              cwd: s.opts.cwd,
+              startupCommand: s.opts.startupCommand,
+              profileLabel: s.opts.profileLabel,
+              profileColor: s.opts.profileColor,
+              startClosed: !connect,
+            },
+      );
+      setSessions((prev) =>
+        place === "front" ? [...made, ...prev] : [...prev, ...made],
+      );
+      setActiveSessionId(made[0].id);
+      setPage("terminals");
+    },
+    [nextSeq],
+  );
+
+  /** A launch waiting on the operator: either because terminals are already
+   * open and the arrangement will not match, or because there is something
+   * about this one worth reading before it happens. */
+  const [pendingLaunch, setPendingLaunch] = useState<{
+    template: Template;
+    plan: LaunchPlan;
+    /** Something is already open, so the three-way placement question applies. */
+    placement: boolean;
+  } | null>(null);
+
+  const openTemplate = useCallback(
+    (template: Template) => {
+      void (async () => {
+        try {
+          const plan = await planTemplateLaunch(template.items);
+          if (plan.sessions.length === 0) {
+            toast.error(
+              plan.skipped.length > 0
+                ? `Nothing in "${template.name}" can open on this machine.`
+                : `"${template.name}" has no sessions in it yet.`,
+            );
+            return;
+          }
+          const placement = sessions.length > 0;
+          // Straight through when there is nothing to say: no terminals open,
+          // everything resolved, and not a wall of them. Anything else is worth
+          // one dialog, and only one.
+          if (
+            !placement &&
+            plan.skipped.length === 0 &&
+            plan.sessions.length <= BUSY_TEMPLATE_ITEMS
+          ) {
+            launchTemplate(plan.sessions, "end", true);
+            return;
+          }
+          setPendingLaunch({ template, plan, placement });
+        } catch (e) {
+          toast.error(errorMessage(e));
+        }
+      })();
+    },
+    [sessions.length, launchTemplate],
+  );
+
+  const editTemplate = useCallback((template: Template | null) => {
+    setTemplateFocus((f) => ({ template, n: (f?.n ?? 0) + 1 }));
+    setPage("templates");
+  }, []);
+
+  const openHelpAt = useCallback((section: HelpSectionId) => {
+    setHelpFocus(section);
+    setPage("help");
+  }, []);
+  // The request is a one-shot. Cleared as soon as the Help page has taken it,
+  // so coming back to the tab later lands where the reader left off rather
+  // than jumping to a section they read last week.
+  const clearHelpFocus = useCallback(() => setHelpFocus(null), []);
+
+  const openGridSettings = useCallback(() => {
+    setSettingsFocus("Grid");
+    setPage("settings");
+  }, []);
+
+  // The one template that opens itself. Read once, at launch, and acted on
+  // before anything is on screen: `launch` makes the tabs and stops, `connect`
+  // goes on to open the shells.
+  useEffect(() => {
+    let alive = true;
+    startupTemplate()
+      .then(async (t) => {
+        if (!alive || !t || t.startup === "off") return null;
+        const plan = await planTemplateLaunch(t.items);
+        return alive ? { t, plan } : null;
+      })
+      .then((ready) => {
+        if (!ready || ready.plan.sessions.length === 0) return;
+        launchTemplate(
+          ready.plan.sessions,
+          "end",
+          ready.t.startup === "connect",
+        );
+        if (ready.plan.skipped.length > 0) {
+          toast.warning(
+            `"${ready.t.name}" opened ${ready.plan.sessions.length} of ${
+              ready.t.items.length
+            } sessions. ${ready.plan.skipped[0]}`,
+          );
+        }
+      })
+      .catch(() => {
+        // A template that will not open must never stop the application
+        // starting. The tab is still there to look at.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [launchTemplate]);
+
   const openShortcutSettings = useCallback(() => {
     setSettingsFocus("shortcuts");
     setPage("settings");
@@ -556,8 +718,22 @@ function App() {
           onTerminateHost={terminateHost}
           connectedHostIds={connectedHostIds}
           openHostIds={openHostIds}
+          onEditTemplate={editTemplate}
+          onOpenTemplate={openTemplate}
+          onOpenHelp={openHelpAt}
         />
       )}
+      {/* Templates stays mounted so a half-built arrangement survives a trip to
+          the Hosts tab to check a hostname. */}
+      <div className={page === "templates" ? "block h-full" : "hidden"}>
+        <TemplatesPage
+          visible={page === "templates"}
+          connectedHostIds={connectedHostIds}
+          focus={templateFocus}
+          onOpenHelp={openHelpAt}
+          onOpenGridSettings={openGridSettings}
+        />
+      </div>
       {/* Broadcast stays mounted so output and host selection survive
           navigation (work-queue: "output history" persistence). */}
       <div className={page === "broadcast" ? "block h-full" : "hidden"}>
@@ -620,6 +796,7 @@ function App() {
           visible={page === "skills"}
           connectedHostIds={connectedHostIds}
           onAdoptTerminal={adoptTerminal}
+          onOpenHelp={openHelpAt}
         />
       </div>
       {/* SFTP stays mounted so an open browser session survives navigation. */}
@@ -649,7 +826,7 @@ function App() {
       {page === "settings" && !settingsReady && <SettingsLoading />}
       {page === "help" && (
         <Suspense fallback={null}>
-          <HelpPage />
+          <HelpPage focusSection={helpFocus} onFocusConsumed={clearHelpFocus} />
         </Suspense>
       )}
         <UnlockDialog
@@ -657,6 +834,87 @@ function App() {
           onOpenChange={setUnlockOpen}
           onUnlocked={() => {}}
         />
+        {/* Opening a template when there is something to say first.
+            Three buttons rather than two when terminals are already open,
+            because "replace" is not one of the answers: a launch never closes
+            anything, so the only question is which end of the strip it lands
+            on. The arrangement will not match the template either way, and
+            saying so is the point of asking. */}
+        <AlertDialog
+          open={pendingLaunch !== null}
+          onOpenChange={(o) => {
+            if (!o) setPendingLaunch(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Open &ldquo;{pendingLaunch?.template.name}&rdquo;?
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>
+                    This opens{" "}
+                    <span className="font-semibold text-foreground">
+                      {pendingLaunch?.plan.sessions.length ?? 0}
+                    </span>{" "}
+                    {pendingLaunch?.plan.sessions.length === 1
+                      ? "session"
+                      : "sessions"}
+                    , in the order they were arranged.
+                  </p>
+                  {pendingLaunch?.placement && (
+                    <p>
+                      {sessions.length}{" "}
+                      {sessions.length === 1 ? "terminal is" : "terminals are"}{" "}
+                      already open, so the grid will not look like the template
+                      did. Nothing is closed either way; choose which end the new
+                      tabs go on.
+                    </p>
+                  )}
+                  {(pendingLaunch?.plan.skipped.length ?? 0) > 0 && (
+                    <>
+                      <p className="font-medium text-foreground">
+                        {pendingLaunch?.plan.skipped.length} of them cannot open
+                        on this machine:
+                      </p>
+                      <ul className="list-disc space-y-0.5 pl-5 text-xs">
+                        {pendingLaunch?.plan.skipped.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              {pendingLaunch?.placement && (
+                <AlertDialogAction
+                  variant="outline"
+                  onClick={() => {
+                    const p = pendingLaunch;
+                    setPendingLaunch(null);
+                    if (p) launchTemplate(p.plan.sessions, "front", true);
+                  }}
+                >
+                  Add to the front
+                </AlertDialogAction>
+              )}
+              <AlertDialogAction
+                onClick={() => {
+                  const p = pendingLaunch;
+                  setPendingLaunch(null);
+                  if (p) launchTemplate(p.plan.sessions, "end", true);
+                }}
+              >
+                {pendingLaunch?.placement ? "Add to the end" : "Open"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         <AlertDialog open={exitConfirmOpen} onOpenChange={setExitConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>

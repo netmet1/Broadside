@@ -10,12 +10,15 @@ import {
   ArrowUpDownIcon,
   ChevronDownIcon,
   DownloadIcon,
+  LayoutTemplateIcon,
   ListFilterIcon,
   Loader2Icon,
   PencilIcon,
+  PlayIcon,
   PlugZapIcon,
   PlusIcon,
   SearchIcon,
+  ServerIcon,
   TagIcon,
   TerminalIcon,
   Trash2Icon,
@@ -51,6 +54,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { EmptyState } from "@/components/EmptyState";
 import { HostFormPanel } from "@/components/HostFormPanel";
 import { ImportHostsPanel } from "@/components/ImportHostsPanel";
 import { DeleteHostDialog } from "@/components/DeleteHostDialog";
@@ -81,6 +85,28 @@ import { useHostConnTest } from "@/pages/hosts/useHostConnTest";
 import { useHostSort } from "@/pages/hosts/useHostSort";
 import { useColumnResize } from "@/pages/hosts/useColumnResize";
 import { useHostTagFilter } from "@/pages/hosts/useHostTagFilter";
+import { TemplatesView } from "@/pages/hosts/TemplatesView";
+import {
+  deleteTemplate,
+  listTemplates,
+  type Template,
+} from "@/lib/tauri/templates";
+import {
+  HELP_HOSTS,
+  HELP_TEMPLATES,
+  type HelpSectionId,
+} from "@/pages/help/sections";
+import { cn } from "@/lib/utils";
+
+/** The Hosts tab has two lists in it, and which one you were looking at is
+ * worth remembering. A view preference about this machine, so localStorage
+ * alongside the column widths and the grid settings. */
+type HostsSide = "hosts" | "templates";
+const SIDE_KEY = "hosts-side";
+
+function loadSide(): HostsSide {
+  return localStorage.getItem(SIDE_KEY) === "templates" ? "templates" : "hosts";
+}
 
 export function HostsPage({
   onOpenTerminal,
@@ -88,6 +114,9 @@ export function HostsPage({
   onTerminateHost,
   connectedHostIds,
   openHostIds,
+  onEditTemplate,
+  onOpenTemplate,
+  onOpenHelp,
 }: {
   onOpenTerminal: (host: Host) => void;
   /** Open terminal tabs for several hosts at once (multi-select). */
@@ -98,9 +127,33 @@ export function HostsPage({
   connectedHostIds: Set<number>;
   /** Hosts with at least one open terminal tab (for the already-open guards). */
   openHostIds: Set<number>;
+  /** Switch to the Templates tab with this template loaded, or a new one. */
+  onEditTemplate: (template: Template | null) => void;
+  /** Open every session in this template. The App layer owns what happens when
+   * terminals are already open, because it is the one that knows. */
+  onOpenTemplate: (template: Template) => void;
+  onOpenHelp: (section: HelpSectionId) => void;
 }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
+  // Which side of the Hosts | Templates toggle is showing. Persisted, because
+  // an operator who works from templates should not have to pick the same side
+  // of the same switch on every launch.
+  const [side, setSide] = useState<HostsSide>(loadSide);
+  const chooseSide = useCallback((next: HostsSide) => {
+    setSide(next);
+    localStorage.setItem(SIDE_KEY, next);
+  }, []);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
+  // Which one Open would open. A radio rather than a checkbox: see
+  // hosts/TemplatesView.
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(
+    null,
+  );
+  const [deletingTemplate, setDeletingTemplate] = useState<Template | null>(
+    null,
+  );
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<Host | null>(null);
@@ -265,11 +318,17 @@ export function HostsPage({
   };
 
   usePageStatus(
-    loading
-      ? null
-      : (tagFilterActive || labelFilterActive) && visibleHosts.length !== hosts.length
-        ? `Showing ${visibleHosts.length} of ${hosts.length} hosts (filtered) · ${connectedCount} connected`
-        : `Showing ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"} · ${connectedCount} connected`,
+    side === "templates"
+      ? templatesLoading
+        ? null
+        : `Showing ${templates.length} ${
+            templates.length === 1 ? "template" : "templates"
+          }`
+      : loading
+        ? null
+        : (tagFilterActive || labelFilterActive) && visibleHosts.length !== hosts.length
+          ? `Showing ${visibleHosts.length} of ${hosts.length} hosts (filtered) · ${connectedCount} connected`
+          : `Showing ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"} · ${connectedCount} connected`,
     !formOpen && !importOpen,
   );
 
@@ -303,6 +362,48 @@ export function HostsPage({
       alive = false;
     };
   }, []);
+
+  // The templates list. Its own load rather than a field on the hosts one: the
+  // two are independent, and a template read that fails must not cost the page
+  // its machines.
+  const reloadTemplates = useCallback(() => {
+    listTemplates()
+      .then(setTemplates)
+      .catch((e) => toast.error(errorMessage(e)))
+      .finally(() => setTemplatesLoading(false));
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    listTemplates()
+      .then((list) => {
+        if (alive) setTemplates(list);
+      })
+      .catch((e) => toast.error(errorMessage(e)))
+      .finally(() => {
+        if (alive) setTemplatesLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const runDeleteTemplate = useCallback(async () => {
+    const target = deletingTemplate;
+    setDeletingTemplate(null);
+    if (!target) return;
+    try {
+      await deleteTemplate(target.id);
+      setSelectedTemplateId((id) => (id === target.id ? null : id));
+      reloadTemplates();
+      toast.success(`Deleted "${target.name}"`);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  }, [deletingTemplate, reloadTemplates]);
+
+  const selectedTemplate =
+    templates.find((t) => t.id === selectedTemplateId) ?? null;
 
   const openAdd = () => {
     setEditing(null);
@@ -463,12 +564,84 @@ export function HostsPage({
 
             The heading is not a control, so it takes the hint on hover only;
             the sidebar button is the one that answers to Tab. */}
-        <h1
-          className="min-w-0 truncate font-heading text-xl font-semibold tracking-tight"
-          {...hint(HOSTS_NAV_HINT)}
-        >
-          Hosts
-        </h1>
+        <div className="flex min-w-0 items-center gap-3">
+          <h1
+            className="min-w-0 truncate font-heading text-xl font-semibold tracking-tight"
+            {...hint(HOSTS_NAV_HINT)}
+          >
+            Hosts
+          </h1>
+          {/* Two lists on one tab, switched the way the Terminals rail switches
+              between Tabs and Grid. They belong together: a template is an
+              arrangement of the machines in the other list, and keeping it on
+              its own tab would mean two places to go to answer "what have I got
+              and how do I open it". The Templates *editor* is elsewhere; this
+              is the list. */}
+          <div
+            role="group"
+            aria-label="Hosts or templates"
+            className="flex shrink-0 items-center gap-0.5 rounded-md border border-input p-0.5"
+          >
+            <button
+              type="button"
+              onClick={() => chooseSide("hosts")}
+              aria-pressed={side === "hosts"}
+              className={cn(
+                "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
+                side === "hosts"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              {...hint("The machines Broadside knows about.")}
+            >
+              <ServerIcon className="h-3.5 w-3.5" />
+              Hosts
+            </button>
+            <button
+              type="button"
+              onClick={() => chooseSide("templates")}
+              aria-pressed={side === "templates"}
+              className={cn(
+                "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
+                side === "templates"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              {...hint(
+                "Saved arrangements of sessions. Pick one and press Open to launch the whole set.",
+              )}
+            >
+              <LayoutTemplateIcon className="h-3.5 w-3.5" />
+              Templates
+            </button>
+          </div>
+        </div>
+        {side === "templates" ? (
+          <div className="flex shrink-0 gap-2">
+            <Button
+              variant="outline"
+              onClick={() => selectedTemplate && onOpenTemplate(selectedTemplate)}
+              disabled={!selectedTemplate}
+              aria-label="Open template"
+              {...hint(
+                selectedTemplate
+                  ? `Open every session in "${selectedTemplate.name}", in order, on the Terminals tab`
+                  : "Pick a template first. Open launches the whole arrangement at once."
+              )}
+            >
+              <PlayIcon />
+              {compact ? "" : "Open"}
+            </Button>
+            <Button
+              onClick={() => onEditTemplate(null)}
+              aria-label="New template"
+              {...hint("Build a new arrangement on the Templates tab")}
+            >
+              <PlusIcon />
+              {!compact && "New template"}
+            </Button>
+          </div>
+        ) : (
         <div className="flex shrink-0 gap-2">
           {/* Ctrl-f style label search over the table, mirroring the broadcast
               rails' "Find by label…" box. Narrows the table with the tag filter. */}
@@ -565,11 +738,51 @@ export function HostsPage({
             {!compact && "Add host"}
           </Button>
         </div>
+        )}
       </div>
 
-      {/* Neutralize the shadcn Table's own overflow wrapper so THIS div is the
+      {side === "templates" ? (
+        templatesLoading || templates.length > 0 ? (
+          <TemplatesView
+            templates={templates}
+            loading={templatesLoading}
+            selectedId={selectedTemplateId}
+            onSelect={setSelectedTemplateId}
+            onEdit={onEditTemplate}
+            onDelete={setDeletingTemplate}
+          />
+        ) : (
+          <EmptyState
+            icon={LayoutTemplateIcon}
+            title="Templates"
+            actionLabel="Create your first template"
+            onAction={() => onEditTemplate(null)}
+            actionHint="Build an arrangement of sessions on the Templates tab"
+            description="A template is a saved arrangement of terminal sessions. Build it once, then open the whole set from here in a single action."
+            helpSection={HELP_TEMPLATES}
+            onOpenHelp={onOpenHelp}
+          />
+        )
+      ) : !loading && hosts.length === 0 ? (
+        /* Nothing here yet, so nothing to put in a table. The headings used to
+           stay up over an empty grid with one line of text under them, which
+           made a fresh install look like a page that had failed to load rather
+           than one nobody had used. Only what is *drawn* changes: the hosts are
+           read, saved and deleted exactly as before. */
+        <EmptyState
+          icon={ServerIcon}
+          title="Hosts"
+          actionLabel="Add your first host"
+          onAction={openAdd}
+          actionHint="Add a single host through the form"
+          description="A host is a machine Broadside can reach over SSH: an address, a user name and how to authenticate. Everything else in the application works from this list."
+          helpSection={HELP_HOSTS}
+          onOpenHelp={onOpenHelp}
+        />
+      ) : (
+      /* Neutralize the shadcn Table's own overflow wrapper so THIS div is the
           single scroll container for both axes, gives a viewport-pinned
-          horizontal scrollbar and lets the header stick on vertical scroll. */}
+          horizontal scrollbar and lets the header stick on vertical scroll. */
       <div
         ref={tableScrollRef}
         className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible"
@@ -767,13 +980,10 @@ export function HostsPage({
                   Loading…
                 </TableCell>
               </TableRow>
-            ) : hosts.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center text-sm text-muted-foreground">
-                  No hosts yet. Click <span className="font-medium">Add host</span> to create one.
-                </TableCell>
-              </TableRow>
             ) : visibleHosts.length === 0 ? (
+              /* Filtered down to nothing. There is no "no hosts at all" case
+                 here any more: with an empty list the table is not drawn, and
+                 the centred empty state is on screen instead. */
               <TableRow>
                 <TableCell colSpan={10} className="text-center text-sm text-muted-foreground">
                   No hosts match the current filter.{" "}
@@ -989,6 +1199,38 @@ export function HostsPage({
           </TableBody>
         </Table>
       </div>
+      )}
+
+      {/* Deleting a template from the list beside the hosts. Its own dialog
+          rather than the host one: nothing here is a machine, and the wording
+          that matters is which of the two is going. */}
+      <AlertDialog
+        open={deletingTemplate !== null}
+        onOpenChange={(o) => {
+          if (!o) setDeletingTemplate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete &ldquo;{deletingTemplate?.name}&rdquo;?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The arrangement goes. The hosts, shells and profiles it names are
+              not touched, and neither is anything currently open.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => void runDeleteTemplate()}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* #9: per-host view of the columns hidden from the table. */}
       <AlertDialog

@@ -276,6 +276,17 @@ type Props = {
    * once on the adopting mount so the run's history is visible (adoption binds
    * to the live stream going forward; the backend does not replay the past). */
   adoptSnapshot?: string;
+  /** Mount without connecting: the pane goes straight to the closed banner and
+   * waits on Reconnect.
+   *
+   * What a template set to "open the tabs at startup" opens with, so an
+   * unattended launch makes no connections of its own. It reuses the closed
+   * phase rather than inventing a fourth not-connected state, which means the
+   * pane already has the button, the reachability pill and the wording for
+   * "there is no shell here yet"; the only thing that differs is that there
+   * never was one. First mount only: Reconnect bumps the retry nonce, and from
+   * there this connects like any other pane. */
+  startClosed?: boolean;
 };
 
 /** One xterm.js pane bound to one backend PTY session. Stays mounted (and
@@ -299,6 +310,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       onPhaseChange,
       adoptExisting,
       adoptSnapshot,
+      startClosed,
     }: Props,
     searchHandleRef,
   ) {
@@ -881,6 +893,17 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       const term = termRef.current;
       const fit = fitRef.current;
       if (!term || !fit) return;
+      // Opened by a template that was told to make the tabs and stop there.
+      // Only on the first mount: a Reconnect (retryNonce > 0) is the operator
+      // asking for the shell, and from there this is an ordinary connect.
+      if (startClosed && retryNonce === 0) {
+        setPhase({
+          kind: "closed",
+          message: "not connected yet",
+          clean: true,
+        });
+        return;
+      }
       setPhase({ kind: "connecting" });
       if (containerRef.current?.offsetParent) fit.fit();
       // Make sure the pty:data listener is live before the backend can emit, so

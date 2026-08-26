@@ -114,16 +114,12 @@ export function TemplatesPage({
   focus,
   onOpenHelp,
   onOpenGridSettings,
-  onTemplatesChanged,
 }: {
   visible: boolean;
   connectedHostIds: Set<number>;
   focus: TemplateFocus | null;
   onOpenHelp: (section: HelpSectionId) => void;
   onOpenGridSettings: () => void;
-  /** A template was created, saved or deleted, so the Hosts tab's list is now
-   * out of date. */
-  onTemplatesChanged: () => void;
 }) {
   const hint = useHint();
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -283,7 +279,6 @@ export function TemplatesPage({
             : await updateTemplate(d.id, input);
         openDraft(draftOf(saved));
         await reload();
-        onTemplatesChanged();
         toast.success(
           d.id == null ? `Created "${saved.name}"` : `Saved "${saved.name}"`,
         );
@@ -293,7 +288,7 @@ export function TemplatesPage({
         setSaving(false);
       }
     },
-    [openDraft, reload, onTemplatesChanged],
+    [openDraft, reload],
   );
 
   const requestSave = useCallback(() => {
@@ -409,12 +404,11 @@ export function TemplatesPage({
       setDraft(null);
       setBaseline("");
       await reload();
-      onTemplatesChanged();
       toast.success(`Deleted "${target.name}"`);
     } catch (e) {
       toast.error(errorMessage(e));
     }
-  }, [deleting, reload, onTemplatesChanged]);
+  }, [deleting, reload]);
 
   const closeEditor = useCallback(() => {
     setDiscarding(false);

@@ -77,6 +77,7 @@ import {
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { GridSection } from "@/pages/settings/GridSection";
 import { CustomTerminalsSection } from "@/pages/settings/CustomTerminalsSection";
+import { DismissedWarnings } from "@/pages/settings/DismissedWarnings";
 import { SkillsSection } from "@/pages/settings/SkillsSection";
 import { useAdminLock } from "@/pages/settings/useAdminLock";
 import { useAppearance } from "@/pages/settings/useAppearance";
@@ -511,12 +512,37 @@ export function SettingsPage({
     };
   }, [syncPerfFromSettings, syncAppearanceFromSettings, onReady]);
 
-  // Deep-link scroll (e.g. "Manage shortcuts…" from Broadcast/Terminals).
+  // Deep-link scroll (e.g. "Manage shortcuts…" from Broadcast/Terminals, or
+  // "Grid settings" from the Templates canvas).
+  //
+  // Two ways in, because the shortcuts one predates the section ids and holds
+  // its own ref. Anything else is addressed by section title, which is what the
+  // jump-to dropdown already uses, so a new deep link needs no code here at
+  // all: it passes the title and lands.
   useEffect(() => {
-    if (focusSection === "shortcuts" && settings) {
+    if (!focusSection || !settings) return;
+    if (focusSection === "shortcuts") {
       shortcutsSectionRef.current?.scrollIntoView({ behavior: "smooth" });
       onFocusConsumed?.();
+      return;
     }
+    if (!SECTION_TITLES.includes(focusSection)) return;
+    // Two frames, like the restore above: the sections below this one are
+    // revealed progressively, and scrolling before the commit lands puts the
+    // target somewhere it is about to move from.
+    //
+    // The request is consumed *after* the scroll, not before. Consuming it
+    // first clears the prop, which re-runs this effect, whose cleanup then
+    // cancels the frame that was going to do the scrolling.
+    const outer = requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        document
+          .getElementById(sectionDomId(focusSection))
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        onFocusConsumed?.();
+      }),
+    );
+    return () => cancelAnimationFrame(outer);
   }, [focusSection, settings, onFocusConsumed]);
 
   const probe = settings?.local_probe ?? null;
@@ -1641,6 +1667,8 @@ export function SettingsPage({
           disable; Takes effect next time a new terminal is opened. Disabling
           does not delete stored passwords.
         </p>
+
+        <DismissedWarnings />
 
         {/* Admin lock (opt-in), gates the toggle above, credential editing and
             Reset. Authorization only: it stores no key, so a lost passcode never

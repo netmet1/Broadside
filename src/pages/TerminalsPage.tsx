@@ -2743,6 +2743,7 @@ export function TerminalsPage({
                   onPhaseChange={onPhaseChange}
                   adoptExisting={s.type === "ssh" && s.adopted === true}
                   adoptSnapshot={s.type === "ssh" ? s.adoptSnapshot : undefined}
+                  startClosed={s.startClosed === true}
                 />
               </div>
 

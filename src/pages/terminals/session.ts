@@ -31,6 +31,11 @@ export type SshTermSession = {
   /** The skill pane's scrollback as an ANSI string, seeded into the terminal on
    * its first (adopting) mount so the run's history carries over. */
   adoptSnapshot?: string;
+  /** Open the tab but not the shell: the pane mounts straight onto its closed
+   * banner, waiting on Reconnect. What a template set to "open the tabs at
+   * startup" produces, so an unattended launch makes no connections. First
+   * mount only; pressing Reconnect opens for real. */
+  startClosed?: boolean;
 };
 
 export type LocalTermSession = {
@@ -52,6 +57,8 @@ export type LocalTermSession = {
    * rest of this session. Deliberately not persisted: session ids are fresh
    * UUIDs every run, so a stored name would have nothing to reattach to. */
   title?: string;
+  /** Open the tab but not the shell. See {@link SshTermSession.startClosed}. */
+  startClosed?: boolean;
 };
 
 export type TermSession = SshTermSession | LocalTermSession;
