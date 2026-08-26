@@ -24,6 +24,11 @@
 import { type ReactNode } from "react";
 
 import { ShortcutMatrix, WarningMatrix } from "@/pages/help/matrices";
+import {
+  HELP_HOSTS,
+  HELP_SKILLS,
+  HELP_TEMPLATES,
+} from "@/pages/help/sections";
 
 /** Stable DOM id for a glossary entry, used by inline term links. */
 function glossaryId(term: string): string {
@@ -406,7 +411,7 @@ export const SECTIONS: HelpSection[] = [
     ),
   },
   {
-    id: "help-sec-hosts",
+    id: HELP_HOSTS,
     title: "Hosts",
     keywords:
       "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first",
@@ -594,6 +599,160 @@ export const SECTIONS: HelpSection[] = [
               Drag the separator on the right edge of the <Nav>Tag</Nav> column to
               resize it, or double-click that edge to fit it to the contents. The
               width is remembered.
+            </li>
+          </Bullets>
+        </Detail>
+      </>
+    ),
+  },
+  {
+    id: HELP_TEMPLATES,
+    title: "Templates",
+    keywords:
+      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup radio button pick one open button add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list hosts tab toggle switch between hosts and templates nothing launches from the templates tab why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group",
+    body: (
+      <>
+        <Lead>
+          A <Nav>template</Nav> is a saved arrangement of terminal sessions.
+          Build it once, and one action opens the whole set: four servers and a
+          local shell, in the order you want them, without opening five things
+          by hand every morning.
+        </Lead>
+        <p>
+          It lives in two places, and the split is deliberate. The{" "}
+          <Nav>Templates</Nav> tab on the left rail is the editor and only the
+          editor: nothing launches from it. The <Nav>Hosts</Nav> tab has a{" "}
+          <Nav>Hosts</Nav> | <Nav>Templates</Nav> switch at the top, and the
+          Templates side is the list you open one from. So the screen you build
+          on has no button that opens twelve connections, and the screen you
+          launch from has no way to change what it is about to open.
+        </p>
+        <Detail>
+          <H3>Building one</H3>
+          <Bullets>
+            <li>
+              The rail on the left of the editor has four groups: your saved{" "}
+              <Nav>hosts</Nav>, the <Nav>local shells</Nav> this machine has,
+              your <Nav>custom terminals</Nav> (Git Bash and the like) and your
+              saved <Nav>shell profiles</Nav>. Drag a row into a box, or click
+              it to add it at the end.
+            </li>
+            <li>
+              Sorting applies <span className="font-medium">inside</span> each
+              group and never across them, so a sort never puts a WSL distro
+              between two hosts. Hosts take the whole sort list; shells and
+              custom terminals keep the order the launcher gives them; profiles
+              sort by name only.
+            </li>
+            <li>
+              A shell hidden in <Nav>Settings</Nav>, <Nav>Appearance</Nav>,{" "}
+              <Nav>Local shells in the launcher</Nav> is hidden here too.
+              Profiles ignore that list, exactly as the{" "}
+              <Nav>plus button</Nav> on the Terminals tab does.
+            </li>
+            <li>
+              Drag a box onto another to change the order, and use the small{" "}
+              <Nav>x</Nav> on a box to take that session out. The number in the
+              corner is the order it opens in.
+            </li>
+            <li>
+              The same host may appear more than once. Two tabs on one machine
+              is an ordinary way to work.
+            </li>
+          </Bullets>
+          <H3>The preview is not a picture</H3>
+          <p>
+            The boxes are laid out by your own <Nav>Settings</Nav>,{" "}
+            <Nav>Grid</Nav> values: the column count, and what happens to a
+            short last row. It is the same arithmetic the{" "}
+            <SectionLink id="help-sec-terminals">Terminals</SectionLink> grid
+            uses, so what you see is what launching will build. Change the
+            column count in Settings and the canvas changes with it.
+          </p>
+          <p>
+            The empty box with the <Nav>plus</Nav> is part of the grid, because
+            where the next session lands is the thing worth seeing before you
+            drop it. That means the canvas draws one more box than the template
+            holds, which is why the line underneath says how many sessions will
+            actually open.
+          </p>
+          <p>
+            A template stores <span className="font-medium">only</span> the
+            ordered list. No layout is saved: not tabs versus grid, not a column
+            count, not a tile size. That is what lets the same template look
+            right on a laptop and on a wall of monitors, and it means a template
+            can never argue with your own grid settings.
+          </p>
+          <H3>Opening one</H3>
+          <Bullets>
+            <li>
+              On the <Nav>Hosts</Nav> tab, switch to <Nav>Templates</Nav>, pick
+              one with its radio button and press <Nav>Open</Nav>. It opens
+              every session in the saved order and takes you to the Terminals
+              tab.
+            </li>
+            <li>
+              A radio rather than tick boxes, because opening two arrangements
+              at once is not a thing anybody means to do.
+            </li>
+            <li>
+              With terminals already open you are asked where the new tabs go:{" "}
+              <Nav>add to the front</Nav>, <Nav>add to the end</Nav>, or{" "}
+              <Nav>cancel</Nav>. There is no replace. A launch never closes
+              anything.
+            </li>
+            <li>
+              Anything the template names that this machine does not have (a
+              host that has been deleted, a WSL distro that has been removed) is
+              listed in that dialog and skipped. The rest still opens.
+            </li>
+          </Bullets>
+          <H3>Opening at startup</H3>
+          <p>
+            One template, at most, can open itself when Broadside starts. The
+            setting is in the editor top bar and has two on positions:
+          </p>
+          <Bullets>
+            <li>
+              <Nav>Open the tabs at startup</Nav> makes the tabs and stops. Every
+              pane sits on its <Nav>Reconnect</Nav> button, and nothing connects
+              until you say so.
+            </li>
+            <li>
+              <Nav>Open and connect at startup</Nav> goes on to open the shells.
+              That means live sessions on those machines from the moment the
+              application launches, before anyone has looked at the screen, so
+              saving it asks you to confirm.
+            </li>
+          </Bullets>
+          <p>
+            Choosing it on one template takes it off whichever one had it.
+            Warnings you turn off with a{" "}
+            <em>do not warn me about this again</em> box are listed in{" "}
+            <SectionLink id="help-sec-security">Security</SectionLink>, where
+            one button puts them all back.
+          </p>
+          <H3>Export and import</H3>
+          <Bullets>
+            <li>
+              An exported file holds each host by label, address, port and user
+              name. No credentials are written to it, and no internal ids: those
+              name a row in one database and nothing anywhere else.
+            </li>
+            <li>
+              Importing matches those fields against this machine&apos;s hosts.
+              Anything that does not match arrives as a named box for you to
+              point at a real host, and the file always imports: an
+              unresolvable reference is never a reason to refuse it.
+            </li>
+            <li>
+              Import never creates or changes a host, and a file can never
+              arrive already set to open at startup.
+            </li>
+            <li>
+              Local shells and profiles are per machine by nature. They travel
+              with their names, so a template made elsewhere tells you what it
+              wanted even when this PC has no such shell.
             </li>
           </Bullets>
         </Detail>
@@ -1805,7 +1964,7 @@ export const SECTIONS: HelpSection[] = [
     ),
   },
   {
-    id: "help-sec-skills",
+    id: HELP_SKILLS,
     title: "Skills",
     keywords:
       "skill skills sequence step steps run expect send wait pattern regex branch ok fail match no match stop next start at renumber interactive timeout pause flow map diagram overview orphan loop transfer handoff to terminal root inputs parameters placeholder import export json reorder move up down builder editor pencil go to a step on timeout goto recovery retry jump timeout branch clone copy duplicate variant collapse expand fold steps step log narration progress which step of how many repeat cap runaway loop limit stop after runs times post to skill log log step note warning error message cancelled itself reason why self documenting rerun run again repeat run active step highlight tint selected scroll to new step infinite loop unlimited no cap forever never ends dangerous run until stopped jump go to step button follow branch scroll to target orange tint skill file version newer broadside cannot import older app unknown variant malformed take over takeover give me the keyboard type into a running host let me drive interrupt a skill mid run step in manually cannot type nothing happens when i type keyboard locked pause it now after this step waiting printf bsdone marker junk after my command what is that ugly line completion marker hidden quiet shell integration echo off stty clean pane blink flicker flash stty -echo appears briefly narrow pane long prompt leftover fragment status dot colour legend key what do the colours mean green dark green amber red grey online offline reachable port check probe is this host up before i run sort online first collapse the rail hide the sidebar more room expand button pin a skill dropdown pinned card frozen top of the list favourite most used skill green tint highlight moved to another skill which one am i working on dropdown will not open first click does nothing two clicks to open the pinned list missing from the list disappeared from the list where did my skill go cannot move the pinned skill arrows greyed double click to pin double clicking a skill quicker way to pin pinning shows the flow flow does not follow the dropdown outline left behind highlight on the wrong skill ring stuck on a row nothing selected but still highlighted save and close save cancel discard unsaved changes stay in the editor keep editing first save creates it",
