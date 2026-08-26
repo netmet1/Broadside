@@ -28,7 +28,7 @@ import {
   planTemplateLaunch,
   type LaunchPlan,
   type LaunchSession,
-} from "@/lib/templateLaunch";
+} from "@/pages/templates/launch";
 import {
   BUSY_TEMPLATE_ITEMS,
   startupTemplate,

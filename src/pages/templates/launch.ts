@@ -10,6 +10,11 @@
  * turns that into tabs through the same path the Hosts tab and the "+" launcher
  * already use. There is one way to open a session in this application and a
  * template is not a second one.
+ *
+ * Beside the editor rather than in `lib/`, because it resolves items the way
+ * the canvas draws them and describes a session the way the Terminals page
+ * opens one. Nothing under `lib/` reaches into `pages/`, and this would have
+ * been the first thing to.
  */
 
 import { listHosts, type Host } from "@/lib/tauri/hosts";
