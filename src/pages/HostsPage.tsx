@@ -67,9 +67,9 @@ import {
   HIDEABLE_COLUMNS,
   HOST_COLUMNS_EVENT,
   loadColumnOrder,
-  reorderColumns,
   saveColumnOrder,
 } from "@/lib/hostColumns";
+import { useColumnDrag } from "@/lib/columnDrag";
 import { parseTags } from "@/lib/hostTags";
 import { ShellChip } from "@/components/ShellChip";
 import { HOSTS_NAV_HINT } from "@/components/AppShell";
@@ -170,10 +170,10 @@ export function HostsPage({
   // columns are not in it: the checkbox and swatch are the row's grip and the
   // actions are its tail, so they bracket whatever order the rest are in.
   const [colOrder, setColOrder] = useState(loadColumnOrder);
-  /** The column being dragged, and the one the cursor is over. Both null when
-   * nothing is being dragged, which is also what hides the drop marker. */
-  const [dragCol, setDragCol] = useState<string | null>(null);
-  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  const { dragProps, isTarget } = useColumnDrag(colOrder, (next) => {
+    setColOrder(next);
+    saveColumnOrder(next);
+  });
   useEffect(() => {
     const read = () => setColOrder(loadColumnOrder());
     window.addEventListener(HOST_COLUMNS_EVENT, read);
@@ -194,46 +194,27 @@ export function HostsPage({
    * Everything that makes a column header draggable, and a target for another
    * one: spread onto the span wrapping each header's label.
    *
-   * On the label and not on the whole cell, deliberately. The cell's right edge
-   * carries the resize strip, and a draggable ancestor swallows that gesture as
-   * a column drag, so dragging a column wider would move it instead. Keeping
-   * both gestures means keeping them on different elements.
+   * On a span inside the cell and not on the cell itself, deliberately. The
+   * cell's right edge carries the resize strip, and a draggable *ancestor*
+   * swallows that gesture as a column drag, so dragging a column wider would
+   * move it instead. The strip is this span's sibling, painted over it, so the
+   * span can be as wide as the cell without taking the resize away.
    */
   const colDrag = (id: string) => ({
-    draggable: true,
-    onDragStart: (e: React.DragEvent) => {
-      setDragCol(id);
-      e.dataTransfer.effectAllowed = "move";
-      // Some targets refuse a drag carrying no data at all.
-      e.dataTransfer.setData("text/plain", id);
-    },
-    onDragEnd: () => {
-      setDragCol(null);
-      setDragOverCol(null);
-    },
-    onDragOver: (e: React.DragEvent) => {
-      if (!dragCol || dragCol === id) return;
-      // Without this the drop never fires: refusing is the default for a
-      // dragover, and a target that never says otherwise never receives one.
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      setDragOverCol(id);
-    },
-    onDragLeave: () => setDragOverCol((c) => (c === id ? null : c)),
-    onDrop: (e: React.DragEvent) => {
-      e.preventDefault();
-      if (dragCol) {
-        const next = reorderColumns(colOrder, dragCol, id);
-        setColOrder(next);
-        saveColumnOrder(next);
-      }
-      setDragCol(null);
-      setDragOverCol(null);
-    },
-    className: `inline-flex min-w-0 cursor-grab rounded active:cursor-grabbing${
-      dragOverCol === id && dragCol !== id
-        ? " bg-primary/20 ring-1 ring-primary/50"
-        : ""
+    ...dragProps(id),
+    // `flex`, never `inline-flex`, and this is not cosmetic. An inline box is
+    // sized shrink-to-fit, which here means "as wide as the sort button's
+    // content, less the 4px that button bleeds either side" (SortHeader is
+    // `-mx-1 px-1` so its hover plate lines up with the cell's text). The
+    // button's own `max-w-full` then resolves against that 8px-short width and
+    // ellipsises a header that had all the room in the world: `Label` came out
+    // as `La...` and `Username` as `Userna...` however wide the column was
+    // dragged. A block-level flex box fills the cell, so a header truncates
+    // when its column is genuinely too narrow and not before. `flex-1` is for
+    // the Tag header, where this span shares a flex row with the filter icon
+    // and would otherwise be shrink-to-fit all over again.
+    className: `flex min-w-0 flex-1 cursor-grab rounded active:cursor-grabbing${
+      isTarget(id) ? " bg-primary/20 ring-1 ring-primary/50" : ""
     }`,
     title: "Drag to move this column",
   });

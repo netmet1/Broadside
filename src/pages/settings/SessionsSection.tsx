@@ -48,10 +48,12 @@ export function SessionsSection({ id }: { id: string }) {
         <div className="grid gap-1.5">
           <Label htmlFor="session-timeout">Session timeout</Label>
           <p className="text-xs text-muted-foreground">
-            Close an SSH terminal that has been completely quiet for this long,
-            in seconds. Quiet means nothing typed <em>and</em> nothing printed,
-            so a command still producing output is never cut off. Local shells
-            and serial consoles are left alone.
+            Close an SSH terminal that has been idle for this long, in seconds.
+            Idle means nothing typed, nothing printed, <em>and</em> nothing
+            running in the foreground, so neither a command still producing
+            output nor a silent one like <code>sleep 120</code> is ever cut off.
+            A background job does not hold a session open. Local shells and
+            serial consoles are left alone.
           </p>
           <div className="flex items-center gap-3 pt-0.5">
             <IdleField
