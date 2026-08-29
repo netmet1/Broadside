@@ -322,6 +322,13 @@ pub const SHELL_INTEGRATION: &str = r#"if [ -n "$BASH_VERSION" ]; then __omni_fi
 ///   POSIX shell parses the lot and takes no branch. zsh has no way to delete a
 ///   history entry at all, so zsh keeps only the leading space, and that works
 ///   there only for an operator who has set `HIST_IGNORE_SPACE`.
+///
+/// It can be turned off (Settings -> Security), because deleting an entry is a
+/// write to somebody else's machine and not everyone wants a terminal doing
+/// that unasked: a box under a policy that its shell history is the record of
+/// what happened on it would rather carry Broadside's line than have a tool
+/// reaching into the list. Off means the leading space is the whole of it
+/// again, which is where this started.
 const HISTORY_SCRUB: &str = r#"if [ -n "$BASH_VERSION" ]; then __omni_hl=$(history 1); case "$__omni_hl" in *__omni_precmd*) __omni_hl=${__omni_hl#"${__omni_hl%%[![:space:]]*}"}; history -d "${__omni_hl%%[![:digit:]]*}" 2>/dev/null;; esac; unset __omni_hl; fi"#;
 
 /// The integration line ready to write to a PTY (newline-terminated, so the
@@ -340,6 +347,12 @@ pub fn shell_integration_command() -> String {
 /// clear/MOTD/last-login tail, which every Bourne shell reads even though it
 /// installs no hooks.
 ///
+/// `scrub_history` is the operator's answer to [`HISTORY_SCRUB`]: false leaves
+/// the line in a bash history that would have recorded it, and is the setting
+/// for somebody who would rather see it there than have Broadside delete
+/// anything. It reaches no shell that is not being sent the integration
+/// anyway.
+///
 /// **`None` means write nothing at all**, and that is the whole point of the
 /// silent variants. Dropping only the OSC 133 half is not enough to leave a
 /// host alone: the tail is still `clear; cat …` followed by a newline, and on
@@ -349,6 +362,7 @@ pub fn shell_integration_command() -> String {
 pub fn shell_setup_command(
     last_login: Option<&str>,
     capability: ShellCapability,
+    scrub_history: bool,
 ) -> Option<String> {
     if !capability.sends_setup() {
         return None;
@@ -361,11 +375,13 @@ pub fn shell_setup_command(
     if capability.with_integration() {
         cmd.push_str(SHELL_INTEGRATION);
         cmd.push_str("; ");
-        // In front of the `clear`, so anything it has to say (a bash too old for
-        // `history -d`, a shell with history switched off) is wiped by the same
-        // line it is part of and never reaches the pane.
-        cmd.push_str(HISTORY_SCRUB);
-        cmd.push_str("; ");
+        if scrub_history {
+            // In front of the `clear`, so anything it has to say (a bash too old
+            // for `history -d`, a shell with history switched off) is wiped by
+            // the same line it is part of and never reaches the pane.
+            cmd.push_str(HISTORY_SCRUB);
+            cmd.push_str("; ");
+        }
     }
     cmd.push_str("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null");
     if let Some(ll) = last_login {
@@ -645,6 +661,7 @@ mod tests {
         let c = shell_setup_command(
             Some("Last login: Mon Jun 15 from 1.2.3.4"),
             ShellCapability::Full,
+            true,
         )
         .expect("bash is written to");
         assert!(c.starts_with(' ')); // leading space keeps it out of shell history
@@ -658,7 +675,7 @@ mod tests {
 
     #[test]
     fn the_setup_line_takes_itself_back_out_of_bash_history() {
-        let c = shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::Full)
+        let c = shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::Full, true)
             .expect("bash is written to");
         assert!(c.contains("history -d"));
         // Guarded, so a POSIX shell parses it and runs none of it.
@@ -671,14 +688,31 @@ mod tests {
         let clear = c.find("clear;").expect("clear is on the line");
         assert!(scrub < clear, "the scrub has to run before the screen is kept");
         // And it is not sent to a shell that was never given the integration.
-        let tail = shell_setup_command(None, ShellCapability::TailOnly)
+        let tail = shell_setup_command(None, ShellCapability::TailOnly, true)
             .expect("fish still gets its tail");
         assert!(!tail.contains("history -d"));
     }
 
+    /// Turning the setting off takes the deletion out and leaves everything
+    /// else, including the leading space that was the whole mechanism before
+    /// any of this existed.
+    #[test]
+    fn the_scrub_can_be_switched_off_without_losing_the_rest_of_the_line() {
+        let c = shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::Full, false)
+            .expect("bash is still written to");
+        assert!(!c.contains("history -d"));
+        assert!(!c.contains("__omni_hl"));
+        assert!(c.starts_with(' '), "the space is what is left when it is off");
+        assert!(c.contains("133;A"));
+        assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
+        assert!(c.contains("printf '%s\\n' 'Last login: Mon Jun 15'"));
+        assert!(!c.trim_end_matches('\n').contains('\n'));
+    }
+
     #[test]
     fn setup_command_without_last_login_omits_printf() {
-        let c = shell_setup_command(None, ShellCapability::Full).expect("bash is written to");
+        let c =
+            shell_setup_command(None, ShellCapability::Full, true).expect("bash is written to");
         assert!(c.contains("clear; cat /run/motd.dynamic"));
         assert!(!c.contains("printf '%s"));
     }
@@ -688,8 +722,9 @@ mod tests {
         // sh/dash/ksh read the `if/elif/fi` fine and simply take neither
         // branch, so the line is sent in full and the OmniParser::flush
         // fallback is what gets a block out of them.
-        let c = shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::ParseSafe)
-            .expect("sh is written to");
+        let c =
+            shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::ParseSafe, true)
+                .expect("sh is written to");
         assert!(c.contains("133;A"));
         assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
     }
@@ -700,8 +735,9 @@ mod tests {
         // line at parse time, so it gets the clear, the MOTD and its last-login
         // and never the OSC 133 half. Folding it in with the silent tiers would
         // have quietly taken the fresh-login presentation back off it.
-        let c = shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::TailOnly)
-            .expect("fish is written to");
+        let c =
+            shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::TailOnly, true)
+                .expect("fish is written to");
         assert!(!c.contains("133;A"));
         assert!(!c.contains("BASH_VERSION"));
         assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
@@ -716,14 +752,14 @@ mod tests {
         // built, because the clear/MOTD tail alone is what the console menu was
         // reading as a menu selection.
         for cap in [ShellCapability::Unsupported, ShellCapability::Unreadable] {
-            assert_eq!(shell_setup_command(Some("Last login: Mon"), cap), None);
-            assert_eq!(shell_setup_command(None, cap), None);
+            assert_eq!(shell_setup_command(Some("Last login: Mon"), cap, true), None);
+            assert_eq!(shell_setup_command(None, cap, true), None);
         }
     }
 
     #[test]
     fn setup_command_escapes_single_quotes() {
-        let c = shell_setup_command(Some("it's here"), ShellCapability::Full)
+        let c = shell_setup_command(Some("it's here"), ShellCapability::Full, true)
             .expect("bash is written to");
         assert!(c.contains(r"'it'\''s here'"));
     }

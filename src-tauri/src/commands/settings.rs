@@ -21,6 +21,9 @@ const KEY_HELP_HINTS: &str = "help_hints_enabled";
 /// passwords are never injected into interactive terminals. Public so the PTY
 /// open path can read the same key when deciding whether to arm injection.
 pub const KEY_SUDO_AUTOFILL: &str = "sudo_autofill_enabled";
+/// Whether the connect setup line deletes its own entry from a bash history
+/// that would otherwise keep it (`crate::omni::HISTORY_SCRUB`). On by default.
+pub const KEY_HISTORY_SCRUB: &str = "history_scrub_enabled";
 const KEY_SHORTCUTS: &str = "shortcut_commands";
 const KEY_TERMINAL_FONT_FAMILY: &str = "terminal_font_family";
 const KEY_TERMINAL_FONT_SIZE: &str = "terminal_font_size";
@@ -173,6 +176,7 @@ pub struct AppSettings {
     pub bulk_confirm_over: u16,
     pub help_hints_enabled: bool,
     pub sudo_autofill_enabled: bool,
+    pub history_scrub_enabled: bool,
     pub core_rules: Vec<CoreRuleInfo>,
     pub user_rules: Vec<UserRule>,
     pub core_shortcuts: Vec<CoreShortcut>,
@@ -293,6 +297,7 @@ pub fn get_app_settings(state: State<'_, DbState>) -> AppResult<AppSettings> {
                 .unwrap_or(DEFAULT_BULK_CONFIRM_OVER),
             help_hints_enabled: settings::get_bool(conn, KEY_HELP_HINTS, true)?,
             sudo_autofill_enabled: settings::get_bool(conn, KEY_SUDO_AUTOFILL, true)?,
+            history_scrub_enabled: settings::get_bool(conn, KEY_HISTORY_SCRUB, true)?,
             core_rules: guard::core_rule_infos(),
             user_rules: load_user_rules(conn)?,
             core_shortcuts: core_shortcuts(),
@@ -527,6 +532,25 @@ pub fn set_sudo_autofill_enabled(
     with_db(&state, |conn| {
         crate::admin_lock::ensure_unlocked(conn, &lock_state)?;
         settings::set(conn, KEY_SUDO_AUTOFILL, if enabled { "true" } else { "false" })
+    })
+}
+
+/// Whether the connect setup line takes itself back out of the host's bash
+/// history. On by default; off leaves it to the leading space, which keeps it
+/// out only where `HISTCONTROL` says so. Saved immediately, read by the PTY open
+/// path, so it applies to the next terminal opened.
+///
+/// Not admin-lock gated: neither answer exposes anything, and neither grants
+/// access. And, like sudo auto-fill, intentionally **not** cleared by
+/// `reset_app_settings`. The polarity looks the other way round to the rest of
+/// that list, so it is worth saying why: turning this back on is not "back to
+/// safe", it is Broadside resuming a `history -d` on somebody else's machine.
+/// An operator who switched that off did it about the host, not about their own
+/// preferences, and a preferences reset has no business undoing it.
+#[tauri::command]
+pub fn set_history_scrub_enabled(enabled: bool, state: State<'_, DbState>) -> AppResult<()> {
+    with_db(&state, |conn| {
+        settings::set(conn, KEY_HISTORY_SCRUB, if enabled { "true" } else { "false" })
     })
 }
 

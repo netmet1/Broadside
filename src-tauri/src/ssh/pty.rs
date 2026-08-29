@@ -488,6 +488,11 @@ pub async fn open<E: PtyEvents>(
     // The host's standing answer for shell integration (D-067). `Auto` is the
     // default and believes the probe.
     shell_pref: ShellIntegrationPref,
+    // Whether the setup line deletes its own bash history entry as it goes past
+    // (Settings -> Security, on by default). Read per connect, so turning it off
+    // applies to the next terminal opened rather than at the next launch. See
+    // `crate::omni::HISTORY_SCRUB`.
+    scrub_history: bool,
     // Whether the login banner and the setup redraw are held back and shown as
     // one finished screen. A terminal tab wants that; a skill run must not have
     // it, because its engine reads this same stream and a held stream reads as a
@@ -616,6 +621,7 @@ pub async fn open<E: PtyEvents>(
                                 let setup = crate::omni::shell_setup_command(
                                     last_login.as_deref(),
                                     effective,
+                                    scrub_history,
                                 );
                                 // The curtain has to be told which of the two
                                 // this is *before* the write, or the host could
@@ -713,7 +719,7 @@ pub async fn open<E: PtyEvents>(
                     // it. Both outcomes below are the same as on the data path:
                     // a line going out means a redraw is coming and what is held
                     // is a draft, no line means what is held is the screen.
-                    match crate::omni::shell_setup_command(None, effective) {
+                    match crate::omni::shell_setup_command(None, effective, scrub_history) {
                         Some(setup) => {
                             curtain.setup_sent(Instant::now(), setup.as_bytes());
                             arm_curtain_timer(&mut curtain_timeout, &curtain);

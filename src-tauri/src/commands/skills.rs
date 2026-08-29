@@ -339,6 +339,13 @@ pub async fn run_skill(
     let sudo_autofill = with_db(&state, |conn| {
         crate::db::settings::get_bool(conn, crate::commands::settings::KEY_SUDO_AUTOFILL, true)
     })?;
+    // A skill run is sent the same setup line as a terminal tab, so it answers
+    // the same setting. Read once for the dispatch, like the log preferences
+    // below: what it changes is what gets typed, and that is decided per host
+    // before the shell opens.
+    let scrub_history = with_db(&state, |conn| {
+        crate::db::settings::get_bool(conn, crate::commands::settings::KEY_HISTORY_SCRUB, true)
+    })?;
     let mut jobs = Vec::with_capacity(host_ids.len());
     for host_id in &host_ids {
         let (host, keys) = with_db(&state, |conn| {
@@ -470,6 +477,7 @@ pub async fn run_skill(
                         crate::ssh::ShellIntegrationPref::from_stored(
                             job.host.shell_integration.as_deref(),
                         ),
+                        scrub_history,
                         // Raw, and it has to stay raw. The engine reads this
                         // stream through the tap above and, on a shell with no
                         // prompt marks, decides the login is over by the stream

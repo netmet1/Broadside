@@ -90,6 +90,8 @@ export type AppSettings = {
   bulk_confirm_over: number;
   help_hints_enabled: boolean;
   sudo_autofill_enabled: boolean;
+  /** Whether the connect setup line deletes its own bash history entry. */
+  history_scrub_enabled: boolean;
   core_rules: CoreRuleInfo[];
   user_rules: UserRule[];
   core_shortcuts: CoreShortcut[];
@@ -150,6 +152,13 @@ export function setHelpHintsEnabled(enabled: boolean): Promise<void> {
 
 export function setSudoAutofillEnabled(enabled: boolean): Promise<void> {
   return invoke<void>("set_sudo_autofill_enabled", { enabled });
+}
+
+/** Whether the line Broadside types on connect takes itself back out of the
+ * host's bash history. Read when a terminal opens, so it applies to the next
+ * one rather than to a session already running. */
+export function setHistoryScrubEnabled(enabled: boolean): Promise<void> {
+  return invoke<void>("set_history_scrub_enabled", { enabled });
 }
 
 /** Opt-in admin lock state: `lock_set` = a passcode is configured;
