@@ -486,14 +486,15 @@ export const SECTIONS: HelpSection[] = [
               the host, not the network, so a slow link or a VPN makes the wait
               longer rather than making the line flash past. On the rare host
               that does not do what the line asks, you get what the host said,
-              still without the line itself in it. It is also taken back out of{" "}
-              <code>bash</code>'s own history, so an <Nav>Up</Nav> arrow finds
-              your commands and not Broadside's. <code>zsh</code> has no way to
-              delete a history entry, so on zsh the line is kept out only if you
-              have set <code>HIST_IGNORE_SPACE</code>. If you would rather
-              nothing reached into your history at all, the deletion is a switch
-              in <Nav>Settings &gt; Security</Nav>; turning it off leaves the
-              line in the list on any host that records it.
+              still without the line itself in it. It is written with a space in
+              front of it, which is a request that the host's shell keep it out
+              of the history list, and stock Debian and Ubuntu honour it. A host
+              that does not will record the line, and an <Nav>Up</Nav> arrow
+              there finds it instead of your last command. Broadside can delete
+              that entry as it goes past, but it will not do so unless you ask:
+              the switch is in <Nav>Settings &gt; Security</Nav> and it is off
+              to begin with, because running a <code>history -d</code> on your
+              machines is your decision and not ours.
             </li>
             <li>
               <b>Reconnect check</b>, the card above it, is for the machine you
@@ -2555,7 +2556,7 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               <Nav>Security</Nav>: the sudo auto-fill switch, whether a connect
-              keeps its own setup line out of the host's shell history, and the
+              deletes its own setup line from the host's shell history, and the
               admin lock. All three are described in the Security section below.
             </li>
             <li>
@@ -2646,19 +2647,23 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               <Nav>Keep the connect line out of the host's shell history</Nav> is
-              the second switch, and it is on. Opening an SSH terminal types one
-              setup line at the host; on it is deleted from <code>bash</code>'s
-              history as it goes past, so an <Nav>Up</Nav> arrow finds your own
-              last command. It only ever removes an entry it has checked is its
-              own, so nothing of yours is at risk either way. Turn it off if you
-              would rather nothing ran a <code>history -d</code> on your
-              machines, for instance where the shell history is meant to be the
-              record of what happened on the box. Off, the line is kept out only
-              on a host whose <code>HISTCONTROL</code> ignores commands typed
-              with a leading space, which is the Debian and Ubuntu default and
-              little else. It has no effect on <code>zsh</code>, which offers no
-              way to delete an entry, and it is read when a terminal opens, so
-              it applies to the next one.
+              the second switch, and it is <b>off</b> until you turn it on.
+              Opening an SSH terminal types one setup line at the host, written
+              with a space in front so that a shell whose{" "}
+              <code>HISTCONTROL</code> ignores space-prefixed commands never
+              records it. That is the Debian and Ubuntu default and not much
+              else, so on a Red Hat family box, an appliance, or anything with
+              its own profile, the line is kept and an <Nav>Up</Nav> arrow finds
+              it instead of your last command. Switch this on and the line
+              deletes that entry as it goes past. It only ever removes an entry
+              it has first checked is its own, so no command of yours can be
+              taken by it. It starts off because the space is a request and a{" "}
+              <code>history -d</code> is a write, and a terminal should not be
+              making that second decision about your machines on your behalf,
+              least of all on a box where the shell history is meant to be the
+              record of what happened. It does nothing on <code>zsh</code>,
+              which offers no way to delete an entry, and it is read when a
+              terminal opens, so it applies to the next one.
             </li>
             <li>
               The admin lock is an optional passcode that protects the credential

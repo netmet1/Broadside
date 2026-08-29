@@ -40,7 +40,7 @@ pub async fn pty_open(
         let scrub_history = crate::db::settings::get_bool(
             conn,
             crate::commands::settings::KEY_HISTORY_SCRUB,
-            true,
+            false,
         )?;
         Ok((host, keys, sudo_autofill_enabled, scrub_history))
     })?;

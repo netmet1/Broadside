@@ -322,14 +322,27 @@ pub const SHELL_INTEGRATION: &str = r#"if [ -n "$BASH_VERSION" ]; then __omni_fi
 ///   POSIX shell parses the lot and takes no branch. zsh has no way to delete a
 ///   history entry at all, so zsh keeps only the leading space, and that works
 ///   there only for an operator who has set `HIST_IGNORE_SPACE`.
+/// - **There is no `!` anywhere in it**, which is why the negated character
+///   classes are written `[^...]` rather than the POSIX `[!...]`. A guard on
+///   `$BASH_VERSION` is a *runtime* guard, and zsh expands history in the
+///   lexer, before it decides anything: `![:space:]` reads as a reference to
+///   an event named `[`, zsh answers `event not found: [` and discards **the
+///   whole line**, taking the OSC 133 integration, the `clear` and the MOTD
+///   down with it. That is the entire feature gone on every zsh host, caused
+///   by a block zsh was never going to run. Bash reads `^` as the same
+///   negation, and bash is the only shell that ever executes this, so the
+///   POSIX spelling bought nothing and cost every zsh host.
 ///
-/// It can be turned off (Settings -> Security), because deleting an entry is a
-/// write to somebody else's machine and not everyone wants a terminal doing
-/// that unasked: a box under a policy that its shell history is the record of
-/// what happened on it would rather carry Broadside's line than have a tool
-/// reaching into the list. Off means the leading space is the whole of it
-/// again, which is where this started.
-const HISTORY_SCRUB: &str = r#"if [ -n "$BASH_VERSION" ]; then __omni_hl=$(history 1); case "$__omni_hl" in *__omni_precmd*) __omni_hl=${__omni_hl#"${__omni_hl%%[![:space:]]*}"}; history -d "${__omni_hl%%[![:digit:]]*}" 2>/dev/null;; esac; unset __omni_hl; fi"#;
+/// **It is off until the operator asks for it** (Settings -> Security), and the
+/// asymmetry is the reason. The leading space is a request the shell is free to
+/// ignore; this is a write to somebody else's machine. Wrong in the quiet
+/// direction, the cost is a long line in a history list: the operator presses
+/// Up, sees it, and turns the switch on. Wrong in the other direction, a tool
+/// they never configured has been deleting entries from what may be the audit
+/// record of a box that is not theirs, and nothing on screen ever said so. A
+/// visible, self-correcting failure is the one to default to. Off means the
+/// leading space is the whole of it, which is where this started.
+const HISTORY_SCRUB: &str = r#"if [ -n "$BASH_VERSION" ]; then __omni_hl=$(history 1); case "$__omni_hl" in *__omni_precmd*) __omni_hl=${__omni_hl#"${__omni_hl%%[^[:space:]]*}"}; history -d "${__omni_hl%%[^[:digit:]]*}" 2>/dev/null;; esac; unset __omni_hl; fi"#;
 
 /// The integration line ready to write to a PTY (newline-terminated, so the
 /// remote shell executes it).
@@ -347,11 +360,11 @@ pub fn shell_integration_command() -> String {
 /// clear/MOTD/last-login tail, which every Bourne shell reads even though it
 /// installs no hooks.
 ///
-/// `scrub_history` is the operator's answer to [`HISTORY_SCRUB`]: false leaves
-/// the line in a bash history that would have recorded it, and is the setting
-/// for somebody who would rather see it there than have Broadside delete
-/// anything. It reaches no shell that is not being sent the integration
-/// anyway.
+/// `scrub_history` is the operator's answer to [`HISTORY_SCRUB`], and it is
+/// false unless they have said otherwise: the line is left in a bash history
+/// that records it, and the leading space is all that keeps it out anywhere.
+/// True is the operator asking for the entry to be deleted as well. It reaches
+/// no shell that is not being sent the integration anyway.
 ///
 /// **`None` means write nothing at all**, and that is the whole point of the
 /// silent variants. Dropping only the OSC 133 half is not enough to leave a
@@ -707,6 +720,40 @@ mod tests {
         assert!(c.contains("clear; cat /run/motd.dynamic /etc/motd 2>/dev/null"));
         assert!(c.contains("printf '%s\\n' 'Last login: Mon Jun 15'"));
         assert!(!c.trim_end_matches('\n').contains('\n'));
+    }
+
+    /// The regression that took the whole line out on zsh.
+    ///
+    /// zsh expands history in its lexer, so one `!` in a block guarded on
+    /// `$BASH_VERSION` was enough for zsh to answer `event not found` and throw
+    /// the line away unrun: no integration, no clear, no MOTD, and the raw
+    /// setup line left on screen. Nothing we write to a shell may contain one.
+    #[test]
+    fn nothing_we_type_at_a_host_contains_a_bang() {
+        for (name, line) in [
+            ("integration", SHELL_INTEGRATION.to_string()),
+            ("scrub", HISTORY_SCRUB.to_string()),
+            (
+                "setup",
+                shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::Full, true)
+                    .expect("bash is written to"),
+            ),
+            (
+                "setup, no scrub",
+                shell_setup_command(Some("Last login: Mon Jun 15"), ShellCapability::Full, false)
+                    .expect("bash is written to"),
+            ),
+            (
+                "tail",
+                shell_setup_command(None, ShellCapability::TailOnly, true)
+                    .expect("fish still gets its tail"),
+            ),
+        ] {
+            assert!(
+                !line.contains('!'),
+                "{name} carries a `!`, which zsh reads as a history reference                  and answers by discarding the entire line"
+            );
+        }
     }
 
     #[test]

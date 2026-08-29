@@ -1647,7 +1647,7 @@ export function SettingsPage({
           <input
             type="checkbox"
             className="accent-primary"
-            checked={settings?.history_scrub_enabled ?? true}
+            checked={settings?.history_scrub_enabled ?? false}
             disabled={settings === null}
             onChange={async (e) => {
               const next = e.target.checked;
@@ -1665,16 +1665,18 @@ export function SettingsPage({
         </label>
         <p className="max-w-xl text-xs text-muted-foreground">
           Opening an SSH terminal types one setup line at the host, which
-          installs command tracking and reprints the login screen. Left alone,
-          bash records it and an <strong>Up</strong> arrow finds it instead of
-          your own last command. On, the line deletes its own entry as it goes
-          past, and only ever an entry it has checked is its own. Turn it{" "}
-          <strong>off</strong> if you would rather nothing ran{" "}
-          <code>history -d</code> on your hosts; the line is then kept out only
-          where <code>HISTCONTROL</code> ignores commands typed with a leading
-          space, which is the Debian and Ubuntu default and not much else. Takes
-          effect next time a terminal is opened. zsh has no way to delete a
-          history entry, so this setting does nothing there.
+          installs command tracking and reprints the login screen. It is written
+          with a space in front of it, so any host whose{" "}
+          <code>HISTCONTROL</code> ignores space-prefixed commands (the Debian
+          and Ubuntu default) never records it. Everywhere else bash keeps it,
+          and an <strong>Up</strong> arrow finds it instead of your own last
+          command. Turn this <strong>on</strong> to have the line delete its own
+          entry as it goes past; it only ever removes an entry it has checked is
+          its own, so none of your commands are at risk. It is{" "}
+          <strong>off</strong> to begin with because a <code>history -d</code>{" "}
+          is a write to your machines, and that is your call to make rather than
+          ours. Takes effect next time a terminal is opened. zsh offers no way
+          to delete a history entry, so this does nothing there.
         </p>
 
         {/* Admin lock (opt-in), gates the toggle above, credential editing and

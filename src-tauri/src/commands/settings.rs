@@ -22,7 +22,9 @@ const KEY_HELP_HINTS: &str = "help_hints_enabled";
 /// open path can read the same key when deciding whether to arm injection.
 pub const KEY_SUDO_AUTOFILL: &str = "sudo_autofill_enabled";
 /// Whether the connect setup line deletes its own entry from a bash history
-/// that would otherwise keep it (`crate::omni::HISTORY_SCRUB`). On by default.
+/// that would otherwise keep it (`crate::omni::HISTORY_SCRUB`). **Off** by
+/// default: deleting from a history list is a write to somebody else's machine,
+/// and Broadside does not make that one for them.
 pub const KEY_HISTORY_SCRUB: &str = "history_scrub_enabled";
 const KEY_SHORTCUTS: &str = "shortcut_commands";
 const KEY_TERMINAL_FONT_FAMILY: &str = "terminal_font_family";
@@ -297,7 +299,7 @@ pub fn get_app_settings(state: State<'_, DbState>) -> AppResult<AppSettings> {
                 .unwrap_or(DEFAULT_BULK_CONFIRM_OVER),
             help_hints_enabled: settings::get_bool(conn, KEY_HELP_HINTS, true)?,
             sudo_autofill_enabled: settings::get_bool(conn, KEY_SUDO_AUTOFILL, true)?,
-            history_scrub_enabled: settings::get_bool(conn, KEY_HISTORY_SCRUB, true)?,
+            history_scrub_enabled: settings::get_bool(conn, KEY_HISTORY_SCRUB, false)?,
             core_rules: guard::core_rule_infos(),
             user_rules: load_user_rules(conn)?,
             core_shortcuts: core_shortcuts(),
@@ -468,6 +470,14 @@ pub fn reset_app_settings(
             KEY_SKILL_LOG_WHERE,
             KEY_SKILL_LOG_DETAIL,
             KEY_SKILL_LOG_FORMAT,
+            // Back to off, for the same reason as the skill log above: a
+            // preferences reset lands on the answer that writes least to
+            // somebody else's machine. This key was once left out of this list
+            // on the reasoning that a reset must not silently re-enable a
+            // `history -d`. That reasoning was right and the fix was in the
+            // wrong place: the default is now off, so clearing the key *is*
+            // the quiet answer, and the exception can go.
+            KEY_HISTORY_SCRUB,
         ] {
             conn.execute("DELETE FROM settings WHERE key = ?1", rusqlite::params![key])?;
         }
@@ -536,17 +546,16 @@ pub fn set_sudo_autofill_enabled(
 }
 
 /// Whether the connect setup line takes itself back out of the host's bash
-/// history. On by default; off leaves it to the leading space, which keeps it
-/// out only where `HISTCONTROL` says so. Saved immediately, read by the PTY open
+/// history. **Off** by default, so out of the box the leading space is the
+/// whole mechanism and Broadside deletes nothing anywhere; on is the operator
+/// asking for the entry to go too. Saved immediately, read by the PTY open
 /// path, so it applies to the next terminal opened.
 ///
 /// Not admin-lock gated: neither answer exposes anything, and neither grants
-/// access. And, like sudo auto-fill, intentionally **not** cleared by
-/// `reset_app_settings`. The polarity looks the other way round to the rest of
-/// that list, so it is worth saying why: turning this back on is not "back to
-/// safe", it is Broadside resuming a `history -d` on somebody else's machine.
-/// An operator who switched that off did it about the host, not about their own
-/// preferences, and a preferences reset has no business undoing it.
+/// access. Unlike sudo auto-fill, it **is** cleared by `reset_app_settings`,
+/// because with the default off, clearing it is Broadside going back to
+/// touching nothing. That is what a reset is supposed to mean, and it is only
+/// true because the default is the quiet one.
 #[tauri::command]
 pub fn set_history_scrub_enabled(enabled: bool, state: State<'_, DbState>) -> AppResult<()> {
     with_db(&state, |conn| {

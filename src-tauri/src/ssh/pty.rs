@@ -489,9 +489,9 @@ pub async fn open<E: PtyEvents>(
     // default and believes the probe.
     shell_pref: ShellIntegrationPref,
     // Whether the setup line deletes its own bash history entry as it goes past
-    // (Settings -> Security, on by default). Read per connect, so turning it off
-    // applies to the next terminal opened rather than at the next launch. See
-    // `crate::omni::HISTORY_SCRUB`.
+    // (Settings -> Security, off unless the operator asked for it). Read per
+    // connect, so a change applies to the next terminal opened rather than at
+    // the next launch. See `crate::omni::HISTORY_SCRUB`.
     scrub_history: bool,
     // Whether the login banner and the setup redraw are held back and shown as
     // one finished screen. A terminal tab wants that; a skill run must not have

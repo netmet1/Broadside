@@ -344,7 +344,7 @@ pub async fn run_skill(
     // below: what it changes is what gets typed, and that is decided per host
     // before the shell opens.
     let scrub_history = with_db(&state, |conn| {
-        crate::db::settings::get_bool(conn, crate::commands::settings::KEY_HISTORY_SCRUB, true)
+        crate::db::settings::get_bool(conn, crate::commands::settings::KEY_HISTORY_SCRUB, false)
     })?;
     let mut jobs = Vec::with_capacity(host_ids.len());
     for host_id in &host_ids {

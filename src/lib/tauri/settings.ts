@@ -90,7 +90,8 @@ export type AppSettings = {
   bulk_confirm_over: number;
   help_hints_enabled: boolean;
   sudo_autofill_enabled: boolean;
-  /** Whether the connect setup line deletes its own bash history entry. */
+  /** Whether the connect setup line deletes its own bash history entry.
+   * Off unless the operator turned it on. */
   history_scrub_enabled: boolean;
   core_rules: CoreRuleInfo[];
   user_rules: UserRule[];
@@ -155,8 +156,9 @@ export function setSudoAutofillEnabled(enabled: boolean): Promise<void> {
 }
 
 /** Whether the line Broadside types on connect takes itself back out of the
- * host's bash history. Read when a terminal opens, so it applies to the next
- * one rather than to a session already running. */
+ * host's bash history. Off by default, so nothing is deleted anywhere until
+ * this is asked for. Read when a terminal opens, so it applies to the next one
+ * rather than to a session already running. */
 export function setHistoryScrubEnabled(enabled: boolean): Promise<void> {
   return invoke<void>("set_history_scrub_enabled", { enabled });
 }
