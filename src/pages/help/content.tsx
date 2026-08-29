@@ -2578,7 +2578,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-security",
     title: "Security",
     keywords:
-      "security credentials storage credential manager age encrypted file sqlite transmitted telemetry tofu host key sudo auto-fill admin lock argon2 recovery code isolation separate logins privacy why was my password not typed nothing filled in did not fill shell history bash_history history -d delete entry up arrow long line setup line keep my history clean stop broadside writing to my host histcontrol ignorespace hist_ignore_space audit record of what happened on the box",
+      "security credentials storage credential manager age encrypted file sqlite transmitted telemetry tofu host key sudo auto-fill admin lock argon2 recovery code isolation separate logins privacy why was my password not typed nothing filled in did not fill shell history bash_history history -d delete entry up arrow long line setup line keep my history clean stop broadside writing to my host histcontrol ignorespace ignoreboth ignoredups hist_ignore_space echo $histcontrol how do i tell if my host records it switch does nothing no difference on or off cannot tell what it does audit record of what happened on the box",
     body: (
       <>
         <Lead>
@@ -2654,8 +2654,12 @@ export const SECTIONS: HelpSection[] = [
               records it. That is the Debian and Ubuntu default and not much
               else, so on a Red Hat family box, an appliance, or anything with
               its own profile, the line is kept and an <Nav>Up</Nav> arrow finds
-              it instead of your last command. Switch this on and the line
-              deletes that entry as it goes past. It only ever removes an entry
+              it instead of your last command. Run{" "}
+              <code>{'echo "$HISTCONTROL"'}</code> on a host to see which kind
+              you are on: an answer with <code>ignorespace</code> or{" "}
+              <code>ignoreboth</code> in it means the space is already keeping
+              the line out and this switch changes nothing you can see there.
+              Switch this on and the line deletes that entry as it goes past. It only ever removes an entry
               it has first checked is its own, so no command of yours can be
               taken by it. It starts off because the space is a request and a{" "}
               <code>history -d</code> is a write, and a terminal should not be

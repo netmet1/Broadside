@@ -45,6 +45,32 @@
 //! what the operator is left looking at is what the host said, never the
 //! sentence Broadside typed to make it say it.
 //!
+//! # The shells that do not echo, they redraw
+//!
+//! "Reads it back to us" is what bash does, and it is not what a shell has to
+//! do. Bash's line editor writes the characters it was handed, in order, and
+//! lets the terminal wrap them, so what comes back is byte for byte what went
+//! out. zsh's does not: it renders the line, and at every wrap it emits a
+//! padding space, a carriage return, an erase-to-end-of-line, the character
+//! that wrapped, a second carriage return, and that character over again.
+//!
+//! Measured, not assumed. A real zsh 5.9 under a pty on `xterm-256color` gives
+//! back 1146 bytes for the 837 that were written, and a matcher that insists on
+//! byte for byte recognises 75 of them: everything up to the first wrap, which
+//! is one row of the screen. Bash, on the same test, gives 838 of 837.
+//!
+//! Both halves of what the recognition buys were therefore lost on zsh and only
+//! on zsh. The deadline stopped being pushed after the first row came back, so
+//! it went back to being measured from the write, which is the network deadline
+//! this file exists to stop using. And a deadline that then passed released
+//! 1071 of those 1146 bytes, `__omni_precmd` and all, onto the screen. That is
+//! the blink, on the shells that redraw, on the hosts slow enough to reach the
+//! deadline, and never on bash.
+//!
+//! So the walk steps over a line editor's own redraw: a short run of bytes
+//! between two characters of ours is the editor drawing, not the host talking.
+//! See [`REDRAW_SLACK`] for how short, and why there is a limit at all.
+//!
 //! # What it refuses to do
 //!
 //! **Hold a shell we are not writing to.** A silent host (a console menu, an
@@ -82,6 +108,15 @@ use std::time::{Duration, Instant};
 /// hotel wireless was blowing a deadline measured from the write on every
 /// connect, and every connect showed the line.
 ///
+/// It does not start until the host has said a word back, for the same reason
+/// read the other way. The line goes out when sshd prints the last-login line,
+/// which is before the login shell has read the first line of its own rc, and a
+/// `.zshrc` with a framework in it can spend seconds there. Expiring in the
+/// middle of that silence shows nobody anything sooner, because nothing is
+/// being held to show; all it does is open the curtain, so the echo that
+/// arrives a moment later goes straight to the screen. [`HOLD_CAP`] is the
+/// answer to a host that says nothing at all.
+///
 /// Generous even so, because a machine that has just accepted a login may be
 /// busy doing it, and the cost of waiting is that a pane which says "connecting"
 /// goes on saying it. The cost of giving up early is the blink this exists to
@@ -106,6 +141,12 @@ const ERASE_DISPLAY: [&[u8]; 3] = [b"\x1b[2J", b"\x1b[0J", b"\x1b[J"];
 /// "connecting" for an hour. This is the backstop that cannot be pushed, so the
 /// worst case is a flicker after ten seconds rather than a tab that never
 /// arrives.
+///
+/// It is also the whole of the wait for a host that never answers the line,
+/// since the deadline above has no host-side clock to run until one of them
+/// does. A pane holding on "connecting" that long is a pane whose host has said
+/// nothing since it accepted the login, which is worth being told about, and
+/// the connecting overlay says so on its own.
 const HOLD_CAP: Duration = Duration::from_secs(10);
 
 /// How much of our own line has to be seen before a run of bytes is called its
@@ -113,7 +154,28 @@ const HOLD_CAP: Duration = Duration::from_secs(10);
 ///
 /// Long enough that no host prints it by accident, short enough that a line the
 /// deadline caught halfway back is still recognised for what it is.
+///
+/// Matched verbatim, which is the one thing every shell here does the same way:
+/// the anchor sits at the start of the line, and a line editor's redraw only
+/// interrupts at a wrap. A prompt wide enough to leave fewer than this many
+/// columns on its own row would split the anchor and the echo would go
+/// unrecognised, which is the old behaviour and not a new failure.
 const ECHO_ANCHOR: usize = 16;
+
+/// How many bytes a line editor may put between two characters of ours before
+/// the run stops being our line.
+///
+/// The whole of the wrap dance zsh 5.9 performs is ten bytes at its longest,
+/// and four in the common case. Sixty-four leaves room for an editor that
+/// colours what it draws, and for a terminfo that spells the same erase at
+/// greater length.
+///
+/// There is a limit at all because this is what decides which bytes are taken
+/// off somebody's screen. Without one, a walk that ran out of our line halfway
+/// could pick its remaining characters out of the host's own output and take
+/// the host's words away with them. A gap longer than a redraw is the host
+/// talking, and the walk stops there.
+const REDRAW_SLACK: usize = 64;
 
 /// Sent ahead of the released bytes, so the screen the operator lands on starts
 /// at the top.
@@ -148,7 +210,14 @@ enum State {
     /// output; the screen begins at the erase in the middle of that.
     ///
     /// `deadline` moves as the echo arrives; `cap` is where it stops moving.
-    AwaitingClear { deadline: Instant, cap: Instant },
+    /// `heard` is whether the host has said anything since the write, because
+    /// until it has there is no host-side clock to run and `deadline` is the
+    /// cap.
+    AwaitingClear {
+        deadline: Instant,
+        cap: Instant,
+        heard: bool,
+    },
     /// Everything goes straight through, which is the whole session after the
     /// first screen.
     Open,
@@ -205,17 +274,32 @@ impl Curtain {
                 self.held.extend_from_slice(data);
                 Emit::Nothing
             }
-            State::AwaitingClear { mut deadline, cap } => {
+            State::AwaitingClear {
+                mut deadline,
+                cap,
+                heard,
+            } => {
+                // The first word back is where the clock starts. Before it the
+                // host has told us nothing, and a deadline running through that
+                // silence is a deadline on how quickly somebody else's shell
+                // gets out of bed.
+                if !heard {
+                    deadline = (now + CLEAR_DEADLINE).min(cap);
+                }
                 self.held.extend_from_slice(data);
                 // More of our own line coming back is not the host answering, it
                 // is the host still reading, so the clock starts again. Without
                 // this the deadline is really a guess at somebody's latency.
-                let seen = find_echo(&self.held, &self.echo).map_or(0, |(_, len)| len);
+                let seen = find_echo(&self.held, &self.echo).map_or(0, |e| e.matched);
                 if seen > self.echo_seen {
                     self.echo_seen = seen;
                     deadline = (now + CLEAR_DEADLINE).min(cap);
-                    self.state = State::AwaitingClear { deadline, cap };
                 }
+                self.state = State::AwaitingClear {
+                    deadline,
+                    cap,
+                    heard: true,
+                };
                 // The screen starts at the erase. Everything before it is the
                 // banner we are hiding and the echo of the line that wiped it.
                 if let Some(idx) = find_erase(&self.held) {
@@ -249,8 +333,11 @@ impl Curtain {
         self.echo = written.to_vec();
         self.echo_seen = 0;
         self.state = State::AwaitingClear {
-            deadline: now + CLEAR_DEADLINE,
+            // Not `CLEAR_DEADLINE`: nothing has been heard yet, so there is no
+            // host to be late. See the constant.
+            deadline: now + HOLD_CAP,
             cap: now + HOLD_CAP,
+            heard: false,
         };
     }
 
@@ -310,42 +397,81 @@ fn find_erase(buf: &[u8]) -> Option<usize> {
         .min()
 }
 
+/// What was found of our own line in a buffer.
+///
+/// Two numbers rather than one, because a shell that redraws makes them
+/// different: the bytes of the buffer that belong to the echo are the
+/// characters plus the editor's own drawing in between, and only the characters
+/// say how far the host has got.
+#[derive(Debug, Clone, Copy)]
+struct Echo {
+    /// Where it starts in the buffer.
+    start: usize,
+    /// How much of the buffer it covers, redraw and all. What comes out.
+    span: usize,
+    /// How many bytes of the line itself were recognised. The progress signal:
+    /// a host still adding to this has not reached the `clear`.
+    matched: usize,
+}
+
 /// Where the host's echo of our own line sits in `buf`, and how much of it has
 /// arrived, or `None` if it has not started.
 ///
 /// Anchored rather than assumed to be at the front: the prompt the shell drew
 /// while the line was in flight lands ahead of it, and so does the tail of a
 /// banner that was still streaming when we wrote.
-fn find_echo(buf: &[u8], echo: &[u8]) -> Option<(usize, usize)> {
+///
+/// Past the anchor the walk allows for a line editor redrawing rather than
+/// echoing, stepping over a short run of bytes that are not ours and refusing a
+/// long one. See [`REDRAW_SLACK`].
+fn find_echo(buf: &[u8], echo: &[u8]) -> Option<Echo> {
     if echo.is_empty() {
         return None;
     }
     let start = find_sub(buf, &echo[..ECHO_ANCHOR.min(echo.len())])?;
     let mut i = start;
     let mut j = 0;
+    // One past the last byte that was certainly ours. Not `i`: a run stepped
+    // over on the way to a character we never found is the host's, and taking
+    // it off the screen is the mistake this is here to avoid.
+    let mut end = start;
+    let mut slack = 0;
     while i < buf.len() && j < echo.len() {
         if buf[i] == echo[j] {
             i += 1;
             j += 1;
+            end = i;
+            slack = 0;
         } else if buf[i] == b'\r' && echo[j] == b'\n' {
             // The terminal turns the newline that ran the line into CR LF on the
             // way back. That newline is the only one in it, and it is the last
             // byte, so this costs one comparison at the very end.
             i += 1;
+            end = i;
         } else {
-            // Not our line any more. Whatever this is, the host said it.
-            break;
+            // A line editor drawing what it was handed, or the host starting to
+            // answer. Which of the two it is, is a question of how long it goes
+            // on for.
+            slack += 1;
+            if slack > REDRAW_SLACK {
+                break;
+            }
+            i += 1;
         }
     }
-    Some((start, i - start))
+    Some(Echo {
+        start,
+        span: end - start,
+        matched: j,
+    })
 }
 
 /// `buf` without the echo of our own line, if it is in there.
 fn strip_echo(buf: &[u8], echo: &[u8]) -> Vec<u8> {
     match find_echo(buf, echo) {
-        Some((start, len)) => {
-            let mut out = buf[..start].to_vec();
-            out.extend_from_slice(&buf[start + len..]);
+        Some(e) => {
+            let mut out = buf[..e.start].to_vec();
+            out.extend_from_slice(&buf[e.start + e.span..]);
             out
         }
         None => buf.to_vec(),
@@ -380,6 +506,51 @@ mod tests {
         let mut v = line[..line.len() - 1].to_vec();
         v.extend_from_slice(b"\r\n");
         v
+    }
+
+    /// What a real zsh 5.9 gives back for `ZSH_TYPED`, captured under a pty on
+    /// `xterm-256color` in a 24-column pane behind a two-column prompt.
+    ///
+    /// It is not an echo. zsh renders the line: the first character, a
+    /// backspace, the line as far as the edge of the pane, and then, at the
+    /// wrap, a padding space, a carriage return, an erase-to-end-of-line, the
+    /// character that wrapped, a second carriage return, and that character
+    /// again. Nine bytes that were never typed, in the middle of twenty-nine
+    /// that were.
+    const ZSH_TYPED: &[u8] = b"# one two three four five six";
+    const ZSH_REDRAWN: &[u8] = b"#\x08# one two three fou \r\x1b[Kr\rr five six";
+
+    /// The same line at the same width from a real bash 5.2, for the contrast:
+    /// readline writes what it was handed and lets the terminal wrap it, so
+    /// there is nothing in here that was not typed.
+    const BASH_ECHOED: &[u8] = b"# one two three four five six\r\n";
+
+    /// `line` as a shell that redraws would give it back, modelled on
+    /// `ZSH_REDRAWN` above. For the lines that are too long to write out.
+    fn redrawn(line: &[u8], cols: usize, prompt: usize) -> Vec<u8> {
+        let mut out = vec![line[0], 0x08];
+        let mut col = prompt;
+        let mut i = 0;
+        while i < line.len() {
+            if line[i] == b'\n' {
+                out.extend_from_slice(b"\r\n");
+                i += 1;
+                continue;
+            }
+            if col + 1 >= cols && i + 1 < line.len() {
+                out.extend_from_slice(b" \r\x1b[K");
+                out.push(line[i]);
+                out.push(b'\r');
+                out.push(line[i]);
+                col = 1;
+                i += 1;
+                continue;
+            }
+            out.push(line[i]);
+            col += 1;
+            i += 1;
+        }
+        out
     }
 
     #[test]
@@ -614,5 +785,154 @@ mod tests {
         c.setup_sent(now, SETUP);
         assert!(!c.is_holding());
         assert_eq!(c.feed(now, b"x"), Emit::Bytes(b"x".to_vec()));
+    }
+    /// The measurement this file was rewritten for. A shell that redraws the
+    /// line instead of echoing it is still recognised as having read it.
+    ///
+    /// Before, the walk stopped at the first wrap: on a real 837-byte setup
+    /// line at 80 columns that is 75 bytes, one row of the screen, nine per
+    /// cent. Everything after it was taken for the host answering.
+    #[test]
+    fn a_shell_that_redraws_the_line_is_still_read_as_having_read_it() {
+        let e = find_echo(ZSH_REDRAWN, ZSH_TYPED).expect("the anchor is in there verbatim");
+        assert_eq!(
+            e.matched,
+            ZSH_TYPED.len(),
+            "every character of ours came back; the wrap dance is not the host talking"
+        );
+        assert_eq!(e.start, 2, "after the character zsh echoes and backspaces over");
+        // And what it covers is the drawing as well as the characters, so
+        // nothing of the dance is left on screen either.
+        assert_eq!(&ZSH_REDRAWN[e.start + e.span..], b"");
+        assert_eq!(strip_echo(ZSH_REDRAWN, ZSH_TYPED), b"#\x08".to_vec());
+    }
+
+    /// The shell that made the strict walk look right for two years.
+    #[test]
+    fn bash_hands_the_line_back_exactly_as_it_was_given() {
+        let e = find_echo(BASH_ECHOED, ZSH_TYPED).expect("verbatim, so trivially found");
+        assert_eq!(e.matched, ZSH_TYPED.len());
+        assert_eq!(e.start, 0);
+        // Only the CR LF the terminal made of the newline that ran it is left,
+        // and that is the host's, not ours.
+        assert_eq!(strip_echo(BASH_ECHOED, ZSH_TYPED), b"\r\n".to_vec());
+    }
+
+    /// The consequence on the deadline, which is the half nobody sees. A host
+    /// still redrawing our line is a host that has not reached the `clear`, and
+    /// it has to buy the same time as a host still echoing it.
+    #[test]
+    fn a_redrawn_line_pushes_the_deadline_like_an_echoed_one() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        c.setup_sent(now, SETUP);
+        let back = redrawn(SETUP, 80, 14);
+        let half = back.len() / 2;
+        let late = now + CLEAR_DEADLINE - Duration::from_millis(1);
+        assert_eq!(c.feed(late, &back[..half]), Emit::Nothing);
+        assert!(
+            c.deadline().expect("still holding") > late,
+            "the first row was recognised, the rest has to be too"
+        );
+        let later = late + CLEAR_DEADLINE - Duration::from_millis(1);
+        assert_eq!(c.feed(later, &back[half..]), Emit::Nothing);
+        assert!(c.is_holding(), "our own line is not a reason to give up");
+    }
+
+    /// And the half somebody does see: a `clear` that never comes must not put
+    /// a redrawn line on the screen either.
+    #[test]
+    fn a_redrawn_line_is_not_released_when_the_deadline_passes() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        c.setup_sent(now, SETUP);
+        assert_eq!(c.feed(now, b"root@fw-01# "), Emit::Nothing);
+        assert_eq!(c.feed(now, &redrawn(SETUP, 80, 12)), Emit::Nothing);
+        let late = now + HOLD_CAP + Duration::from_millis(1);
+        match c.feed(late, b"zsh: clear: command not found\r\n") {
+            Emit::Bytes(b) => {
+                let seen = String::from_utf8_lossy(&b).into_owned();
+                assert!(!seen.contains("BASH_VERSION"), "showed the line: {seen}");
+                assert!(!seen.contains("omni_precmd"), "showed the line: {seen}");
+                // Two bytes of the line survive, and they are the two in
+                // front of the anchor: the character zsh echoes before it
+                // starts drawing, and the backspace it puts over it. They
+                // cancel each other out on the screen, and reaching behind a
+                // match to take them out would be modelling one shell's habits
+                // rather than recognising a line.
+                assert_eq!(seen, "root@fw-01#  \u{8}zsh: clear: command not found\r\n");
+            }
+            Emit::Nothing => panic!("the deadline passed; the pane must not stay empty"),
+        }
+    }
+
+    /// The other way to the same blink, and no slow link anywhere near it. The
+    /// setup line goes out when sshd prints the last-login line, which is before
+    /// the login shell has read a word of its own rc, so a `.zshrc` with a
+    /// framework in it spends the whole deadline saying nothing. Giving up in
+    /// the middle of that silence releases nothing, because nothing is held; all
+    /// it does is open the curtain in time for the echo to be shown raw.
+    #[test]
+    fn silence_after_the_write_is_not_a_host_refusing_the_line() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        c.setup_sent(now, SETUP);
+        assert_eq!(
+            c.deadline(),
+            Some(now + HOLD_CAP),
+            "nothing has been said, so there is no host-side clock to run"
+        );
+
+        // Three seconds of a shell sourcing its rc, well past the old deadline.
+        let woke = now + CLEAR_DEADLINE + Duration::from_millis(500);
+        assert_eq!(c.feed(woke, &echoed(SETUP)), Emit::Nothing, "ours to hold");
+        assert_eq!(
+            c.deadline(),
+            Some(woke + CLEAR_DEADLINE),
+            "and now it runs, from the first word the host said"
+        );
+        match c.feed(woke, b"\x1b[H\x1b[2JMOTD\r\n$ ") {
+            Emit::Bytes(b) => {
+                let seen = String::from_utf8_lossy(&b).into_owned();
+                assert!(!seen.contains("BASH_VERSION"), "showed the line: {seen}");
+                assert!(seen.ends_with("MOTD\r\n$ "));
+            }
+            Emit::Nothing => panic!("the clear arrived, so the screen should have gone out"),
+        }
+    }
+
+    /// And the limit on that: a host that takes the line and never says a word
+    /// is held for the cap and no longer.
+    #[test]
+    fn a_host_that_says_nothing_at_all_is_still_let_go_at_the_cap() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        c.setup_sent(now, SETUP);
+        let much_later = now + HOLD_CAP + Duration::from_millis(1);
+        match c.feed(much_later, b"> ") {
+            Emit::Bytes(b) => assert_eq!(b, b"> ".to_vec()),
+            Emit::Nothing => panic!("the cap passed; the pane must not stay empty"),
+        }
+        assert!(!c.is_holding());
+    }
+
+    /// The limit on the other side. A redraw is a short interruption; anything
+    /// longer is the host, and the host's own words must not be taken off the
+    /// screen on the strength of a few characters that look like ours.
+    #[test]
+    fn a_gap_too_long_to_be_a_redraw_ends_the_line() {
+        let mut buf = SETUP[..40].to_vec();
+        let host = "-- the host had something to say ".repeat(4);
+        buf.extend_from_slice(host.as_bytes());
+        buf.extend_from_slice(&SETUP[40..]);
+        assert!(host.len() > REDRAW_SLACK, "the gap has to be past the limit");
+
+        let e = find_echo(&buf, SETUP).expect("the anchor is at the front");
+        assert_eq!(e.matched, 40, "the walk stops where the line stops");
+        let left = String::from_utf8_lossy(&strip_echo(&buf, SETUP)).into_owned();
+        assert!(
+            left.starts_with(&host),
+            "the host keeps every word of its own: {left}"
+        );
     }
 }

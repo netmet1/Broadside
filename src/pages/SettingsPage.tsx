@@ -1668,7 +1668,11 @@ export function SettingsPage({
           installs command tracking and reprints the login screen. It is written
           with a space in front of it, so any host whose{" "}
           <code>HISTCONTROL</code> ignores space-prefixed commands (the Debian
-          and Ubuntu default) never records it. Everywhere else bash keeps it,
+          and Ubuntu default) never records it. Run{" "}
+          <code>{'echo "$HISTCONTROL"'}</code> on a host to see which kind it
+          is: an answer with <code>ignorespace</code> or <code>ignoreboth</code>{" "}
+          in it is a host where the space is already doing the work and this
+          switch changes nothing you can see. Everywhere else bash keeps it,
           and an <strong>Up</strong> arrow finds it instead of your own last
           command. Turn this <strong>on</strong> to have the line delete its own
           entry as it goes past; it only ever removes an entry it has checked is
