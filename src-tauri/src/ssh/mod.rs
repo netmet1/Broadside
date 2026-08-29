@@ -70,9 +70,64 @@ fn handshake_backoff(attempt: usize) -> Duration {
         % 250;
     Duration::from_millis(base + jitter)
 }
-/// Bound on the `echo $SHELL` probe. Short on purpose: it is a nicety, and a
-/// server that will not answer it must not hold up opening the terminal.
-const SHELL_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+/// Bound on the login-shell probe, end to end.
+///
+/// Three seconds, and described as a bound on a server that will not answer,
+/// made this a network timeout. It is not one. The probe runs a command *in the
+/// host's login shell*, and a login shell runs the operator's rc file before it
+/// runs anything of ours, so this is a budget for somebody else's startup
+/// script: an `nvm`, `conda` or `pyenv` block above the `case $- in *i*` guard
+/// at the top of a `.bashrc`, or a home directory on a cold NFS mount, any of
+/// which costs seconds without the host being slow in any sense the operator
+/// would recognise.
+///
+/// What three seconds did to such a host was not a slower connect, it was a
+/// worse one. The probe returned nothing, the host was recorded `Unreadable`,
+/// and an unreadable host is sent nothing at all; so command blocks and skills
+/// went away, a dialog said the shell could not be read, and the login screen
+/// arrived in pieces, because with no setup line there is no `clear` for
+/// [`crate::ssh::connect_curtain`] to cut at and nothing for it to hold. One
+/// slow rc file, three symptoms, none of them naming the cause.
+///
+/// It is [`SHELL_PROBE_QUIET`] and the marker below that end the ordinary case,
+/// not this. Hosts that answer are not made to wait for this value, and hosts
+/// that answer with something that is not a shell are not made to wait for it
+/// either. It bounds one case only: a host that says nothing whatsoever.
+const SHELL_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// How long the probe keeps listening after the host has said something that
+/// was not the answer.
+///
+/// A shell that ran the command closes the channel when it is done, and the
+/// close is what ends the probe. A console menu never closes: pfSense's
+/// `rc.initial` answers by reprinting itself and waits for the next selection,
+/// so on the old code it cost the entire budget and then read as a timeout. So
+/// once bytes have arrived without [`SHELL_PROBE_MARK`] among them, a gap this
+/// long is taken to mean the host has finished saying whatever it was going to
+/// say, and what arrived is parsed as it stands.
+///
+/// This is why the budget above could be raised without making any real host
+/// slower. Silence *before* the host speaks is an rc file still running and is
+/// worth waiting out; silence *after* it speaks is an answer, and this is how
+/// long it takes to be sure of one.
+const SHELL_PROBE_QUIET: Duration = Duration::from_millis(750);
+
+/// What the probe asks the shell to print in front of its answer.
+///
+/// `echo $SHELL` on its own has no end to it. The reply lands somewhere inside
+/// whatever the rc file also printed, so the only way to know all of it had
+/// arrived was to wait for the channel to close, and waiting for the close is
+/// what made a host that never closes indistinguishable from a host that is
+/// merely slow. A marker gives the answer an edge the probe can see: it can
+/// stop the instant the answer lands, which is sooner than the close on every
+/// host that works, and it can tell "still starting up" from "this is not a
+/// shell and no answer is coming".
+///
+/// Still `echo` and still `$SHELL`, for the reason given on
+/// [`detect_login_shell`]: both are understood by every shell this has to
+/// survive, fish and csh included. A shell that does not expand it echoes the
+/// literal, which the `$` check below still catches.
+const SHELL_PROBE_MARK: &str = "__broadside_shell=";
 
 /// How much of the connect-time setup a host's login shell can be given.
 ///
@@ -268,18 +323,58 @@ pub fn shell_name(shell: &str) -> String {
 /// Returns `None` on any failure at all. A server with a `ForceCommand`, a
 /// restricted account, or anything else that will not run this must keep the
 /// behaviour it has today, so an unanswerable probe is not an error.
+///
+/// # Whose clock this is on
+///
+/// This is not a round trip. `exec` runs the command through the account's
+/// login shell, which sources the operator's rc file first, so the probe takes
+/// as long as somebody else's startup script takes and there is no bound on
+/// that worth guessing at. Everything about the timing here follows from
+/// that: the budget is [`SHELL_PROBE_TIMEOUT`], the ordinary case ends on
+/// [`SHELL_PROBE_MARK`] long before the budget, and a host that talks without
+/// ever answering ends on [`SHELL_PROBE_QUIET`].
+///
+/// It matters more than a probe usually would, because `None` is not a missing
+/// nicety. `None` is `Unreadable`, `Unreadable` sends nothing, and a host that
+/// is sent nothing loses command blocks, loses skills, and has its login screen
+/// painted in pieces for want of a `clear` to cut at. A wrong answer here is
+/// not a wrong chip, it is a connect that looks broken.
 pub(crate) async fn detect_login_shell(handle: &Handle<TofuHandler>) -> Option<String> {
     let probe = async {
         let mut channel = handle.channel_open_session().await.ok()?;
-        channel.exec(true, "echo $SHELL").await.ok()?;
+        channel
+            .exec(true, format!("echo \"{SHELL_PROBE_MARK}$SHELL\""))
+            .await
+            .ok()?;
         let mut out = String::new();
         loop {
-            match channel.wait().await {
+            // The two silences are different facts and are given different
+            // amounts of patience. Nothing said yet means the rc file is still
+            // running and the only honest bound is the whole budget. Silence
+            // after the host has spoken means it has finished: a shell would
+            // have closed the channel by now, so what is left is something that
+            // answers and then waits, which is a console menu.
+            let next = if out.is_empty() {
+                channel.wait().await
+            } else {
+                match tokio::time::timeout(SHELL_PROBE_QUIET, channel.wait()).await {
+                    Ok(msg) => msg,
+                    Err(_) => break,
+                }
+            };
+            match next {
                 Some(ChannelMsg::Data { ref data }) => {
                     out.push_str(&String::from_utf8_lossy(data));
-                    // A login shell path is short; anything longer is noise from
-                    // a chatty rc file and we are not going to find it there.
-                    if out.len() > 512 {
+                    // The marker gives the answer an end, so there is no reason
+                    // to sit through the close on a host that works.
+                    if marked_answer_complete(&out) {
+                        break;
+                    }
+                    // A chatty rc file can print a great deal on a
+                    // non-interactive login. Read enough of it to get past a
+                    // banner to the marker behind it, and no more: past this
+                    // the host is not answering the question that was asked.
+                    if out.len() > 4096 {
                         break;
                     }
                 }
@@ -287,36 +382,62 @@ pub(crate) async fn detect_login_shell(handle: &Handle<TofuHandler>) -> Option<S
                 Some(_) => {}
             }
         }
-        // Take the last line that could actually *be* `$SHELL`, not simply the
-        // last non-empty one. An rc file that prints on a non-interactive login
-        // puts its output on both sides of the echo, and taking whatever came
-        // last read one operator's rc banner as their login shell, the host
-        // then wore an "unsupported shell" chip naming a line of their own
-        // startup script. Finding nothing that looks like a shell is not an
-        // error: `None` means "we could not tell", which warns about nothing.
-        let line = out
-            .lines()
-            .map(str::trim)
-            .rev()
-            .find(|l| looks_like_shell_path(l))?;
-        let name = shell_name(line);
-        // `$SHELL` unset echoes back empty, and a shell that does not expand it
-        // echoes the literal. Either way we know nothing.
-        //
-        // Deliberately NOT held to `is_shell_name` here: the terminal path uses
-        // this answer to decide against injecting the integration line, and on
-        // a pfSense host the truthful `rc.initial` is exactly what keeps a
-        // POSIX `if` from being typed into the console menu. The alphabet is
-        // enforced where the answer is stored or shown, not where it is learned.
-        if name.is_empty() || name.contains('$') {
-            return None;
-        }
-        Some(name)
+        shell_from_probe_output(&out)
     };
     tokio::time::timeout(SHELL_PROBE_TIMEOUT, probe)
         .await
         .ok()
         .flatten()
+}
+
+/// Whether the marked answer has arrived whole: the marker, and a newline after
+/// it to say the value it introduces is finished rather than half delivered.
+fn marked_answer_complete(out: &str) -> bool {
+    match out.find(SHELL_PROBE_MARK) {
+        Some(at) => out[at..].contains('\n'),
+        None => false,
+    }
+}
+
+/// The login shell the host reported, out of everything else it said.
+///
+/// Two readings, tried in that order. The marked one is exact: the probe asked
+/// for the value behind [`SHELL_PROBE_MARK`], so a marked line is the answer
+/// and nothing else on the stream can be taken for it.
+///
+/// The unmarked one is the older heuristic, kept for a host that answers
+/// something other than what was asked. It takes the last line that could
+/// actually *be* `$SHELL`, not simply the last non-empty one: an rc file that
+/// prints on a non-interactive login puts its output on both sides of the echo,
+/// and taking whatever came last once read an operator's rc banner as their
+/// login shell, after which the host wore an "unsupported shell" chip naming a
+/// line of their own startup script.
+///
+/// Finding nothing is not an error. `None` means "we could not tell", and that
+/// warns about nothing.
+fn shell_from_probe_output(out: &str) -> Option<String> {
+    let line = out
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix(SHELL_PROBE_MARK))
+        .rfind(|value| !value.is_empty())
+        .or_else(|| {
+            out.lines()
+                .map(str::trim)
+                .rfind(|l| looks_like_shell_path(l))
+        })?;
+    let name = shell_name(line);
+    // `$SHELL` unset echoes back empty, and a shell that does not expand it
+    // echoes the literal. Either way we know nothing.
+    //
+    // Deliberately NOT held to `is_shell_name` here: the terminal path uses
+    // this answer to decide against injecting the integration line, and on
+    // a pfSense host the truthful `rc.initial` is exactly what keeps a
+    // POSIX `if` from being typed into the console menu. The alphabet is
+    // enforced where the answer is stored or shown, not where it is learned.
+    if name.is_empty() || name.contains('$') {
+        return None;
+    }
+    Some(name)
 }
 
 /// Key the server presented during the handshake, captured by the handler
@@ -927,18 +1048,93 @@ mod shell_tests {
         }
     }
 
-    /// The whole point of the change: the probe must reach past trailing rc
-    /// output to the line that is actually the shell.
+    /// The probe must reach past trailing rc output to the line that is
+    /// actually the shell. Predates the marker, and still has to hold, because
+    /// the unmarked reading is what a host that answers something other than
+    /// what was asked falls back to.
     #[test]
     fn the_shell_is_found_under_trailing_rc_output() {
         let out = "welcome\n/bin/bash\nrc.inital\n";
-        let line = out
-            .lines()
-            .map(str::trim)
-            .rev()
-            .find(|l| looks_like_shell_path(l));
-        assert_eq!(line, Some("/bin/bash"));
-        assert_eq!(shell_name(line.unwrap()), "bash");
+        assert_eq!(shell_from_probe_output(out).as_deref(), Some("bash"));
+    }
+
+    #[test]
+    fn the_marked_answer_is_taken_over_anything_else_on_the_stream() {
+        // An rc file that prints on a non-interactive login, on both sides of
+        // the echo, and prints a path of its own for good measure. Before the
+        // marker the last plausible path won; now the line that was asked for
+        // does, whatever else is shouting.
+        let out = "== welcome to prod ==\n\
+                   using /usr/local/bin/python3.11\n\
+                   __broadside_shell=/bin/zsh\n\
+                   /opt/tools/bin/agent\n";
+        assert_eq!(shell_from_probe_output(out).as_deref(), Some("zsh"));
+    }
+
+    #[test]
+    fn an_unmarked_answer_still_reads() {
+        // A host that mangles the quoting, or answers something other than what
+        // was asked. The old heuristic is the fallback, not the primary.
+        assert_eq!(
+            shell_from_probe_output("/usr/bin/fish\n").as_deref(),
+            Some("fish")
+        );
+        // pfSense's console menu: it reprints itself rather than running the
+        // command, and nothing in that is a shell path. `None` is the truthful
+        // answer, and it is `Unreadable` rather than a guess.
+        let menu = "Welcome to pfSense!\n\n\
+                    0) Logout (SSH only)\n\
+                    1) Assign Interfaces\n\
+                    8) Shell\n\nEnter an option: ";
+        assert_eq!(shell_from_probe_output(menu), None);
+    }
+
+    #[test]
+    fn a_shell_that_does_not_expand_it_is_not_believed() {
+        // The marker arrives, the value behind it does not: a shell that echoed
+        // the literal. Knowing nothing is the correct answer, and the `$` check
+        // is what keeps it from being stored as a shell called `$SHELL`.
+        assert_eq!(shell_from_probe_output("__broadside_shell=$SHELL\n"), None);
+        // And `$SHELL` unset, which echoes back as an empty value. Empty must
+        // not shadow a real path further up the stream either.
+        assert_eq!(shell_from_probe_output("__broadside_shell=\n"), None);
+        assert_eq!(
+            shell_from_probe_output("/bin/dash\n__broadside_shell=\n").as_deref(),
+            Some("dash")
+        );
+    }
+
+    #[test]
+    fn the_marker_is_what_says_the_answer_is_whole() {
+        // The reason the probe can stop before the channel closes: a marker
+        // with a newline behind it is a complete line, and a complete line is
+        // the answer. Half of one is not, and waiting for the rest of it is the
+        // difference between reading `/bin/ba` and reading bash.
+        assert!(marked_answer_complete("__broadside_shell=/bin/bash\n"));
+        assert!(!marked_answer_complete("__broadside_shell=/bin/ba"));
+        assert!(!marked_answer_complete("__broadside_sh"));
+        // Noise in front of it is fine; noise is what the marker exists for.
+        assert!(marked_answer_complete(
+            "nvm: no such file\n__broadside_shell=/bin/zsh\n"
+        ));
+        // A menu never produces it, which is what sends that case to the quiet
+        // gap instead of to the budget.
+        assert!(!marked_answer_complete("Enter an option: "));
+    }
+
+    #[test]
+    fn the_probe_budget_outlasts_a_slow_rc_file() {
+        // The 68-5 fault, at the level that caused it. A `.bashrc` with an
+        // `nvm` or `conda` block above the `case $- in *i*` guard runs on the
+        // probe's non-interactive login too, and at three seconds it ran the
+        // clock out: the host was recorded Unreadable, was therefore sent
+        // nothing, and lost command blocks, skills, and the curtain with them.
+        assert!(SHELL_PROBE_TIMEOUT >= Duration::from_secs(8));
+        // And the reason that could be afforded: the hosts that answer are not
+        // waiting on it. A shell closes the channel, a marked answer ends the
+        // read sooner still, and a host that talks without answering ends on a
+        // gap that is a fraction of the budget.
+        assert!(SHELL_PROBE_QUIET < SHELL_PROBE_TIMEOUT / 4);
     }
 
     #[test]
