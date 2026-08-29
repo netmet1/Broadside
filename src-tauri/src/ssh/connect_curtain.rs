@@ -71,6 +71,49 @@
 //! between two characters of ours is the editor drawing, not the host talking.
 //! See [`REDRAW_SLACK`] for how short, and why there is a limit at all.
 //!
+//! It comes back twice, as well. The terminal driver on the host echoes what
+//! arrives at it whether or not any program is reading, and the login shell then
+//! draws the same characters over again when it gets round to reading them as
+//! keystrokes. So a copy lands at the instant of the write, before the shell has
+//! read a word of its own rc, and a second one lands whenever the shell is
+//! ready. Every copy is taken out, not the first.
+//!
+//! # The prompt that erases
+//!
+//! The cut is made at the host's `clear`, and for two years "the host's `clear`"
+//! meant the first erase-display sequence on the stream. That is not what an
+//! erase-display means. This is a real zsh 5.9 drawing an ordinary prompt:
+//!
+//! ```text
+//! ESC[0m ESC[27m ESC[24m ESC[J probe ESC[K
+//! ```
+//!
+//! `ESC[J` erases from the cursor to the end of the display, and a shell about
+//! to draw a prompt has every right to use it: it is clearing its own ground,
+//! below its own cursor. But it was the first erase on the stream, so the cut
+//! was made there, and everything after it went to the pane: the prompt, then
+//! the shell's redraw of our setup line, in full, and then the real `clear`
+//! wiping it. On the measured login that is 1370 bytes released with
+//! `BASH_VERSION`, `__omni_precmd` and `add-zsh-hook` in them, where the right
+//! cut releases 429 with none of them.
+//!
+//! Every time, on every zsh, and never on bash, whose prompt is
+//! `ESC[?2004h user@host$ ` with no erase in it anywhere. That is exactly the
+//! shape the bug was reported in.
+//!
+//! What separates them is where the cursor is. A `clear` homes first and then
+//! erases, so erasing forwards is erasing everything; a prompt erases from
+//! wherever it happens to be. So `ESC[2J`, which erases the whole display and
+//! which nothing draws a prompt with, is taken wherever it appears, and an erase
+//! forwards is taken only with a cursor home immediately in front of it. See
+//! [`HOMES`].
+//!
+//! What that does not cover: a host that clears its own screen in its rc file,
+//! between our write and our `clear`. The cut would be made at that one, and
+//! what follows it is the shell's redraw of our line. So the release is stripped
+//! of our line on both paths rather than only on the deadline, which turns a
+//! wrong cut from something an operator reads into something nobody can see.
+//!
 //! # What it refuses to do
 //!
 //! **Hold a shell we are not writing to.** A silent host (a console menu, an
@@ -108,13 +151,18 @@ use std::time::{Duration, Instant};
 /// hotel wireless was blowing a deadline measured from the write on every
 /// connect, and every connect showed the line.
 ///
-/// It does not start until the host has said a word back, for the same reason
-/// read the other way. The line goes out when sshd prints the last-login line,
-/// which is before the login shell has read the first line of its own rc, and a
-/// `.zshrc` with a framework in it can spend seconds there. Expiring in the
-/// middle of that silence shows nobody anything sooner, because nothing is
-/// being held to show; all it does is open the curtain, so the echo that
-/// arrives a moment later goes straight to the screen. [`HOLD_CAP`] is the
+/// It does not start until the host has said a word of its own, for the same
+/// reason read the other way. The line goes out when sshd prints the last-login
+/// line, which is before the login shell has read the first line of its own rc,
+/// and a `.zshrc` with a framework in it can spend seconds there. Expiring in
+/// the middle of that silence shows nobody anything sooner, because nothing is
+/// being held to show; all it does is open the curtain, so the redraw that
+/// arrives a moment later goes straight to the screen.
+///
+/// "A word of its own" and not "a byte", because the host is not silent in that
+/// gap: its terminal driver echoes our line back the instant it arrives,
+/// complete, with no shell involved. Counting that as the host answering starts
+/// this clock at the write again, which is where it came in. [`HOLD_CAP`] is the
 /// answer to a host that says nothing at all.
 ///
 /// Generous even so, because a machine that has just accepted a login may be
@@ -123,15 +171,38 @@ use std::time::{Duration, Instant};
 /// remove, so the deadline is set where a human would rather wait than see it.
 pub const CLEAR_DEADLINE: Duration = Duration::from_millis(2500);
 
-/// The erase-display sequences a `clear` can come out as, longest first so a
-/// prefix never matches ahead of the sequence it is part of.
+/// Erase the whole display. What `clear` comes out as on `xterm-256color`,
+/// which is the terminal type we ask for, so in practice it is always this one.
 ///
-/// `ESC[2J` is what `xterm-256color` gives, which is the terminal type we ask
-/// for, so in practice it is always the first. The other two are what a terminfo
-/// that clears by homing the cursor and erasing forwards produces, and they are
-/// here because the cost of listing them is nothing and the cost of a host that
-/// uses one is the curtain waiting out its whole deadline on every connect.
-const ERASE_DISPLAY: [&[u8]; 3] = [b"\x1b[2J", b"\x1b[0J", b"\x1b[J"];
+/// Taken as a `clear` wherever it appears, because nothing else emits it. A line
+/// editor erases from where the cursor is; it has no reason to wipe a screen it
+/// does not own.
+const ERASE_ALL: &[u8] = b"\x1b[2J";
+
+/// Erase from the cursor to the end of the display.
+///
+/// A `clear` on a terminfo that homes first and then erases forwards ends in one
+/// of these: `vt100`, `linux` and `ansi` all spell it `ESC[H ESC[J`. So does
+/// every prompt zsh has ever drawn, which is the whole difficulty. See
+/// [`HOMES`].
+const ERASE_FORWARD: [&[u8]; 2] = [b"\x1b[0J", b"\x1b[J"];
+
+/// The cursor homes a `clear` does before it erases forwards.
+///
+/// This is what tells the two apart, and it is the fix for a bug that put the
+/// setup line on the screen at every single zsh connect. Erasing forwards from
+/// the top left is erasing everything, which is a `clear`. Erasing forwards from
+/// wherever the cursor happens to be is a shell tidying up after itself before
+/// it draws a prompt, and that is nobody's screen but its own.
+///
+/// Measured on a real zsh 5.9: every prompt it draws is `ESC[0m ESC[27m ESC[24m
+/// ESC[J`, three times in one login, and its `clear` is `ESC[H ESC[2J ESC[3J`.
+/// Bash draws its prompt with no erase in it at all, which is why this was only
+/// ever a bug on one of the two.
+///
+/// `ESC[H` is what `xterm` and most others use. The other two are the same
+/// instruction spelled out, and cost nothing to accept.
+const HOMES: [&[u8]; 3] = [b"\x1b[H", b"\x1b[;H", b"\x1b[1;1H"];
 
 /// The longest a first screen is ever held, whatever is arriving.
 ///
@@ -277,34 +348,54 @@ impl Curtain {
             State::AwaitingClear {
                 mut deadline,
                 cap,
-                heard,
+                mut heard,
             } => {
-                // The first word back is where the clock starts. Before it the
-                // host has told us nothing, and a deadline running through that
-                // silence is a deadline on how quickly somebody else's shell
-                // gets out of bed.
-                if !heard {
+                self.held.extend_from_slice(data);
+                let copies = find_echoes(&self.held, &self.echo);
+                let seen: usize = copies.iter().map(|e| e.matched).sum();
+                let ours: usize = copies.iter().map(|e| e.span).sum();
+                // What is here that we did not put here. Our own line coming
+                // back is not the host speaking, and neither is the beginning of
+                // a copy of it that is still too short to recognise.
+                let theirs = self
+                    .held
+                    .len()
+                    .saturating_sub(ours)
+                    .saturating_sub(pending_echo(&self.held, &self.echo));
+                // The host's first word of its own is where the clock starts.
+                // Before it the host has told us nothing: the line goes out when
+                // sshd prints the last-login line, and the shell may not have
+                // read the first line of its rc yet.
+                if !heard && theirs > 0 {
+                    heard = true;
                     deadline = (now + CLEAR_DEADLINE).min(cap);
                 }
-                self.held.extend_from_slice(data);
                 // More of our own line coming back is not the host answering, it
                 // is the host still reading, so the clock starts again. Without
                 // this the deadline is really a guess at somebody's latency.
-                let seen = find_echo(&self.held, &self.echo).map_or(0, |e| e.matched);
+                // Forwards only: a line still arriving cannot be a reason to give
+                // up sooner than we already meant to.
                 if seen > self.echo_seen {
                     self.echo_seen = seen;
-                    deadline = (now + CLEAR_DEADLINE).min(cap);
+                    if heard {
+                        deadline = deadline.max((now + CLEAR_DEADLINE).min(cap));
+                    }
                 }
                 self.state = State::AwaitingClear {
                     deadline,
                     cap,
-                    heard: true,
+                    heard,
                 };
                 // The screen starts at the erase. Everything before it is the
                 // banner we are hiding and the echo of the line that wiped it.
+                //
+                // Stripped even so. Nothing of ours should be on the far side of
+                // the host's own `clear`, and on every host measured nothing is,
+                // but the promise this file makes is about what leaves it and not
+                // about what it expects to find.
                 if let Some(idx) = find_erase(&self.held) {
                     let mut out = HOME.to_vec();
-                    out.extend_from_slice(&self.held[idx..]);
+                    out.extend_from_slice(&strip_echo(&self.held[idx..], &self.echo));
                     self.held = Vec::new();
                     self.lift();
                     return Emit::Bytes(out);
@@ -383,18 +474,27 @@ impl Curtain {
     }
 }
 
-/// Where in `buf` the erase-display sequence starts, if it has arrived.
+/// Where in `buf` the host's `clear` starts, if it has arrived.
+///
+/// The earliest one, because everything in front of an erase is being thrown
+/// away by the host as well, so cutting at the first is never cutting away
+/// something a person was going to keep.
+///
+/// The host's `clear` and not merely an erase: an erase forwards counts only
+/// when a cursor home is the thing immediately in front of it. See [`HOMES`].
 fn find_erase(buf: &[u8]) -> Option<usize> {
-    // Every candidate is scanned rather than stopping at the first match of the
-    // first pattern, because `ESC[J` can appear earlier in the stream than the
-    // `ESC[2J` that is the real clear (a prompt redraw erasing to end of line is
-    // a different sequence, but a program in the banner can legitimately erase
-    // forwards). The earliest erase is the safe one to cut at: everything before
-    // any erase is being thrown away by the host too.
-    ERASE_DISPLAY
+    let all = find_sub(buf, ERASE_ALL);
+    // Every occurrence and not just the first, because the first can be a prompt
+    // and the second the real thing.
+    let forward = ERASE_FORWARD
         .iter()
-        .filter_map(|pat| find_sub(buf, pat))
-        .min()
+        .flat_map(|pat| occurrences(buf, pat))
+        .filter(|&i| HOMES.iter().any(|home| buf[..i].ends_with(home)))
+        .min();
+    match (all, forward) {
+        (Some(a), Some(f)) => Some(a.min(f)),
+        (a, f) => a.or(f),
+    }
 }
 
 /// What was found of our own line in a buffer.
@@ -424,11 +524,14 @@ struct Echo {
 /// Past the anchor the walk allows for a line editor redrawing rather than
 /// echoing, stepping over a short run of bytes that are not ours and refusing a
 /// long one. See [`REDRAW_SLACK`].
-fn find_echo(buf: &[u8], echo: &[u8]) -> Option<Echo> {
-    if echo.is_empty() {
+/// `from` is where the search starts, which is how the second and later copies
+/// are found. See [`find_echoes`].
+fn find_echo_from(buf: &[u8], echo: &[u8], from: usize) -> Option<Echo> {
+    if echo.is_empty() || from >= buf.len() {
         return None;
     }
-    let start = find_sub(buf, &echo[..ECHO_ANCHOR.min(echo.len())])?;
+    let anchor = &echo[..ECHO_ANCHOR.min(echo.len())];
+    let start = from + find_sub(&buf[from..], anchor)?;
     let mut i = start;
     let mut j = 0;
     // One past the last byte that was certainly ours. Not `i`: a run stepped
@@ -466,16 +569,61 @@ fn find_echo(buf: &[u8], echo: &[u8]) -> Option<Echo> {
     })
 }
 
-/// `buf` without the echo of our own line, if it is in there.
-fn strip_echo(buf: &[u8], echo: &[u8]) -> Vec<u8> {
-    match find_echo(buf, echo) {
-        Some(e) => {
-            let mut out = buf[..e.start].to_vec();
-            out.extend_from_slice(&buf[e.start + e.span..]);
-            out
+/// Every run of `buf` that is our own line coming back, in order.
+///
+/// Every, because the line is echoed more than once. The terminal driver on the
+/// host echoes what arrives at it whether or not any program is reading, and the
+/// login shell draws the same characters again when it finally gets round to
+/// reading them as keystrokes. Measured on a shell with three seconds of rc file
+/// to get through: 838 bytes at the instant of the write, and another 917 three
+/// seconds later. A pass that took out the first copy left the second one on
+/// somebody's screen.
+fn find_echoes(buf: &[u8], echo: &[u8]) -> Vec<Echo> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    while from < buf.len() {
+        match find_echo_from(buf, echo, from) {
+            // `max(1)` only so that a zero-length find could not loop; the
+            // anchor having matched means the span is at least one byte.
+            Some(e) => {
+                from = e.start + e.span.max(1);
+                out.push(e);
+            }
+            None => break,
         }
-        None => buf.to_vec(),
     }
+    out
+}
+
+/// How much of a copy too short to recognise yet is sitting at the end of `buf`.
+///
+/// [`ECHO_ANCHOR`] bytes have to arrive before a run can be called our line, and
+/// between the first byte and the sixteenth those bytes would otherwise count as
+/// the host having said something. It has not: that is our own line, arriving
+/// slowly. This is what stops a link delivering the echo a few bytes at a time
+/// from starting a clock that is meant to start when the host speaks.
+fn pending_echo(buf: &[u8], echo: &[u8]) -> usize {
+    let max = (ECHO_ANCHOR - 1).min(buf.len()).min(echo.len());
+    (1..=max)
+        .rev()
+        .find(|&n| buf[buf.len() - n..] == echo[..n])
+        .unwrap_or(0)
+}
+
+/// `buf` without any copy of the echo of our own line.
+fn strip_echo(buf: &[u8], echo: &[u8]) -> Vec<u8> {
+    let copies = find_echoes(buf, echo);
+    if copies.is_empty() {
+        return buf.to_vec();
+    }
+    let mut out = Vec::with_capacity(buf.len());
+    let mut at = 0;
+    for e in copies {
+        out.extend_from_slice(&buf[at..e.start]);
+        at = e.start + e.span;
+    }
+    out.extend_from_slice(&buf[at..]);
+    out
 }
 
 fn find_sub(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -485,6 +633,19 @@ fn find_sub(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|w| w == needle)
+}
+
+/// Every offset in `haystack` where `needle` starts.
+fn occurrences(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return Vec::new();
+    }
+    haystack
+        .windows(needle.len())
+        .enumerate()
+        .filter(|(_, w)| *w == needle)
+        .map(|(i, _)| i)
+        .collect()
 }
 
 #[cfg(test)]
@@ -519,6 +680,21 @@ mod tests {
     /// that were.
     const ZSH_TYPED: &[u8] = b"# one two three four five six";
     const ZSH_REDRAWN: &[u8] = b"#\x08# one two three fou \r\x1b[Kr\rr five six";
+
+    /// An ordinary prompt from a real zsh 5.9, captured byte for byte. The
+    /// `ESC[J` in the middle of it is what the cut used to be made at, on every
+    /// connect, releasing the redraw of the setup line that came after it.
+    const ZSH_PROMPT: &[u8] = b"\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jprobe\x1b[K\x1b[?2004h";
+
+    /// And the `clear` from the same login, which is the one that should be cut
+    /// at: bracketed paste off, the newline that ran the line, then a home and
+    /// the erase.
+    const ZSH_CLEAR: &[u8] = b"\x1b[?2004l\r\r\n\x1b[H\x1b[2J\x1b[3J";
+
+    /// zsh's mark for output that did not end in a newline, which is the first
+    /// thing it says on a login and so the first thing that is really the host
+    /// talking. The run of spaces is shortened here; the shape is the capture's.
+    const ZSH_PARTIAL_LINE: &[u8] = b"\x1b[1m\x1b[7m%\x1b[27m\x1b[1m\x1b[0m      \r \r";
 
     /// The same line at the same width from a real bash 5.2, for the contrast:
     /// readline writes what it was handed and lets the terminal wrap it, so
@@ -794,7 +970,7 @@ mod tests {
     /// cent. Everything after it was taken for the host answering.
     #[test]
     fn a_shell_that_redraws_the_line_is_still_read_as_having_read_it() {
-        let e = find_echo(ZSH_REDRAWN, ZSH_TYPED).expect("the anchor is in there verbatim");
+        let e = find_echo_from(ZSH_REDRAWN, ZSH_TYPED, 0).expect("the anchor is in there verbatim");
         assert_eq!(
             e.matched,
             ZSH_TYPED.len(),
@@ -810,7 +986,7 @@ mod tests {
     /// The shell that made the strict walk look right for two years.
     #[test]
     fn bash_hands_the_line_back_exactly_as_it_was_given() {
-        let e = find_echo(BASH_ECHOED, ZSH_TYPED).expect("verbatim, so trivially found");
+        let e = find_echo_from(BASH_ECHOED, ZSH_TYPED, 0).expect("verbatim, so trivially found");
         assert_eq!(e.matched, ZSH_TYPED.len());
         assert_eq!(e.start, 0);
         // Only the CR LF the terminal made of the newline that ran it is left,
@@ -883,9 +1059,20 @@ mod tests {
             "nothing has been said, so there is no host-side clock to run"
         );
 
-        // Three seconds of a shell sourcing its rc, well past the old deadline.
+        // The host's terminal driver echoes the line back at the instant of the
+        // write, complete, with no shell involved. That is not the host
+        // answering, and a clock started on it is a clock started on the write.
+        assert_eq!(c.feed(now, &echoed(SETUP)), Emit::Nothing, "ours to hold");
+        assert_eq!(
+            c.deadline(),
+            Some(now + HOLD_CAP),
+            "our own line coming back is not a word from the host"
+        );
+
+        // Three seconds of a shell sourcing its rc, well past the old deadline,
+        // and then the shell arrives and draws a prompt.
         let woke = now + CLEAR_DEADLINE + Duration::from_millis(500);
-        assert_eq!(c.feed(woke, &echoed(SETUP)), Emit::Nothing, "ours to hold");
+        assert_eq!(c.feed(woke, ZSH_PROMPT), Emit::Nothing, "a prompt, not a clear");
         assert_eq!(
             c.deadline(),
             Some(woke + CLEAR_DEADLINE),
@@ -927,12 +1114,142 @@ mod tests {
         buf.extend_from_slice(&SETUP[40..]);
         assert!(host.len() > REDRAW_SLACK, "the gap has to be past the limit");
 
-        let e = find_echo(&buf, SETUP).expect("the anchor is at the front");
+        let e = find_echo_from(&buf, SETUP, 0).expect("the anchor is at the front");
         assert_eq!(e.matched, 40, "the walk stops where the line stops");
         let left = String::from_utf8_lossy(&strip_echo(&buf, SETUP)).into_owned();
         assert!(
             left.starts_with(&host),
             "the host keeps every word of its own: {left}"
         );
+    }
+    /// The bug this build exists for, in one line. zsh erases to the end of the
+    /// display before it draws a prompt, which is its own ground and not the
+    /// screen, and it used to be where the cut was made.
+    #[test]
+    fn a_prompt_that_erases_is_not_a_clear() {
+        assert_eq!(
+            find_erase(ZSH_PROMPT),
+            None,
+            "the erase in a prompt is the shell clearing under its own cursor"
+        );
+        assert!(
+            find_erase(ZSH_CLEAR).is_some(),
+            "and the one in a clear is the screen"
+        );
+    }
+
+    /// The tolerance that made the bug possible is kept, and it is kept the way
+    /// it was meant to be: `vt100`, `linux` and `ansi` all clear by homing and
+    /// erasing forwards, and a home in front is what makes that a whole screen.
+    #[test]
+    fn a_clear_that_homes_and_erases_forwards_is_still_a_clear() {
+        assert_eq!(find_erase(b"\x1b[H\x1b[J"), Some(3));
+        assert_eq!(find_erase(b"\x1b[;H\x1b[0J"), Some(4));
+        assert_eq!(find_erase(b"\x1b[1;1H\x1b[J"), Some(6));
+        assert_eq!(
+            find_erase(b"\x1b[24m\x1b[J"),
+            None,
+            "erasing forwards from where the cursor happened to be is not a clear"
+        );
+    }
+
+    /// And the first erase is not blindly the answer either: a login has a
+    /// prompt in it before it has a clear.
+    #[test]
+    fn the_clear_is_found_behind_a_prompt_that_erased_first() {
+        let mut buf = ZSH_PROMPT.to_vec();
+        let at = buf.len() + 3;
+        buf.extend_from_slice(b"\x1b[H\x1b[J");
+        assert_eq!(find_erase(&buf), Some(at));
+    }
+
+    /// A whole zsh login, in the order the bytes really arrive: the terminal
+    /// driver's echo at the instant of the write, three seconds of `.zshrc`,
+    /// the shell's prompt, its redraw of the line, and then the clear.
+    ///
+    /// Before this build the cut was made at the prompt and 1370 bytes went to
+    /// the pane with `__omni_precmd` in them.
+    #[test]
+    fn the_first_screen_of_a_zsh_login_is_one_paint() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        c.setup_sent(now, SETUP);
+        assert_eq!(c.feed(now, &echoed(SETUP)), Emit::Nothing, "the driver");
+        let woke = now + Duration::from_secs(3);
+        assert_eq!(c.feed(woke, ZSH_PARTIAL_LINE), Emit::Nothing, "still ours");
+        assert_eq!(c.feed(woke, ZSH_PROMPT), Emit::Nothing, "not a clear");
+        assert_eq!(c.feed(woke, &redrawn(SETUP, 80, 6)), Emit::Nothing, "the shell");
+        let mut last = ZSH_CLEAR.to_vec();
+        last.extend_from_slice(b"MOTD\r\nLast login: Fri Aug 28 from 10.0.0.1\r\n");
+        match c.feed(woke, &last) {
+            Emit::Bytes(b) => {
+                let seen = String::from_utf8_lossy(&b).into_owned();
+                assert!(!seen.contains("BASH_VERSION"), "showed the line: {seen}");
+                assert!(!seen.contains("omni_precmd"), "showed the line: {seen}");
+                assert!(seen.starts_with("\u{1b}[H\u{1b}[2J"), "starts at the top");
+                assert!(seen.ends_with("Last login: Fri Aug 28 from 10.0.0.1\r\n"));
+            }
+            Emit::Nothing => panic!("the clear arrived; the screen should have gone out"),
+        }
+        assert!(!c.is_holding());
+    }
+
+    /// The line comes back twice, so taking out the first copy is taking out
+    /// half of it.
+    #[test]
+    fn every_copy_of_our_line_is_taken_out_and_not_just_the_first() {
+        let mut buf = echoed(SETUP);
+        buf.extend_from_slice(b"root@fw-01# ");
+        buf.extend_from_slice(&redrawn(SETUP, 80, 12));
+        let left = String::from_utf8_lossy(&strip_echo(&buf, SETUP)).into_owned();
+        assert!(!left.contains("BASH_VERSION"), "left a copy behind: {left}");
+        assert!(!left.contains("clear; cat"), "left a copy behind: {left}");
+        assert!(
+            left.contains("root@fw-01#"),
+            "and kept every word the host said: {left}"
+        );
+    }
+
+    /// An echo arriving a few bytes at a time is still our line, before there is
+    /// enough of it to recognise as one. Without this the clock starts on the
+    /// first fragment, which is the write again.
+    #[test]
+    fn an_echo_too_short_to_recognise_is_still_not_the_host_talking() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        c.setup_sent(now, SETUP);
+        for chunk in echoed(SETUP).chunks(5) {
+            assert_eq!(c.feed(now, chunk), Emit::Nothing);
+            assert_eq!(
+                c.deadline(),
+                Some(now + HOLD_CAP),
+                "still nothing but our own line, a piece at a time"
+            );
+        }
+    }
+
+    /// The backstop. A host that clears its own screen in its rc file, between
+    /// our write and our clear, has the cut made in the wrong place, and what
+    /// follows a wrong cut is the shell's redraw of our line. Nobody sees it
+    /// even so, because what leaves here leaves without our line in it whichever
+    /// way it left.
+    #[test]
+    fn a_cut_made_in_the_wrong_place_still_shows_nobody_our_line() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        c.setup_sent(now, SETUP);
+        assert_eq!(c.feed(now, &echoed(SETUP)), Emit::Nothing);
+        let mut theirs = b"\x1b[H\x1b[2J".to_vec();
+        theirs.extend_from_slice(&redrawn(SETUP, 80, 6));
+        theirs.extend_from_slice(b"\x1b[H\x1b[2Jready\r\n");
+        match c.feed(now, &theirs) {
+            Emit::Bytes(b) => {
+                let seen = String::from_utf8_lossy(&b).into_owned();
+                assert!(!seen.contains("BASH_VERSION"), "showed the line: {seen}");
+                assert!(!seen.contains("omni_precmd"), "showed the line: {seen}");
+                assert!(seen.ends_with("ready\r\n"));
+            }
+            Emit::Nothing => panic!("an erase arrived; the screen should have gone out"),
+        }
     }
 }
