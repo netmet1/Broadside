@@ -25,6 +25,26 @@
 //! what it was before. What changes is how many times it is drawn on the way
 //! there.
 //!
+//! # The line itself
+//!
+//! The setup line is typed at a shell, so the host reads it back to us before it
+//! runs it: a thousand characters of `if [ -n "$BASH_VERSION" ]; then ...`
+//! arriving on the same stream as everything else. On the good path that is
+//! already invisible, because the cut is made at the `clear` and the echo is in
+//! front of it. The path that showed it was the deadline below: what is held
+//! goes out as it stands, and what is held is mostly that line. On a slow link
+//! that is the whole of what flashes past, and it is the one thing on this
+//! stream that the operator certainly did not type.
+//!
+//! So the echo is recognised rather than merely outrun. What was written is
+//! kept and matched against what comes back, which buys two things. The
+//! deadline is pushed out for as long as more of the line keeps arriving, since
+//! a host still repeating it cannot have reached the `clear` yet, and that is
+//! the difference between a deadline on the host and a deadline on the network.
+//! And whatever this file does release, it releases without that line in it:
+//! what the operator is left looking at is what the host said, never the
+//! sentence Broadside typed to make it say it.
+//!
 //! # What it refuses to do
 //!
 //! **Hold a shell we are not writing to.** A silent host (a console menu, an
@@ -54,11 +74,18 @@ use std::time::{Duration, Instant};
 /// How long to wait for the setup line's `clear` before giving up and showing
 /// what was held.
 ///
-/// Generous, because the thing being waited for is a round trip to a machine
-/// that has just accepted a login and may be busy doing it, and the cost of
-/// waiting is that a pane which says "connecting" goes on saying it. The cost of
-/// giving up early is the blink this exists to remove, so the deadline is set
-/// where a human would rather wait than see it.
+/// Counted from the last byte of our own line to come back, not from the write,
+/// so it is a deadline on the host and not on the link. Once the shell has
+/// finished reading the line it is about to run it, and everything from there is
+/// local to the machine; before that we are watching a round trip, and how long
+/// one of those takes is not something this file gets an opinion about. A VPN on
+/// hotel wireless was blowing a deadline measured from the write on every
+/// connect, and every connect showed the line.
+///
+/// Generous even so, because a machine that has just accepted a login may be
+/// busy doing it, and the cost of waiting is that a pane which says "connecting"
+/// goes on saying it. The cost of giving up early is the blink this exists to
+/// remove, so the deadline is set where a human would rather wait than see it.
 pub const CLEAR_DEADLINE: Duration = Duration::from_millis(2500);
 
 /// The erase-display sequences a `clear` can come out as, longest first so a
@@ -70,6 +97,23 @@ pub const CLEAR_DEADLINE: Duration = Duration::from_millis(2500);
 /// here because the cost of listing them is nothing and the cost of a host that
 /// uses one is the curtain waiting out its whole deadline on every connect.
 const ERASE_DISPLAY: [&[u8]; 3] = [b"\x1b[2J", b"\x1b[0J", b"\x1b[J"];
+
+/// The longest a first screen is ever held, whatever is arriving.
+///
+/// The deadline above restarts every time more of our own line comes back, which
+/// is right for a slow link and wrong for a host that dribbles it back a byte at
+/// a time: a thousand restarts of two and a half seconds is a pane that says
+/// "connecting" for an hour. This is the backstop that cannot be pushed, so the
+/// worst case is a flicker after ten seconds rather than a tab that never
+/// arrives.
+const HOLD_CAP: Duration = Duration::from_secs(10);
+
+/// How much of our own line has to be seen before a run of bytes is called its
+/// echo.
+///
+/// Long enough that no host prints it by accident, short enough that a line the
+/// deadline caught halfway back is still recognised for what it is.
+const ECHO_ANCHOR: usize = 16;
 
 /// Sent ahead of the released bytes, so the screen the operator lands on starts
 /// at the top.
@@ -102,7 +146,9 @@ enum State {
     Banner,
     /// The setup line has gone out. What is arriving is its echo and then its
     /// output; the screen begins at the erase in the middle of that.
-    AwaitingClear { deadline: Instant },
+    ///
+    /// `deadline` moves as the echo arrives; `cap` is where it stops moving.
+    AwaitingClear { deadline: Instant, cap: Instant },
     /// Everything goes straight through, which is the whole session after the
     /// first screen.
     Open,
@@ -125,6 +171,13 @@ pub enum Emit {
 pub struct Curtain {
     state: State,
     held: Vec<u8>,
+    /// Exactly what was written to the host, kept so its echo can be told apart
+    /// from what the host has to say for itself. Empty for a session that is
+    /// sent nothing.
+    echo: Vec<u8>,
+    /// How much of that echo has been seen. Only ever grows, and growing is what
+    /// pushes the deadline out.
+    echo_seen: usize,
 }
 
 impl Curtain {
@@ -138,6 +191,8 @@ impl Curtain {
                 FirstScreen::Raw => State::Open,
             },
             held: Vec::new(),
+            echo: Vec::new(),
+            echo_seen: 0,
         }
     }
 
@@ -150,15 +205,24 @@ impl Curtain {
                 self.held.extend_from_slice(data);
                 Emit::Nothing
             }
-            State::AwaitingClear { deadline } => {
+            State::AwaitingClear { mut deadline, cap } => {
                 self.held.extend_from_slice(data);
+                // More of our own line coming back is not the host answering, it
+                // is the host still reading, so the clock starts again. Without
+                // this the deadline is really a guess at somebody's latency.
+                let seen = find_echo(&self.held, &self.echo).map_or(0, |(_, len)| len);
+                if seen > self.echo_seen {
+                    self.echo_seen = seen;
+                    deadline = (now + CLEAR_DEADLINE).min(cap);
+                    self.state = State::AwaitingClear { deadline, cap };
+                }
                 // The screen starts at the erase. Everything before it is the
                 // banner we are hiding and the echo of the line that wiped it.
                 if let Some(idx) = find_erase(&self.held) {
                     let mut out = HOME.to_vec();
                     out.extend_from_slice(&self.held[idx..]);
-                    self.state = State::Open;
                     self.held = Vec::new();
+                    self.lift();
                     return Emit::Bytes(out);
                 }
                 // Waited long enough. Whatever this shell is doing, it is not
@@ -174,23 +238,55 @@ impl Curtain {
     /// The setup line has been written to the host. From here what is held is
     /// the banner plus the echo of that line, all of which the `clear` in it is
     /// about to make irrelevant, so it is dropped rather than kept.
-    pub fn setup_sent(&mut self, now: Instant) {
+    ///
+    /// `written` is exactly what went out. Keeping it is what lets the echo be
+    /// recognised on the way back rather than shown to somebody.
+    pub fn setup_sent(&mut self, now: Instant, written: &[u8]) {
         if matches!(self.state, State::Open) {
             return;
         }
         self.held = Vec::new();
+        self.echo = written.to_vec();
+        self.echo_seen = 0;
         self.state = State::AwaitingClear {
             deadline: now + CLEAR_DEADLINE,
+            cap: now + HOLD_CAP,
         };
     }
 
-    /// Lift the curtain now and hand back everything held, unchanged.
+    /// When this curtain next needs looking at, so a session loop can park a
+    /// timer on it. `None` once it is open.
+    ///
+    /// It has to be asked again after every chunk rather than armed once,
+    /// because the answer moves for as long as our own line is still arriving.
+    pub fn deadline(&self) -> Option<Instant> {
+        match self.state {
+            State::AwaitingClear { deadline, .. } => Some(deadline),
+            _ => None,
+        }
+    }
+
+    /// Lift the curtain now and hand back everything held, less our own line.
     ///
     /// For the shells that are sent nothing: there is no redraw coming, so what
-    /// is being held is not a draft of the screen, it *is* the screen.
+    /// is being held is not a draft of the screen, it *is* the screen, and
+    /// nothing was written to them, so there is nothing in it to take out.
+    ///
+    /// For a shell that took the line and then did not clear, the echo is the
+    /// one thing here that is certainly not the host's own output, and this is
+    /// the path that used to put it on somebody's screen.
     pub fn open_now(&mut self) -> Vec<u8> {
+        let held = std::mem::take(&mut self.held);
+        let out = strip_echo(&held, &self.echo);
+        self.lift();
+        out
+    }
+
+    /// Up for good: nothing more to hold, and nothing more to recognise.
+    fn lift(&mut self) {
         self.state = State::Open;
-        std::mem::take(&mut self.held)
+        self.echo = Vec::new();
+        self.echo_seen = 0;
     }
 
     /// Whether anything is still being held back, i.e. whether a session that is
@@ -214,6 +310,48 @@ fn find_erase(buf: &[u8]) -> Option<usize> {
         .min()
 }
 
+/// Where the host's echo of our own line sits in `buf`, and how much of it has
+/// arrived, or `None` if it has not started.
+///
+/// Anchored rather than assumed to be at the front: the prompt the shell drew
+/// while the line was in flight lands ahead of it, and so does the tail of a
+/// banner that was still streaming when we wrote.
+fn find_echo(buf: &[u8], echo: &[u8]) -> Option<(usize, usize)> {
+    if echo.is_empty() {
+        return None;
+    }
+    let start = find_sub(buf, &echo[..ECHO_ANCHOR.min(echo.len())])?;
+    let mut i = start;
+    let mut j = 0;
+    while i < buf.len() && j < echo.len() {
+        if buf[i] == echo[j] {
+            i += 1;
+            j += 1;
+        } else if buf[i] == b'\r' && echo[j] == b'\n' {
+            // The terminal turns the newline that ran the line into CR LF on the
+            // way back. That newline is the only one in it, and it is the last
+            // byte, so this costs one comparison at the very end.
+            i += 1;
+        } else {
+            // Not our line any more. Whatever this is, the host said it.
+            break;
+        }
+    }
+    Some((start, i - start))
+}
+
+/// `buf` without the echo of our own line, if it is in there.
+fn strip_echo(buf: &[u8], echo: &[u8]) -> Vec<u8> {
+    match find_echo(buf, echo) {
+        Some((start, len)) => {
+            let mut out = buf[..start].to_vec();
+            out.extend_from_slice(&buf[start + len..]);
+            out
+        }
+        None => buf.to_vec(),
+    }
+}
+
 fn find_sub(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
         return None;
@@ -231,13 +369,26 @@ mod tests {
         Instant::now()
     }
 
+    /// A setup line in the shape of the real one: leading space, the shell test,
+    /// the hook, the clear, and the newline that runs it.
+    const SETUP: &[u8] =
+        b" if [ -n \"$BASH_VERSION\" ]; then __omni_precmd() { :; }; fi; clear; cat /etc/motd\n";
+
+    /// The same line as the host reads it back, which is byte for byte what was
+    /// written except that the terminal makes CR LF of the newline.
+    fn echoed(line: &[u8]) -> Vec<u8> {
+        let mut v = line[..line.len() - 1].to_vec();
+        v.extend_from_slice(b"\r\n");
+        v
+    }
+
     #[test]
     fn the_banner_is_held_and_never_reaches_the_pane() {
         let mut c = Curtain::new(FirstScreen::Curtained);
         let now = t0();
         assert_eq!(c.feed(now, b"Welcome to Ubuntu\r\n"), Emit::Nothing);
         assert_eq!(c.feed(now, b"Last login: Mon\r\n"), Emit::Nothing);
-        c.setup_sent(now);
+        c.setup_sent(now, b" clear; cat /etc/motd\n");
         // The banner is gone, not queued: the clear was about to wipe it.
         let out = c.feed(now, b" clear; cat /etc/motd\r\n\x1b[H\x1b[2J\x1b[3JMOTD\r\n$ ");
         match out {
@@ -257,7 +408,7 @@ mod tests {
     fn the_erase_survives_being_split_across_chunks() {
         let mut c = Curtain::new(FirstScreen::Curtained);
         let now = t0();
-        c.setup_sent(now);
+        c.setup_sent(now, b" setup line\n");
         assert_eq!(c.feed(now, b" setup line\r\n\x1b[H\x1b"), Emit::Nothing);
         // The `[2J` lands in the next chunk; the sequence still has to be found.
         match c.feed(now, b"[2JMOTD") {
@@ -272,7 +423,7 @@ mod tests {
     fn everything_after_the_curtain_lifts_goes_straight_out() {
         let mut c = Curtain::new(FirstScreen::Curtained);
         let now = t0();
-        c.setup_sent(now);
+        c.setup_sent(now, SETUP);
         let _ = c.feed(now, b"\x1b[2J$ ");
         assert!(!c.is_holding());
         assert_eq!(c.feed(now, b"ls\r\n"), Emit::Bytes(b"ls\r\n".to_vec()));
@@ -302,7 +453,7 @@ mod tests {
     fn a_clear_that_never_arrives_gives_everything_back_at_the_deadline() {
         let mut c = Curtain::new(FirstScreen::Curtained);
         let now = t0();
-        c.setup_sent(now);
+        c.setup_sent(now, SETUP);
         assert_eq!(c.feed(now, b"sh: clear: not found\r\n"), Emit::Nothing);
         let late = now + CLEAR_DEADLINE + Duration::from_millis(1);
         match c.feed(late, b"$ ") {
@@ -320,7 +471,7 @@ mod tests {
     fn an_erase_to_end_of_display_counts_as_a_clear() {
         let mut c = Curtain::new(FirstScreen::Curtained);
         let now = t0();
-        c.setup_sent(now);
+        c.setup_sent(now, b" echo\n");
         match c.feed(now, b"echo\r\n\x1b[H\x1b[Jready") {
             Emit::Bytes(b) => assert_eq!(b, [HOME, b"\x1b[Jready"].concat()),
             Emit::Nothing => panic!("ESC[J after a home is a cleared screen"),
@@ -340,7 +491,7 @@ mod tests {
             Emit::Bytes(b"Welcome to Ubuntu\r\n".to_vec())
         );
         // Even the events that would close a curtain leave this one open.
-        c.setup_sent(now);
+        c.setup_sent(now, SETUP);
         assert!(!c.is_holding());
         assert_eq!(
             c.feed(now, b"\x1b[H\x1b[2JMOTD"),
@@ -349,12 +500,118 @@ mod tests {
         );
     }
 
+    /// The one this was written for. A `clear` that never comes must not put
+    /// the line Broadside typed on somebody's screen, however long it waits.
+    #[test]
+    fn our_own_line_is_never_released_even_when_the_deadline_passes() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        c.setup_sent(now, SETUP);
+        // The prompt the shell had already drawn lands ahead of the echo, which
+        // is why the echo cannot be looked for at the front of the buffer.
+        assert_eq!(c.feed(now, b"user@web-01:~$ "), Emit::Nothing);
+        assert_eq!(c.feed(now, &echoed(SETUP)), Emit::Nothing);
+        let late = now + CLEAR_DEADLINE + Duration::from_millis(1);
+        match c.feed(late, b"sh: clear: not found\r\n") {
+            Emit::Bytes(b) => {
+                assert_eq!(b, b"user@web-01:~$ sh: clear: not found\r\n".to_vec());
+            }
+            Emit::Nothing => panic!("the deadline passed; the pane must not stay empty"),
+        }
+        assert!(!c.is_holding());
+    }
+
+    /// A link slow enough to blow the old deadline on its own. The line takes
+    /// longer to come back than the whole deadline, twice over, and none of that
+    /// counts against the host.
+    #[test]
+    fn a_line_still_coming_back_pushes_the_deadline_out() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        c.setup_sent(now, SETUP);
+        let half = SETUP.len() / 2;
+        let late = now + CLEAR_DEADLINE - Duration::from_millis(1);
+        assert_eq!(c.feed(late, &SETUP[..half]), Emit::Nothing);
+        assert!(c.deadline().expect("still holding") > late);
+        let later = late + CLEAR_DEADLINE - Duration::from_millis(1);
+        assert_eq!(c.feed(later, &SETUP[half..]), Emit::Nothing);
+        assert!(c.is_holding(), "our own line is not a reason to give up");
+        // And the screen it was waiting for is cut in the usual place.
+        match c.feed(later, b"\r\n\x1b[H\x1b[2JMOTD\r\n$ ") {
+            Emit::Bytes(b) => {
+                let s = String::from_utf8_lossy(&b).into_owned();
+                assert!(!s.contains("BASH_VERSION"), "showed the line: {s}");
+                assert!(s.ends_with("MOTD\r\n$ "));
+            }
+            Emit::Nothing => panic!("the clear arrived, so the screen should have gone out"),
+        }
+    }
+
+    /// The deadline moves, but not for ever: a host feeding its echo back one
+    /// slow byte at a time must not hold a pane on "connecting" all afternoon.
+    #[test]
+    fn the_deadline_can_be_pushed_but_only_so_far() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        // Long enough that the dribble outlasts the cap several times over, so
+        // the test does not turn on how long the real line happens to be. The
+        // chunks have to clear ECHO_ANCHOR or there is nothing to recognise.
+        let line = SETUP.repeat(4);
+        c.setup_sent(now, &line);
+        let mut at = now;
+        for chunk in line.chunks(ECHO_ANCHOR + 1) {
+            at += Duration::from_secs(2);
+            if let Emit::Bytes(b) = c.feed(at, chunk) {
+                assert!(
+                    at >= now + HOLD_CAP,
+                    "gave up at {:?}, before the cap",
+                    at - now
+                );
+                assert!(
+                    !String::from_utf8_lossy(&b).contains("BASH_VERSION"),
+                    "and still without our own line in it"
+                );
+                assert!(!c.is_holding());
+                return;
+            }
+        }
+        panic!("a dribbling host held the curtain for the whole line");
+    }
+
+    /// A host that does not echo at all (a menu, a device that takes the line
+    /// and says nothing back) must be no worse off than before: what it said is
+    /// what it gets, and none of this looks for a line that is not there.
+    #[test]
+    fn a_host_that_never_echoes_gets_its_own_output_back_whole() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        c.setup_sent(now, SETUP);
+        assert_eq!(c.feed(now, b"Command not recognised.\r\n"), Emit::Nothing);
+        let late = now + CLEAR_DEADLINE + Duration::from_millis(1);
+        match c.feed(late, b"> ") {
+            Emit::Bytes(b) => assert_eq!(b, b"Command not recognised.\r\n> ".to_vec()),
+            Emit::Nothing => panic!("the deadline passed; the pane must not stay empty"),
+        }
+    }
+
+    #[test]
+    fn an_open_curtain_has_no_deadline_to_wait_on() {
+        let mut c = Curtain::new(FirstScreen::Curtained);
+        let now = t0();
+        assert!(c.deadline().is_none(), "nothing has been written yet");
+        c.setup_sent(now, SETUP);
+        assert!(c.deadline().is_some());
+        let _ = c.open_now();
+        assert!(c.deadline().is_none());
+        assert!(Curtain::new(FirstScreen::Raw).deadline().is_none());
+    }
+
     #[test]
     fn setup_sent_after_the_curtain_is_open_changes_nothing() {
         let mut c = Curtain::new(FirstScreen::Curtained);
         let now = t0();
         let _ = c.open_now();
-        c.setup_sent(now);
+        c.setup_sent(now, SETUP);
         assert!(!c.is_holding());
         assert_eq!(c.feed(now, b"x"), Emit::Bytes(b"x".to_vec()));
     }

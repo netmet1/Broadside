@@ -409,7 +409,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-hosts",
     title: "Hosts",
     keywords:
-      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first",
+      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first long line flashes on connect blink flicker flash before the banner what was that line where did it come from omni_precmd bash_version prompt_command typed by itself not mine setup line visible on slow connection vpn wireless remote high latency laggy link appears then disappears wiped cleared line in my shell history up arrow recalls it bash_history histcontrol ignorespace ignoreboth hist_ignore_space histtimeformat delete the entry remove from history broadside typed it not the user zsh cannot delete",
     body: (
       <>
         <Lead>
@@ -476,6 +476,21 @@ export const SECTIONS: HelpSection[] = [
               alone on their own, without needing this set. The setting is read
               when a terminal opens, so it applies to the next tab you open on
               that host rather than to one already running.
+            </li>
+            <li>
+              <b>You are not meant to see that line.</b> The host reads it back
+              before it runs it, the way it reads back anything typed at a
+              prompt, and Broadside holds the whole first screen until the host
+              has finished with it: the pane goes from <Nav>connecting</Nav>
+              straight to the finished login in one paint. What it waits for is
+              the host, not the network, so a slow link or a VPN makes the wait
+              longer rather than making the line flash past. On the rare host
+              that does not do what the line asks, you get what the host said,
+              still without the line itself in it. It is also taken back out of{" "}
+              <code>bash</code>'s own history, so an <Nav>Up</Nav> arrow finds
+              your commands and not Broadside's. <code>zsh</code> has no way to
+              delete a history entry, so on zsh the line is kept out only if you
+              have set <code>HIST_IGNORE_SPACE</code>.
             </li>
             <li>
               <b>Reconnect check</b>, the card above it, is for the machine you
