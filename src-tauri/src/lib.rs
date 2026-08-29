@@ -180,6 +180,7 @@ pub fn run() {
             commands::ssh::test_connection,
             commands::ssh::trust_host_key,
             commands::ssh::remove_host_key,
+            ssh::set_ssh_keepalive,
             commands::credentials::set_sudo_password,
             commands::credentials::set_sudo_same_as_login,
             commands::broadcast::check_destructive,

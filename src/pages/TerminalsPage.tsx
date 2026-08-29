@@ -179,6 +179,10 @@ type Props = {
   connectedSessions: Set<string>;
   onConnectionChange: (sessionId: string, connected: boolean) => void;
   onManageShortcuts: () => void;
+  /** Open Settings at the session section. The link on the amber line a pane
+   * shows when the idle timeout closed it, so the answer to "why did that
+   * happen" is one click from where it happened. */
+  onOpenSessionSettings: () => void;
   onActivate: (id: string) => void;
   onCloseSession: (id: string) => void;
   /** Reorder tabs: drop the dragged session in front of the target. */
@@ -225,6 +229,7 @@ export function TerminalsPage({
   connectedSessions,
   onConnectionChange,
   onManageShortcuts,
+  onOpenSessionSettings,
   onActivate,
   onCloseSession,
   onReorder,
@@ -2741,6 +2746,7 @@ export function TerminalsPage({
                   }
                   onConnectionChange={onConnectionChange}
                   onPhaseChange={onPhaseChange}
+                  onOpenSessionSettings={onOpenSessionSettings}
                   adoptExisting={s.type === "ssh" && s.adopted === true}
                   adoptSnapshot={s.type === "ssh" ? s.adoptSnapshot : undefined}
                 />

@@ -214,6 +214,15 @@ export function setUiSettings(input: UiSettingsInput): Promise<void> {
   return invoke<void>("set_ui_settings", { input });
 }
 
+/** How often SSH connections opened from now on should send a keepalive, in
+ * seconds; 0 turns it off. Not stored in the settings database: the preference
+ * itself lives in localStorage with the other per-machine UI prefs, and this
+ * pushes it down to the connection layer at startup and on every change. It
+ * applies to the *next* connection, never to one already open. */
+export function setSshKeepalive(secs: number): Promise<void> {
+  return invoke<void>("set_ssh_keepalive", { secs });
+}
+
 export function saveShortcuts(shortcuts: ShortcutCommand[]): Promise<void> {
   return invoke<void>("save_shortcuts", { shortcuts });
 }

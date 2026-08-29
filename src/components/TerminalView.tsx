@@ -25,6 +25,11 @@ import {
   type PtyOpenResult,
 } from "@/lib/tauri/pty";
 import { ptyOpenLocal } from "@/lib/tauri/local";
+import {
+  SESSION_PREFS_EVENT,
+  describeIdle,
+  loadSessionPrefs,
+} from "@/lib/sessionPrefs";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
   dismissShellWarning,
@@ -203,6 +208,13 @@ function freshScreenSequence(term: Terminal, endedAt: number | null): string {
   return out + "\x1b[H";
 }
 
+/** How often an open pane checks whether it has gone quiet.
+ *
+ * Five seconds against a timeout measured in minutes: the check is a
+ * subtraction, and the cost of being up to five seconds late closing a session
+ * that has been idle for half an hour is nothing at all. */
+const IDLE_CHECK_MS = 5_000;
+
 type Phase =
   | { kind: "connecting" }
   | { kind: "open" }
@@ -212,7 +224,16 @@ type Phase =
    * asked to go and went is clean, and a shell that died on its own or came
    * back non-zero is not. It only tints the message on the banner, so a wrong
    * guess costs a colour rather than a behaviour. */
-  | { kind: "closed"; message: string; clean: boolean };
+  | {
+      kind: "closed";
+      message: string;
+      clean: boolean;
+      /** This pane was closed by the idle timeout rather than by the shell or
+       * the operator. The banner says so in amber and links to the setting,
+       * because a terminal that closed itself while you were in a meeting is
+       * otherwise indistinguishable from one that dropped. */
+      idle?: boolean;
+    };
 
 /** How far along a pane's connection is, without the message that goes with it.
  * Reported to the page (see `onPhaseChange`) because "not connected" is four
@@ -268,6 +289,9 @@ type Props = {
    * all: `connecting` and `gate` are both "red" in the tab strip and neither
    * wants a retry. */
   onPhaseChange?: (sessionId: string, phase: TerminalPhaseKind) => void;
+  /** Open Settings at the session section, from the amber line the banner
+   * shows when the idle timeout is what closed this pane. */
+  onOpenSessionSettings?: () => void;
   /** Adopt a backend PTY that is already open (a skill run handed its shell
    * over) instead of opening a new one. Skips `pty_open` on the first mount and
    * binds to the existing session id; a later Reconnect opens for real. */
@@ -297,6 +321,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       onSearchResults,
       onConnectionChange,
       onPhaseChange,
+      onOpenSessionSettings,
       adoptExisting,
       adoptSnapshot,
     }: Props,
@@ -511,6 +536,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     });
 
     const dataSub = term.onData((data) => {
+      lastActivityRef.current = Date.now();
       ptyWrite(sessionId, data).catch(() => {
         // Session already gone; the closed event handles UI state.
       });
@@ -518,6 +544,33 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const resizeSub = term.onResize(({ cols, rows }) => {
       ptyResize(sessionId, cols, rows).catch(() => {});
     });
+
+    // Whether the shell is holding the terminal or has handed it to a command,
+    // for the idle timeout further down.
+    //
+    // Bracketed paste is the nearest thing to a shell saying "I am waiting for
+    // you to type": readline and zsh's zle turn it on while a prompt is up and
+    // off again before they give the terminal to a command, then back on at the
+    // next prompt. That makes a silent `sleep 120` visible as work in progress
+    // rather than as a quiet session, without asking anything of the host.
+    //
+    // Watched, not handled. Returning `false` puts the sequence back on the
+    // parser's own chain, so the mode is still applied exactly as before.
+    const noteBracketedPaste = (params: (number | number[])[], on: boolean) => {
+      if (params.some((p) => p === 2004)) {
+        if (on) promptRef.current.seen = true;
+        promptRef.current.atPrompt = on;
+      }
+      return false;
+    };
+    const modeOnSub = term.parser.registerCsiHandler(
+      { prefix: "?", final: "h" },
+      (params) => noteBracketedPaste(params, true),
+    );
+    const modeOffSub = term.parser.registerCsiHandler(
+      { prefix: "?", final: "l" },
+      (params) => noteBracketedPaste(params, false),
+    );
 
     // Refit coalesced to one per frame: a grid relayout (hiding a tile flips
     // the container between the 3+ grid and the two-up split, and a scrollbar
@@ -632,6 +685,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // `term.write` directly, so a reconnect's clean screen cannot be missed by
     // one of the two paths below.
     const writeToPane = (data: Uint8Array) => {
+      // Output is activity too, and this is the one funnel every byte the
+      // session says goes through. A broadcast typed into this PTY from another
+      // page arrives here as output, so it keeps the session alive without the
+      // idle timer needing to know that page exists.
+      lastActivityRef.current = Date.now();
       if (freshScreenRef.current) {
         freshScreenRef.current = false;
         const endedAt = endedAtRef.current;
@@ -707,6 +765,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       dataSub.dispose();
       resultsSub.dispose();
       resizeSub.dispose();
+      modeOnSub.dispose();
+      modeOffSub.dispose();
       scrollSub.dispose();
       writeSub.dispose();
       cancelAnimationFrame(refitRaf);
@@ -806,6 +866,90 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       clean: true,
     });
   }, [endNonce, sessionId, setPhase]);
+
+  // Close this session when it has been quiet for long enough --------------
+  //
+  // Off unless the operator asks for it (see sessionPrefs). Idle means two
+  // things, and both have to hold:
+  //
+  //   - no bytes in *either* direction, so a `tail -f` still printing is not
+  //     idle even though nobody is typing at it. Keepalives are not traffic for
+  //     this purpose: they are ours, sent whether anyone is here or not, and if
+  //     they counted the timeout could never fire while the other setting was
+  //     on.
+  //   - nothing running in the foreground. A command that holds the terminal
+  //     and says nothing for an hour (`sleep`, a long build, a restore) is the
+  //     session doing exactly what it was asked to, and closing it is the one
+  //     thing a timeout must never do. Something left running in the
+  //     *background* does not count: the shell has the terminal back, and a
+  //     `&` job cannot keep a session open forever on its own.
+  //
+  // SSH only. A local shell has no state table on a firewall somewhere to keep
+  // alive and no connection to lose, so closing one would be taking something
+  // away for nothing.
+  const lastActivityRef = useRef(Date.now());
+  /**
+   * What this pane can tell about the shell's own state.
+   *
+   * `seen` stays false until the session enables bracketed paste even once. A
+   * shell that never does (dash, an old bash, a device CLI) leaves no signal to
+   * read, so the timeout falls back to quiet-alone rather than guessing; a
+   * shell that does gives a reliable prompt-versus-command line all session.
+   */
+  const promptRef = useRef({ seen: false, atPrompt: false });
+  const [idleSecs, setIdleSecs] = useState(() => loadSessionPrefs().idleSecs);
+  useEffect(() => {
+    const read = () => setIdleSecs(loadSessionPrefs().idleSecs);
+    window.addEventListener(SESSION_PREFS_EVENT, read);
+    return () => window.removeEventListener(SESSION_PREFS_EVENT, read);
+  }, []);
+  // A fresh shell has not been idle for anything, whatever this pane was doing
+  // before it. Reconnect is the case that matters: without this, a tab that had
+  // been sitting closed all afternoon would reconnect and immediately time out
+  // again on the old clock.
+  useEffect(() => {
+    if (phase.kind === "open") {
+      lastActivityRef.current = Date.now();
+      // And it knows nothing about its shell yet either. Whatever the last one
+      // was doing when it ended has nothing to say about this one.
+      promptRef.current = { seen: false, atPrompt: false };
+    }
+  }, [phase.kind]);
+  const isSsh = source.type === "ssh";
+  useEffect(() => {
+    if (idleSecs === null || !isSsh) return;
+    const limitMs = idleSecs * 1000;
+    /** Something has the terminal that is not the shell's own line editor. */
+    const foreground = () => {
+      // A full-screen program (vim, less, top, tmux) has the alternate buffer
+      // and is plainly in the foreground, whatever it does with paste mode.
+      if (termRef.current?.buffer.active.type === "alternate") return true;
+      const p = promptRef.current;
+      return p.seen && !p.atPrompt;
+    };
+    const timer = setInterval(() => {
+      if (phaseRef.current.kind !== "open") return;
+      // A command in the foreground holds the clock at zero rather than
+      // pausing it, so when it finishes the session gets its whole timeout
+      // from that moment, not whatever was left over from before it started.
+      if (foreground()) {
+        lastActivityRef.current = Date.now();
+        return;
+      }
+      if (Date.now() - lastActivityRef.current < limitMs) return;
+      // Same path the Sessions menu's unplug takes: close the PTY and announce
+      // it here, because a close asked for from inside the app deliberately
+      // emits no `pty:closed` (see the endNonce effect above).
+      ptyClose(sessionId).catch(() => {});
+      setPhase({
+        kind: "closed",
+        message: `idle for ${describeIdle(idleSecs)}`,
+        clean: true,
+        idle: true,
+      });
+    }, IDLE_CHECK_MS);
+    return () => clearInterval(timer);
+  }, [idleSecs, isSsh, sessionId, setPhase]);
 
   useImperativeHandle(searchHandleRef, () => ({
     findNext: (pattern, options, incremental) => {
@@ -1271,6 +1415,30 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
                 : reachability.last && !reachability.everMissed
                   ? "SSH still answering"
                   : `SSH ${reachability.last ? "back " : ""}${reachability.ok}/${reachability.total} ${reachability.percent}%`}
+            </span>
+          )}
+          {/* The idle timeout closed this one, and it says so in full rather
+              than in the slim message plate beside it.
+
+              A session that ended while you were somewhere else is the one
+              close where "why" is not obvious from anything on screen, and the
+              honest answer is "a setting you chose did this", so the setting is
+              a click away. Amber, not red: nothing went wrong. */}
+          {phase.idle && (
+            <span className="min-w-0 truncate rounded-md border border-amber-500/40 bg-background/90 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
+              Closed by the session timeout.{" "}
+              {onOpenSessionSettings ? (
+                <button
+                  type="button"
+                  onClick={onOpenSessionSettings}
+                  className="underline underline-offset-2 hover:no-underline"
+                >
+                  Settings
+                </button>
+              ) : (
+                "Settings"
+              )}{" "}
+              can change or switch it off.
             </span>
           )}
           <span
