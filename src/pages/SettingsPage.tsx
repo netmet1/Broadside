@@ -51,6 +51,7 @@ import {
   getAppSettings,
   resetAppSettings,
   setSudoAutofillEnabled,
+  setHistoryScrubEnabled,
 } from "@/lib/tauri/settings";
 import { isExitGuardEnabled, setExitGuardEnabled } from "@/lib/exitGuard";
 import { AdminUnlockDialog } from "@/components/AdminUnlockDialog";
@@ -1609,7 +1610,7 @@ export function SettingsPage({
       <section id={sectionDomId("Security")} className="space-y-4">
         <SectionHeading
           title="Security"
-          hint="Sudo password auto-fill, plus an optional admin lock for the sensitive controls."
+          hint="Sudo password auto-fill, what a connect leaves in the host's shell history, plus an optional admin lock for the sensitive controls."
         />
         <label
           className={`flex w-fit items-center gap-2 text-sm ${adminLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
@@ -1637,6 +1638,46 @@ export function SettingsPage({
           Auto Complete 'sudo' passwords. Turn it <strong>off</strong> to
           disable; Takes effect next time a new terminal is opened. Disabling
           does not delete stored passwords.
+        </p>
+
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="accent-primary"
+            checked={settings?.history_scrub_enabled ?? false}
+            disabled={settings === null}
+            onChange={async (e) => {
+              const next = e.target.checked;
+              try {
+                await setHistoryScrubEnabled(next);
+                setSettings((prev) =>
+                  prev ? { ...prev, history_scrub_enabled: next } : prev,
+                );
+              } catch (err) {
+                toast.error(errorMessage(err));
+              }
+            }}
+          />
+          Keep the connect line out of the host's shell history
+        </label>
+        <p className="max-w-xl text-xs text-muted-foreground">
+          Opening an SSH terminal types one setup line at the host, which
+          installs command tracking and reprints the login screen. It is written
+          with a space in front of it, so any host whose{" "}
+          <code>HISTCONTROL</code> ignores space-prefixed commands (the Debian
+          and Ubuntu default) never records it. Run{" "}
+          <code>{'echo "$HISTCONTROL"'}</code> on a host to see which kind it
+          is: an answer with <code>ignorespace</code> or <code>ignoreboth</code>{" "}
+          in it is a host where the space is already doing the work and this
+          switch changes nothing you can see. Everywhere else bash keeps it,
+          and an <strong>Up</strong> arrow finds it instead of your own last
+          command. Turn this <strong>on</strong> to have the line delete its own
+          entry as it goes past; it only ever removes an entry it has checked is
+          its own, so none of your commands are at risk. It is{" "}
+          <strong>off</strong> to begin with because a <code>history -d</code>{" "}
+          is a write to your machines, and that is your call to make rather than
+          ours. Takes effect next time a terminal is opened. zsh offers no way
+          to delete a history entry, so this does nothing there.
         </p>
 
         {/* Admin lock (opt-in), gates the toggle above, credential editing and

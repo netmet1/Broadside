@@ -247,6 +247,7 @@ pub fn run() {
             commands::settings::destroy_all_hosts,
             commands::settings::set_help_hints_enabled,
             commands::settings::set_sudo_autofill_enabled,
+            commands::settings::set_history_scrub_enabled,
             commands::settings::set_skill_log_prefs,
             commands::security::admin_lock_status,
             commands::security::set_admin_passcode,

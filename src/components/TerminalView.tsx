@@ -10,7 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
-import { ArrowDownIcon } from "lucide-react";
+import { ArrowDownIcon, Loader2Icon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
@@ -235,6 +235,31 @@ type Phase =
       idle?: boolean;
     };
 
+/** How long a connect may take before the overlay says which half is slow.
+ *
+ * Under this, the operator sees the spinner and the word and nothing else,
+ * which is the whole of what a connect that lands needs. Over it, the wait is
+ * long enough to be worth a sentence, and the sentence differs: waiting on the
+ * host to answer at all is a different problem from waiting on it to finish
+ * logging you in, and only one of those is the network's fault. */
+const SLOW_CONNECT_MS = 4000;
+
+/** How long the overlay will wait for the first bytes of a session that has
+ * already been granted a shell.
+ *
+ * The backend holds a session's first screen until the host has finished
+ * drawing it, capped at ten seconds (see `ssh/connect_curtain.rs`), and a
+ * curtain that lifts with nothing to show sends no frame at all. So this is
+ * that cap plus the slack in front of it, and it exists for the host that never
+ * says anything: without it the overlay would sit over an empty pane for the
+ * life of the tab. Past it the overlay comes down and the pane is the pane,
+ * empty or not.
+ *
+ * Longer than the wait it is backing, on purpose. Cutting a curtain off early
+ * would put the overlay down a moment before the login screen it was covering
+ * arrives, which is a flicker of exactly the kind this build removed. */
+const FIRST_PAINT_GRACE_MS = 13000;
+
 /** How far along a pane's connection is, without the message that goes with it.
  * Reported to the page (see `onPhaseChange`) because "not connected" is four
  * different situations and only two of them are worth retrying: a pane that is
@@ -242,6 +267,23 @@ type Phase =
  * one at a `gate` is waiting on a host-key dialog the operator has to answer
  * either way. `failed` and `closed` are the ones showing a Try again button. */
 export type TerminalPhaseKind = Phase["kind"];
+
+/** What to say about a connect that has been going a while.
+ *
+ * Two answers rather than one, because the halves of a slow connect have
+ * different culprits and the difference is something the operator can act on:
+ * nothing has answered yet is a link or a machine that is down, and a login
+ * already accepted but not yet drawn is neither of those. */
+function slowConnectNote(kind: TerminalPhaseKind, local: boolean): string {
+  if (kind === "connecting") {
+    return local
+      ? "Still waiting for the shell to start."
+      : "Still waiting for the host to accept the connection.";
+  }
+  // Only a remote pane reaches here. An open one is covered only while its
+  // first screen is being held, and nothing holds a local shell's.
+  return "Signed in. Waiting for the host to finish drawing the login screen.";
+}
 
 /** What backs this terminal: an SSH host, or a local shell over ConPTY. A local
  * source may carry a saved profile's `cwd` (passed to the spawn) and
@@ -408,6 +450,23 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     },
     [sessionId],
   );
+  // Nothing has reached this pane yet on this connect.
+  //
+  // Not the same thing as the `connecting` phase, and the gap between them is
+  // the reason this exists: `pty_open` returns as soon as the host grants a
+  // shell, so the pane goes `open` while the first screen is still being held
+  // back on the Rust side. Before this, the overlay came down at that moment
+  // and the rest of the wait happened on a blank pane, with nothing on screen
+  // to say anything was still going on. The ref is what the data callback
+  // compares against so the state is set once and not once per chunk.
+  const unpaintedRef = useRef(true);
+  const [unpainted, setUnpainted] = useState(true);
+  // The first-paint wait has run out (see FIRST_PAINT_GRACE_MS). Only ever
+  // about the window after the shell is granted; a pane still `connecting` is
+  // covered for as long as it takes.
+  const [firstPaintGaveUp, setFirstPaintGaveUp] = useState(false);
+  // The connect has been going long enough to say more about it.
+  const [slowConnect, setSlowConnect] = useState(false);
   // Whether this pane is parked above the live end of its output, which is the
   // only time the jump-to-bottom button is drawn. The ref is the one the
   // terminal's own events compare against; the state is only what renders.
@@ -690,6 +749,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // page arrives here as output, so it keeps the session alive without the
       // idle timer needing to know that page exists.
       lastActivityRef.current = Date.now();
+      // Whatever this is, the pane is no longer empty, so the overlay has
+      // nothing left to explain.
+      if (unpaintedRef.current) {
+        unpaintedRef.current = false;
+        setUnpainted(false);
+      }
       if (freshScreenRef.current) {
         freshScreenRef.current = false;
         const endedAt = endedAtRef.current;
@@ -1018,6 +1083,9 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // screen in it. Arm the clean start here and let the first bytes spend it,
     // so a connect that never lands leaves the old output where it was.
     if (retryNonce > 0) freshScreenRef.current = true;
+    // A reconnect is a new first screen, so it gets the overlay again.
+    unpaintedRef.current = true;
+    setUnpainted(true);
     // Pending profile startup-command injection (local shells), cleared if the
     // tab tears down or reconnects before it fires.
     let startupTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1047,6 +1115,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
             snapshotWrittenRef.current = true;
             term.write(adoptSnapshot);
           }
+          // Adoption is a pane that already has a session's history in it. It
+          // is not waiting on a first screen and must not be told it is: the
+          // run may be sitting at a prompt with nothing more to say until
+          // somebody types.
+          unpaintedRef.current = false;
+          setUnpainted(false);
           setPhase({ kind: "open" });
           term.focus();
         }
@@ -1139,6 +1213,47 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, retryNonce]);
+
+  // How long the pane may go on being held for a first screen that never
+  // arrives. Armed only for the window this is about, and re-armed by a
+  // reconnect through `unpainted`.
+  useEffect(() => {
+    if (phase.kind !== "open" || !unpainted) {
+      setFirstPaintGaveUp(false);
+      return;
+    }
+    const timer = setTimeout(
+      () => setFirstPaintGaveUp(true),
+      FIRST_PAINT_GRACE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [phase.kind, unpainted]);
+
+  // Whether this connect has been going long enough to explain itself. Keyed on
+  // the overlay rather than on the phase, so the clock runs across the handover
+  // from connecting to a held first screen instead of restarting at it: that
+  // handover is invisible to the operator and it is the same wait to them.
+  //
+  // The held-screen half is remote-only, because the thing it is covering is:
+  // only an SSH session has a first screen held back. A local shell that says
+  // nothing yet is not waiting on anything we know about, and one of them says
+  // nothing on purpose. A serial console is silent until you press Enter, and
+  // telling somebody it is still connecting while a live COM port waits for
+  // that keypress would be a lie with a spinner on it.
+  const connectOverlay =
+    phase.kind === "connecting" ||
+    (source.type === "ssh" &&
+      phase.kind === "open" &&
+      unpainted &&
+      !firstPaintGaveUp);
+  useEffect(() => {
+    if (!connectOverlay) {
+      setSlowConnect(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlowConnect(true), SLOW_CONNECT_MS);
+    return () => clearTimeout(timer);
+  }, [connectOverlay]);
 
   // Apply appearance-setting changes to the live terminal.
   useEffect(() => {
@@ -1247,13 +1362,39 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           <ArrowDownIcon className="h-4 w-4" />
         </button>
       )}
-      {(phase.kind === "connecting" ||
-        phase.kind === "gate" ||
-        phase.kind === "failed") && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/85">
+      {/* Connecting, and the two states that replace it. The connecting half
+          takes no clicks: there is nothing in it to press, and letting them
+          through means an operator can put the cursor in the pane and start
+          typing at a shell that is already listening, which is what a blank
+          pane used to let them do. Keystrokes were never blocked either way,
+          the terminal keeps focus underneath. */}
+      {(connectOverlay || phase.kind === "gate" || phase.kind === "failed") && (
+        <div
+          className={cn(
+            "absolute inset-0 flex items-center justify-center bg-background/85",
+            connectOverlay && "pointer-events-none",
+          )}
+        >
           <div className="max-w-md space-y-3 px-6 text-center">
-            {phase.kind === "connecting" && (
-              <p className="text-sm text-muted-foreground">Connecting…</p>
+            {connectOverlay && (
+              <>
+                <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <Loader2Icon
+                    className="h-4 w-4 shrink-0 animate-spin"
+                    aria-hidden
+                  />
+                  Connecting…
+                </p>
+                {/* Only once the wait is long enough to be worth a sentence.
+                    Which sentence depends on how far the connect got, and that
+                    is the useful half: an operator who can see the login was
+                    accepted knows to stop suspecting their network. */}
+                {slowConnect && (
+                  <p className="text-xs text-muted-foreground/80">
+                    {slowConnectNote(phase.kind, source.type === "local")}
+                  </p>
+                )}
+              </>
             )}
             {phase.kind === "gate" && (
               <>

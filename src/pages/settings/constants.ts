@@ -63,7 +63,7 @@ export const SECTION_KEYWORDS: Record<string, string> = {
   Help: "hints status bar tooltips bottom bar explanations hover guidance",
   "Audit log": "logs history record trail who what when broadcasts host keys sessions opened turn off",
   Security:
-    "sudo password auto fill autofill admin lock passcode unlock protect credentials secrets argon2 privileged",
+    "sudo password auto fill autofill admin lock passcode unlock protect credentials secrets argon2 privileged shell history bash_history history -d delete entry up arrow recalls a long line setup line broadside typed it not me keep my history clean histcontrol ignorespace leave my host alone do not run anything extra stop deleting",
   Reset: "defaults factory restore preferences start over clear settings",
   "Danger Zone": "delete all hosts wipe destroy remove everything purge credentials",
 };
