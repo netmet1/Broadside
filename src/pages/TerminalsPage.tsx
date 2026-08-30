@@ -106,13 +106,14 @@ const BROADCAST_RAIL_KEY = "terminal-broadcast-rail";
 /** "1" rolls the tab strip away in Grid, giving its row to the tiles. */
 const TAB_BAR_HIDDEN_KEY = "terminal-tab-bar-hidden";
 
-/** How long a profile's delete button stays armed after the first click.
+/** How long a lone click on a profile's bin waits before it explains itself.
  *
- * Long enough that the second click is unhurried, short enough that a button
- * left armed while you went to do something else is disarmed again by the time
- * you come back: an armed delete you have forgotten about is the hazard the two
- * clicks were added to remove. */
-const ARM_TIMEOUT_MS = 4_000;
+ * A double-click delivers its first `click` before the `dblclick`, so the hint
+ * has to hang back long enough not to flash on the way past. Windows' own
+ * double-click threshold is 500ms and can be set higher, so this is not a
+ * guarantee on its own: opening the dialog also dismisses the hint outright,
+ * which covers the slow double-click this delay does not. */
+const DELETE_HINT_DELAY_MS = 400;
 
 /** A profile with a startup command gets a far stricter threshold than the
  * configured one: every copy runs that command again, and two accidental runs
@@ -303,7 +304,6 @@ export function TerminalsPage({
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const launcherRef = useRef<HTMLDivElement>(null);
   const closeShellMenu = useCallback(() => setShellMenuOpen(false), []);
-  useDismissOnOutside(launcherRef, shellMenuOpen, closeShellMenu);
 
   // Sessions whose hand-typed commands MultiTerminal is copying into its log
   // (Show Manual Activity, for the hosts checked there). Marked on the tab,
@@ -496,30 +496,64 @@ export function TerminalsPage({
   );
 
   /**
-   * The profile whose delete button is armed, and the timer that disarms it.
+   * Deleting a profile takes a double-click and then an answer.
    *
    * Delete used to go on the first click, with a saved profile and no undo
    * behind it, sitting one row from Edit in a menu you are moving through
-   * quickly. So it now takes two: the first arms the button (it turns red and
-   * says so), the second does it. Held as an id rather than a boolean so
-   * arming one row disarms any other, and dropped after a few seconds because
-   * an armed delete you have forgotten about is the same hazard again.
+   * quickly. Two deliberate gestures now stand between the pointer and the
+   * loss: the double-click, which no sweep of the mouse produces by accident,
+   * and a dialog that names the profile and has to be answered. That is more
+   * work per delete, on purpose. This is the one button here that destroys
+   * something.
+   *
+   * The profile is held rather than its id, so the dialog can name it even
+   * after the list underneath has changed.
    */
-  const [armedDelete, setArmedDelete] = useState<string | null>(null);
-  const armedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const armDelete = useCallback((id: string) => {
-    setArmedDelete(id);
-    if (armedTimer.current) clearTimeout(armedTimer.current);
-    armedTimer.current = setTimeout(() => setArmedDelete(null), ARM_TIMEOUT_MS);
+  const [profileDelete, setProfileDelete] = useState<ShellProfile | null>(null);
+  /**
+   * The pending "double-click to delete" hint, and the toast it becomes.
+   *
+   * A single click on the bin is a reasonable thing to try, and doing nothing
+   * at all in reply teaches nobody the gesture. So it says so, in a toast and
+   * in the tooltip. Both handles are kept because the hint has to be
+   * retractable in two states: still pending, and already on screen.
+   */
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hintToast = useRef<string | number | null>(null);
+  const cancelDeleteHint = useCallback(() => {
+    if (hintTimer.current) {
+      clearTimeout(hintTimer.current);
+      hintTimer.current = null;
+    }
+    if (hintToast.current !== null) {
+      toast.dismiss(hintToast.current);
+      hintToast.current = null;
+    }
   }, []);
-  const disarmDelete = useCallback(() => {
-    if (armedTimer.current) clearTimeout(armedTimer.current);
-    armedTimer.current = null;
-    setArmedDelete(null);
-  }, []);
-  useEffect(() => () => {
-    if (armedTimer.current) clearTimeout(armedTimer.current);
-  }, []);
+  const hintDeleteGesture = useCallback(() => {
+    cancelDeleteHint();
+    hintTimer.current = setTimeout(() => {
+      hintTimer.current = null;
+      hintToast.current = toast("Double-click to delete");
+    }, DELETE_HINT_DELAY_MS);
+  }, [cancelDeleteHint]);
+  useEffect(() => cancelDeleteHint, [cancelDeleteHint]);
+  /**
+   * The launcher's outside-press dismissal, switched off while the delete
+   * dialog is up.
+   *
+   * The dialog is portalled, so every press inside it (Cancel, Delete, the
+   * overlay) lands outside `launcherRef` and would take the menu down mid
+   * answer, leaving you looking at a dialog about a list that is no longer
+   * there. Suspending it instead keeps the list behind the dialog, so deleting
+   * a second profile does not mean reopening the menu. The dialog is modal and
+   * brings its own Escape, so nothing is left undismissable.
+   */
+  useDismissOnOutside(
+    launcherRef,
+    shellMenuOpen && !profileDelete,
+    closeShellMenu,
+  );
 
   // Launch a saved profile: resolve its shell among the detected ones (a profile
   // can outlive a removed WSL distro), then open with its cwd / startup / name.
@@ -1763,10 +1797,9 @@ export function TerminalsPage({
             <button
               type="button"
               onClick={() => {
-                // Never open the menu with a delete still armed from last time:
-                // the arm is a promise about *this* click and the next one, and
-                // it must not survive the menu it was made in.
-                disarmDelete();
+                // A hint about a bin in this menu has nothing to say once the
+                // menu itself is going away.
+                cancelDeleteHint();
                 setShellMenuOpen((v) => !v);
               }}
               aria-label="New local shell"
@@ -1940,7 +1973,7 @@ export function TerminalsPage({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  disarmDelete();
+                                  cancelDeleteHint();
                                   setShellMenuOpen(false);
                                   setProfileEdit({ profile: p });
                                 }}
@@ -1957,7 +1990,7 @@ export function TerminalsPage({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  disarmDelete();
+                                  cancelDeleteHint();
                                   duplicateProfileById(p.id);
                                 }}
                                 aria-label={`Duplicate ${p.label}`}
@@ -1966,40 +1999,27 @@ export function TerminalsPage({
                               >
                                 <CopyIcon className="h-3.5 w-3.5" />
                               </button>
-                              {/* Two clicks, not one. The first arms it and
-                                  says so; the second deletes. A profile is
-                                  saved work with no undo behind it, and this
-                                  button sits a few pixels from Edit in a menu
-                                  people move through quickly. */}
+                              {/* A double-click, and then the dialog. A profile
+                                  is saved work with no undo behind it, and
+                                  this button sits a few pixels from Edit in a
+                                  menu people move through quickly. A lone
+                                  click deletes nothing and says why. */}
                               <button
                                 type="button"
-                                onClick={() => {
-                                  if (armedDelete === p.id) {
-                                    disarmDelete();
-                                    deleteProfile(p.id);
-                                  } else {
-                                    armDelete(p.id);
-                                  }
+                                onClick={(e) => {
+                                  // The second click of a double-click arrives
+                                  // here too, carrying detail 2. Only a click
+                                  // that is on its own needs explaining.
+                                  if (e.detail > 1) return;
+                                  hintDeleteGesture();
                                 }}
-                                onBlur={() => {
-                                  if (armedDelete === p.id) disarmDelete();
+                                onDoubleClick={() => {
+                                  cancelDeleteHint();
+                                  setProfileDelete(p);
                                 }}
-                                aria-label={
-                                  armedDelete === p.id
-                                    ? `Confirm deleting ${p.label}`
-                                    : `Delete ${p.label}`
-                                }
-                                title={
-                                  armedDelete === p.id
-                                    ? "Click again to delete this profile"
-                                    : "Delete profile (click twice)"
-                                }
-                                className={cn(
-                                  "shrink-0 rounded p-0.5",
-                                  armedDelete === p.id
-                                    ? "bg-destructive/15 text-red-500 opacity-100 ring-1 ring-destructive/50"
-                                    : "text-muted-foreground opacity-0 hover:bg-accent hover:text-red-500 group-hover:opacity-100",
-                                )}
+                                aria-label={`Delete ${p.label}`}
+                                title="Double-click to delete"
+                                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-red-500 group-hover:opacity-100"
                               >
                                 <Trash2Icon className="h-3.5 w-3.5" />
                               </button>
@@ -2898,6 +2918,42 @@ export function TerminalsPage({
         })}
       </div>
       </div>
+
+      {/* The second half of the delete guard: the double-click opens this, and
+          this is what actually removes the profile. It names the profile,
+          because "are you sure" about an unnamed thing in a list of similar
+          names is not a question anybody can answer. */}
+      <AlertDialog
+        open={!!profileDelete}
+        onOpenChange={(open) => {
+          if (!open) setProfileDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this profile?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold text-foreground">
+                {profileDelete?.label}
+              </span>{" "}
+              will be removed from the launcher. Saved profiles have no undo, so
+              this cannot be taken back. Terminals already open from it keep
+              running.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (profileDelete) deleteProfile(profileDelete.id);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={closeAllOpen} onOpenChange={setCloseAllOpen}>
         <AlertDialogContent>
