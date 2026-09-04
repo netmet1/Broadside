@@ -54,6 +54,34 @@ function copySelection(sel: string) {
     .catch(() => {});
 }
 
+/** Read the clipboard and send it to `sessionId` as if it had been typed, then
+ * flash a short confirmation. Both paste routes go through here so they say the
+ * same thing. A paste into a live shell is consequential (a trailing newline
+ * runs what went in) and right-click is easy to press by accident, so the toast
+ * reports the line count when there is more than one line: that is the case
+ * where the clipboard held more than you thought and several commands just ran.
+ * Nothing is said when the clipboard is empty or unreadable, or when the
+ * session is gone and the text went nowhere. */
+function pasteToSession(sessionId: string) {
+  navigator.clipboard
+    ?.readText()
+    .then((text) => {
+      if (!text) return;
+      const lines = text.replace(/\r?\n$/, "").split("\n").length;
+      ptyWrite(sessionId, text)
+        .then(() =>
+          toast.success(
+            lines > 1 ? `Pasted ${lines} lines from clipboard` : "Pasted from clipboard",
+            { duration: 1200 },
+          ),
+        )
+        .catch(() => {});
+    })
+    .catch(() => {
+      // Clipboard unreadable (empty or permission denied), ignore.
+    });
+}
+
 export type ConnectionGate = Extract<
   PtyOpenResult,
   { status: "unknown_key" } | { status: "key_mismatch" }
@@ -564,12 +592,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       }
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) {
         e.preventDefault();
-        navigator.clipboard
-          ?.readText()
-          .then((text) => {
-            if (text) ptyWrite(sessionId, text).catch(() => {});
-          })
-          .catch(() => {});
+        pasteToSession(sessionId);
         return false;
       }
       // Alt+Left/Right switch terminal tabs even while the terminal is focused.
@@ -719,14 +742,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // context menu. A no-op on a closed session (ptyWrite swallows the error).
     const onContextMenu = (e: MouseEvent) => {
       e.preventDefault();
-      navigator.clipboard
-        ?.readText()
-        .then((text) => {
-          if (text) ptyWrite(sessionId, text).catch(() => {});
-        })
-        .catch(() => {
-          // Clipboard unreadable (empty or permission denied), ignore.
-        });
+      pasteToSession(sessionId);
     };
     const contextMenuEl = containerRef.current;
     contextMenuEl?.addEventListener("contextmenu", onContextMenu);
@@ -735,7 +751,14 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // copy it to the clipboard. Pairs with right-click-paste so the mouse alone
     // does both copy and paste. Fires once per drag (on mouseup) rather than on
     // every onSelectionChange tick, so we don't spam the clipboard mid-drag.
-    const onMouseUp = () => {
+    //
+    // Left button only. `mouseup` fires for every button, and on Windows the
+    // right button's `contextmenu` arrives *after* its `mouseup`, so an
+    // ungated handler made a right-click re-copy whatever was still selected in
+    // the pane: it claimed "Copied to clipboard" on a paste, and it raced the
+    // read below for the clipboard, which could paste the old selection back.
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button !== 0) return;
       copySelection(term.getSelection());
     };
     contextMenuEl?.addEventListener("mouseup", onMouseUp);
