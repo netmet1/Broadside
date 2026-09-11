@@ -10,7 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
-import { ArrowDownIcon } from "lucide-react";
+import { ArrowDownIcon, Loader2Icon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
@@ -25,6 +25,11 @@ import {
   type PtyOpenResult,
 } from "@/lib/tauri/pty";
 import { ptyOpenLocal } from "@/lib/tauri/local";
+import {
+  SESSION_PREFS_EVENT,
+  describeIdle,
+  loadSessionPrefs,
+} from "@/lib/sessionPrefs";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
   dismissShellWarning,
@@ -47,6 +52,34 @@ function copySelection(sel: string) {
     ?.writeText(sel)
     .then(() => toast.success("Copied to clipboard", { duration: 1200 }))
     .catch(() => {});
+}
+
+/** Read the clipboard and send it to `sessionId` as if it had been typed, then
+ * flash a short confirmation. Both paste routes go through here so they say the
+ * same thing. A paste into a live shell is consequential (a trailing newline
+ * runs what went in) and right-click is easy to press by accident, so the toast
+ * reports the line count when there is more than one line: that is the case
+ * where the clipboard held more than you thought and several commands just ran.
+ * Nothing is said when the clipboard is empty or unreadable, or when the
+ * session is gone and the text went nowhere. */
+function pasteToSession(sessionId: string) {
+  navigator.clipboard
+    ?.readText()
+    .then((text) => {
+      if (!text) return;
+      const lines = text.replace(/\r?\n$/, "").split("\n").length;
+      ptyWrite(sessionId, text)
+        .then(() =>
+          toast.success(
+            lines > 1 ? `Pasted ${lines} lines from clipboard` : "Pasted from clipboard",
+            { duration: 1200 },
+          ),
+        )
+        .catch(() => {});
+    })
+    .catch(() => {
+      // Clipboard unreadable (empty or permission denied), ignore.
+    });
 }
 
 export type ConnectionGate = Extract<
@@ -203,6 +236,13 @@ function freshScreenSequence(term: Terminal, endedAt: number | null): string {
   return out + "\x1b[H";
 }
 
+/** How often an open pane checks whether it has gone quiet.
+ *
+ * Five seconds against a timeout measured in minutes: the check is a
+ * subtraction, and the cost of being up to five seconds late closing a session
+ * that has been idle for half an hour is nothing at all. */
+const IDLE_CHECK_MS = 5_000;
+
 type Phase =
   | { kind: "connecting" }
   | { kind: "open" }
@@ -212,7 +252,41 @@ type Phase =
    * asked to go and went is clean, and a shell that died on its own or came
    * back non-zero is not. It only tints the message on the banner, so a wrong
    * guess costs a colour rather than a behaviour. */
-  | { kind: "closed"; message: string; clean: boolean };
+  | {
+      kind: "closed";
+      message: string;
+      clean: boolean;
+      /** This pane was closed by the idle timeout rather than by the shell or
+       * the operator. The banner says so in amber and links to the setting,
+       * because a terminal that closed itself while you were in a meeting is
+       * otherwise indistinguishable from one that dropped. */
+      idle?: boolean;
+    };
+
+/** How long a connect may take before the overlay says which half is slow.
+ *
+ * Under this, the operator sees the spinner and the word and nothing else,
+ * which is the whole of what a connect that lands needs. Over it, the wait is
+ * long enough to be worth a sentence, and the sentence differs: waiting on the
+ * host to answer at all is a different problem from waiting on it to finish
+ * logging you in, and only one of those is the network's fault. */
+const SLOW_CONNECT_MS = 4000;
+
+/** How long the overlay will wait for the first bytes of a session that has
+ * already been granted a shell.
+ *
+ * The backend holds a session's first screen until the host has finished
+ * drawing it, capped at ten seconds (see `ssh/connect_curtain.rs`), and a
+ * curtain that lifts with nothing to show sends no frame at all. So this is
+ * that cap plus the slack in front of it, and it exists for the host that never
+ * says anything: without it the overlay would sit over an empty pane for the
+ * life of the tab. Past it the overlay comes down and the pane is the pane,
+ * empty or not.
+ *
+ * Longer than the wait it is backing, on purpose. Cutting a curtain off early
+ * would put the overlay down a moment before the login screen it was covering
+ * arrives, which is a flicker of exactly the kind this build removed. */
+const FIRST_PAINT_GRACE_MS = 13000;
 
 /** How far along a pane's connection is, without the message that goes with it.
  * Reported to the page (see `onPhaseChange`) because "not connected" is four
@@ -221,6 +295,23 @@ type Phase =
  * one at a `gate` is waiting on a host-key dialog the operator has to answer
  * either way. `failed` and `closed` are the ones showing a Try again button. */
 export type TerminalPhaseKind = Phase["kind"];
+
+/** What to say about a connect that has been going a while.
+ *
+ * Two answers rather than one, because the halves of a slow connect have
+ * different culprits and the difference is something the operator can act on:
+ * nothing has answered yet is a link or a machine that is down, and a login
+ * already accepted but not yet drawn is neither of those. */
+function slowConnectNote(kind: TerminalPhaseKind, local: boolean): string {
+  if (kind === "connecting") {
+    return local
+      ? "Still waiting for the shell to start."
+      : "Still waiting for the host to accept the connection.";
+  }
+  // Only a remote pane reaches here. An open one is covered only while its
+  // first screen is being held, and nothing holds a local shell's.
+  return "Signed in. Waiting for the host to finish drawing the login screen.";
+}
 
 /** What backs this terminal: an SSH host, or a local shell over ConPTY. A local
  * source may carry a saved profile's `cwd` (passed to the spawn) and
@@ -268,6 +359,9 @@ type Props = {
    * all: `connecting` and `gate` are both "red" in the tab strip and neither
    * wants a retry. */
   onPhaseChange?: (sessionId: string, phase: TerminalPhaseKind) => void;
+  /** Open Settings at the session section, from the amber line the banner
+   * shows when the idle timeout is what closed this pane. */
+  onOpenSessionSettings?: () => void;
   /** Adopt a backend PTY that is already open (a skill run handed its shell
    * over) instead of opening a new one. Skips `pty_open` on the first mount and
    * binds to the existing session id; a later Reconnect opens for real. */
@@ -308,6 +402,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       onSearchResults,
       onConnectionChange,
       onPhaseChange,
+      onOpenSessionSettings,
       adoptExisting,
       adoptSnapshot,
       startClosed,
@@ -395,6 +490,23 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     },
     [sessionId],
   );
+  // Nothing has reached this pane yet on this connect.
+  //
+  // Not the same thing as the `connecting` phase, and the gap between them is
+  // the reason this exists: `pty_open` returns as soon as the host grants a
+  // shell, so the pane goes `open` while the first screen is still being held
+  // back on the Rust side. Before this, the overlay came down at that moment
+  // and the rest of the wait happened on a blank pane, with nothing on screen
+  // to say anything was still going on. The ref is what the data callback
+  // compares against so the state is set once and not once per chunk.
+  const unpaintedRef = useRef(true);
+  const [unpainted, setUnpainted] = useState(true);
+  // The first-paint wait has run out (see FIRST_PAINT_GRACE_MS). Only ever
+  // about the window after the shell is granted; a pane still `connecting` is
+  // covered for as long as it takes.
+  const [firstPaintGaveUp, setFirstPaintGaveUp] = useState(false);
+  // The connect has been going long enough to say more about it.
+  const [slowConnect, setSlowConnect] = useState(false);
   // Whether this pane is parked above the live end of its output, which is the
   // only time the jump-to-bottom button is drawn. The ref is the one the
   // terminal's own events compare against; the state is only what renders.
@@ -492,12 +604,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       }
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) {
         e.preventDefault();
-        navigator.clipboard
-          ?.readText()
-          .then((text) => {
-            if (text) ptyWrite(sessionId, text).catch(() => {});
-          })
-          .catch(() => {});
+        pasteToSession(sessionId);
         return false;
       }
       // Alt+Left/Right switch terminal tabs even while the terminal is focused.
@@ -523,6 +630,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     });
 
     const dataSub = term.onData((data) => {
+      lastActivityRef.current = Date.now();
       ptyWrite(sessionId, data).catch(() => {
         // Session already gone; the closed event handles UI state.
       });
@@ -530,6 +638,33 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const resizeSub = term.onResize(({ cols, rows }) => {
       ptyResize(sessionId, cols, rows).catch(() => {});
     });
+
+    // Whether the shell is holding the terminal or has handed it to a command,
+    // for the idle timeout further down.
+    //
+    // Bracketed paste is the nearest thing to a shell saying "I am waiting for
+    // you to type": readline and zsh's zle turn it on while a prompt is up and
+    // off again before they give the terminal to a command, then back on at the
+    // next prompt. That makes a silent `sleep 120` visible as work in progress
+    // rather than as a quiet session, without asking anything of the host.
+    //
+    // Watched, not handled. Returning `false` puts the sequence back on the
+    // parser's own chain, so the mode is still applied exactly as before.
+    const noteBracketedPaste = (params: (number | number[])[], on: boolean) => {
+      if (params.some((p) => p === 2004)) {
+        if (on) promptRef.current.seen = true;
+        promptRef.current.atPrompt = on;
+      }
+      return false;
+    };
+    const modeOnSub = term.parser.registerCsiHandler(
+      { prefix: "?", final: "h" },
+      (params) => noteBracketedPaste(params, true),
+    );
+    const modeOffSub = term.parser.registerCsiHandler(
+      { prefix: "?", final: "l" },
+      (params) => noteBracketedPaste(params, false),
+    );
 
     // Refit coalesced to one per frame: a grid relayout (hiding a tile flips
     // the container between the 3+ grid and the two-up split, and a scrollbar
@@ -619,14 +754,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // context menu. A no-op on a closed session (ptyWrite swallows the error).
     const onContextMenu = (e: MouseEvent) => {
       e.preventDefault();
-      navigator.clipboard
-        ?.readText()
-        .then((text) => {
-          if (text) ptyWrite(sessionId, text).catch(() => {});
-        })
-        .catch(() => {
-          // Clipboard unreadable (empty or permission denied), ignore.
-        });
+      pasteToSession(sessionId);
     };
     const contextMenuEl = containerRef.current;
     contextMenuEl?.addEventListener("contextmenu", onContextMenu);
@@ -635,7 +763,14 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // copy it to the clipboard. Pairs with right-click-paste so the mouse alone
     // does both copy and paste. Fires once per drag (on mouseup) rather than on
     // every onSelectionChange tick, so we don't spam the clipboard mid-drag.
-    const onMouseUp = () => {
+    //
+    // Left button only. `mouseup` fires for every button, and on Windows the
+    // right button's `contextmenu` arrives *after* its `mouseup`, so an
+    // ungated handler made a right-click re-copy whatever was still selected in
+    // the pane: it claimed "Copied to clipboard" on a paste, and it raced the
+    // read below for the clipboard, which could paste the old selection back.
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button !== 0) return;
       copySelection(term.getSelection());
     };
     contextMenuEl?.addEventListener("mouseup", onMouseUp);
@@ -644,6 +779,17 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // `term.write` directly, so a reconnect's clean screen cannot be missed by
     // one of the two paths below.
     const writeToPane = (data: Uint8Array) => {
+      // Output is activity too, and this is the one funnel every byte the
+      // session says goes through. A broadcast typed into this PTY from another
+      // page arrives here as output, so it keeps the session alive without the
+      // idle timer needing to know that page exists.
+      lastActivityRef.current = Date.now();
+      // Whatever this is, the pane is no longer empty, so the overlay has
+      // nothing left to explain.
+      if (unpaintedRef.current) {
+        unpaintedRef.current = false;
+        setUnpainted(false);
+      }
       if (freshScreenRef.current) {
         freshScreenRef.current = false;
         const endedAt = endedAtRef.current;
@@ -719,6 +865,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       dataSub.dispose();
       resultsSub.dispose();
       resizeSub.dispose();
+      modeOnSub.dispose();
+      modeOffSub.dispose();
       scrollSub.dispose();
       writeSub.dispose();
       cancelAnimationFrame(refitRaf);
@@ -819,6 +967,90 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     });
   }, [endNonce, sessionId, setPhase]);
 
+  // Close this session when it has been quiet for long enough --------------
+  //
+  // Off unless the operator asks for it (see sessionPrefs). Idle means two
+  // things, and both have to hold:
+  //
+  //   - no bytes in *either* direction, so a `tail -f` still printing is not
+  //     idle even though nobody is typing at it. Keepalives are not traffic for
+  //     this purpose: they are ours, sent whether anyone is here or not, and if
+  //     they counted the timeout could never fire while the other setting was
+  //     on.
+  //   - nothing running in the foreground. A command that holds the terminal
+  //     and says nothing for an hour (`sleep`, a long build, a restore) is the
+  //     session doing exactly what it was asked to, and closing it is the one
+  //     thing a timeout must never do. Something left running in the
+  //     *background* does not count: the shell has the terminal back, and a
+  //     `&` job cannot keep a session open forever on its own.
+  //
+  // SSH only. A local shell has no state table on a firewall somewhere to keep
+  // alive and no connection to lose, so closing one would be taking something
+  // away for nothing.
+  const lastActivityRef = useRef(Date.now());
+  /**
+   * What this pane can tell about the shell's own state.
+   *
+   * `seen` stays false until the session enables bracketed paste even once. A
+   * shell that never does (dash, an old bash, a device CLI) leaves no signal to
+   * read, so the timeout falls back to quiet-alone rather than guessing; a
+   * shell that does gives a reliable prompt-versus-command line all session.
+   */
+  const promptRef = useRef({ seen: false, atPrompt: false });
+  const [idleSecs, setIdleSecs] = useState(() => loadSessionPrefs().idleSecs);
+  useEffect(() => {
+    const read = () => setIdleSecs(loadSessionPrefs().idleSecs);
+    window.addEventListener(SESSION_PREFS_EVENT, read);
+    return () => window.removeEventListener(SESSION_PREFS_EVENT, read);
+  }, []);
+  // A fresh shell has not been idle for anything, whatever this pane was doing
+  // before it. Reconnect is the case that matters: without this, a tab that had
+  // been sitting closed all afternoon would reconnect and immediately time out
+  // again on the old clock.
+  useEffect(() => {
+    if (phase.kind === "open") {
+      lastActivityRef.current = Date.now();
+      // And it knows nothing about its shell yet either. Whatever the last one
+      // was doing when it ended has nothing to say about this one.
+      promptRef.current = { seen: false, atPrompt: false };
+    }
+  }, [phase.kind]);
+  const isSsh = source.type === "ssh";
+  useEffect(() => {
+    if (idleSecs === null || !isSsh) return;
+    const limitMs = idleSecs * 1000;
+    /** Something has the terminal that is not the shell's own line editor. */
+    const foreground = () => {
+      // A full-screen program (vim, less, top, tmux) has the alternate buffer
+      // and is plainly in the foreground, whatever it does with paste mode.
+      if (termRef.current?.buffer.active.type === "alternate") return true;
+      const p = promptRef.current;
+      return p.seen && !p.atPrompt;
+    };
+    const timer = setInterval(() => {
+      if (phaseRef.current.kind !== "open") return;
+      // A command in the foreground holds the clock at zero rather than
+      // pausing it, so when it finishes the session gets its whole timeout
+      // from that moment, not whatever was left over from before it started.
+      if (foreground()) {
+        lastActivityRef.current = Date.now();
+        return;
+      }
+      if (Date.now() - lastActivityRef.current < limitMs) return;
+      // Same path the Sessions menu's unplug takes: close the PTY and announce
+      // it here, because a close asked for from inside the app deliberately
+      // emits no `pty:closed` (see the endNonce effect above).
+      ptyClose(sessionId).catch(() => {});
+      setPhase({
+        kind: "closed",
+        message: `idle for ${describeIdle(idleSecs)}`,
+        clean: true,
+        idle: true,
+      });
+    }, IDLE_CHECK_MS);
+    return () => clearInterval(timer);
+  }, [idleSecs, isSsh, sessionId, setPhase]);
+
   useImperativeHandle(searchHandleRef, () => ({
     findNext: (pattern, options, incremental) => {
       // The xterm search addon can throw on some inputs (smoke test 7.2:
@@ -886,6 +1118,9 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // screen in it. Arm the clean start here and let the first bytes spend it,
     // so a connect that never lands leaves the old output where it was.
     if (retryNonce > 0) freshScreenRef.current = true;
+    // A reconnect is a new first screen, so it gets the overlay again.
+    unpaintedRef.current = true;
+    setUnpainted(true);
     // Pending profile startup-command injection (local shells), cleared if the
     // tab tears down or reconnects before it fires.
     let startupTimer: ReturnType<typeof setTimeout> | undefined;
@@ -926,6 +1161,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
             snapshotWrittenRef.current = true;
             term.write(adoptSnapshot);
           }
+          // Adoption is a pane that already has a session's history in it. It
+          // is not waiting on a first screen and must not be told it is: the
+          // run may be sitting at a prompt with nothing more to say until
+          // somebody types.
+          unpaintedRef.current = false;
+          setUnpainted(false);
           setPhase({ kind: "open" });
           term.focus();
         }
@@ -1018,6 +1259,47 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, retryNonce]);
+
+  // How long the pane may go on being held for a first screen that never
+  // arrives. Armed only for the window this is about, and re-armed by a
+  // reconnect through `unpainted`.
+  useEffect(() => {
+    if (phase.kind !== "open" || !unpainted) {
+      setFirstPaintGaveUp(false);
+      return;
+    }
+    const timer = setTimeout(
+      () => setFirstPaintGaveUp(true),
+      FIRST_PAINT_GRACE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [phase.kind, unpainted]);
+
+  // Whether this connect has been going long enough to explain itself. Keyed on
+  // the overlay rather than on the phase, so the clock runs across the handover
+  // from connecting to a held first screen instead of restarting at it: that
+  // handover is invisible to the operator and it is the same wait to them.
+  //
+  // The held-screen half is remote-only, because the thing it is covering is:
+  // only an SSH session has a first screen held back. A local shell that says
+  // nothing yet is not waiting on anything we know about, and one of them says
+  // nothing on purpose. A serial console is silent until you press Enter, and
+  // telling somebody it is still connecting while a live COM port waits for
+  // that keypress would be a lie with a spinner on it.
+  const connectOverlay =
+    phase.kind === "connecting" ||
+    (source.type === "ssh" &&
+      phase.kind === "open" &&
+      unpainted &&
+      !firstPaintGaveUp);
+  useEffect(() => {
+    if (!connectOverlay) {
+      setSlowConnect(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlowConnect(true), SLOW_CONNECT_MS);
+    return () => clearTimeout(timer);
+  }, [connectOverlay]);
 
   // Apply appearance-setting changes to the live terminal.
   useEffect(() => {
@@ -1126,13 +1408,39 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           <ArrowDownIcon className="h-4 w-4" />
         </button>
       )}
-      {(phase.kind === "connecting" ||
-        phase.kind === "gate" ||
-        phase.kind === "failed") && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/85">
+      {/* Connecting, and the two states that replace it. The connecting half
+          takes no clicks: there is nothing in it to press, and letting them
+          through means an operator can put the cursor in the pane and start
+          typing at a shell that is already listening, which is what a blank
+          pane used to let them do. Keystrokes were never blocked either way,
+          the terminal keeps focus underneath. */}
+      {(connectOverlay || phase.kind === "gate" || phase.kind === "failed") && (
+        <div
+          className={cn(
+            "absolute inset-0 flex items-center justify-center bg-background/85",
+            connectOverlay && "pointer-events-none",
+          )}
+        >
           <div className="max-w-md space-y-3 px-6 text-center">
-            {phase.kind === "connecting" && (
-              <p className="text-sm text-muted-foreground">Connecting…</p>
+            {connectOverlay && (
+              <>
+                <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <Loader2Icon
+                    className="h-4 w-4 shrink-0 animate-spin"
+                    aria-hidden
+                  />
+                  Connecting…
+                </p>
+                {/* Only once the wait is long enough to be worth a sentence.
+                    Which sentence depends on how far the connect got, and that
+                    is the useful half: an operator who can see the login was
+                    accepted knows to stop suspecting their network. */}
+                {slowConnect && (
+                  <p className="text-xs text-muted-foreground/80">
+                    {slowConnectNote(phase.kind, source.type === "local")}
+                  </p>
+                )}
+              </>
             )}
             {phase.kind === "gate" && (
               <>
@@ -1294,6 +1602,30 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
                 : reachability.last && !reachability.everMissed
                   ? "SSH still answering"
                   : `SSH ${reachability.last ? "back " : ""}${reachability.ok}/${reachability.total} ${reachability.percent}%`}
+            </span>
+          )}
+          {/* The idle timeout closed this one, and it says so in full rather
+              than in the slim message plate beside it.
+
+              A session that ended while you were somewhere else is the one
+              close where "why" is not obvious from anything on screen, and the
+              honest answer is "a setting you chose did this", so the setting is
+              a click away. Amber, not red: nothing went wrong. */}
+          {phase.idle && (
+            <span className="min-w-0 truncate rounded-md border border-amber-500/40 bg-background/90 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
+              Closed by the session timeout.{" "}
+              {onOpenSessionSettings ? (
+                <button
+                  type="button"
+                  onClick={onOpenSessionSettings}
+                  className="underline underline-offset-2 hover:no-underline"
+                >
+                  Settings
+                </button>
+              ) : (
+                "Settings"
+              )}{" "}
+              can change or switch it off.
             </span>
           )}
           <span

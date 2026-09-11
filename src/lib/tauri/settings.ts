@@ -90,6 +90,9 @@ export type AppSettings = {
   bulk_confirm_over: number;
   help_hints_enabled: boolean;
   sudo_autofill_enabled: boolean;
+  /** Whether the connect setup line deletes its own bash history entry.
+   * Off unless the operator turned it on. */
+  history_scrub_enabled: boolean;
   core_rules: CoreRuleInfo[];
   user_rules: UserRule[];
   core_shortcuts: CoreShortcut[];
@@ -152,6 +155,14 @@ export function setSudoAutofillEnabled(enabled: boolean): Promise<void> {
   return invoke<void>("set_sudo_autofill_enabled", { enabled });
 }
 
+/** Whether the line Broadside types on connect takes itself back out of the
+ * host's bash history. Off by default, so nothing is deleted anywhere until
+ * this is asked for. Read when a terminal opens, so it applies to the next one
+ * rather than to a session already running. */
+export function setHistoryScrubEnabled(enabled: boolean): Promise<void> {
+  return invoke<void>("set_history_scrub_enabled", { enabled });
+}
+
 /** Opt-in admin lock state: `lock_set` = a passcode is configured;
  * `unlocked` = this session has been unlocked (re-locks on app restart). */
 export type AdminLockStatus = { lock_set: boolean; unlocked: boolean };
@@ -212,6 +223,15 @@ export type UiSettingsInput = {
 
 export function setUiSettings(input: UiSettingsInput): Promise<void> {
   return invoke<void>("set_ui_settings", { input });
+}
+
+/** How often SSH connections opened from now on should send a keepalive, in
+ * seconds; 0 turns it off. Not stored in the settings database: the preference
+ * itself lives in localStorage with the other per-machine UI prefs, and this
+ * pushes it down to the connection layer at startup and on every change. It
+ * applies to the *next* connection, never to one already open. */
+export function setSshKeepalive(secs: number): Promise<void> {
+  return invoke<void>("set_ssh_keepalive", { secs });
 }
 
 export function saveShortcuts(shortcuts: ShortcutCommand[]): Promise<void> {

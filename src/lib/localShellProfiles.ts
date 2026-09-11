@@ -85,3 +85,54 @@ export function removeProfile(
 ): ShellProfile[] {
   return profiles.filter((p) => p.id !== id);
 }
+
+/** Strips one trailing ` (copy)` or ` (copy N)` off a label, so a copy of a
+ * copy counts from the original rather than stacking suffixes. `Foo (copy 3)`
+ * gives `Foo`; `Foo` gives `Foo`. Only the last one goes, so a profile the user
+ * deliberately called `Backup (copy) (copy)` still has a base of
+ * `Backup (copy)` and numbers from there. */
+function copyBase(label: string): string {
+  return label.replace(/\s*\((?:copy)(?:\s+\d+)?\)$/i, "").trim() || label;
+}
+
+/** A name for a copy of `label` that is not already taken: `X (copy)`, then
+ * `X (copy 2)`, `X (copy 3)`. Duplicating the same profile three times should
+ * give three profiles you can tell apart, not three called the same thing.
+ *
+ * Duplicating a *copy* collapses rather than nests: a copy of `X (copy)` is
+ * `X (copy 2)`, not `X (copy) (copy)`. The suffix is bookkeeping, and a name
+ * that grows a word every time you press the button stops being readable at
+ * exactly the point a long list needs it most.
+ *
+ * Compared case-insensitively and on the trimmed name, because two profiles
+ * differing only in case are two profiles nobody can tell apart in a menu. */
+export function copyLabel(profiles: ShellProfile[], label: string): string {
+  const taken = new Set(profiles.map((p) => p.label.trim().toLowerCase()));
+  const stem = copyBase(label);
+  const base = `${stem} (copy)`;
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${stem} (copy ${n})`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
+/** Insert a copy of `id` directly after it, so the copy turns up where you were
+ * looking rather than at the bottom of a list you have scrolled away from.
+ * Returns the new list and the copy; the caller persists it. */
+export function duplicateProfile(
+  profiles: ShellProfile[],
+  id: string,
+): { profiles: ShellProfile[]; copy: ShellProfile } | null {
+  const idx = profiles.findIndex((p) => p.id === id);
+  if (idx === -1) return null;
+  const source = profiles[idx]!;
+  const copy: ShellProfile = {
+    ...source,
+    id: crypto.randomUUID(),
+    label: copyLabel(profiles, source.label),
+  };
+  const next = profiles.slice();
+  next.splice(idx + 1, 0, copy);
+  return { profiles: next, copy };
+}

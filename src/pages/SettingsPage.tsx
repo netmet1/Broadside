@@ -38,7 +38,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/tauri/hosts";
-import { HIDEABLE_COLUMNS } from "@/lib/hostColumns";
 import { GENERIC_MONOSPACE, cssFontFamily } from "@/lib/monospaceFonts";
 import { DEFAULT_UI_PREFS, MAX_TERMINAL_SCROLLBACK } from "@/lib/uiPrefs";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
@@ -52,6 +51,7 @@ import {
   getAppSettings,
   resetAppSettings,
   setSudoAutofillEnabled,
+  setHistoryScrubEnabled,
 } from "@/lib/tauri/settings";
 import { isExitGuardEnabled, setExitGuardEnabled } from "@/lib/exitGuard";
 import { AdminUnlockDialog } from "@/components/AdminUnlockDialog";
@@ -76,6 +76,8 @@ import {
 } from "@/pages/settings/constants";
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { GridSection } from "@/pages/settings/GridSection";
+import { HostColumnsBox } from "@/pages/settings/HostColumnsBox";
+import { SessionsSection } from "@/pages/settings/SessionsSection";
 import { CustomTerminalsSection } from "@/pages/settings/CustomTerminalsSection";
 import { DismissedWarnings } from "@/pages/settings/DismissedWarnings";
 import { SkillsSection } from "@/pages/settings/SkillsSection";
@@ -113,6 +115,8 @@ export function SettingsPage({
   const {
     hiddenCols,
     toggleColumn,
+    colOrder,
+    resetColumns,
     shells,
     disabledShells,
     toggleShell,
@@ -513,7 +517,8 @@ export function SettingsPage({
   }, [syncPerfFromSettings, syncAppearanceFromSettings, onReady]);
 
   // Deep-link scroll (e.g. "Manage shortcuts…" from Broadcast/Terminals, or
-  // "Grid settings" from the Templates canvas).
+  // "Grid settings" from the Templates canvas, or the Settings link on a pane
+  // the idle timeout closed).
   //
   // Two ways in, because the shortcuts one predates the section ids and holds
   // its own ref. Anything else is addressed by section title, which is what the
@@ -526,7 +531,11 @@ export function SettingsPage({
       onFocusConsumed?.();
       return;
     }
-    if (!SECTION_TITLES.includes(focusSection)) return;
+    // `sessions` is the other key that predates the ids, sent by the Settings
+    // link on a pane the idle timeout closed. Named to its title here rather
+    // than handled apart, so it gets the same two-frame scroll as the rest.
+    const target = focusSection === "sessions" ? "Sessions" : focusSection;
+    if (!SECTION_TITLES.includes(target)) return;
     // Two frames, like the restore above: the sections below this one are
     // revealed progressively, and scrolling before the commit lands puts the
     // target somewhere it is about to move from.
@@ -537,7 +546,7 @@ export function SettingsPage({
     const outer = requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         document
-          .getElementById(sectionDomId(focusSection))
+          .getElementById(sectionDomId(target))
           ?.scrollIntoView({ behavior: "smooth", block: "start" });
         onFocusConsumed?.();
       }),
@@ -1400,29 +1409,12 @@ export function SettingsPage({
               </Button>
             </div>
           </div>
-          <div className="grid gap-1.5">
-            <Label>Host table columns</Label>
-            <p className="text-xs text-muted-foreground">
-              Hide nice-to-have columns from the Hosts table. Label, hostname
-              and actions always show.
-            </p>
-            <div className="flex flex-wrap gap-x-5 gap-y-1.5 pt-1">
-              {HIDEABLE_COLUMNS.map((col) => (
-                <label
-                  key={col.id}
-                  className="flex cursor-pointer items-center gap-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-primary"
-                    checked={!hiddenCols.has(col.id)}
-                    onChange={(e) => toggleColumn(col.id, e.target.checked)}
-                  />
-                  {col.label}
-                </label>
-              ))}
-            </div>
-          </div>
+          <HostColumnsBox
+            hiddenCols={hiddenCols}
+            toggleColumn={toggleColumn}
+            colOrder={colOrder}
+            resetColumns={resetColumns}
+          />
           <div className="grid gap-1.5">
             <Label>Local shells in the launcher</Label>
             <p className="text-xs text-muted-foreground">
@@ -1464,6 +1456,10 @@ export function SettingsPage({
         )}
 
       {/* Grid: Terminals grid layout (localStorage, applies on next visit). */}
+      {sectionVisible("Sessions") && sectionReady("Sessions") && (
+        <SessionsSection id={sectionDomId("Sessions")} />
+      )}
+
       {sectionVisible("Grid") && sectionReady("Grid") && (
         <GridSection id={sectionDomId("Grid")} />
       )}
@@ -1638,7 +1634,7 @@ export function SettingsPage({
       <section id={sectionDomId("Security")} className="space-y-4">
         <SectionHeading
           title="Security"
-          hint="Sudo password auto-fill, plus an optional admin lock for the sensitive controls."
+          hint="Sudo password auto-fill, what a connect leaves in the host's shell history, plus an optional admin lock for the sensitive controls."
         />
         <label
           className={`flex w-fit items-center gap-2 text-sm ${adminLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
@@ -1666,6 +1662,46 @@ export function SettingsPage({
           Auto Complete 'sudo' passwords. Turn it <strong>off</strong> to
           disable; Takes effect next time a new terminal is opened. Disabling
           does not delete stored passwords.
+        </p>
+
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="accent-primary"
+            checked={settings?.history_scrub_enabled ?? false}
+            disabled={settings === null}
+            onChange={async (e) => {
+              const next = e.target.checked;
+              try {
+                await setHistoryScrubEnabled(next);
+                setSettings((prev) =>
+                  prev ? { ...prev, history_scrub_enabled: next } : prev,
+                );
+              } catch (err) {
+                toast.error(errorMessage(err));
+              }
+            }}
+          />
+          Keep the connect line out of the host's shell history
+        </label>
+        <p className="max-w-xl text-xs text-muted-foreground">
+          Opening an SSH terminal types one setup line at the host, which
+          installs command tracking and reprints the login screen. It is written
+          with a space in front of it, so any host whose{" "}
+          <code>HISTCONTROL</code> ignores space-prefixed commands (the Debian
+          and Ubuntu default) never records it. Run{" "}
+          <code>{'echo "$HISTCONTROL"'}</code> on a host to see which kind it
+          is: an answer with <code>ignorespace</code> or <code>ignoreboth</code>{" "}
+          in it is a host where the space is already doing the work and this
+          switch changes nothing you can see. Everywhere else bash keeps it,
+          and an <strong>Up</strong> arrow finds it instead of your own last
+          command. Turn this <strong>on</strong> to have the line delete its own
+          entry as it goes past; it only ever removes an entry it has checked is
+          its own, so none of your commands are at risk. It is{" "}
+          <strong>off</strong> to begin with because a <code>history -d</code>{" "}
+          is a write to your machines, and that is your call to make rather than
+          ours. Takes effect next time a terminal is opened. zsh offers no way
+          to delete a history entry, so this does nothing there.
         </p>
 
         <DismissedWarnings />

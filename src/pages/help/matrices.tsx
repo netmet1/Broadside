@@ -314,7 +314,7 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>An amber “shell unread” chip</Msg>,
         where: "Hosts in full; a triangle alone in the picker rails",
         means:
-          "The connection succeeded but the host would not say what its login shell is: a forced command, a restricted account, or a server too slow to answer in time. Broadside sends nothing rather than guess, because guessing wrong on an appliance is what makes a console menu print itself twice. The cost is command block tracking and skills. If you know the host runs bash or zsh, open it in Hosts and set Shell integration to Always: both come back, and the chip goes.",
+          "The connection succeeded but the host would not say what its login shell is: a forced command, or a restricted account. Broadside sends nothing rather than guess, because guessing wrong on an appliance is what makes a console menu print itself twice. The cost is command block tracking and skills. If you know the host runs bash or zsh, open it in Hosts and set Shell integration to Always: both come back, and the chip goes. There is a third cause worth knowing about, because it looks like a broken host and is not one: the question is asked by running a command in your login shell, so your own startup file runs first, and a .bashrc that sets up nvm, conda, pyenv or similar above its “if not running interactively” guard runs that on every such connection. A home directory on a slow network mount does the same. Broadside waits eight seconds for the answer, which is long enough for all of those; if a host still shows this chip and you know what it runs, the override is the answer.",
       },
       {
         message: <Msg>An amber “no integration” chip</Msg>,

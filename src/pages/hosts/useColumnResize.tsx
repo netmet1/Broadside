@@ -6,7 +6,7 @@ import { COLS, COL_WIDTHS_KEY, MIN_COL_W } from "@/pages/hosts/constants";
 /** Drag-to-resize + double-click-to-fit for the hosts table columns. Widths
  * persist in localStorage (across tab switches and restarts); `hiddenCols`
  * reflects the latest Settings → Appearance choice (read on mount). */
-export function useColumnResize() {
+export function useColumnResize(orderedIds: string[]) {
   // Persisted column widths (drag-to-resize). Survives tab switches + restart.
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
     const defaults = Object.fromEntries(COLS.map((c) => [c.id, c.w]));
@@ -56,7 +56,11 @@ export function useColumnResize() {
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const measureCanvas = useRef<HTMLCanvasElement | null>(null);
   const autoSizeColumn = useCallback((id: string) => {
-    const colIndex = COLS.findIndex((c) => c.id === id);
+    // Against the *rendered* order, not the shipped one: the columns can be
+    // dragged into a different order now, and measuring `tr.children` at the
+    // shipped index would size a column by whatever happens to be sitting in
+    // that position instead.
+    const colIndex = orderedIds.indexOf(id);
     const container = tableScrollRef.current;
     if (colIndex < 0 || !container) return;
     const canvas =
@@ -80,7 +84,7 @@ export function useColumnResize() {
       localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(next));
       return next;
     });
-  }, []);
+  }, [orderedIds]);
 
   /** A thin drag strip on a column header's right edge. Returns JSX (not a
    * component) so it isn't remounted each render. */

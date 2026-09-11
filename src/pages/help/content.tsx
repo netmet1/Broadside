@@ -414,7 +414,7 @@ export const SECTIONS: HelpSection[] = [
     id: HELP_HOSTS,
     title: "Hosts",
     keywords:
-      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first",
+      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first drag column header move reorder rearrange columns order of columns put hostname first swap columns remembered across restarts reset defaults columns box scoped chips in settings drag the chips header label truncated cut off ellipsis la userna long line flashes on connect blink flicker flash before the banner what was that line where did it come from omni_precmd bash_version prompt_command typed by itself not mine setup line visible on slow connection vpn wireless remote high latency laggy link appears then disappears wiped cleared line in my shell history up arrow recalls it bash_history histcontrol ignorespace ignoreboth hist_ignore_space histtimeformat delete the entry remove from history broadside typed it not the user zsh cannot delete",
     body: (
       <>
         <Lead>
@@ -481,6 +481,25 @@ export const SECTIONS: HelpSection[] = [
               alone on their own, without needing this set. The setting is read
               when a terminal opens, so it applies to the next tab you open on
               that host rather than to one already running.
+            </li>
+            <li>
+              <b>You are not meant to see that line.</b> The host reads it back
+              before it runs it, the way it reads back anything typed at a
+              prompt, and Broadside holds the whole first screen until the host
+              has finished with it: the pane goes from <Nav>connecting</Nav>
+              straight to the finished login in one paint. What it waits for is
+              the host, not the network, so a slow link or a VPN makes the wait
+              longer rather than making the line flash past. On the rare host
+              that does not do what the line asks, you get what the host said,
+              still without the line itself in it. It is written with a space in
+              front of it, which is a request that the host's shell keep it out
+              of the history list, and stock Debian and Ubuntu honour it. A host
+              that does not will record the line, and an <Nav>Up</Nav> arrow
+              there finds it instead of your last command. Broadside can delete
+              that entry as it goes past, but it will not do so unless you ask:
+              the switch is in <Nav>Settings &gt; Security</Nav> and it is off
+              to begin with, because running a <code>history -d</code> on your
+              machines is your decision and not ours.
             </li>
             <li>
               <b>Reconnect check</b>, the card above it, is for the machine you
@@ -571,6 +590,28 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Appearance</Nav>. When a column is hidden, each row gets a small
               tag/label icon in its <Nav>Actions</Nav>; click it to see that host's
               values for the hidden columns.
+            </li>
+            <li>
+              Drag a column's <em>name</em> in the header to move that column
+              somewhere else in the table. The one you are over is highlighted
+              as you go, and the order is remembered across restarts. Drag the
+              thin strip on the header's right edge instead and you resize the
+              column, as before: the two gestures are on different parts of the
+              header so neither can be mistaken for the other.
+            </li>
+            <li>
+              The checkbox, the colour swatch and <Nav>Actions</Nav> stay where
+              they are. The first two are the row's left-hand grip and the last
+              is its tail, and a table with <Nav>Connect</Nav> in the middle of
+              the address is not an order anyone wants.
+            </li>
+            <li>
+              <Nav>Settings → Appearance</Nav> shows the current order as a row
+              of chips, and those can be dragged onto one another too if you
+              would rather set the order there than on the table. The same box
+              has a <Nav>Reset defaults</Nav> button, which brings back every
+              column in the order Broadside ships. It is scoped to that box:
+              fonts, sizes and everything else in Settings are untouched.
             </li>
           </Bullets>
           <H3>Tags</H3>
@@ -763,7 +804,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes advanced grid settings collapsed section starting number seed default unchecking auto lands on your own numbers 80x24 classic terminal size reset defaults just the advanced section",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes advanced grid settings collapsed section starting number seed default unchecking auto lands on your own numbers 80x24 classic terminal size reset defaults just the advanced section session timeout idle close automatically inactivity why did my terminal close by itself left it overnight closed while i was away keep alive keepalive nat firewall state table connection dropped silently hangs after a while disable the timeout never close sleep 120 long running command was closed while it was running foreground background job ampersand tmux screen vim editor full screen program never times out how does it know paste mode plain sh dash device cli no shell integration falls back spinner connecting forever stuck on connecting nothing happening is it frozen hung blank pane black screen after connecting no prompt taking ages slow to open which half is slow signed in waiting for the login screen wireless vpn latency why does it take ten seconds duplicate a profile copy clone make another one like this second profile same shell different folder profile copy numbered delete profile double click doubleclick two clicks confirm dialog ok cancel are you sure guard accidental deletion undo a deleted profile single click does nothing bin trash icon copy of a copy nested copy copy numbering collapses",
     body: (
       <>
         <Lead>
@@ -1002,12 +1043,89 @@ export const SECTIONS: HelpSection[] = [
               than one copy, because every copy runs that command again.
             </li>
             <li>
+              Hover a profile in the launcher for three buttons:{" "}
+              <Nav>edit</Nav>, <Nav>duplicate</Nav> and <Nav>delete</Nav>.{" "}
+              <Nav>Duplicate</Nav> makes a copy called{" "}
+              <Nav>(copy)</Nav> directly under the original and leaves the menu
+              open, which is the quick way to build the set of profiles that
+              differ by one field: the same shell in a different folder, or the
+              same folder running a different command. Duplicate it again and
+              the copy is numbered rather than named the same thing twice.
+              Duplicating a copy carries on the numbering instead of stacking
+              the word: a copy of <Nav>Web (copy)</Nav> is{" "}
+              <Nav>Web (copy 2)</Nav>, never <Nav>Web (copy) (copy)</Nav>.
+            </li>
+            <li>
+              <Nav>Delete</Nav> takes a double-click, and then asks. Double-click
+              the bin and a dialog names the profile and waits for{" "}
+              <Nav>Delete</Nav> or <Nav>Cancel</Nav>. A single click deletes
+              nothing and reminds you of the gesture instead. A profile is saved
+              work with nothing to undo it, and the button sits a few pixels
+              from <Nav>Edit</Nav> in a menu people move through quickly, so it
+              is deliberately more work than the other two buttons. The launcher
+              stays open behind the dialog, and terminals already opened from a
+              profile keep running after it is deleted.
+            </li>
+            <li>
               Profiles are saved on this PC only and never store passwords or
               keys. A profile keeps working even if you hide its shell from the
               plain list. If a profile points at a shell that is no longer
               detected (for example a WSL distribution you removed), its name is
               shown struck through and it will not launch until that shell is
               back.
+            </li>
+          </Bullets>
+          <H3>How long a session stays open</H3>
+          <Bullets>
+            <li>
+              <Nav>Settings → Sessions → Keep alive</Nav> sends a small packet
+              every minute so a firewall or router between you and the host does
+              not quietly forget the connection while nothing is being typed.
+              Without it, a session left sitting can be cut in the middle, and
+              the way you find out is that a keystroke goes nowhere and the tab
+              hangs. On by default. It applies to connections opened from then
+              on, not to terminals that are already open.
+            </li>
+            <li>
+              <Nav>Settings → Sessions → Session timeout</Nav> is the opposite:
+              close an SSH terminal that has been idle for a set number of
+              seconds. Idle is a strict test, and all three parts of it have to
+              hold. Nothing typed, nothing printed, and nothing running in the
+              foreground. A command that is holding the terminal is the session
+              doing what it was asked to, so <code>sleep 120</code>, a restore
+              that says nothing for twenty minutes, or an editor left open, all
+              keep the session. Keepalives do not count as traffic here, or the
+              two settings would cancel each other out.
+            </li>
+            <li>
+              Something left running in the <em>background</em> is a different
+              matter. Once the shell has the terminal back and is sitting at a
+              prompt, the session is idle whatever a <code>&amp;</code> job is
+              still doing, unless that job prints something. When a foreground
+              command does finish, the countdown starts again from that moment
+              rather than carrying on from before it started.
+            </li>
+            <li>
+              Broadside knows the difference because the shell says so: bash,
+              zsh and fish switch the terminal in and out of paste mode around
+              every command they run, and a full-screen program takes the whole
+              screen. Two things follow. A session sitting in{" "}
+              <code>tmux</code>, <code>screen</code> or an editor is never
+              closed by the timeout, because a full-screen program is a
+              foreground command as far as any terminal can tell. And a shell
+              that does neither (a plain <code>sh</code>, a very old bash, a
+              device's own menu) leaves nothing to read, so the timeout falls
+              back to quiet alone: it can still close a session with a silent
+              command running on it.
+            </li>
+            <li>
+              The timeout is <strong className="font-semibold">off</strong> until
+              you turn it on, and worth leaving off unless you want it: sitting
+              at a prompt for half an hour during a maintenance window is
+              ordinary. A pane closed this way keeps its scrollback, says in
+              amber that the timeout is what closed it, links to the setting, and
+              offers <Nav>Reconnect</Nav>. Local shells and serial consoles are
+              never closed by it.
             </li>
           </Bullets>
           <H3>Working with tabs</H3>
@@ -1018,6 +1136,18 @@ export const SECTIONS: HelpSection[] = [
               failed) shows its label in <span className="font-medium text-red-600 dark:text-red-400">red</span>; use{" "}
               <Nav>Reconnect</Nav> to bring it back. Local shell tabs never show
               this.
+            </li>
+            <li>
+              A pane that is still opening says <Nav>Connecting</Nav> over a
+              turning spinner, and keeps saying it until there is something to
+              show: the login screen is held back until the host has finished
+              drawing it, so the moment the shell is granted is not the moment
+              there is anything to look at. If the wait passes a few seconds a
+              second line appears saying which half of it is slow, which is
+              worth reading, because a host that has already accepted your login
+              and is taking its time is not a network problem. The spinner takes
+              no clicks, so you can put the cursor in the pane and start typing
+              at a shell that is already listening.
             </li>
             <li>
               Switch tabs from the keyboard with <Nav>Alt+Right</Nav> (next tab)
@@ -1344,7 +1474,10 @@ export const SECTIONS: HelpSection[] = [
               paste lands in the tile the pointer is over, which is the tile
               outlined in the host's colour, because that is also the tile that
               is listening for the keyboard. Copy from one, move to another,
-              paste, press <Nav>Enter</Nav>: it runs where you are looking.
+              paste, press <Nav>Enter</Nav>: it runs where you are looking. A{" "}
+              <Nav>Pasted from clipboard</Nav> toast confirms it, and when the
+              clipboard held more than one line it says how many went in, since
+              that is the paste that can run several commands at once.
             </li>
             <li>
               <strong className="font-semibold">Find</strong> in a terminal's
@@ -2568,7 +2701,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored backup from someone else untrusted backup file",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored backup from someone else untrusted backup file",
     body: (
       <>
         <Lead>
@@ -2601,9 +2734,17 @@ export const SECTIONS: HelpSection[] = [
               scope.
             </li>
             <li>
+              <Nav>Sessions</Nav>: whether an SSH terminal that has gone idle is
+              closed after a while (off by default, and a command running in the
+              foreground counts as busy however quiet it is), and whether
+              connections are kept alive so a firewall does not drop them for
+              being idle (on by default). See the Terminals section for what
+              each one does.
+            </li>
+            <li>
               <Nav>Appearance</Nav>: light or dark theme, the terminal font and
               its size, the size of the application text, which <Nav>Hosts</Nav>{" "}
-              columns to show, and which detected local shells appear in the
+              columns to show and in what order, and which detected local shells appear in the
               Terminals <Nav>plus button</Nav> menu. The{" "}
               <Nav>Terminal font</Nav> list holds only fonts that are installed
               on this machine and are fixed-width, each drawn in itself so you
@@ -2683,8 +2824,9 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Audit log</Nav>: turn audit recording on or off.
             </li>
             <li>
-              <Nav>Security</Nav>: the sudo auto-fill switch and the admin lock,
-              both described in the Security section below.
+              <Nav>Security</Nav>: the sudo auto-fill switch, whether a connect
+              deletes its own setup line from the host's shell history, and the
+              admin lock. All three are described in the Security section below.
             </li>
             <li>
               <Nav>Reset</Nav>: return every setting to its default, behind a
@@ -2705,7 +2847,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-security",
     title: "Security",
     keywords:
-      "security credentials storage credential manager age encrypted file sqlite transmitted telemetry tofu host key sudo auto-fill admin lock argon2 recovery code isolation separate logins privacy why was my password not typed nothing filled in did not fill",
+      "security credentials storage credential manager age encrypted file sqlite transmitted telemetry tofu host key sudo auto-fill admin lock argon2 recovery code isolation separate logins privacy why was my password not typed nothing filled in did not fill shell history bash_history history -d delete entry up arrow long line setup line keep my history clean stop broadside writing to my host histcontrol ignorespace ignoreboth ignoredups hist_ignore_space echo $histcontrol how do i tell if my host records it switch does nothing no difference on or off cannot tell what it does audit record of what happened on the box",
     body: (
       <>
         <Lead>
@@ -2771,6 +2913,30 @@ export const SECTIONS: HelpSection[] = [
               machine, and a stored password typed into it would have travelled
               somewhere you never chose to send it. Those prompts are yours to
               answer.
+            </li>
+            <li>
+              <Nav>Keep the connect line out of the host's shell history</Nav> is
+              the second switch, and it is <b>off</b> until you turn it on.
+              Opening an SSH terminal types one setup line at the host, written
+              with a space in front so that a shell whose{" "}
+              <code>HISTCONTROL</code> ignores space-prefixed commands never
+              records it. That is the Debian and Ubuntu default and not much
+              else, so on a Red Hat family box, an appliance, or anything with
+              its own profile, the line is kept and an <Nav>Up</Nav> arrow finds
+              it instead of your last command. Run{" "}
+              <code>{'echo "$HISTCONTROL"'}</code> on a host to see which kind
+              you are on: an answer with <code>ignorespace</code> or{" "}
+              <code>ignoreboth</code> in it means the space is already keeping
+              the line out and this switch changes nothing you can see there.
+              Switch this on and the line deletes that entry as it goes past. It only ever removes an entry
+              it has first checked is its own, so no command of yours can be
+              taken by it. It starts off because the space is a request and a{" "}
+              <code>history -d</code> is a write, and a terminal should not be
+              making that second decision about your machines on your behalf,
+              least of all on a box where the shell history is meant to be the
+              record of what happened. It does nothing on <code>zsh</code>,
+              which offers no way to delete an entry, and it is read when a
+              terminal opens, so it applies to the next one.
             </li>
             <li>
               The admin lock is an optional passcode that protects the credential
@@ -2975,7 +3141,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-warnings",
     title: "Warnings and messages",
     keywords:
-      "warning warnings message messages error errors matrix table what does mean red test button red plug icon unreachable host down still red after restart os error 10054 forcibly closed connection reset maxstartups timed out timeout authentication failed no credentials stored host key changed refused unknown key tofu shell chip fish csh unsupported login shell amber chip disconnected banner reconnect every terminal hidden from the grid latency explain meaning troubleshooting no shell chip shell unread no integration console menu printed twice menu reprints pfsense rc.initial checked hosts report no blocks multiterminal silent no output got it dismiss amber line bottom of the pane strip keeps coming back said again",
+      "warning warnings message messages error errors matrix table what does mean red test button red plug icon unreachable host down still red after restart os error 10054 forcibly closed connection reset maxstartups timed out timeout authentication failed no credentials stored host key changed refused unknown key tofu shell chip fish csh unsupported login shell amber chip disconnected banner reconnect every terminal hidden from the grid latency explain meaning troubleshooting no shell chip shell unread no integration console menu printed twice menu reprints pfsense rc.initial checked hosts report no blocks multiterminal silent no output got it dismiss amber line bottom of the pane strip keeps coming back said again could not read this host's login shell so it sent nothing slow rc file bashrc zshenv nvm conda pyenv rvm startup script above the interactive guard nfs home directory slow mount probe timeout eight seconds connect takes ages then no blocks host was fine yesterday",
     body: (
       <>
         <Lead>

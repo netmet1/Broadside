@@ -32,12 +32,17 @@ pub async fn pty_open(
     audit: State<'_, AuditState>,
     errlog: State<'_, crate::errlog::ErrLogState>,
 ) -> AppResult<PtyOpenResult> {
-    let (host, keys, sudo_autofill_enabled) = with_db(&state, |conn| {
+    let (host, keys, sudo_autofill_enabled, scrub_history) = with_db(&state, |conn| {
         let host = host_repo::get(conn, host_id)?;
         let keys = host_keys::list_for_endpoint(conn, &host.hostname, host.port)?;
         let sudo_autofill_enabled =
             crate::db::settings::get_bool(conn, crate::commands::settings::KEY_SUDO_AUTOFILL, true)?;
-        Ok((host, keys, sudo_autofill_enabled))
+        let scrub_history = crate::db::settings::get_bool(
+            conn,
+            crate::commands::settings::KEY_HISTORY_SCRUB,
+            false,
+        )?;
+        Ok((host, keys, sudo_autofill_enabled, scrub_history))
     })?;
     let auth = match auth_for_host(&host, &cred_state)? {
         Some(a) => a,
@@ -81,6 +86,7 @@ pub async fn pty_open(
         auth,
         sudo_password,
         crate::ssh::ShellIntegrationPref::from_stored(host.shell_integration.as_deref()),
+        scrub_history,
         // A terminal tab: one person watching, nothing else reading, so the
         // banner-clear-banner redraw is hidden and the pane gets one paint.
         crate::ssh::connect_curtain::FirstScreen::Curtained,

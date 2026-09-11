@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { errorMessage } from "@/lib/tauri/hosts";
-import { loadHiddenCols, saveHiddenCols } from "@/lib/hostColumns";
+import {
+  HOST_COLUMNS_EVENT,
+  loadColumnOrder,
+  loadHiddenCols,
+  resetHostColumns,
+  saveHiddenCols,
+} from "@/lib/hostColumns";
 import {
   GENERIC_MONOSPACE,
   detectMonospaceFonts,
@@ -39,6 +45,29 @@ export function useAppearance() {
       return next;
     });
   };
+
+  // The order those columns are drawn in, which is dragged on the Hosts table
+  // rather than set here. Shown in Settings because a "reset the columns"
+  // button that put back an order you cannot see would be reset-in-the-dark,
+  // and picked up from the event so dragging one over there redraws it here.
+  const [colOrder, setColOrder] = useState(loadColumnOrder);
+  useEffect(() => {
+    const read = () => {
+      setColOrder(loadColumnOrder());
+      setHiddenCols(loadHiddenCols());
+    };
+    window.addEventListener(HOST_COLUMNS_EVENT, read);
+    return () => window.removeEventListener(HOST_COLUMNS_EVENT, read);
+  }, []);
+
+  /** Every column back, in the order Broadside ships, and nothing else touched.
+   * Scoped this tightly on purpose: it sits inside the columns box, and a
+   * Reset that reached the fonts above it would be a nasty surprise. */
+  const resetColumns = useCallback(() => {
+    resetHostColumns();
+    setHiddenCols(loadHiddenCols());
+    setColOrder(loadColumnOrder());
+  }, []);
 
   // Local-shell launcher visibility (Appearance). The detected shells plus the
   // user's hide list (stored by id); the Terminals "+" menu reads the same list.
@@ -235,6 +264,8 @@ export function useAppearance() {
   return {
     hiddenCols,
     toggleColumn,
+    colOrder,
+    resetColumns,
     shells,
     disabledShells,
     toggleShell,

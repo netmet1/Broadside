@@ -445,6 +445,28 @@ impl PtyState {
     }
 }
 
+/// Points the first-screen timer at whatever deadline the curtain is on.
+///
+/// The curtain can only lift on a byte arriving, and the case it has to survive
+/// is no byte arriving, which is what this timer is for. Its deadline is not
+/// fixed: it moves out for as long as the host is still reading our setup line
+/// back to us (see [`crate::ssh::connect_curtain`]), so the timer is re-armed
+/// from the curtain rather than set once from a constant.
+///
+/// Nothing to do once the curtain is open. Leaving the timer parked where it was
+/// keeps a per-chunk `reset` out of the session's hot path, and the select arm is
+/// guarded on `is_holding` anyway.
+fn arm_curtain_timer(
+    timer: &mut std::pin::Pin<&mut tokio::time::Sleep>,
+    curtain: &crate::ssh::connect_curtain::Curtain,
+) {
+    if let Some(deadline) = curtain.deadline() {
+        timer
+            .as_mut()
+            .reset(tokio::time::Instant::from_std(deadline));
+    }
+}
+
 /// Connects, opens a PTY + shell, and spawns the session task that pumps
 /// remote output to the event sink and accepts Write/Resize/Close commands.
 /// Registers the session in `state` on success; the task deregisters itself
@@ -466,6 +488,11 @@ pub async fn open<E: PtyEvents>(
     // The host's standing answer for shell integration (D-067). `Auto` is the
     // default and believes the probe.
     shell_pref: ShellIntegrationPref,
+    // Whether the setup line deletes its own bash history entry as it goes past
+    // (Settings -> Security, off unless the operator asked for it). Read per
+    // connect, so a change applies to the next terminal opened rather than at
+    // the next launch. See `crate::omni::HISTORY_SCRUB`.
+    scrub_history: bool,
     // Whether the login banner and the setup redraw are held back and shown as
     // one finished screen. A terminal tab wants that; a skill run must not have
     // it, because its engine reads this same stream and a held stream reads as a
@@ -594,6 +621,7 @@ pub async fn open<E: PtyEvents>(
                                 let setup = crate::omni::shell_setup_command(
                                     last_login.as_deref(),
                                     effective,
+                                    scrub_history,
                                 );
                                 // The curtain has to be told which of the two
                                 // this is *before* the write, or the host could
@@ -601,11 +629,8 @@ pub async fn open<E: PtyEvents>(
                                 // treated as still printing its banner.
                                 match setup {
                                     Some(setup) => {
-                                        curtain.setup_sent(Instant::now());
-                                        curtain_timeout.as_mut().reset(
-                                            tokio::time::Instant::now()
-                                                + crate::ssh::connect_curtain::CLEAR_DEADLINE,
-                                        );
+                                        curtain.setup_sent(Instant::now(), setup.as_bytes());
+                                        arm_curtain_timer(&mut curtain_timeout, &curtain);
                                         let _ = channel.data(setup.as_bytes()).await;
                                     }
                                     // Nothing is being sent, so no redraw is
@@ -639,14 +664,26 @@ pub async fn open<E: PtyEvents>(
                                 block,
                             });
                         }
+                        // Empty is a real answer here: a curtain that lifts
+                        // holding nothing but the echo of our own line has
+                        // nothing to show, and an empty frame is a round trip
+                        // through the IPC for no pixels.
                         if let crate::ssh::connect_curtain::Emit::Bytes(out) =
                             curtain.feed(Instant::now(), &data[..])
                         {
-                            events.data(PtyData {
-                                session_id: session_id.clone(),
-                                data: out,
-                            });
+                            if !out.is_empty() {
+                                events.data(PtyData {
+                                    session_id: session_id.clone(),
+                                    data: out,
+                                });
+                            }
                         }
+                        // The curtain's deadline is counted from the last byte
+                        // of our own line to come back, so it moves while the
+                        // host is still reading that line. Asking after every
+                        // chunk is what keeps this timer on the same deadline
+                        // the curtain is actually using.
+                        arm_curtain_timer(&mut curtain_timeout, &curtain);
                         // Answer a sudo prompt after the bytes reach the UI so
                         // the operator sees the prompt (D-065). The password
                         // never enters the visible stream.
@@ -682,13 +719,10 @@ pub async fn open<E: PtyEvents>(
                     // it. Both outcomes below are the same as on the data path:
                     // a line going out means a redraw is coming and what is held
                     // is a draft, no line means what is held is the screen.
-                    match crate::omni::shell_setup_command(None, effective) {
+                    match crate::omni::shell_setup_command(None, effective, scrub_history) {
                         Some(setup) => {
-                            curtain.setup_sent(Instant::now());
-                            curtain_timeout.as_mut().reset(
-                                tokio::time::Instant::now()
-                                    + crate::ssh::connect_curtain::CLEAR_DEADLINE,
-                            );
+                            curtain.setup_sent(Instant::now(), setup.as_bytes());
+                            arm_curtain_timer(&mut curtain_timeout, &curtain);
                             let _ = channel.data(setup.as_bytes()).await;
                         }
                         None => {
