@@ -52,6 +52,15 @@ const STARTUP_OPTIONS: {
  * The editor's own bar: what this template is called, what colour it wears,
  * whether it opens itself when Broadside starts, and the four actions.
  *
+ * **The bar is one row and stays one row.** It used to wrap, which at a 1024px
+ * window put the four actions on a second line and pushed the canvas down. It
+ * is now a container query: under 52rem of bar the three labelled buttons drop
+ * their labels and go to icons, which is the 116px that makes the difference,
+ * and the name field and the startup menu can give a little more ground before
+ * anything scrolls. 52rem is where the labelled row stops fitting, measured
+ * rather than guessed: roughly 818px of controls, and a 1024px window with the
+ * sidebar in its icon strip leaves the bar 744.
+ *
  * Startup is a setting on the template rather than a switch in the Hosts list
  * on purpose. It is a property of the arrangement, it belongs with the name and
  * the colour, and putting it here is what lets the confirmation happen at the
@@ -103,7 +112,7 @@ export function TemplateTopBar({
     STARTUP_OPTIONS.find((o) => o.value === startup)?.hint ?? "";
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/50 px-3 py-2">
+    <div className="@container flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border/50 px-3 py-2">
       {/* Which template this is, and the way to another one.
           Here rather than on the Hosts tab's list alone, because the editor
           opened on its own lands on the last one edited and there would
@@ -154,7 +163,7 @@ export function TemplateTopBar({
         placeholder="Template name"
         aria-label="Template name"
         spellCheck={false}
-        className="h-8 w-48 min-w-0 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
+        className="h-8 w-48 min-w-28 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
         {...hint("What this arrangement is called in the Hosts tab's list")}
       />
 
@@ -188,6 +197,7 @@ export function TemplateTopBar({
                 type="button"
                 onClick={() => onColorChange(c)}
                 aria-label={`Pick colour ${c}`}
+                {...hint(`Give this template the colour ${c}`)}
                 className={cn(
                   "h-6 w-6 rounded-md border-2",
                   color.toLowerCase() === c.toLowerCase()
@@ -202,6 +212,7 @@ export function TemplateTopBar({
             <button
               type="button"
               onClick={() => onColorChange("")}
+              {...hint("No colour: the template shows a dashed outline in the list")}
               className={cn(
                 "flex h-6 items-center gap-1.5 rounded-md border-2 px-1.5 text-xs",
                 color === "" ? "border-foreground" : "border-transparent",
@@ -226,6 +237,7 @@ export function TemplateTopBar({
                 className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                 aria-label="Pick any colour"
                 title="Pick any colour"
+                {...hint("Open the system colour picker for anything not in the twelve")}
               />
             </span>
           </div>
@@ -236,7 +248,7 @@ export function TemplateTopBar({
         value={startup}
         onChange={(e) => onStartupChange(e.target.value as TemplateStartup)}
         aria-label="Open this template at startup"
-        className="h-8 rounded-md border border-input bg-background px-1.5 text-xs outline-none focus-visible:border-ring"
+        className="h-8 min-w-24 truncate rounded-md border border-input bg-background px-1.5 text-xs outline-none focus-visible:border-ring"
         {...hint(startupHint)}
       >
         {STARTUP_OPTIONS.map((o) => (
@@ -251,30 +263,31 @@ export function TemplateTopBar({
           variant="outline"
           size="sm"
           onClick={onImport}
+          aria-label="Import a template"
           {...hint(
             "Read a template file. Hosts it names are matched against this machine's; the ones that don't match arrive as boxes to point at a host.",
           )}
         >
           <UploadIcon className="h-3.5 w-3.5" />
-          Import
+          <span className="@max-[52rem]:hidden">Import</span>
         </Button>
-        <span className="flex" {...hint(
-          !saved
-            ? "Save this template before exporting it: an export is written from what is stored."
-            : dirty
-              ? "There are unsaved changes. Save first, so the file matches what you see."
-              : "Write this template to a file, to import on another machine.",
-        )}>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!saved || dirty}
-            onClick={onExport}
-          >
-            <DownloadIcon className="h-3.5 w-3.5" />
-            Export
-          </Button>
-        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!saved || dirty}
+          onClick={onExport}
+          aria-label="Export template"
+          {...hint(
+            !saved
+              ? "Save this template before exporting it: an export is written from what is stored."
+              : dirty
+                ? "There are unsaved changes. Save first, so the file matches what you see."
+                : "Write this template to a file, to import on another machine.",
+          )}
+        >
+          <DownloadIcon className="h-3.5 w-3.5" />
+          <span className="@max-[52rem]:hidden">Export</span>
+        </Button>
         {saved && (
           <Button
             variant="outline"
@@ -303,6 +316,7 @@ export function TemplateTopBar({
           size="sm"
           disabled={saving || name.trim() === "" || (!dirty && saved)}
           onClick={onSave}
+          aria-label={saved ? "Save template" : "Create template"}
           {...hint(
             name.trim() === ""
               ? "A template needs a name before it can be saved."
@@ -312,7 +326,7 @@ export function TemplateTopBar({
           )}
         >
           <SaveIcon className="h-3.5 w-3.5" />
-          {saved ? "Save" : "Create"}
+          <span className="@max-[52rem]:hidden">{saved ? "Save" : "Create"}</span>
         </Button>
       </div>
     </div>
