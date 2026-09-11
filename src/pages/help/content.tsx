@@ -650,7 +650,7 @@ export const SECTIONS: HelpSection[] = [
     id: HELP_TEMPLATES,
     title: "Templates",
     keywords:
-      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup radio button pick one open button add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list hosts tab toggle switch between hosts and templates nothing launches from the templates tab why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group",
+      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup radio button pick one open button add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list hosts tab toggle switch between hosts and templates nothing launches from the templates tab why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group grid settings popover change columns without leaving the page drag a session here strip band at the bottom duplicate name same name twice numbered 02 03 renamed automatically two templates called the same thing show all templates recent five import from the splash screen closed editor deleted somewhere else deleted while open create it again discard greyed button no tooltip why is the button grey status bar hint on a disabled button",
     body: (
       <>
         <Lead>
@@ -704,18 +704,29 @@ export const SECTIONS: HelpSection[] = [
           <H3>The preview is not a picture</H3>
           <p>
             The boxes are laid out by your own <Nav>Settings</Nav>,{" "}
-            <Nav>Grid</Nav> values: the column count, and what happens to a
-            short last row. It is the same arithmetic the{" "}
+            <Nav>Grid</Nav> values: the column count, the tile size, and what
+            happens to a short last row. It is the same arithmetic the{" "}
             <SectionLink id="help-sec-terminals">Terminals</SectionLink> grid
-            uses, so what you see is what launching will build. Change the
-            column count in Settings and the canvas changes with it.
+            uses, so what you see is what launching will build.
           </p>
           <p>
-            The empty box with the <Nav>plus</Nav> is part of the grid, because
-            where the next session lands is the thing worth seeing before you
-            drop it. That means the canvas draws one more box than the template
-            holds, which is why the line underneath says how many sessions will
-            actually open.
+            You do not have to leave the page to change them. The line under the
+            canvas says what the grid is doing in words, and{" "}
+            <Nav>Grid settings</Nav> in that line opens the same four controls
+            in a panel: the arrangement above re-lays itself as you change them.
+            There is one set of these settings, shared with the Terminals grid,
+            so a change here is a change everywhere. The full section in{" "}
+            <Nav>Settings</Nav> also has <Nav>Strict</Nav> and the three
+            defaults, which are about dragging a real tile and have no meaning
+            on a preview.
+          </p>
+          <p>
+            The dashed <Nav>Drag a session here</Nav> strip at the foot of the
+            canvas is not one of the boxes. It used to be, and the arrangement
+            was then worked out for one tile more than the template opens, which
+            got the short-row fill backwards at two columns. Now the grid shows
+            the sessions, the strip takes the drop, and the line underneath says
+            how many will open.
           </p>
           <p>
             A template stores <span className="font-medium">only</span> the
@@ -724,6 +735,31 @@ export const SECTIONS: HelpSection[] = [
             right on a laptop and on a wall of monitors, and it means a template
             can never argue with your own grid settings.
           </p>
+          <H3>Names, and finding one again</H3>
+          <Bullets>
+            <li>
+              Two templates cannot be called the same thing. Save a second
+              &ldquo;Morning check&rdquo; and it is stored as{" "}
+              <Nav>Morning check 02</Nav>, the next as <Nav>03</Nav>, and the
+              editor shows you the name it actually got. A name is how you tell
+              them apart in a list, a menu and a startup setting, so two the
+              same is two you cannot.
+            </li>
+            <li>
+              Closing the editor with the <Nav>x</Nav> leaves a screen with{" "}
+              <Nav>New template</Nav>, <Nav>Import</Nav> and the five you edited
+              most recently. It is a way back in, not a second copy of the list:{" "}
+              <Nav>Show all</Nav> goes to the Hosts tab, where every one of them
+              is.
+            </li>
+            <li>
+              Delete a template on the Hosts tab while the editor is holding it
+              and the editor says so when you come back. Nothing on the canvas
+              is lost: the button goes back to <Nav>Create</Nav>, and pressing
+              it writes the arrangement back as a new template.{" "}
+              <Nav>Discard</Nav> closes the editor instead.
+            </li>
+          </Bullets>
           <H3>Opening one</H3>
           <Bullets>
             <li>
@@ -1412,7 +1448,10 @@ export const SECTIONS: HelpSection[] = [
               exception: a single terminal fills the whole area and two take the
               full window side by side or stacked, both ignoring the Grid
               settings entirely, because at those counts a pinned size can only
-              waste screen you could have been using.
+              waste screen you could have been using. The same four controls sit
+              on the line under the{" "}
+              <SectionLink id="help-sec-templates">Templates</SectionLink>{" "}
+              canvas, beside the preview they lay out; there is one set of them.
             </li>
             <li>
               A pinned <Nav>Columns across</Nav> is trimmed to the number of
