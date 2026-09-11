@@ -65,8 +65,15 @@ pub struct HostRef {
 }
 
 /// One session in a template, in the order it opens.
+///
+/// `rename_all_fields` is the load-bearing half of the attribute below.
+/// `rename_all` on an enum renames the *variants*, never the fields inside
+/// them, so without the second one `profile_id` and `shell_id` would stay
+/// snake_case on the wire while the frontend sends `profileId` and `shellId`,
+/// and every save carrying one of those items would be refused by the argument
+/// parser before the command was ever entered.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum TemplateItem {
     /// A saved SSH host. `host_id` is null for a reference that did not resolve
     /// on this machine, which is a placeholder the operator points at a real
@@ -679,5 +686,79 @@ mod tests {
         resolve_items(&conn, &mut items).unwrap();
         refresh_refs(&conn, &mut items).unwrap();
         assert_eq!(items, before);
+    }
+
+    #[test]
+    fn an_item_parses_from_the_json_the_frontend_actually_sends() {
+        // Every other test here builds the enum in Rust, which is why the
+        // camelCase field names went unnoticed until a save was pressed: a
+        // Rust-built value never crosses the wire. This one is the wire. The
+        // literal below is what `src/pages/templates/items.ts` produces, so if
+        // the two shapes drift again this fails in `cargo test` rather than in
+        // a toast.
+        let json = r#"[
+            {"kind":"host","hostId":7,"ref":{"label":"web01","hostname":"10.0.0.5","port":22,"username":"joe"}},
+            {"kind":"host","ref":{"label":"web02","hostname":"10.0.0.6","port":22,"username":"joe"}},
+            {"kind":"shell","shellId":"cmd","label":"Command Prompt"},
+            {"kind":"profile","profileId":"p-1","label":"Broadside dev"}
+        ]"#;
+        let items: Vec<TemplateItem> = serde_json::from_str(json).unwrap();
+        assert_eq!(items.len(), 4);
+        match &items[0] {
+            TemplateItem::Host { host_id, reference } => {
+                // The id is the half that is easy to lose silently: it is
+                // optional, so a name it does not recognise costs the link to
+                // the host rather than raising anything.
+                assert_eq!(*host_id, Some(7));
+                assert_eq!(reference.hostname, "10.0.0.5");
+            }
+            _ => unreachable!(),
+        }
+        assert!(matches!(&items[1], TemplateItem::Host { host_id: None, .. }));
+        match &items[2] {
+            TemplateItem::Shell { shell_id, label } => {
+                assert_eq!(shell_id, "cmd");
+                assert_eq!(label, "Command Prompt");
+            }
+            _ => unreachable!(),
+        }
+        match &items[3] {
+            TemplateItem::Profile { profile_id, label } => {
+                assert_eq!(profile_id, "p-1");
+                assert_eq!(label, "Broadside dev");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn an_item_serialises_back_into_the_shape_the_frontend_reads() {
+        // The same boundary in the other direction: `list_templates` hands
+        // these straight to the editor, so a snake_case field here is a box
+        // that draws as an unresolved placeholder for no visible reason.
+        let items = vec![
+            TemplateItem::Host {
+                host_id: Some(7),
+                reference: HostRef {
+                    label: "web01".into(),
+                    hostname: "10.0.0.5".into(),
+                    port: 22,
+                    username: "joe".into(),
+                },
+            },
+            TemplateItem::Shell {
+                shell_id: "cmd".into(),
+                label: "Command Prompt".into(),
+            },
+            TemplateItem::Profile {
+                profile_id: "p-1".into(),
+                label: "Broadside dev".into(),
+            },
+        ];
+        let text = serde_json::to_string(&items).unwrap();
+        assert!(text.contains("\"hostId\":7"), "{text}");
+        assert!(text.contains("\"shellId\":\"cmd\""), "{text}");
+        assert!(text.contains("\"profileId\":\"p-1\""), "{text}");
+        assert!(!text.contains("_id"), "{text}");
     }
 }
