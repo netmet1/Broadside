@@ -243,18 +243,12 @@ pub fn create(conn: &mut Connection, input: &TemplateInput) -> AppResult<Templat
     let now = Utc::now().to_rfc3339();
     let items_json = serde_json::to_string(&input.items)?;
     let tx = conn.transaction()?;
+    let name = unique_name(&tx, input.name.trim(), None)?;
     clear_other_startups(&tx, input, None)?;
     tx.execute(
         "INSERT INTO templates (name, color, items_json, startup, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            input.name.trim(),
-            input.color,
-            items_json,
-            input.startup,
-            now,
-            now
-        ],
+        params![name, input.color, items_json, input.startup, now, now],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;
@@ -266,25 +260,86 @@ pub fn update(conn: &mut Connection, id: i64, input: &TemplateInput) -> AppResul
     let now = Utc::now().to_rfc3339();
     let items_json = serde_json::to_string(&input.items)?;
     let tx = conn.transaction()?;
+    let name = unique_name(&tx, input.name.trim(), Some(id))?;
     clear_other_startups(&tx, input, Some(id))?;
     let changed = tx.execute(
         "UPDATE templates
             SET name = ?1, color = ?2, items_json = ?3, startup = ?4, updated_at = ?5
           WHERE id = ?6",
-        params![
-            input.name.trim(),
-            input.color,
-            items_json,
-            input.startup,
-            now,
-            id
-        ],
+        params![name, input.color, items_json, input.startup, now, id],
     )?;
     if changed == 0 {
         return Err(AppError::InvalidInput(format!("no such template: {id}")));
     }
     tx.commit()?;
     get(conn, id)
+}
+
+/// The name this template will actually be saved under.
+///
+/// Two templates called the same thing are two rows nobody can tell apart: the
+/// Hosts list, the editor's own menu and the "which one opens at startup"
+/// question are all answered by reading a name off a screen. So a name already
+/// in use is taken as the base of a new one rather than refused, and the save
+/// goes through with a number on the end. The saved row is read back and put
+/// into the editor, so the operator sees the name they actually got.
+///
+/// Done here rather than in the editor because the editor is one way in among
+/// several: an import, a second window and a restored backup all arrive at the
+/// same two functions, and a rule enforced on one screen is not a rule. It runs
+/// inside the write's own transaction, so two saves racing cannot both find the
+/// same name free.
+///
+/// A trailing number is treated as one of these suffixes and replaced, so
+/// saving "Morning check 02" a second time gives "Morning check 03" rather than
+/// "Morning check 02 02". A number that is part of the name ("Server2") is not
+/// a suffix and survives.
+fn unique_name(
+    tx: &rusqlite::Transaction<'_>,
+    desired: &str,
+    keep: Option<i64>,
+) -> AppResult<String> {
+    if !name_taken(tx, desired, keep)? {
+        return Ok(desired.to_string());
+    }
+    let stem = match desired.rsplit_once(' ') {
+        Some((head, tail))
+            if !head.trim().is_empty()
+                && !tail.is_empty()
+                && tail.chars().all(|c| c.is_ascii_digit()) =>
+        {
+            head.trim_end()
+        }
+        _ => desired,
+    };
+    for n in 2..=999u32 {
+        let candidate = format!("{stem} {n:02}");
+        if !name_taken(tx, &candidate, keep)? {
+            return Ok(candidate);
+        }
+    }
+    Err(AppError::InvalidInput(format!(
+        "there are already too many templates called \"{stem}\"; give this one a different name"
+    )))
+}
+
+/// Is some *other* template already called this? NOCASE, because two names that
+/// differ only in capitals are two names only the database can tell apart.
+fn name_taken(
+    tx: &rusqlite::Transaction<'_>,
+    name: &str,
+    keep: Option<i64>,
+) -> AppResult<bool> {
+    // `id IS NOT ?2` rather than `<>`: with no id to keep the bind is NULL, and
+    // `id <> NULL` is NULL for every row, which would match nothing at all.
+    Ok(tx
+        .query_row(
+            "SELECT 1 FROM templates WHERE name = ?1 COLLATE NOCASE AND id IS NOT ?2 LIMIT 1",
+            params![name, keep],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
 }
 
 /// Exactly one template may open at startup, and that is enforced here rather
@@ -413,6 +468,65 @@ mod tests {
         assert_eq!(got.items.len(), 2);
         assert_eq!(got.startup, STARTUP_OFF);
         assert_eq!(got.created_at, got.updated_at);
+    }
+
+    #[test]
+    fn a_second_template_with_the_same_name_is_numbered() {
+        let mut conn = open_in_memory().unwrap();
+        let a = create(&mut conn, &input("Morning check")).unwrap();
+        let b = create(&mut conn, &input("Morning check")).unwrap();
+        let c = create(&mut conn, &input("Morning check")).unwrap();
+        assert_eq!(a.name, "Morning check");
+        assert_eq!(b.name, "Morning check 02");
+        assert_eq!(c.name, "Morning check 03");
+    }
+
+    #[test]
+    fn the_number_replaces_the_one_already_on_the_end() {
+        // Saving "Morning check 02" again is the same collision one step along,
+        // so it continues the run rather than stacking another suffix on it.
+        let mut conn = open_in_memory().unwrap();
+        create(&mut conn, &input("Morning check")).unwrap();
+        create(&mut conn, &input("Morning check")).unwrap();
+        let next = create(&mut conn, &input("Morning check 02")).unwrap();
+        assert_eq!(next.name, "Morning check 03");
+    }
+
+    #[test]
+    fn a_number_inside_the_name_is_not_a_suffix() {
+        let mut conn = open_in_memory().unwrap();
+        create(&mut conn, &input("Server2")).unwrap();
+        let second = create(&mut conn, &input("Server2")).unwrap();
+        assert_eq!(second.name, "Server2 02");
+    }
+
+    #[test]
+    fn capitals_do_not_make_a_name_different() {
+        let mut conn = open_in_memory().unwrap();
+        create(&mut conn, &input("Morning check")).unwrap();
+        let second = create(&mut conn, &input("MORNING CHECK")).unwrap();
+        assert_eq!(second.name, "MORNING CHECK 02");
+    }
+
+    #[test]
+    fn saving_a_template_keeps_its_own_name() {
+        // The row being written is exempt from the collision check, or every
+        // save of an unchanged name would number it one higher.
+        let mut conn = open_in_memory().unwrap();
+        let made = create(&mut conn, &input("Morning check")).unwrap();
+        let saved = update(&mut conn, made.id, &input("Morning check")).unwrap();
+        assert_eq!(saved.name, "Morning check");
+        let again = update(&mut conn, made.id, &input("Morning check")).unwrap();
+        assert_eq!(again.name, "Morning check");
+    }
+
+    #[test]
+    fn renaming_onto_another_template_is_numbered_too() {
+        let mut conn = open_in_memory().unwrap();
+        create(&mut conn, &input("Morning check")).unwrap();
+        let other = create(&mut conn, &input("Evening check")).unwrap();
+        let renamed = update(&mut conn, other.id, &input("Morning check")).unwrap();
+        assert_eq!(renamed.name, "Morning check 02");
     }
 
     #[test]
