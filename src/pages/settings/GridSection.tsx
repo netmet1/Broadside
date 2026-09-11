@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 
+import { GridFields } from "@/components/GridControls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { parseField, useGridFields } from "@/lib/gridFields";
 import { useHint } from "@/lib/status";
 import { SectionHeading } from "@/pages/settings/shared";
 import {
@@ -13,22 +15,12 @@ import {
   GRID_ITEM_COLS_MIN,
   GRID_ITEM_ROWS_MAX,
   GRID_ITEM_ROWS_MIN,
-  GRID_PREFS_EVENT,
-  loadGridPrefs,
   loadGridSeeds,
-  loadGridStrict,
-  loadRowFill,
   resetGridSeeds,
-  saveGridCols,
-  saveGridItemCols,
-  saveGridItemRows,
   saveGridSeedCols,
   saveGridSeedItemCols,
   saveGridSeedItemRows,
   saveGridStrict,
-  saveRowFill,
-  type GridSeeds,
-  type RowFill,
 } from "@/lib/gridPrefs";
 
 /**
@@ -37,41 +29,16 @@ import {
  * "auto" (keep the shipped fit-to-viewport behavior) or a number. This is a
  * localStorage UI pref, applied when the Terminals page is next shown (it re-reads
  * on visible), so there is no Save button: changes persist immediately.
+ *
+ * The four fields themselves live in `components/GridControls`, because the
+ * Templates editor offers the same four in a popover beside the preview they
+ * lay out. What is only here is Strict, which is about dragging a tile in the
+ * grid and so has no meaning on a preview, and the Advanced defaults.
  */
 export function GridSection({ id }: { id: string }) {
-  const initial = loadGridPrefs();
-  const [cols, setCols] = useState(fieldState(initial.cols));
-  const [itemCols, setItemCols] = useState(fieldState(initial.itemCols));
-  const [itemRows, setItemRows] = useState(fieldState(initial.itemRows));
-  const [strict, setStrict] = useState(loadGridStrict);
-  const [rowFill, setRowFill] = useState<RowFill>(loadRowFill);
-  const [seeds, setSeeds] = useState<GridSeeds>(loadGridSeeds);
+  const f = useGridFields();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const hint = useHint();
-
-  // With strict off, a drag in the Terminals grid writes the tile size here, so
-  // these fields have to follow a change this component did not make. Both
-  // screens stay mounted, so nothing would otherwise re-read them and the page
-  // would go on showing the old numbers, which is exactly the complaint.
-  const reload = useCallback(() => {
-    const p = loadGridPrefs();
-    setCols(fieldState(p.cols));
-    setItemCols(fieldState(p.itemCols));
-    setItemRows(fieldState(p.itemRows));
-    setStrict(loadGridStrict());
-    setRowFill(loadRowFill());
-    setSeeds(loadGridSeeds());
-    // The setters are listed although React guarantees their identity is stable
-    // and `[]` would behave identically. The compiler cannot know that
-    // guarantee, so an empty array reads to it as a dependency list that does
-    // not match what the body uses, and it gives up optimizing the whole
-    // component rather than risk a stale closure. Naming them costs nothing and
-    // keeps the file compilable.
-  }, [setCols, setItemCols, setItemRows, setStrict, setRowFill, setSeeds]);
-  useEffect(() => {
-    window.addEventListener(GRID_PREFS_EVENT, reload);
-    return () => window.removeEventListener(GRID_PREFS_EVENT, reload);
-  }, [reload]);
 
   return (
     <section id={id} className="space-y-4">
@@ -87,11 +54,16 @@ export function GridSection({ id }: { id: string }) {
         actually open, so six columns with three terminals up lays out three
         across the window rather than leaving half of it empty.
       </p>
+      <p className="max-w-md text-xs text-muted-foreground">
+        The Templates editor draws its preview from these same numbers, and
+        offers the four below on the line under its canvas. There is one set of
+        them: a template stores no layout of its own.
+      </p>
       <div className="grid max-w-md gap-4">
         <label
           className="flex max-w-md cursor-pointer items-start gap-2 text-sm"
           {...hint(
-            strict
+            f.strict
               ? "Strict: the numbers below are the last word. A tile size dragged in the grid lasts until Broadside is closed and is then forgotten."
               : "Not strict: dragging a tile in the grid writes its width and height here, so the size comes back after a restart.",
           )}
@@ -99,9 +71,9 @@ export function GridSection({ id }: { id: string }) {
           <input
             type="checkbox"
             className="mt-0.5 accent-primary"
-            checked={strict}
+            checked={f.strict}
             onChange={(e) => {
-              setStrict(e.target.checked);
+              f.setStrict(e.target.checked);
               saveGridStrict(e.target.checked);
             }}
           />
@@ -116,81 +88,16 @@ export function GridSection({ id }: { id: string }) {
             </span>
           </span>
         </label>
-        <GridField
-          label="Columns across"
-          unit="tiles"
-          hint="How many terminals sit side by side. Auto uses one column, or two on a wide window. Trimmed to the number of terminals open."
-          min={GRID_COLS_MIN}
-          max={GRID_COLS_MAX}
-          defaultValue={seeds.cols}
-          state={cols}
-          setState={setCols}
-          onCommit={saveGridCols}
-        />
-        <GridField
-          label="Item width"
-          unit="columns"
-          hint="Each tile's width in characters. When fixed widths overflow the window the grid scrolls horizontally."
-          min={GRID_ITEM_COLS_MIN}
-          max={GRID_ITEM_COLS_MAX}
-          defaultValue={seeds.itemCols}
-          state={itemCols}
-          setState={setItemCols}
-          onCommit={saveGridItemCols}
-        />
-        <GridField
-          label="Item height"
-          unit="rows"
-          hint="Each tile's height in character rows. Extra tiles scroll vertically."
-          min={GRID_ITEM_ROWS_MIN}
-          max={GRID_ITEM_ROWS_MAX}
-          defaultValue={seeds.itemRows}
-          state={itemRows}
-          setState={setItemRows}
-          onCommit={saveGridItemRows}
-        />
-        <div className="grid gap-1.5">
-          <Label>Short last row</Label>
-          <div className="flex flex-col gap-1.5">
-            {ROW_FILL_CHOICES.map((choice) => (
-              <label
-                key={choice.value}
-                className="flex cursor-pointer items-start gap-2 text-sm"
-                {...hint(choice.hint)}
-              >
-                <input
-                  type="radio"
-                  name="grid-row-fill"
-                  className="mt-1 accent-primary"
-                  checked={rowFill === choice.value}
-                  onChange={() => {
-                    setRowFill(choice.value);
-                    saveRowFill(choice.value);
-                  }}
-                />
-                <span>
-                  {choice.label}
-                  <span className="mt-0.5 block text-xs text-muted-foreground">
-                    {choice.hint}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            What fills the gap when the terminals don't divide evenly into
-            columns: three tiles in two columns, for instance. A pinned Item
-            width or Item height wins: a stretched tile is wider than one and a
-            tall tile is taller than the other, so where you have set that
-            dimension by hand the gap stays.
-          </p>
-        </div>
+        <GridFields f={f} />
         <div className="border-t border-border/50 pt-3">
           <button
             type="button"
             onClick={() => setAdvancedOpen((o) => !o)}
             className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
             aria-expanded={advancedOpen}
+            {...hint(
+              "The number each field above lands on the moment its Auto box is unchecked",
+            )}
           >
             {advancedOpen ? (
               <ChevronDownIcon className="h-4 w-4 shrink-0" />
@@ -213,9 +120,9 @@ export function GridSection({ id }: { id: string }) {
                 unit="tiles"
                 min={GRID_COLS_MIN}
                 max={GRID_COLS_MAX}
-                value={seeds.cols}
+                value={f.seeds.cols}
                 onCommit={(v) => {
-                  setSeeds((s) => ({ ...s, cols: v }));
+                  f.setSeeds((s) => ({ ...s, cols: v }));
                   saveGridSeedCols(v);
                 }}
               />
@@ -224,9 +131,9 @@ export function GridSection({ id }: { id: string }) {
                 unit="columns"
                 min={GRID_ITEM_COLS_MIN}
                 max={GRID_ITEM_COLS_MAX}
-                value={seeds.itemCols}
+                value={f.seeds.itemCols}
                 onCommit={(v) => {
-                  setSeeds((s) => ({ ...s, itemCols: v }));
+                  f.setSeeds((s) => ({ ...s, itemCols: v }));
                   saveGridSeedItemCols(v);
                 }}
               />
@@ -235,9 +142,9 @@ export function GridSection({ id }: { id: string }) {
                 unit="rows"
                 min={GRID_ITEM_ROWS_MIN}
                 max={GRID_ITEM_ROWS_MAX}
-                value={seeds.itemRows}
+                value={f.seeds.itemRows}
                 onCommit={(v) => {
-                  setSeeds((s) => ({ ...s, itemRows: v }));
+                  f.setSeeds((s) => ({ ...s, itemRows: v }));
                   saveGridSeedItemRows(v);
                 }}
               />
@@ -246,7 +153,7 @@ export function GridSection({ id }: { id: string }) {
                 size="sm"
                 onClick={() => {
                   resetGridSeeds();
-                  setSeeds(loadGridSeeds());
+                  f.setSeeds(loadGridSeeds());
                 }}
                 {...hint(
                   "Reset just the three defaults above, back to 3 columns / 80x24. Does not touch Columns across, Item width or Item height themselves.",
@@ -259,116 +166,6 @@ export function GridSection({ id }: { id: string }) {
         </div>
       </div>
     </section>
-  );
-}
-
-/** The three ways to treat a last row that isn't full. The wording is the
- * whole explanation the operator gets, in the section and in the status-bar
- * hint, so each one says what it does rather than naming a strategy. */
-const ROW_FILL_CHOICES: { value: RowFill; label: string; hint: string }[] = [
-  {
-    value: "stretch",
-    label: "Stretch the row",
-    hint: "The tiles on the short row widen to fill the whole width. Three in two columns gives two on top, one wide underneath.",
-  },
-  {
-    value: "tall",
-    label: "Tall tile in the last column",
-    hint: "When one space is left, the tile above grows down into it. Three in two columns gives a full-height tile on the right.",
-  },
-  {
-    value: "gaps",
-    label: "Leave the gap",
-    hint: "Every tile keeps the same shape and the empty cell stays empty.",
-  },
-];
-
-/** A field is "auto" (no pinned value) or an in-progress string being edited. */
-type FieldState = { auto: boolean; text: string };
-
-function fieldState(v: number | null): FieldState {
-  return v === null ? { auto: true, text: "" } : { auto: false, text: String(v) };
-}
-
-/** Parse a field's text; returns the number when it is a valid integer within
- * range, else null (invalid: shown with a red border, not persisted). */
-function parseField(text: string, min: number, max: number): number | null {
-  const n = Number.parseInt(text, 10);
-  if (!Number.isFinite(n) || String(n) !== text.trim()) return null;
-  if (n < min || n > max) return null;
-  return n;
-}
-
-function GridField({
-  label,
-  unit,
-  hint,
-  min,
-  max,
-  defaultValue,
-  state,
-  setState,
-  onCommit,
-}: {
-  label: string;
-  unit: string;
-  hint: string;
-  min: number;
-  max: number;
-  defaultValue: number;
-  state: FieldState;
-  setState: (s: FieldState) => void;
-  /** Persist the field: a number pins it, null clears it back to auto. */
-  onCommit: (v: number | null) => void;
-}) {
-  const invalid = !state.auto && parseField(state.text, min, max) === null;
-
-  const toggleAuto = (auto: boolean) => {
-    if (auto) {
-      setState({ auto: true, text: "" });
-      onCommit(null);
-    } else {
-      setState({ auto: false, text: String(defaultValue) });
-      onCommit(defaultValue);
-    }
-  };
-
-  const onText = (text: string) => {
-    setState({ auto: false, text });
-    const parsed = parseField(text, min, max);
-    if (parsed !== null) onCommit(parsed);
-  };
-
-  return (
-    <div className="grid gap-1.5">
-      <Label>{label}</Label>
-      <div className="flex items-center gap-3">
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="accent-primary"
-            checked={state.auto}
-            onChange={(e) => toggleAuto(e.target.checked)}
-          />
-          Auto
-        </label>
-        <Input
-          type="number"
-          inputMode="numeric"
-          value={state.text}
-          min={min}
-          max={max}
-          disabled={state.auto}
-          onChange={(e) => onText(e.target.value)}
-          aria-label={label}
-          className={`w-28 font-mono text-sm ${invalid ? "border-destructive" : ""}`}
-        />
-        <span className="text-xs text-muted-foreground">{unit}</span>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {hint} {min}-{max}.
-      </p>
-    </div>
   );
 }
 

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PlusIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 
+import { GridFields } from "@/components/GridControls";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   GRID_PREFS_EVENT,
   loadGridPrefs,
@@ -14,6 +20,7 @@ import {
   tileSpan,
   twoUpThresholdPx,
 } from "@/lib/gridShape";
+import { useGridFields } from "@/lib/gridFields";
 import { measureTerminalCell } from "@/lib/terminalCell";
 import { useHint } from "@/lib/status";
 import type { TemplateItem } from "@/lib/tauri/templates";
@@ -47,16 +54,24 @@ const ROW_FILL_WORDS: Record<RowFill, string> = {
  * `tall` sees the tall tile. A fixed illustration would be right for whoever
  * drew it and quietly wrong for everybody else.
  *
- * The trailing `+` box is a band **under** the arrangement, not a cell in it.
- * It used to take a cell, on the reasoning that where the next session lands is
- * what you want to see before you drop it. But a cell it takes is a cell the
- * arrangement does not have: the canvas laid out one tile too many, and at two
- * columns that got the short-row fill exactly backwards, drawing a fill for the
- * counts that launch without one and hiding it for the counts that launch with
- * one. It was a poor prediction in any case, since adding a session re-lays the
- * whole grid rather than filling in one more square. So the grid shows the
- * sessions, the band takes the drop, and the line underneath says how many will
- * open.
+ * The `+` band is **outside** the arrangement, a strip of its own under the
+ * scrolling pane. It used to be a box in the grid, on the reasoning that where
+ * the next session lands is what you want to see before you drop it. But a cell
+ * it takes is a cell the arrangement does not have: the canvas laid out one
+ * tile too many, and at two columns that got the short-row fill exactly
+ * backwards, drawing a fill for the counts that launch without one and hiding
+ * it for the counts that launch with one. It was a poor prediction in any case,
+ * since adding a session re-lays the whole grid rather than filling in one more
+ * square.
+ *
+ * Out of the grid entirely rather than merely placed on the row beneath it,
+ * because a row of the grid is a *tile-sized* row: at three sessions the drop
+ * target was taking a third of the canvas to say four words. A strip is the
+ * same target in a fraction of the height, it no longer scrolls away under a
+ * long arrangement, and there is no arithmetic left that could put it back
+ * inside the boxes. The one exception is an empty template, where the band is
+ * the whole canvas, because there is no arrangement for it to be under and
+ * nothing else for the canvas to be.
  */
 export function TemplateCanvas({
   items,
@@ -77,6 +92,10 @@ export function TemplateCanvas({
 }) {
   const hint = useHint();
   const { prefs: uiPrefs } = useUiPrefs();
+  // The same four preferences the arrangement below is drawn from, as controls,
+  // for the popover on the line at the foot of the page. Held here rather than
+  // inside the popover so it is not rebuilt on every open.
+  const gridFields = useGridFields();
 
   // The Grid settings, live: Settings and this page can both be mounted, so a
   // column count changed there has to arrive here without a restart. Same
@@ -189,6 +208,36 @@ export function TemplateCanvas({
     onMove(payload.index, Math.min(index, items.length - 1));
   };
 
+  // Where a new session is dropped. Two shapes and one behaviour: a strip under
+  // the arrangement when there is an arrangement, and the whole canvas when
+  // there is not, because an empty template's canvas has nothing else to be and
+  // a 26px target is a poor welcome.
+  const dropBand = (whole: boolean) => (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = dragIndex === null ? "copy" : "move";
+        setOverIndex(items.length);
+      }}
+      onDragLeave={() => setOverIndex((v) => (v === items.length ? null : v))}
+      onDrop={(e) => {
+        e.preventDefault();
+        handleDrop(e.dataTransfer.getData("text/plain"), items.length);
+      }}
+      className={cn(
+        "flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border text-center text-xs text-muted-foreground",
+        whole ? "min-h-0 flex-col px-3 py-2" : "mx-2 mb-2 shrink-0 py-1",
+        overIndex === items.length && "border-primary ring-2 ring-primary",
+      )}
+      {...hint(
+        "Drop a host, shell or profile here to add it to the end of this template.",
+      )}
+    >
+      <PlusIcon className={whole ? "h-5 w-5" : "h-3.5 w-3.5"} />
+      <span>Drag a session here</span>
+    </div>
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div ref={paneRef} className="min-h-0 flex-1 overflow-auto p-2">
@@ -251,6 +300,9 @@ export function TemplateCanvas({
                   onClick={() => onRemove(i)}
                   aria-label={`Remove ${r.label}`}
                   title="Remove from this template"
+                  {...hint(
+                    `Take ${r.label} out of this template. The host, shell or profile itself is untouched.`,
+                  )}
                   className="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-red-500 focus-visible:opacity-100 group-hover:opacity-100"
                 >
                   <XIcon className="h-3.5 w-3.5" />
@@ -282,48 +334,20 @@ export function TemplateCanvas({
               </div>
             );
           })}
-
-          {!full && (
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = dragIndex === null ? "copy" : "move";
-                setOverIndex(items.length);
-              }}
-              onDragLeave={() =>
-                setOverIndex((v) => (v === items.length ? null : v))
-              }
-              onDrop={(e) => {
-                e.preventDefault();
-                handleDrop(e.dataTransfer.getData("text/plain"), items.length);
-              }}
-              style={{
-                // Under the arrangement, never in it: the row after the last one
-                // the sessions use, across the full width. That is what keeps a
-                // hole a hole on `gaps`, and it stays clear of the tile that
-                // grew down into the last row on `tall`. Neither fill can reach
-                // past the row the sessions end on, so this row is always free.
-                gridRow: Math.ceil(count / cols) + 1,
-                gridColumn: "1 / -1",
-              }}
-              className={cn(
-                "flex min-h-0 flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-center text-muted-foreground",
-                overIndex === items.length && "border-primary ring-2 ring-primary",
-              )}
-              {...hint(
-                "Drop a host, shell or profile here to add it to the end of this template.",
-              )}
-            >
-              <PlusIcon className="h-5 w-5" />
-              <span className="text-xs">Drag a session here</span>
-            </div>
-          )}
+          {items.length === 0 && dropBand(true)}
         </div>
       </div>
 
-      {/* What the boxes above will actually do, said in words, because one of
-          them is a place to drop rather than a session and because the
-          arrangement follows a setting on another tab. */}
+      {/* The strip, once there is an arrangement for it to sit under. Outside
+          the pane above, so a long one scrolls under it and it is always where
+          you left it. */}
+      {items.length > 0 && !full && dropBand(false)}
+
+      {/* What the boxes above will actually do, said in words, because the
+          arrangement follows a setting that is not on this template. The
+          controls hang off those words: this is the line where you find out the
+          layout is not the one you wanted, so it is the line that should change
+          it. */}
       <p className="shrink-0 border-t border-border/50 px-3 py-2 text-xs text-muted-foreground">
         {items.length === 0
           ? "Empty. Drag a host, a local shell or a saved profile from the left."
@@ -331,18 +355,41 @@ export function TemplateCanvas({
         {items.length > 0 && (
           <>
             Your{" "}
-            {onOpenGridSettings ? (
-              <button
-                type="button"
-                onClick={onOpenGridSettings}
-                className="font-medium text-primary hover:underline"
-                {...hint("Open Settings at the Grid section")}
-              >
-                Grid settings
-              </button>
-            ) : (
-              "Grid settings"
-            )}{" "}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="font-medium text-primary hover:underline"
+                  {...hint(
+                    "Change the grid these boxes are laid out by, without leaving the page",
+                  )}
+                >
+                  Grid settings
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="start" className="w-80">
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Broadside&apos;s Grid settings, the same four the Terminals
+                  grid lays itself out by. A template stores no layout of its
+                  own, so a change here is a change everywhere.
+                </p>
+                <div className="grid gap-3">
+                  <GridFields f={gridFields} compact />
+                </div>
+                {onOpenGridSettings && (
+                  <button
+                    type="button"
+                    onClick={onOpenGridSettings}
+                    className="mt-3 text-xs font-medium text-primary hover:underline"
+                    {...hint(
+                      "Open the Settings tab at Grid, for Strict and the three defaults",
+                    )}
+                  >
+                    Open the full Grid settings
+                  </button>
+                )}
+              </PopoverContent>
+            </Popover>{" "}
             lay them out {cols === 1 ? "in one column" : `${cols} across`}, and
             when the last row is short, {ROW_FILL_WORDS[rowFill]}.
           </>
