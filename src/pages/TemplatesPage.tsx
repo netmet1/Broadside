@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { LayoutTemplateIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -48,6 +55,13 @@ import { useTemplateSources } from "@/pages/templates/useTemplateSources";
  * about this machine, so localStorage rather than a column. */
 const LAST_EDITED_KEY = "templates-last-edited";
 const SORT_KEY = "templates-rail-sort";
+
+/** How many saved templates the closed-editor screen offers before it stops
+ * listing them and points at the Hosts tab instead. The screen is a way back
+ * into the editor, not a second copy of the list: past a handful it would grow
+ * past the window, and the list that scrolls, sorts and deletes already exists
+ * one tab away. */
+const SPLASH_RECENT = 5;
 
 /** What the editor is holding: a saved template being changed (`id` set) or one
  * that does not exist yet (`id` null). */
@@ -114,12 +128,15 @@ export function TemplatesPage({
   focus,
   onOpenHelp,
   onOpenGridSettings,
+  onBrowseTemplates,
 }: {
   visible: boolean;
   connectedHostIds: Set<number>;
   focus: TemplateFocus | null;
   onOpenHelp: (section: HelpSectionId) => void;
   onOpenGridSettings: () => void;
+  /** Go to the Hosts tab's Templates list, where all of them are. */
+  onBrowseTemplates: () => void;
 }) {
   const hint = useHint();
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -127,6 +144,16 @@ export function TemplatesPage({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [baseline, setBaseline] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  // A template deleted somewhere else while the editor was holding it. The
+  // arrangement on the canvas is not lost, it has only lost the row it belonged
+  // to, which is why the draft keeps its items and gives up its id: the button
+  // goes back to saying Create, and pressing it writes this one back.
+  const [vanished, setVanished] = useState(false);
+  // Which template the editor has open, readable from a promise continuation
+  // that must not be re-run every time the draft changes. The effect that
+  // re-reads the list needs it at the moment the list comes back, and taking it
+  // as a dependency would re-read on every keystroke in the name field.
+  const openIdRef = useRef<number | null>(null);
 
   const [sort, setSort] = useState(
     () => localStorage.getItem(SORT_KEY) ?? "az",
@@ -156,12 +183,26 @@ export function TemplatesPage({
   // other. The chain is written out here rather than calling `reload` (which
   // the save and delete paths use) so the state write is visibly in a
   // continuation, and so a list arriving after the page is hidden is dropped.
+  //
+  // This is also where a template that went while the editor held it is
+  // noticed. The check belongs on *this* read rather than on every list: the
+  // save and delete paths reload immediately after writing, and there is a
+  // render in the middle of a create where the draft already carries the new id
+  // and the list does not yet, which would read as a template that vanished the
+  // instant it was made.
   useEffect(() => {
     if (!visible) return;
     let alive = true;
     listTemplates()
       .then((list) => {
-        if (alive) setTemplates(list);
+        if (!alive) return;
+        setTemplates(list);
+        const open = openIdRef.current;
+        if (open != null && !list.some((t) => t.id === open)) {
+          localStorage.removeItem(LAST_EDITED_KEY);
+          setDraft((d) => (d && d.id === open ? { ...d, id: null } : d));
+          setVanished(true);
+        }
       })
       .catch((e) => {
         if (alive) toast.error(errorMessage(e));
@@ -182,7 +223,16 @@ export function TemplatesPage({
   // Where the editor was last, so opening the tab on its own lands there. An
   // effect because it writes to something outside React and sets no state,
   // which is what an effect is for.
+  //
+  // The same number goes into the ref above, written in a *layout* effect,
+  // which is where this codebase keeps its latest-value refs: a render can be
+  // discarded and must not mutate anything outside itself, while a layout
+  // effect lands before the browser paints, so nothing can read a value older
+  // than the screen.
   const currentId = draft?.id ?? null;
+  useLayoutEffect(() => {
+    openIdRef.current = currentId;
+  }, [currentId]);
   useEffect(() => {
     if (currentId != null) {
       localStorage.setItem(LAST_EDITED_KEY, String(currentId));
@@ -215,6 +265,17 @@ export function TemplatesPage({
   }
 
   const dirty = draft !== null && fingerprint(draft) !== baseline;
+
+  // Most recently touched first, which is the order that makes a short list
+  // useful. The Hosts tab sorts them alphabetically, because that is the one
+  // you read down looking for a name.
+  const recent = useMemo(
+    () =>
+      [...templates]
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+        .slice(0, SPLASH_RECENT),
+    [templates],
+  );
 
   usePageStatus(
     draft === null
@@ -464,6 +525,9 @@ export function TemplatesPage({
           }
           onAction={() => openDraft(EMPTY_DRAFT)}
           actionHint="Start a new template: drag hosts and shells into the grid, then save it"
+          secondaryLabel="Import"
+          onSecondary={requestImport}
+          secondaryHint="Read a template file someone exported. It opens in the editor, and nothing is saved until you press Create."
           description="A template is a saved arrangement of terminal sessions. Build it once here, then open the whole set from the Hosts tab in a single action."
           helpSection={HELP_TEMPLATES}
           onOpenHelp={onOpenHelp}
@@ -471,10 +535,10 @@ export function TemplatesPage({
         {templates.length > 0 && (
           <div className="mx-auto w-full max-w-md px-6 pb-16">
             <p className="mb-2 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Or edit a saved one
+              Or edit a recent one
             </p>
             <div className="space-y-1">
-              {templates.map((t) => (
+              {recent.map((t) => (
                 <button
                   key={t.id}
                   type="button"
@@ -497,6 +561,18 @@ export function TemplatesPage({
                 </button>
               ))}
             </div>
+            {templates.length > recent.length && (
+              <button
+                type="button"
+                onClick={onBrowseTemplates}
+                className="mt-2 w-full text-center text-xs font-medium text-primary hover:underline"
+                {...hint(
+                  "Open the Hosts tab at the Templates list, where every one of them is",
+                )}
+              >
+                Show all {templates.length} templates
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -636,6 +712,48 @@ export function TemplatesPage({
             <AlertDialogCancel>Keep it</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={() => void runDelete()}>
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* A template deleted on the Hosts tab while it was open here. */}
+      <AlertDialog
+        open={vanished}
+        onOpenChange={(o) => {
+          if (!o) setVanished(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {draft.name.trim()
+                ? `“${draft.name.trim()}” was deleted`
+                : "This template was deleted"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              It was removed while the editor was holding it, so there is
+              nothing left to save over. What is on the canvas is untouched: the
+              button now says Create, and pressing it writes this arrangement
+              back as a new template. Discard closes the editor instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setVanished(false);
+                closeEditor();
+              }}
+            >
+              Discard
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setVanished(false);
+                void persist({ ...draft, id: null });
+              }}
+            >
+              Create
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

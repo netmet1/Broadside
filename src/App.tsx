@@ -28,6 +28,7 @@ import {
   loadSessionPrefs,
 } from "@/lib/sessionPrefs";
 import { setSshKeepalive } from "@/lib/tauri/settings";
+import { rememberHostsSide } from "@/lib/hostsSide";
 import { HostsPage } from "@/pages/HostsPage";
 import { TemplatesPage, type TemplateFocus } from "@/pages/TemplatesPage";
 import {
@@ -515,6 +516,14 @@ function App() {
     setPage("settings");
   }, []);
 
+  // "Show all templates", from the Templates splash. The list of them lives on
+  // the Hosts tab beside the list of machines, and that page is rebuilt on each
+  // visit, so setting which side it opens on is all this takes.
+  const browseTemplates = useCallback(() => {
+    rememberHostsSide("templates");
+    setPage("hosts");
+  }, []);
+
   // The one template that opens itself. Read once, at launch, and acted on
   // before anything is on screen: `launch` makes the tabs and stops, `connect`
   // goes on to open the shells.
@@ -770,6 +779,7 @@ function App() {
           focus={templateFocus}
           onOpenHelp={openHelpAt}
           onOpenGridSettings={openGridSettings}
+          onBrowseTemplates={browseTemplates}
         />
       </div>
       {/* Broadcast stays mounted so output and host selection survive

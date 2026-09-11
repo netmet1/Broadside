@@ -19,6 +19,11 @@ import type { HelpSectionId } from "@/pages/help/sections";
  * way to the page that explains it properly. The description is deliberately
  * below the button rather than above it, because the reader who already knows
  * what a host is should not have to read past a paragraph to find "Add host".
+ *
+ * A second button is allowed and stays quieter than the first (outline against
+ * solid), for the case where the thing you want already exists somewhere else:
+ * Templates has a file to import, and somebody arriving with one should not
+ * have to make an empty template first to find the button that reads it.
  */
 export function EmptyState({
   icon: Icon,
@@ -26,6 +31,9 @@ export function EmptyState({
   actionLabel,
   onAction,
   actionHint,
+  secondaryLabel,
+  onSecondary,
+  secondaryHint,
   description,
   helpSection,
   onOpenHelp,
@@ -37,6 +45,10 @@ export function EmptyState({
   onAction: () => void;
   /** Status-bar line for the button, as everywhere else. */
   actionHint: string;
+  /** An optional second way in, drawn beside the first and less loudly. */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
+  secondaryHint?: string;
   /** One or two sentences on what this thing is for. */
   description: ReactNode;
   helpSection: HelpSectionId;
@@ -53,9 +65,20 @@ export function EmptyState({
       <h2 className="font-heading text-lg font-semibold tracking-tight">
         {title}
       </h2>
-      <Button className="mt-4" onClick={onAction} {...hint(actionHint)}>
-        {actionLabel}
-      </Button>
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+        <Button onClick={onAction} {...hint(actionHint)}>
+          {actionLabel}
+        </Button>
+        {secondaryLabel && onSecondary && (
+          <Button
+            variant="outline"
+            onClick={onSecondary}
+            {...hint(secondaryHint ?? secondaryLabel)}
+          >
+            {secondaryLabel}
+          </Button>
+        )}
+      </div>
       <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
         {description}
       </p>

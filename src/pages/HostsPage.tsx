@@ -103,17 +103,14 @@ import {
   HELP_TEMPLATES,
   type HelpSectionId,
 } from "@/pages/help/sections";
+import {
+  loadHostsSide,
+  rememberHostsSide,
+  type HostsSide,
+} from "@/lib/hostsSide";
 import { cn } from "@/lib/utils";
 
-/** The Hosts tab has two lists in it, and which one you were looking at is
- * worth remembering. A view preference about this machine, so localStorage
- * alongside the column widths and the grid settings. */
-type HostsSide = "hosts" | "templates";
-const SIDE_KEY = "hosts-side";
 
-function loadSide(): HostsSide {
-  return localStorage.getItem(SIDE_KEY) === "templates" ? "templates" : "hosts";
-}
 
 export function HostsPage({
   onOpenTerminal,
@@ -146,10 +143,10 @@ export function HostsPage({
   // Which side of the Hosts | Templates toggle is showing. Persisted, because
   // an operator who works from templates should not have to pick the same side
   // of the same switch on every launch.
-  const [side, setSide] = useState<HostsSide>(loadSide);
+  const [side, setSide] = useState<HostsSide>(loadHostsSide);
   const chooseSide = useCallback((next: HostsSide) => {
     setSide(next);
-    localStorage.setItem(SIDE_KEY, next);
+    rememberHostsSide(next);
   }, []);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
