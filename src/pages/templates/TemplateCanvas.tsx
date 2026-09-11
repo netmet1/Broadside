@@ -47,10 +47,16 @@ const ROW_FILL_WORDS: Record<RowFill, string> = {
  * `tall` sees the tall tile. A fixed illustration would be right for whoever
  * drew it and quietly wrong for everybody else.
  *
- * The trailing `+` box is part of the grid rather than a button beside it,
- * because where the next session lands is the thing you want to see before you
- * drop it. It means the canvas shows one more box than the template holds,
- * which is why the line underneath says plainly how many sessions will open.
+ * The trailing `+` box is a band **under** the arrangement, not a cell in it.
+ * It used to take a cell, on the reasoning that where the next session lands is
+ * what you want to see before you drop it. But a cell it takes is a cell the
+ * arrangement does not have: the canvas laid out one tile too many, and at two
+ * columns that got the short-row fill exactly backwards, drawing a fill for the
+ * counts that launch without one and hiding it for the counts that launch with
+ * one. It was a poor prediction in any case, since adding a session re-lays the
+ * whole grid rather than filling in one more square. So the grid shows the
+ * sessions, the band takes the drop, and the line underneath says how many will
+ * open.
  */
 export function TemplateCanvas({
   items,
@@ -121,10 +127,11 @@ export function TemplateCanvas({
   const wantsTwoUp = fitsTwoUp(paneW, threshold, twoUpFits);
   if (paneW !== 0 && wantsTwoUp !== twoUpFits) setTwoUpFits(wantsTwoUp);
 
+  // A full template has nowhere to put the `+` box, so it loses it.
   const full = items.length >= MAX_TEMPLATE_ITEMS;
-  // The boxes actually drawn: the template, plus the empty one the next session
-  // goes in. A full template has nowhere for that to be, so it loses it.
-  const boxCount = full ? items.length : items.length + 1;
+  // What the arrangement is worked out from: the sessions, and only those. The
+  // `+` box is drawn as well and sits below them (see the note at the top).
+  const count = items.length;
 
   // How many columns the real grid would use, worked out the way it works it
   // out. A pinned count wins and is trimmed to the number of tiles; a pinned
@@ -137,7 +144,7 @@ export function TemplateCanvas({
       : null;
   const cols =
     gridPrefs.cols != null
-      ? Math.min(gridPrefs.cols, Math.max(boxCount, 1))
+      ? Math.min(gridPrefs.cols, Math.max(count, 1))
       : tileWidthPx != null && paneW > 0
         ? Math.max(1, Math.floor((paneW + gapPx) / (tileWidthPx + gapPx)))
         : twoUpFits
@@ -152,7 +159,7 @@ export function TemplateCanvas({
   const spanRows = gridPrefs.itemRows == null;
 
   const gridStyle = defaultGridStyle({
-    count: boxCount,
+    count,
     cols,
     // A template stores no layout, so there is nothing here that could ask for
     // the top/bottom flip: two sessions get the grid's own default, side by
@@ -190,7 +197,7 @@ export function TemplateCanvas({
             const r = resolveItem(item, sources);
             const span = tileSpan({
               slot: i,
-              count: boxCount,
+              count,
               cols,
               rowFill,
               spanCols,
@@ -290,14 +297,15 @@ export function TemplateCanvas({
                 e.preventDefault();
                 handleDrop(e.dataTransfer.getData("text/plain"), items.length);
               }}
-              style={tileSpan({
-                slot: items.length,
-                count: boxCount,
-                cols,
-                rowFill,
-                spanCols,
-                spanRows,
-              })}
+              style={{
+                // Under the arrangement, never in it: the row after the last one
+                // the sessions use, across the full width. That is what keeps a
+                // hole a hole on `gaps`, and it stays clear of the tile that
+                // grew down into the last row on `tall`. Neither fill can reach
+                // past the row the sessions end on, so this row is always free.
+                gridRow: Math.ceil(count / cols) + 1,
+                gridColumn: "1 / -1",
+              }}
               className={cn(
                 "flex min-h-0 flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-center text-muted-foreground",
                 overIndex === items.length && "border-primary ring-2 ring-primary",
@@ -313,8 +321,8 @@ export function TemplateCanvas({
         </div>
       </div>
 
-      {/* What the boxes above will actually do, said in words, because the
-          canvas draws one more box than the template holds and because the
+      {/* What the boxes above will actually do, said in words, because one of
+          them is a place to drop rather than a session and because the
           arrangement follows a setting on another tab. */}
       <p className="shrink-0 border-t border-border/50 px-3 py-2 text-xs text-muted-foreground">
         {items.length === 0
