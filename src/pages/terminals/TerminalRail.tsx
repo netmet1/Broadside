@@ -460,12 +460,6 @@ export function TerminalRail({
               teaches nobody the key. */}
           <DropdownMenuItem
             disabled={!canFullscreen}
-            // A greyed entry is the one most worth explaining, and the default
-            // disabled style takes its pointer events away so it cannot raise
-            // its hint. Radix already ignores pointer moves on a disabled item
-            // (it clears the highlight rather than following the mouse), so
-            // handing them back costs nothing and buys the status-bar line.
-            className="data-disabled:pointer-events-auto"
             onSelect={toggleFullscreen}
             {...hint(fullscreenHint)}
           >
@@ -553,7 +547,6 @@ export function TerminalRail({
           {gridMode && (
             <DropdownMenuItem
               disabled={!sizeIsPinned}
-              className="data-disabled:pointer-events-auto"
               onSelect={resetTileSize}
               {...hint(
                 sizeIsPinned
@@ -573,7 +566,6 @@ export function TerminalRail({
               pane's view only; the session and everything in it carry on. */}
           <DropdownMenuItem
             disabled={activeId === null}
-            className="data-disabled:pointer-events-auto"
             onSelect={() => {
               if (activeId !== null) resetDisplay(activeId);
             }}
@@ -729,8 +721,8 @@ export function TerminalRail({
                     }}
                     className={cn(
                       "ml-auto shrink-0 rounded-sm p-1 text-muted-foreground",
-                      "hover:bg-destructive/10 hover:text-destructive",
-                      "disabled:pointer-events-none disabled:opacity-30",
+                      "not-disabled:hover:bg-destructive/10 not-disabled:hover:text-destructive",
+                      "disabled:cursor-not-allowed disabled:opacity-30",
                     )}
                     {...hint(
                       openIds.has(s.id)
