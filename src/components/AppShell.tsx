@@ -5,6 +5,7 @@ import {
   FolderTreeIcon,
   InfoIcon,
   LayersIcon,
+  LayoutTemplateIcon,
   Minimize2Icon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -25,6 +26,7 @@ import { cn } from "@/lib/utils";
 
 export type Page =
   | "hosts"
+  | "templates"
   | "broadcast"
   | "ptybroadcast"
   | "terminals"
@@ -51,6 +53,12 @@ const NAV_ITEMS: {
     label: "Hosts",
     icon: ServerIcon,
     hint: HOSTS_NAV_HINT,
+  },
+  {
+    page: "templates",
+    label: "Templates",
+    icon: LayoutTemplateIcon,
+    hint: "Build a saved arrangement of sessions; open it from the Hosts tab",
   },
   {
     page: "terminals",

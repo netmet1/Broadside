@@ -1864,7 +1864,7 @@ export function TerminalsPage({
                         aria-label="Reset the count to 1"
                         title="Back to 1"
                         {...hint("Set the number of copies to open back to 1")}
-                        className="-ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                        className="-ml-1 rounded p-0.5 text-muted-foreground not-disabled:hover:bg-accent not-disabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
                       >
                         <RotateCcwIcon className="h-3 w-3" />
                       </button>
@@ -2869,6 +2869,7 @@ export function TerminalsPage({
                   onOpenSessionSettings={onOpenSessionSettings}
                   adoptExisting={s.type === "ssh" && s.adopted === true}
                   adoptSnapshot={s.type === "ssh" ? s.adoptSnapshot : undefined}
+                  startClosed={s.startClosed === true}
                 />
               </div>
 

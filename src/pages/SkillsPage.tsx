@@ -1,9 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
+import {
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  WandSparklesIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDestructiveDialog } from "@/components/ConfirmDestructiveDialog";
+import { EmptyState } from "@/components/EmptyState";
 import { RailFilterControls } from "@/components/RailFilterControls";
 import { ShellChip } from "@/components/ShellChip";
 import {
@@ -49,6 +54,7 @@ import {
 import { useSkillRun } from "@/pages/skills/useSkillRun";
 import { useSkillsModel } from "@/pages/skills/useSkillsModel";
 import type { SkillDraft } from "@/pages/skills/useSequenceForm";
+import { HELP_SKILLS, type HelpSectionId } from "@/pages/help/sections";
 
 /** Persisted collapse state for the whole rail. */
 const RAIL_COLLAPSED_KEY = "skills-rail-collapsed";
@@ -96,6 +102,7 @@ export function SkillsPage({
   visible,
   connectedHostIds,
   onAdoptTerminal,
+  onOpenHelp,
 }: {
   visible: boolean;
   /** Hosts with a connected terminal open. The strongest thing the rail's
@@ -105,6 +112,8 @@ export function SkillsPage({
    * backend session. `snapshot` is the pane's scrollback as an ANSI string, so
    * the new tab opens with the run's history intact rather than empty. */
   onAdoptTerminal: (sessionId: string, host: Host, snapshot: string | null) => void;
+  /** Open the Help tab at a section, from the empty state's link. */
+  onOpenHelp: (section: HelpSectionId) => void;
 }) {
   const hint = useHint();
   const sel = useSkillSelection(visible, connectedHostIds);
@@ -652,19 +661,36 @@ export function SkillsPage({
             onRun={(params, preflight) => startRun(view.skill, params, preflight)}
           />
         ) : view.kind === "idle" ? (
-          <div className="mx-auto max-w-lg px-6 py-16 text-center">
-            <h2 className="text-lg font-semibold">Skills</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              A skill opens a live shell on each host you check and drives it:
-              running commands, waiting for prompts, and answering them. Because
-              it's a real shell, it can become root and stay root, work through
-              questions, and handle programs that repaint the screen, and you
-              watch every host's terminal while it happens.
-            </p>
-            <p className="mt-3 text-sm text-muted-foreground">
-              Check some hosts on the left, then press play on a skill.
-            </p>
-          </div>
+          // Nothing yet, so the same centred block Hosts and Templates show on
+          // a fresh install: what this is, the one button, and the way to the
+          // page that explains it. With skills in the list it goes back to
+          // describing what to do with them.
+          model.skills.length === 0 && !model.loading ? (
+            <EmptyState
+              icon={WandSparklesIcon}
+              title="Skills"
+              actionLabel="Create your first skill"
+              onAction={() => openEditor({ skill: null, from: "list" })}
+              actionHint="Build a skill: a sequence of steps run over a live shell on each checked host"
+              description="A skill opens a live shell on each host you check and drives it: running commands, waiting for prompts, and answering them. You watch every host's terminal while it happens."
+              helpSection={HELP_SKILLS}
+              onOpenHelp={onOpenHelp}
+            />
+          ) : (
+            <div className="mx-auto max-w-lg px-6 py-16 text-center">
+              <h2 className="text-lg font-semibold">Skills</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                A skill opens a live shell on each host you check and drives it:
+                running commands, waiting for prompts, and answering them. Because
+                it's a real shell, it can become root and stay root, work through
+                questions, and handle programs that repaint the screen, and you
+                watch every host's terminal while it happens.
+              </p>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Check some hosts on the left, then press play on a skill.
+              </p>
+            </div>
+          )
         ) : null}
       </div>
 

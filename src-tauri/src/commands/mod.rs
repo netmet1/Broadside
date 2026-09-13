@@ -15,3 +15,4 @@ pub mod settings;
 pub mod skilllog;
 pub mod skills;
 pub mod ssh;
+pub mod templates;

@@ -67,7 +67,24 @@ const SECTION_TEXT = new Map<string, string>(
   ]),
 );
 
-export function HelpPage() {
+export function HelpPage({
+  focusSection = null,
+  onFocusConsumed,
+}: {
+  /** A link from another tab's empty state: land on this section rather than
+   * wherever the reader last was. One-shot, and cleared by the caller as soon
+   * as it has been taken. */
+  focusSection?: string | null;
+  onFocusConsumed?: () => void;
+} = {}) {
+  // Captured once. The prop is cleared the moment it is consumed, and the
+  // restore below must not then run again and scroll back to the remembered
+  // position; holding the value in state means the effect sees a constant.
+  const [landOn] = useState(focusSection);
+  useEffect(() => {
+    if (landOn) onFocusConsumed?.();
+  }, [landOn, onFocusConsumed]);
+
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -151,7 +168,15 @@ export function HelpPage() {
     // the previously shown page sharing this <main>.
     const saved = Number(sessionStorage.getItem(HELP_SCROLL_KEY));
     requestAnimationFrame(() => {
-      scroller.scrollTop = Number.isFinite(saved) && saved > 0 ? saved : 0;
+      // A deep link wins over the remembered position: it is the reason this
+      // page is open. Falls back to the restore when the section is not on the
+      // page, so a stale link is a normal visit rather than a blank one.
+      const target = landOn ? document.getElementById(landOn) : null;
+      if (target) {
+        target.scrollIntoView({ block: "start" });
+      } else {
+        scroller.scrollTop = Number.isFinite(saved) && saved > 0 ? saved : 0;
+      }
       computeActive();
       saveEnabled.current = true;
     });
@@ -172,7 +197,9 @@ export function HelpPage() {
       scroller.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, []);
+    // `landOn` never changes after mount (it is a useState initial value), so
+    // this is still the once-per-mount effect it has always been.
+  }, [landOn]);
 
   return (
     <div ref={rootRef} className="mx-auto flex max-w-5xl gap-8 px-6 py-6">

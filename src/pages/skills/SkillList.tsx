@@ -292,10 +292,11 @@ export function SkillList({
         {loading ? (
           <p className="px-2 py-4 text-xs text-muted-foreground">Loading…</p>
         ) : skills.length === 0 ? (
+          // Short, because the centred block on the right now says what a
+          // skill is and offers the button. Two descriptions of the same thing,
+          // side by side, was one too many.
           <p className="px-2 py-4 text-xs text-muted-foreground">
-            No skills yet. A skill opens a live shell on each checked host and
-            drives it: running commands, watching for prompts and answering
-            them. Press New to build one.
+            No skills yet.
           </p>
         ) : (
           listed.map((s, i) => (
