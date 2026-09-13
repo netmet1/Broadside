@@ -37,29 +37,20 @@ import {
   shellWarningDismissed,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
+import { copyTerminalSelection } from "@/lib/terminalClipboard";
 import { useReachability } from "@/lib/useReachability";
 import { useHint } from "@/lib/status";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
 
-/** Copy `sel` to the clipboard and flash a short confirmation toast. Nothing
- * on-screen otherwise signals that copy-on-select fired, so the toast is the
- * only feedback that the clipboard changed. A blank selection is a no-op. */
-function copySelection(sel: string) {
-  if (!sel) return;
-  navigator.clipboard
-    ?.writeText(sel)
-    .then(() => toast.success("Copied to clipboard", { duration: 1200 }))
-    .catch(() => {});
-}
-
 /** Read the clipboard and send it to `sessionId` as if it had been typed, then
- * flash a short confirmation. Both paste routes go through here so they say the
- * same thing. A paste into a live shell is consequential (a trailing newline
- * runs what went in) and right-click is easy to press by accident, so the toast
- * reports the line count when there is more than one line: that is the case
- * where the clipboard held more than you thought and several commands just ran.
+ * flash a short confirmation. Both paste routes (a right-click with nothing
+ * selected, and Ctrl+Shift+V) go through here so they say the same thing. A
+ * paste into a live shell is consequential (a trailing newline runs what went
+ * in) and right-click is easy to press by accident, so the toast reports the
+ * line count when there is more than one line: that is the case where the
+ * clipboard held more than you thought and several commands just ran.
  * Nothing is said when the clipboard is empty or unreadable, or when the
  * session is gone and the text went nowhere. */
 function pasteToSession(sessionId: string) {
@@ -594,12 +585,14 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         return false;
       }
       // Ctrl+Shift+C copies the current selection; Ctrl+Shift+V pastes. These
-      // are the explicit keyboard counterparts to copy-on-select (mouseup) and
-      // right-click-paste, Ctrl+C/Ctrl+V alone stay reserved for the shell
-      // (SIGINT / literal paste-through the shell may want).
+      // are the keyboard's half of the right-click, which copies a selection
+      // and otherwise pastes. Ctrl+C/Ctrl+V alone stay reserved for the shell
+      // (SIGINT / literal paste-through the shell may want). The copy clears
+      // the selection, as the right-click does, so the two leave the pane in
+      // the same state and the next right-click pastes.
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
         e.preventDefault();
-        copySelection(term.getSelection());
+        copyTerminalSelection(term);
         return false;
       }
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) {
@@ -749,31 +742,30 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     });
     if (containerRef.current) io.observe(containerRef.current);
 
-    // Right-click to paste (Windows Terminal / PuTTY convention): read the
-    // clipboard and send it to the shell as if typed. Suppresses the native
-    // context menu. A no-op on a closed session (ptyWrite swallows the error).
+    // The right-click (Windows Terminal's convention): with a selection it
+    // copies and clears it, and with none it pastes, reading the clipboard and
+    // sending it to the shell as if typed. So the mouse does both halves: select,
+    // right-click to copy, right-click again where it should go.
+    //
+    // This replaced copy-on-select, which copied on every mouse-up. Selecting
+    // was a clipboard write whether anyone wanted one or not, and a drag made
+    // just to read a line threw away the command copied a minute earlier. Here
+    // a selection is only ever copied when asked.
+    //
+    // Always suppresses the native context menu. A paste into a closed session
+    // is a no-op (ptyWrite swallows the error), but a copy still works there,
+    // which is how the last thing a dropped session printed gets out of it.
+    //
+    // Mouse-reporting programs (tmux or vim with the mouse on) take the drag
+    // for themselves, as before; Shift-drag selects past them, and the
+    // right-click then copies.
     const onContextMenu = (e: MouseEvent) => {
       e.preventDefault();
+      if (copyTerminalSelection(term)) return;
       pasteToSession(sessionId);
     };
     const contextMenuEl = containerRef.current;
     contextMenuEl?.addEventListener("contextmenu", onContextMenu);
-
-    // Copy-on-select (PuTTY / xterm convention): when a mouse selection ends,
-    // copy it to the clipboard. Pairs with right-click-paste so the mouse alone
-    // does both copy and paste. Fires once per drag (on mouseup) rather than on
-    // every onSelectionChange tick, so we don't spam the clipboard mid-drag.
-    //
-    // Left button only. `mouseup` fires for every button, and on Windows the
-    // right button's `contextmenu` arrives *after* its `mouseup`, so an
-    // ungated handler made a right-click re-copy whatever was still selected in
-    // the pane: it claimed "Copied to clipboard" on a paste, and it raced the
-    // read below for the clipboard, which could paste the old selection back.
-    const onMouseUp = (e: MouseEvent) => {
-      if (e.button !== 0) return;
-      copySelection(term.getSelection());
-    };
-    contextMenuEl?.addEventListener("mouseup", onMouseUp);
 
     // Everything the session says goes through here rather than to
     // `term.write` directly, so a reconnect's clean screen cannot be missed by
@@ -873,7 +865,6 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       observer.disconnect();
       io.disconnect();
       contextMenuEl?.removeEventListener("contextmenu", onContextMenu);
-      contextMenuEl?.removeEventListener("mouseup", onMouseUp);
       unlistenData.then((fn) => fn());
       unlistenClosed.then((fn) => fn());
       term.dispose();
