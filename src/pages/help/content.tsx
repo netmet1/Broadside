@@ -718,7 +718,8 @@ export const SECTIONS: HelpSection[] = [
             so a change here is a change everywhere. The full section in{" "}
             <Nav>Settings</Nav> also has <Nav>Strict</Nav> and the three
             defaults, which are about dragging a real tile and have no meaning
-            on a preview.
+            on a preview. The gear beside <Nav>Grid Settings</Nav> at the foot
+            of the panel takes you there.
           </p>
           <p>
             The dashed <Nav>Drag a session here</Nav> strip at the foot of the

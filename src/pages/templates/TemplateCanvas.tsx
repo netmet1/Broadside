@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PlusIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { PlusIcon, SettingsIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 
 import { GridFields } from "@/components/GridControls";
+import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
@@ -376,17 +377,23 @@ export function TemplateCanvas({
                 <div className="grid gap-3">
                   <GridFields f={gridFields} compact />
                 </div>
+                {/* The words are a label and only the gear goes anywhere: the
+                    same gear the Settings tab wears in the sidebar. */}
                 {onOpenGridSettings && (
-                  <button
-                    type="button"
-                    onClick={onOpenGridSettings}
-                    className="mt-3 text-xs font-medium text-primary hover:underline"
-                    {...hint(
-                      "Open the Settings tab at Grid, for Strict and the three defaults",
-                    )}
-                  >
-                    Open the full Grid settings
-                  </button>
+                  <div className="mt-3 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                    <span>Grid Settings</span>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={onOpenGridSettings}
+                      aria-label="Open Grid Settings"
+                      {...hint(
+                        "Open the Settings tab at Grid, for Strict and the three defaults",
+                      )}
+                    >
+                      <SettingsIcon />
+                    </Button>
+                  </div>
                 )}
               </PopoverContent>
             </Popover>{" "}
