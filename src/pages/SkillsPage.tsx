@@ -404,6 +404,51 @@ export function SkillsPage({
     }
   }, []);
 
+  /**
+   * The main panel with nothing open in it, and what a view falls back to when
+   * the skill it was showing has gone.
+   *
+   * It always carries New and Import, not only while the list is empty. The
+   * rail holds the other copy of both, and the rail can be collapsed: a page
+   * with a skill saved and the rail put away used to show a paragraph pointing
+   * "on the left" at a rail that was not there, and nothing on screen that
+   * made a skill. Blank while the list loads, so the button does not read "New
+   * skill" for a frame and then change its mind.
+   */
+  const noSkills = model.skills.length === 0;
+  const idlePanel = model.loading ? null : (
+    <EmptyState
+      icon={WandSparklesIcon}
+      title="Skills"
+      actionLabel={noSkills ? "Create your first skill" : "New skill"}
+      onAction={() => openEditor({ skill: null, from: "list" })}
+      actionHint="Build a skill: a sequence of steps run over a live shell on each checked host"
+      secondaryLabel="Import"
+      onSecondary={() => void startImport()}
+      secondaryHint="Import a skill from a .json file. You'll see its steps before it's saved."
+      description={
+        noSkills ? (
+          "A skill opens a live shell on each host you check and drives it: running commands, waiting for prompts, and answering them. You watch every host's terminal while it happens."
+        ) : (
+          <>
+            A skill opens a live shell on each host you check and drives it:
+            running commands, waiting for prompts, and answering them. Because
+            it's a real shell, it can become root and stay root, work through
+            questions, and handle programs that repaint the screen, and you
+            watch every host's terminal while it happens.
+            <span className="mt-3 block">
+              {railCollapsed
+                ? "Open the rail on the left, check some hosts, then press play on a skill."
+                : "Check some hosts on the left, then press play on a skill."}
+            </span>
+          </>
+        )
+      }
+      helpSection={HELP_SKILLS}
+      onOpenHelp={onOpenHelp}
+    />
+  );
+
   return (
     <div className="flex h-full min-h-0">
       {/* Collapsed: nothing but the way back. Deliberately not a dot-and-
@@ -615,8 +660,10 @@ export function SkillsPage({
         {view.kind === "overview" ? (
           // Looked up fresh on every render rather than carried in the view, so
           // saving an edit redraws the flow map immediately. Gone means it was
-          // deleted from under us; the rail's empty state covers that.
-          overviewSkill && (
+          // deleted from under us, and then this is the empty panel rather than
+          // nothing: the rail may be collapsed, and its "No skills yet." has no
+          // button of its own.
+          overviewSkill ? (
             <SkillOverview
               skill={overviewSkill}
               canRun={sel.selected.size > 0 && !run.active}
@@ -628,6 +675,8 @@ export function SkillsPage({
               onExport={() => void exportOne(overviewSkill)}
               onClose={() => setView({ kind: "idle" })}
             />
+          ) : (
+            idlePanel
           )
         ) : view.kind === "edit" ? (
           <SequenceBuilder
@@ -661,36 +710,9 @@ export function SkillsPage({
             onRun={(params, preflight) => startRun(view.skill, params, preflight)}
           />
         ) : view.kind === "idle" ? (
-          // Nothing yet, so the same centred block Hosts and Templates show on
-          // a fresh install: what this is, the one button, and the way to the
-          // page that explains it. With skills in the list it goes back to
-          // describing what to do with them.
-          model.skills.length === 0 && !model.loading ? (
-            <EmptyState
-              icon={WandSparklesIcon}
-              title="Skills"
-              actionLabel="Create your first skill"
-              onAction={() => openEditor({ skill: null, from: "list" })}
-              actionHint="Build a skill: a sequence of steps run over a live shell on each checked host"
-              description="A skill opens a live shell on each host you check and drives it: running commands, waiting for prompts, and answering them. You watch every host's terminal while it happens."
-              helpSection={HELP_SKILLS}
-              onOpenHelp={onOpenHelp}
-            />
-          ) : (
-            <div className="mx-auto max-w-lg px-6 py-16 text-center">
-              <h2 className="text-lg font-semibold">Skills</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                A skill opens a live shell on each host you check and drives it:
-                running commands, waiting for prompts, and answering them. Because
-                it's a real shell, it can become root and stay root, work through
-                questions, and handle programs that repaint the screen, and you
-                watch every host's terminal while it happens.
-              </p>
-              <p className="mt-3 text-sm text-muted-foreground">
-                Check some hosts on the left, then press play on a skill.
-              </p>
-            </div>
-          )
+          // Nothing open: the same centred block Hosts and Templates show, with
+          // the text under it depending on whether there are skills to run.
+          idlePanel
         ) : null}
       </div>
 
