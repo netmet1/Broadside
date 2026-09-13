@@ -68,7 +68,8 @@ export type GridLayout = {
 
   /** Panes in stable creation order, the DOM order they are rendered in. */
   paneOrder: TermSession[];
-  /** Tiles the grid actually lays out (creation order, exclusions removed). */
+  /** Tiles the grid actually lays out (creation order, with the tiles hidden
+   * from the grid and the kinds hidden by the Filter removed). */
   gridTiles: TermSession[];
   /** How many tiles the grid shows. Drives the 1 / 2 / 3+ layout. */
   gridCount: number;
@@ -130,11 +131,16 @@ export type GridLayout = {
 
 export function useGridLayout({
   sessions,
+  filteredOut,
   visible,
   maximized,
   paneRef,
 }: {
   sessions: TermSession[];
+  /** Sessions the View menu's Filter is hiding. They claim no tile, exactly as
+   * a tab hidden from the grid does, so the count, the slots and the short-row
+   * fill all agree with what is on screen and the grid has no holes. */
+  filteredOut: ReadonlySet<string>;
   visible: boolean;
   maximized: boolean;
   /** The element the tiles are laid out in. Measured rather than assumed: how
@@ -231,12 +237,15 @@ export function useGridLayout({
   if (liveExcluded !== excludedFromGrid) setExcludedFromGrid(liveExcluded);
 
   const gridTiles = useMemo(
-    () => paneOrder.filter((s) => !excludedFromGrid.has(s.id)),
-    [paneOrder, excludedFromGrid],
+    () =>
+      paneOrder.filter(
+        (s) => !excludedFromGrid.has(s.id) && !filteredOut.has(s.id),
+      ),
+    [paneOrder, excludedFromGrid, filteredOut],
   );
   // How many tiles the grid shows, drives the fill/split/scroll layout (B3).
-  // Excluded panes don't count, so hiding one of three tiles gives the real
-  // two-up split rather than a two-up-shaped hole.
+  // Excluded and filtered panes don't count, so hiding one of three tiles gives
+  // the real two-up split rather than a two-up-shaped hole.
   const gridCount = gridTiles.length;
 
   // Grid layout prefs (Settings -> Grid): pinned column count and character-based
