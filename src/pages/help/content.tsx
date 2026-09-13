@@ -334,7 +334,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-overview",
     title: "Overview and getting started",
     keywords:
-      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout three and a half seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key",
+      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout three and a half seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key session timeout 30m reminder fourth item bottom bar timeout is on open on a different tab start page startup tab",
     body: (
       <>
         <Lead>
@@ -353,7 +353,9 @@ export const SECTIONS: HelpSection[] = [
             <Nav>About</Nav> sit at
             the bottom. The rail collapses to icons only on narrow windows, or
             with the collapse button at the top. Drag its right edge to resize
-            it, or double-click that edge to reset the width.
+            it, or double-click that edge to reset the width. Broadside opens
+            on <Nav>Hosts</Nav>; <Nav>Settings → Startup</Nav> picks a
+            different first tab.
           </p>
           <H3>Finding your way</H3>
           <Bullets>
@@ -382,6 +384,13 @@ export const SECTIONS: HelpSection[] = [
               clock; what it catches is a pointer left resting on a button with
               the room empty. Turning hints
               off in <Nav>Settings</Nav> leaves them showing all the time.
+              <br />
+              While the session timeout is switched on (<Nav>Settings →
+              Sessions</Nav>), a fourth item joins them:{" "}
+              <Nav>Session timeout 30m</Nav>, with whatever length you set. It
+              is there because the timeout closes shells without asking, so
+              having it on should not be something you have to remember. It
+              goes when you switch the timeout off.
             </li>
             <li>
               The current app version is shown next to the Broadside name at
@@ -805,6 +814,9 @@ export const SECTIONS: HelpSection[] = [
           </Bullets>
           <p>
             Choosing it on one template takes it off whichever one had it.
+            Either on position opens Broadside on <Nav>Terminals</Nav>, so while
+            a template has it, <Nav>Settings → Startup</Nav> is greyed and
+            names the template holding it.
             Warnings you turn off with a{" "}
             <em>do not warn me about this again</em> box are listed in{" "}
             <SectionLink id="help-sec-security">Security</SectionLink>, where
@@ -1162,7 +1174,9 @@ export const SECTIONS: HelpSection[] = [
               ordinary. A pane closed this way keeps its scrollback, says in
               amber that the timeout is what closed it, links to the setting, and
               offers <Nav>Reconnect</Nav>. Local shells and serial consoles are
-              never closed by it.
+              never closed by it. While it is on, the bottom left of the status
+              bar says so, as <Nav>Session timeout 30m</Nav>, so a timeout left
+              switched on is never a surprise.
             </li>
           </Bullets>
           <H3>Working with tabs</H3>
@@ -2794,16 +2808,29 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored backup from someone else untrusted backup file",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored backup from someone else untrusted backup file startup start page open on which tab first tab home greyed template holds startup panel table of contents left side section list highlight follows scroll jump to hidden narrow window",
     body: (
       <>
         <Lead>
-          <Nav>Settings</Nav> is where you tune how Broadside behaves. Use the
-          search box at the top to jump straight to a section.
+          <Nav>Settings</Nav> is where you tune how Broadside behaves. It is
+          laid out like this page: a panel down the left lists every section,
+          the search box at its top narrows the list and the page together, the
+          section you are reading is lit as you scroll, and clicking a name goes
+          there. On a narrower window the panel steps aside, and the search box
+          and a <Nav>Jump to</Nav> list sit in the page header instead.
         </Lead>
         <Detail>
           <H3>What you can change</H3>
           <Bullets>
+            <li>
+              <Nav>Startup</Nav>: which tab Broadside opens on.{" "}
+              <Nav>Hosts</Nav> until you choose another, and after a{" "}
+              <Nav>Reset</Nav>. While a template is set to open at startup the
+              choice is greyed, because that template decides: it opens on{" "}
+              <Nav>Terminals</Nav>. The note under it names the template, and
+              setting that template back to <em>Don&apos;t open at startup</em>{" "}
+              frees the choice again.
+            </li>
             <li>
               <Nav>Performance</Nav>: how many hosts the app talks to at once.
             </li>

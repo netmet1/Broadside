@@ -21,6 +21,7 @@ import { AboutDialog } from "@/components/AboutDialog";
 import { StatusBar } from "@/components/StatusBar";
 import logoUrl from "@/assets/rail_image.png";
 import { useHint, useStatus } from "@/lib/status";
+import { pageLabel } from "@/lib/pages";
 import { useAppVersion } from "@/lib/useAppVersion";
 import { cn } from "@/lib/utils";
 
@@ -50,61 +51,61 @@ const NAV_ITEMS: {
 }[] = [
   {
     page: "hosts",
-    label: "Hosts",
+    label: pageLabel("hosts"),
     icon: ServerIcon,
     hint: HOSTS_NAV_HINT,
   },
   {
     page: "templates",
-    label: "Templates",
+    label: pageLabel("templates"),
     icon: LayoutTemplateIcon,
     hint: "Build a saved arrangement of sessions; open it from the Hosts tab",
   },
   {
     page: "terminals",
-    label: "Terminals",
+    label: pageLabel("terminals"),
     icon: TerminalIcon,
     hint: "Interactive terminal sessions, one tab per host",
   },
   {
     page: "broadcast",
-    label: "Broadcast",
+    label: pageLabel("broadcast"),
     icon: RadioTowerIcon,
     hint: "Send one command to many hosts at once",
   },
   {
     page: "ptybroadcast",
-    label: "PTY Broadcast",
+    label: pageLabel("ptybroadcast"),
     icon: CastIcon,
     hint: "Type one command into every open terminal session",
   },
   {
     page: "multiterminal",
-    label: "MultiTerminal",
+    label: pageLabel("multiterminal"),
     icon: LayersIcon,
     hint: "Run a command across all terminals and see every host's output, color-tinted (needs 2+ open)",
   },
   {
     page: "skills",
-    label: "Skills",
+    label: pageLabel("skills"),
     icon: WandSparklesIcon,
     hint: "Run a saved multi-step operation on many hosts, answering prompts as it goes",
   },
   {
     page: "sftp",
-    label: "SFTP",
+    label: pageLabel("sftp"),
     icon: FolderTreeIcon,
     hint: "Browse and transfer files over SFTP",
   },
   {
     page: "logs",
-    label: "Logs",
+    label: pageLabel("logs"),
     icon: ScrollTextIcon,
     hint: "Saved sessions, audit log and command history",
   },
   {
     page: "settings",
-    label: "Settings",
+    label: pageLabel("settings"),
     icon: SettingsIcon,
     hint: "Performance, guard rules and application options",
   },
