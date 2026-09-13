@@ -73,6 +73,11 @@ function pasteToSession(sessionId: string) {
     });
 }
 
+/** A menu that is up and staying up. Radix marks a closing menu
+ * `data-state="closed"` in the same commit that closes it, so this matches only
+ * one the operator is still working in, never one on its way out. */
+const OPEN_MENU_SELECTOR = "[role='menu'][data-state='open']";
+
 export type ConnectionGate = Extract<
   PtyOpenResult,
   { status: "unknown_key" } | { status: "key_mismatch" }
@@ -1348,10 +1353,20 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   // renderer has woken up, and a fit that early is what dragged returning grid
   // tiles to the top of their scrollback and killed their scroll wheel
   // (smoke 46-3, and the banner-instead-of-prompt bug before it).
+  //
+  // Not while the keyboard is in a menu that is staying open. View > Filter
+  // keeps its menu up while kinds are ticked, and ticking one back on shows its
+  // panes: each of them taking the keyboard moved focus out of the menu, which
+  // Radix reads as a click away, and the menu shut after every tick in Grid
+  // (prompts110, smoke 70 C). A menu that closed on the choice that showed this
+  // pane (a session picked from Sessions) is already marked closed by this
+  // frame, so the keyboard still follows the choice there.
   useEffect(() => {
     if (!visible) return;
     const raf = requestAnimationFrame(() => {
-      if (phaseRef.current.kind === "open") termRef.current?.focus();
+      if (phaseRef.current.kind !== "open") return;
+      if (document.activeElement?.closest(OPEN_MENU_SELECTOR)) return;
+      termRef.current?.focus();
     });
     return () => cancelAnimationFrame(raf);
   }, [visible]);
