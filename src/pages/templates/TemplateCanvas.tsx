@@ -379,37 +379,47 @@ export function TemplateCanvas({
                   Grid settings
                 </button>
               </PopoverTrigger>
-              <PopoverContent side="top" align="start" className="w-80">
-                <p className="mb-3 text-xs text-muted-foreground">
-                  Broadside&apos;s Grid settings, the same four the Terminals
-                  grid lays itself out by. A template stores no layout of its
-                  own, so a change here is a change everywhere.
-                </p>
-                <div className="grid gap-3">
-                  <GridFields f={gridFields} compact />
-                </div>
-                {/* The words are a label and only the gear goes anywhere: the
-                    same gear the Settings tab wears in the sidebar. */}
-                {onOpenGridSettings && (
-                  <div className="mt-3 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                    <span>Grid Settings</span>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => {
-                        setGridOpen(false);
-                        onOpenGridSettings();
-                      }}
-                      aria-label="Open Grid Settings"
-                      {...hint(
-                        "Open the Settings tab at Grid, for Strict and the three defaults",
-                      )}
-                    >
-                      <SettingsIcon />
-                    </Button>
+              {/* Mounted only while the page is showing. The page stays mounted
+                  behind a hidden class, and a panel on a hidden page is drawn
+                  against a trigger that is not there: the top-left corner of
+                  the window. Closing it is not enough, and neither is
+                  hideWhenDetached: the painted frames of build 67-7 showed
+                  WebView2 drawing the 100ms fade-out in that corner while the
+                  DOM said the panel was hidden. Unmounted in the same commit
+                  that hides the page, there is nothing left to draw. */}
+              {visible && (
+                <PopoverContent side="top" align="start" className="w-80">
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Broadside&apos;s Grid settings, the same four the Terminals
+                    grid lays itself out by. A template stores no layout of its
+                    own, so a change here is a change everywhere.
+                  </p>
+                  <div className="grid gap-3">
+                    <GridFields f={gridFields} compact />
                   </div>
-                )}
-              </PopoverContent>
+                  {/* The words are a label and only the gear goes anywhere: the
+                      same gear the Settings tab wears in the sidebar. */}
+                  {onOpenGridSettings && (
+                    <div className="mt-3 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                      <span>Grid Settings</span>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => {
+                          setGridOpen(false);
+                          onOpenGridSettings();
+                        }}
+                        aria-label="Open Grid Settings"
+                        {...hint(
+                          "Open the Settings tab at Grid, for Strict and the three defaults",
+                        )}
+                      >
+                        <SettingsIcon />
+                      </Button>
+                    </div>
+                  )}
+                </PopoverContent>
+              )}
             </Popover>{" "}
             lay them out {cols === 1 ? "in one column" : `${cols} across`}, and
             when the last row is short, {ROW_FILL_WORDS[rowFill]}.
