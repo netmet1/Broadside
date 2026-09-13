@@ -68,13 +68,22 @@ export function usePageStatus(status: ReactNode, active = true) {
 export const HINT_BUDGET_PX = 700;
 
 /** Returns a props factory: spread `hint("…")` onto any actionable element to
- * surface a help hint in the status bar on hover/focus. */
+ * surface a help hint in the status bar on hover/focus.
+ *
+ * Pointer events rather than mouse events, and that is the difference between a
+ * greyed control that explains itself and one that says nothing. React will not
+ * call `onMouseEnter` on a disabled `<button>`, `<input>`, `<select>` or
+ * `<textarea>`: react-dom filters it out along with the click family, although
+ * the browser does deliver the event. `onPointerEnter` is not on that list.
+ * Measured with the app's own Button, Input and menu in Edge on 2026-09-13: the
+ * browser raised both events on every disabled control, and only the mouse one
+ * went missing. */
 export function useHint() {
   const { showHint, clearHint } = useStatus();
   return useCallback(
     (text: string) => ({
-      onMouseEnter: () => showHint(text),
-      onMouseLeave: clearHint,
+      onPointerEnter: () => showHint(text),
+      onPointerLeave: clearHint,
       onFocus: () => showHint(text),
       onBlur: clearHint,
     }),

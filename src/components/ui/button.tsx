@@ -5,15 +5,21 @@ import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 /**
- * **A greyed button still answers the mouse.** shadcn ships this base class with
+ * **A greyed button still answers the mouse.** Two things stood between a
+ * disabled button and the one thing the operator most wants when a control has
+ * gone grey: the status-bar line saying why.
+ *
+ * The first is here. shadcn ships this base class with
  * `disabled:pointer-events-none`, which makes a disabled button invisible to
- * the pointer, and that took away the one thing the operator most wants when a
- * control has gone grey: the status-bar line saying why. Chrome dispatches
- * `mouseenter` to a disabled button perfectly well; it is only that class that
- * stopped it. Removing it costs nothing, because `click` is suppressed by the
+ * the pointer. Removing it costs nothing, because `click` is suppressed by the
  * `disabled` attribute itself and not by the pointer-events rule: measured, a
  * disabled button with pointer events fires pointermove and pointerdown and
  * fires no click at all, on itself or on anything behind it.
+ *
+ * The second is React, which will not call `onMouseEnter` on a disabled button
+ * even though the browser delivers the event. That is why `useHint` in
+ * `lib/status` listens for pointer events instead. Undo either and the line is
+ * gone again.
  *
  * That last part is the one real change: a greyed button is now inert rather
  * than transparent, so clicking one no longer falls through to the row behind
