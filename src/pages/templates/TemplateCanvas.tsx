@@ -81,6 +81,7 @@ export function TemplateCanvas({
   onMove,
   onRemove,
   onOpenGridSettings,
+  visible,
 }: {
   items: TemplateItem[];
   sources: ItemSources;
@@ -90,6 +91,9 @@ export function TemplateCanvas({
   onMove: (from: number, to: number) => void;
   onRemove: (index: number) => void;
   onOpenGridSettings?: () => void;
+  /** False while another tab is showing. The page stays mounted, hidden, so an
+   * open Grid settings panel has to be shut from here. */
+  visible: boolean;
 }) {
   const hint = useHint();
   const { prefs: uiPrefs } = useUiPrefs();
@@ -97,6 +101,13 @@ export function TemplateCanvas({
   // for the popover on the line at the foot of the page. Held here rather than
   // inside the popover so it is not rebuilt on every open.
   const gridFields = useGridFields();
+  // Whether that popover is open. Held here so it can be shut from outside the
+  // popover: by the gear, which leaves the page, and by the page being hidden
+  // any other way. Shut during render rather than in an effect, so it is closed
+  // in the same commit that hides the page. Left open, it came back open on the
+  // next visit, and while away it had no trigger to be placed against.
+  const [gridOpen, setGridOpen] = useState(false);
+  if (!visible && gridOpen) setGridOpen(false);
 
   // The Grid settings, live: Settings and this page can both be mounted, so a
   // column count changed there has to arrive here without a restart. Same
@@ -356,7 +367,7 @@ export function TemplateCanvas({
         {items.length > 0 && (
           <>
             Your{" "}
-            <Popover>
+            <Popover open={gridOpen} onOpenChange={setGridOpen}>
               <PopoverTrigger asChild>
                 <button
                   type="button"
@@ -385,7 +396,10 @@ export function TemplateCanvas({
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      onClick={onOpenGridSettings}
+                      onClick={() => {
+                        setGridOpen(false);
+                        onOpenGridSettings();
+                      }}
                       aria-label="Open Grid Settings"
                       {...hint(
                         "Open the Settings tab at Grid, for Strict and the three defaults",

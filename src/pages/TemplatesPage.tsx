@@ -629,6 +629,7 @@ export function TemplatesPage({
           onMove={move}
           onRemove={remove}
           onOpenGridSettings={onOpenGridSettings}
+          visible={visible}
         />
       </div>
 
