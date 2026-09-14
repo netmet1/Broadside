@@ -17,9 +17,10 @@ import { getAppSettings, setHelpHintsEnabled } from "@/lib/tauri/settings";
  *
  * Short on purpose. This is not a reading-time budget, because a reader is
  * moving the mouse and the timer never fires for them; it is how long a hint
- * outlives the last sign of life in the room. Longer felt like the bar was
- * stuck. Anything much shorter would start firing at a slow reader. */
-const HINT_IDLE_MS = 3_500;
+ * outlives the last sign of life in the room. Fifteen seconds felt like the bar
+ * was stuck; 3.5 took the hint away before a still reader had finished it
+ * (prompts111, smoke 70-s2), so 7. */
+const HINT_IDLE_MS = 7_000;
 
 /** How often the idle check runs. Fine enough that the timeout lands within a
  * quarter-second of what it says, and it only ticks while a hint is up. */

@@ -334,7 +334,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-overview",
     title: "Overview and getting started",
     keywords:
-      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout three and a half seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key session timeout 30m reminder fourth item bottom bar timeout is on open on a different tab start page startup tab",
+      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout seven seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key session timeout 30m reminder fourth item bottom bar timeout is on open on a different tab start page startup tab",
     body: (
       <>
         <Lead>
@@ -379,7 +379,7 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Ctrl</Nav> and turn the wheel over a terminal, and watch the
               number rather than guessing. Hover any control and they step aside
               for its hint, then come back when you move off it, or after about
-              three and a half seconds with nobody at the machine. Reading a
+              seven seconds with nobody at the machine. Reading a
               hint counts as being there, because moving the mouse resets that
               clock; what it catches is a pointer left resting on a button with
               the room empty. Turning hints
