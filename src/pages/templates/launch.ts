@@ -19,7 +19,8 @@
 
 import { listHosts, type Host } from "@/lib/tauri/hosts";
 import { listLocalShells, type LocalShell } from "@/lib/tauri/local";
-import { loadProfiles } from "@/lib/localShellProfiles";
+import { loadShellProfiles } from "@/lib/useShellProfiles";
+import type { ShellProfile } from "@/lib/localShellProfiles";
 import type { TemplateItem } from "@/lib/tauri/templates";
 import { resolveItem } from "@/pages/templates/items";
 import { loadShellColors } from "@/lib/terminalColors";
@@ -41,16 +42,19 @@ export type LaunchPlan = {
 export async function planTemplateLaunch(
   items: TemplateItem[],
 ): Promise<LaunchPlan> {
-  const [hosts, shells] = await Promise.all([
+  const [hosts, shells, profiles] = await Promise.all([
     listHosts(),
     // Losing the shells must not cost the hosts: the SSH sessions in this
     // template can still open, and the local ones will say they could not.
     listLocalShells().catch(() => [] as LocalShell[]),
+    // The same for profiles: a profile item that can't be resolved is
+    // reported as missing, and everything else still opens.
+    loadShellProfiles().catch(() => [] as ShellProfile[]),
   ]);
   const sources = {
     hostsById: new Map(hosts.map((h) => [h.id, h] as const)),
     shellsById: new Map(shells.map((s) => [s.id, s] as const)),
-    profilesById: new Map(loadProfiles().map((p) => [p.id, p] as const)),
+    profilesById: new Map(profiles.map((p) => [p.id, p] as const)),
     shellColors: loadShellColors() as Record<string, string | null | undefined>,
   };
 

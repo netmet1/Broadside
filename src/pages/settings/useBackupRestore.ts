@@ -76,6 +76,7 @@ export function useBackupRestore() {
       if (
         report.dropped_terminals > 0 ||
         report.cleared_host_keys > 0 ||
+        report.cleared_startup_commands > 0 ||
         report.sudo_autofill_disabled
       ) {
         const parts: string[] = [];
@@ -84,6 +85,13 @@ export function useBackupRestore() {
             `${report.dropped_terminals} custom local shell${
               report.dropped_terminals === 1 ? "" : "s"
             } not restored (re-add under Settings)`,
+          );
+        }
+        if (report.cleared_startup_commands > 0) {
+          parts.push(
+            `${report.cleared_startup_commands} shell profile startup command${
+              report.cleared_startup_commands === 1 ? "" : "s"
+            } emptied (type them again in the + launcher)`,
           );
         }
         if (report.cleared_host_keys > 0) {

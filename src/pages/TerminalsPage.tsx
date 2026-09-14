@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
-  CopyIcon,
   CopyPlusIcon,
   Grid2x2Icon,
   Grid2x2XIcon,
@@ -11,7 +10,6 @@ import {
   PencilIcon,
   PlusIcon,
   RotateCcwIcon,
-  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -74,15 +72,11 @@ import {
 } from "@/lib/localShellPrefs";
 import { isTintable } from "@/lib/terminalColors";
 import { useShellColors } from "@/lib/useShellColors";
-import {
-  loadProfiles,
-  duplicateProfile,
-  removeProfile,
-  saveProfiles,
-  upsertProfile,
-  type ShellProfile,
-} from "@/lib/localShellProfiles";
+import { type ShellProfile } from "@/lib/localShellProfiles";
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
+import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
+import { ProfileLauncherList } from "@/pages/terminals/ProfileLauncherList";
+import { useProfileActions } from "@/pages/terminals/useProfileActions";
 import { useGridLayout } from "@/pages/terminals/useGridLayout";
 import { useGridResize } from "@/pages/terminals/useGridResize";
 import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
@@ -458,51 +452,27 @@ export function TerminalsPage({
     [onDuplicateSession],
   );
 
-  // Saved launch profiles (localStorage), re-read whenever the page is shown so
-  // an edit made in the dialog on another visit reflects on return, like
-  // disabledShells. Managed inline from the "+" launcher.
-  const [profiles, setProfiles] = useState<ShellProfile[]>(loadProfiles);
-  // Adjusted during render for the same reason as the hide list above: reading
-  // localStorage is synchronous, so an effect only delays showing the truth.
-  const [wasVisibleForProfiles, setWasVisibleForProfiles] = useState(visible);
-  if (wasVisibleForProfiles !== visible) {
-    setWasVisibleForProfiles(visible);
-    if (visible) setProfiles(loadProfiles());
-  }
+  // Saved launch profiles: in the database since build 69, re-read whenever the
+  // page is shown, and managed inline from the "+" launcher. Every write and
+  // the import preview live in useProfileActions.
+  const {
+    profiles,
+    loading: profilesLoading,
+    saveProfile,
+    deleteProfile,
+    duplicateProfile,
+    reorderProfiles,
+    exportProfiles,
+    importRows,
+    importing,
+    startImport,
+    cancelImport,
+    confirmImport,
+  } = useProfileActions(visible);
   // The profile editor: null = closed; { profile: null } = new; else edit.
   const [profileEdit, setProfileEdit] = useState<{
     profile: ShellProfile | null;
   } | null>(null);
-
-  const persistProfiles = useCallback((next: ShellProfile[]) => {
-    setProfiles(next);
-    saveProfiles(next);
-  }, []);
-  const saveProfile = useCallback(
-    (profile: ShellProfile) => {
-      persistProfiles(upsertProfile(loadProfiles(), profile));
-    },
-    [persistProfiles],
-  );
-  const deleteProfile = useCallback(
-    (id: string) => {
-      persistProfiles(removeProfile(loadProfiles(), id));
-    },
-    [persistProfiles],
-  );
-  /** Copy a profile, named so the two can be told apart, sitting directly
-   * under the one it came from. The whole point is the profiles that differ by
-   * one field: the same pwsh in a different folder, the same folder running a
-   * different command. Building the second from scratch is retyping the first. */
-  const duplicateProfileById = useCallback(
-    (id: string) => {
-      const result = duplicateProfile(loadProfiles(), id);
-      if (!result) return;
-      persistProfiles(result.profiles);
-      toast.success(`Duplicated as "${result.copy.label}"`);
-    },
-    [persistProfiles],
-  );
 
   /**
    * Deleting a profile takes a double-click and then an answer.
@@ -1965,137 +1935,42 @@ export function TerminalsPage({
                     {/* Saved launch profiles: a named shell + folder + optional
                         startup command. Shown regardless of the hide-list (a
                         profile may launch a shell hidden from the plain list) and
-                        managed inline via the editor dialog. */}
-                    <div className="mt-1 border-t border-border/60 pt-1">
-                      <div className="flex items-center justify-between px-2 py-1">
-                        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                          Profiles
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShellMenuOpen(false);
-                            setProfileEdit({ profile: null });
-                          }}
-                          className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-                          {...hint("Create a saved shell profile")}
-                        >
-                          <PlusIcon className="h-3.5 w-3.5" /> New
-                        </button>
-                      </div>
-                      {profiles.length === 0 ? (
-                        <p className="px-2 py-1 text-xs text-muted-foreground">
-                          None yet. A profile opens a shell in a chosen folder and
-                          can run a command on start.
-                        </p>
-                      ) : (
-                        profiles.map((p) => {
-                          // A profile can outlive a removed WSL distro; flag one
-                          // whose shell isn't currently detected.
-                          const shell = localShells.find(
-                            (s) => s.id === p.shellId,
-                          );
-                          // The colour the tab will come out, so the launcher
-                          // shows the same thing the tab strip will: the
-                          // profile's own if it set one, otherwise its shell's.
-                          const profileColor =
-                            p.color || shellColors[shell?.kind ?? ""] || null;
-                          return (
-                            <div
-                              key={p.id}
-                              className="group flex items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => openProfile(p)}
-                                className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                                title={
-                                  shell
-                                    ? `${p.shellId}${p.cwd ? `: ${p.cwd}` : ""}`
-                                    : "This profile's shell isn't available on this machine"
-                                }
-                              >
-                                <LocalShellIcon
-                                  kind={shell?.kind ?? "cmd"}
-                                  className={cn(
-                                    "h-3.5 w-3.5 shrink-0",
-                                    !isTintable(profileColor) &&
-                                      "text-muted-foreground",
-                                  )}
-                                  style={
-                                    isTintable(profileColor)
-                                      ? { color: profileColor }
-                                      : undefined
-                                  }
-                                />
-                                <span
-                                  className={cn(
-                                    "truncate",
-                                    !shell &&
-                                      "text-muted-foreground line-through",
-                                  )}
-                                >
-                                  {p.label}
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  cancelDeleteHint();
-                                  setShellMenuOpen(false);
-                                  setProfileEdit({ profile: p });
-                                }}
-                                aria-label={`Edit ${p.label}`}
-                                title="Edit profile"
-                                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
-                              >
-                                <PencilIcon className="h-3.5 w-3.5" />
-                              </button>
-                              {/* The menu stays open: duplicating is what you
-                                  do when you want two or three of something,
-                                  and closing the list after each one would
-                                  make you reopen it to do the next. */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  cancelDeleteHint();
-                                  duplicateProfileById(p.id);
-                                }}
-                                aria-label={`Duplicate ${p.label}`}
-                                title="Duplicate profile"
-                                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
-                              >
-                                <CopyIcon className="h-3.5 w-3.5" />
-                              </button>
-                              {/* A double-click, and then the dialog. A profile
-                                  is saved work with no undo behind it, and
-                                  this button sits a few pixels from Edit in a
-                                  menu people move through quickly. A lone
-                                  click deletes nothing and says why. */}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  // The second click of a double-click arrives
-                                  // here too, carrying detail 2. Only a click
-                                  // that is on its own needs explaining.
-                                  if (e.detail > 1) return;
-                                  hintDeleteGesture();
-                                }}
-                                onDoubleClick={() => {
-                                  cancelDeleteHint();
-                                  setProfileDelete(p);
-                                }}
-                                aria-label={`Delete ${p.label}`}
-                                title="Double-click to delete"
-                                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-red-500 group-hover:opacity-100"
-                              >
-                                <Trash2Icon className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
+                        managed inline: edit, duplicate, delete, drag to reorder,
+                        import and export. Import and export close the menu, since
+                        each opens a file dialog and the import preview. */}
+                    <ProfileLauncherList
+                      profiles={profiles}
+                      loading={profilesLoading}
+                      shells={localShells}
+                      onNew={() => {
+                        setShellMenuOpen(false);
+                        setProfileEdit({ profile: null });
+                      }}
+                      onImport={() => {
+                        setShellMenuOpen(false);
+                        void startImport();
+                      }}
+                      onExport={() => {
+                        setShellMenuOpen(false);
+                        void exportProfiles();
+                      }}
+                      onOpen={openProfile}
+                      onEdit={(p) => {
+                        cancelDeleteHint();
+                        setShellMenuOpen(false);
+                        setProfileEdit({ profile: p });
+                      }}
+                      onDuplicate={(p) => {
+                        cancelDeleteHint();
+                        duplicateProfile(p);
+                      }}
+                      onDeleteClick={hintDeleteGesture}
+                      onDeleteRequest={(p) => {
+                        cancelDeleteHint();
+                        setProfileDelete(p);
+                      }}
+                      onReorder={reorderProfiles}
+                    />
                   </>
                 )}
                 {/* Serial consoles. A COM port is not a shell and does not
@@ -3328,6 +3203,15 @@ export function TerminalsPage({
         }}
       />
 
+      {/* The import preview. Every profile in the file, startup commands in
+          full, before anything is saved. */}
+      <ShellProfileImportDialog
+        rows={importRows}
+        shells={localShells}
+        busy={importing}
+        onCancel={cancelImport}
+        onConfirm={() => void confirmImport()}
+      />
       <ShellProfileDialog
         open={profileEdit !== null}
         onOpenChange={(open) => {

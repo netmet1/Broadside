@@ -13,6 +13,7 @@ pub mod hosts;
 pub mod omni_history;
 pub mod pty_history;
 pub mod settings;
+pub mod shell_profiles;
 pub mod skills;
 pub mod templates;
 
@@ -281,6 +282,27 @@ const MIGRATIONS: &[&str] = &[
         startup     TEXT NOT NULL DEFAULT 'off',
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
+    );",
+    // 23: saved local-shell launch profiles (build 69), moved out of
+    // localStorage. The note on 22 said a profile "stays where it is"; that
+    // changed when Settings > Reset everything cleared localStorage and every
+    // profile with it. A profile is content, not a preference. See
+    // db/shell_profiles.rs.
+    //
+    // `id` is text because templates already reference a profile by its uuid.
+    // `label` is not UNIQUE: an import collision is renamed, not failed.
+    // `startup_command` is typed into a shell on launch, which is why a restore
+    // clears it (commands::backup::harden_restored_db).
+    "CREATE TABLE IF NOT EXISTS shell_profiles (
+        id              TEXT PRIMARY KEY,
+        label           TEXT NOT NULL,
+        shell_id        TEXT NOT NULL,
+        cwd             TEXT NOT NULL DEFAULT '',
+        startup_command TEXT NOT NULL DEFAULT '',
+        color           TEXT NOT NULL DEFAULT '',
+        sort_order      INTEGER NOT NULL DEFAULT 0,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
     );",
 ];
 

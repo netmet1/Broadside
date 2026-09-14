@@ -12,6 +12,7 @@ pub mod security;
 pub mod session;
 pub mod sftp;
 pub mod settings;
+pub mod shell_profiles;
 pub mod skilllog;
 pub mod skills;
 pub mod ssh;
