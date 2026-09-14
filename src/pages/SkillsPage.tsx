@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useHint, usePageStatus } from "@/lib/status";
+import { cn } from "@/lib/utils";
 import {
   exportSkill,
   parseSequence,
@@ -436,7 +437,14 @@ export function SkillsPage({
             it's a real shell, it can become root and stay root, work through
             questions, and handle programs that repaint the screen, and you
             watch every host's terminal while it happens.
-            <span className="mt-3 block">
+            {/* Amber while the rail is put away: it is the one step the
+                operator can't see a way to take, so it has to stand out. */}
+            <span
+              className={cn(
+                "mt-3 block",
+                railCollapsed && "font-medium text-amber-600 dark:text-amber-400",
+              )}
+            >
               {railCollapsed
                 ? "Open the rail on the left, check some hosts, then press play on a skill."
                 : "Check some hosts on the left, then press play on a skill."}
