@@ -66,6 +66,13 @@
  * events, so the naive version silences exactly the hint that matters most.
  * The button hangs its hint on a wrapper span; the menu entries take their
  * pointer events back. See both below.
+ *
+ * **Close others**, and the **Close other <kind>** entries under it, side with
+ * the repairs rather than the rule. They are there when there is another
+ * session to close and gone when there is not, and the per-kind entries only
+ * when the others are of two kinds or more, since with one kind they would
+ * repeat Close others word for word. The View menu's **Filter** is the rule
+ * again: greyed, and saying why, until a second kind of session is open.
  */
 
 import { useRef } from "react";
@@ -77,6 +84,7 @@ import {
   EyeOffIcon,
   Grid2x2Icon,
   LayoutGridIcon,
+  ListFilterIcon,
   ListIcon,
   Maximize2Icon,
   Minimize2Icon,
@@ -99,6 +107,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ShortcutBar } from "@/components/ShortcutBar";
@@ -114,6 +125,12 @@ import {
   sessionLabel,
   type TermSession,
 } from "@/pages/terminals/session";
+import {
+  kindCountPhrase,
+  kindPlural,
+  type CloseOthersOptions,
+  type KindCount,
+} from "@/pages/terminals/sessionKinds";
 import { isTintable } from "@/lib/terminalColors";
 import { useShellColors } from "@/lib/useShellColors";
 
@@ -157,6 +174,14 @@ export function TerminalRail({
   hiddenCount,
   onUnhideAll,
   launcher,
+  filterKinds,
+  hiddenKinds,
+  filterHiddenCount,
+  onToggleKind,
+  onShowAllKinds,
+  onHideAllKinds,
+  closeOthers,
+  onCloseOthers,
 }: {
   tabsCompact: boolean;
   toggleTabsCompact: () => void;
@@ -218,6 +243,20 @@ export function TerminalRail({
    * reassemble it would make this file responsible for a menu it has nothing to
    * say about. So the rail owns where it sits and the page owns what it does. */
   launcher: React.ReactNode;
+  /** Every kind of session open, counted over all of them, hidden or not: the
+   * Filter lists what exists, so a hidden kind can be ticked back on. */
+  filterKinds: KindCount[];
+  hiddenKinds: ReadonlySet<string>;
+  /** How many sessions the Filter is hiding. */
+  filterHiddenCount: number;
+  onToggleKind: (kind: string) => void;
+  onShowAllKinds: () => void;
+  onHideAllKinds: () => void;
+  /** What Close others would do for the active session, or null when there is
+   * no active session on screen to keep. */
+  closeOthers: CloseOthersOptions | null;
+  /** Close the others, of one kind or of every kind (null). */
+  onCloseOthers: (kind: string | null) => void;
 }) {
   const hint = useHint();
   const shellColors = useShellColors();
@@ -267,6 +306,21 @@ export function TerminalRail({
   if (gridMode && hiddenCount > 0) {
     sessionsExtras.push("put hidden ones back in the grid");
   }
+  if (closeOthers && closeOthers.total > 0) {
+    sessionsExtras.push("close every other one you can see");
+  }
+
+  // The Filter, and whether it has anything to offer. It is greyed below two
+  // kinds, because hiding the only kind open is hiding everything, but never
+  // while it is hiding something: that is the state it has to be reachable in.
+  const filterOn = hiddenKinds.size > 0;
+  const filterUsable = filterKinds.length >= 2 || filterOn;
+  const everyKindHidden =
+    filterKinds.length > 0 && filterKinds.every((k) => hiddenKinds.has(k.kind));
+  const activeLabel = (() => {
+    const s = sessions.find((x) => x.id === activeId);
+    return s ? `${sessionLabel(s)}${tabSuffix.get(s.id) ?? ""}` : "";
+  })();
   const sessionsHint = `Jump to an open terminal session, end one without closing its tab, ${sessionsExtras
     .map((e) => `${e}, `)
     .join("")}or close them all.`;
@@ -288,6 +342,7 @@ export function TerminalRail({
       gridMode,
       showTwoUpFlip,
       sessions.length > 0,
+      filterOn,
     ].join("|"),
   );
 
@@ -434,12 +489,20 @@ export function TerminalRail({
           can name and everybody feels. */}
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
+          {/* Marked while the Filter is hiding anything, in both widths: a
+              strip with tabs missing from it looks like tabs that closed, and
+              this button is where they are. */}
           <Button
             size={compact ? "icon-sm" : "sm"}
-            variant="outline"
-            aria-label="View"
+            variant={filterOn ? "secondary" : "outline"}
+            aria-label={filterOn ? "View (filter on)" : "View"}
+            className="relative"
             {...hint(
-              "Fullscreen, the tab bar and its labels, tile arrangement and the two reset actions.",
+              filterOn
+                ? `The Filter is hiding ${filterHiddenCount} ${
+                    filterHiddenCount === 1 ? "session" : "sessions"
+                  }, all still running. Open View, then Filter, to show them. Also here: fullscreen, the tab bar, tile arrangement and the two reset actions.`
+                : "Fullscreen, the tab bar and its labels, filtering tabs by kind, tile arrangement and the two reset actions.",
             )}
           >
             <SlidersHorizontalIcon className="h-3.5 w-3.5" />
@@ -448,6 +511,12 @@ export function TerminalRail({
                 View
                 <ChevronDownIcon className="-mr-1 h-3.5 w-3.5 opacity-60" />
               </>
+            )}
+            {filterOn && (
+              <span
+                aria-hidden
+                className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-amber-500"
+              />
             )}
           </Button>
         </DropdownMenuTrigger>
@@ -508,6 +577,88 @@ export function TerminalRail({
               Tab bar
             </DropdownMenuCheckboxItem>
           )}
+
+          {/* Which kinds of session are on screen. A submenu, because the list
+              is as long as the kinds open and would otherwise push every other
+              entry here down by it.
+
+              Every entry keeps the menu open (preventDefault on select): this
+              is somewhere you tick three boxes, not one, and a list that closes
+              after each tick has to be reopened twice to finish.
+
+              Hidden tabs keep running, and everything that lists sessions
+              rather than showing them still reaches them: the Sessions menu,
+              Close all and both broadcast surfaces. Only what is on screen
+              changes, which is all a view menu should change. */}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger
+              disabled={!filterUsable}
+              {...hint(
+                !filterUsable
+                  ? "Filter shows or hides tabs by kind: SSH, each local shell, serial consoles. Open a second kind of session and it turns on."
+                  : filterOn
+                    ? `Hiding ${filterHiddenCount} ${
+                        filterHiddenCount === 1 ? "session" : "sessions"
+                      }. Hidden tabs keep running and come back the moment you tick their kind, or open another one.`
+                    : "Show only some kinds of session: SSH, each local shell, serial consoles. Hidden tabs keep running.",
+              )}
+            >
+              <ListFilterIcon />
+              Filter
+              {filterOn && (
+                <span className="text-xs text-amber-600 dark:text-amber-500">
+                  {filterHiddenCount} hidden
+                </span>
+              )}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem
+                disabled={!filterOn}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  onShowAllKinds();
+                }}
+                {...hint(
+                  filterOn
+                    ? "Show every kind of session again."
+                    : "Every kind is already shown.",
+                )}
+              >
+                All
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={everyKindHidden}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  onHideAllKinds();
+                }}
+                {...hint(
+                  everyKindHidden
+                    ? "Every kind is already hidden."
+                    : "Hide every session, then tick the kinds you want back. Nothing is closed.",
+                )}
+              >
+                None
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {filterKinds.map((k) => (
+                <DropdownMenuCheckboxItem
+                  key={k.kind}
+                  checked={!hiddenKinds.has(k.kind)}
+                  onCheckedChange={() => onToggleKind(k.kind)}
+                  onSelect={(e) => e.preventDefault()}
+                  {...hint(
+                    hiddenKinds.has(k.kind)
+                      ? `Show the ${kindCountPhrase(k, k.count)} again.`
+                      : `Hide the ${kindCountPhrase(k, k.count)}. They keep running.`,
+                  )}
+                >
+                  <span className="truncate">{k.label}</span>
+                  <DropdownMenuShortcut>{k.count}</DropdownMenuShortcut>
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
 
           {/* The one entry that still comes and goes, and the exception proves
               the rule: everything else here is an action that exists and is
@@ -850,6 +1001,45 @@ export function TerminalRail({
                   </span>
                 </DropdownMenuItem>
               )}
+
+              {/* Close others, aimed at the active session because that is the
+                  one this menu marks; any tab's right-click menu offers the same
+                  for that tab. Only the sessions on screen: a tab hidden by the
+                  Filter is not closed by an action about the ones you can see.
+                  Here beside Close all, as its narrower sibling. */}
+              {closeOthers && closeOthers.total > 0 && (
+                <DropdownMenuItem
+                  onSelect={() => onCloseOthers(null)}
+                  {...hint(
+                    closeOthers.total === 1
+                      ? `Close the one other session on screen and keep "${activeLabel}".${filterOn ? " Tabs hidden by the Filter are left alone." : ""}`
+                      : `Close the ${closeOthers.total} other sessions on screen and keep "${activeLabel}" (asks first).${filterOn ? " Tabs hidden by the Filter are left alone." : ""}`,
+                  )}
+                >
+                  <XIcon />
+                  Close others
+                  <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
+                    {closeOthers.total}
+                  </span>
+                </DropdownMenuItem>
+              )}
+              {closeOthers?.perKind.map((k) => (
+                <DropdownMenuItem
+                  key={k.kind}
+                  onSelect={() => onCloseOthers(k.kind)}
+                  {...hint(
+                    `Close the other ${kindCountPhrase(k, k.count)} and keep "${activeLabel}"${
+                      k.count > 1 ? " (asks first)" : ""
+                    }.`,
+                  )}
+                >
+                  <XIcon />
+                  <span className="truncate">Close other {kindPlural(k)}</span>
+                  <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
+                    {k.count}
+                  </span>
+                </DropdownMenuItem>
+              ))}
 
               <DropdownMenuItem
                 onSelect={onCloseAll}

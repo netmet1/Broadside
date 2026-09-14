@@ -334,7 +334,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-overview",
     title: "Overview and getting started",
     keywords:
-      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout three and a half seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key",
+      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout seven seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key session timeout 30m reminder fourth item bottom bar timeout is on open on a different tab start page startup tab",
     body: (
       <>
         <Lead>
@@ -347,13 +347,17 @@ export const SECTIONS: HelpSection[] = [
           <H3>The left rail</H3>
           <p>
             The buttons down the left side switch between the main areas of the
-            app: <Nav>Hosts</Nav>, <Nav>Terminals</Nav>, <Nav>Broadcast</Nav>,{" "}
-            <Nav>PTY Broadcast</Nav>, <Nav>MultiTerminal</Nav>, <Nav>Skills</Nav>,{" "}
-            <Nav>SFTP</Nav>, <Nav>Logs</Nav> and <Nav>Settings</Nav>. <Nav>Help</Nav> and{" "}
-            <Nav>About</Nav> sit at
-            the bottom. The rail collapses to icons only on narrow windows, or
+            app. The tabs you work in run down from the top:{" "}
+            <Nav>Hosts</Nav>, <Nav>Templates</Nav>, <Nav>Terminals</Nav>,{" "}
+            <Nav>Broadcast</Nav>, <Nav>PTY Broadcast</Nav>,{" "}
+            <Nav>MultiTerminal</Nav>, <Nav>Skills</Nav> and <Nav>SFTP</Nav>.
+            The ones for looking back and setting up sit at the bottom:{" "}
+            <Nav>Logs</Nav>, <Nav>Settings</Nav>, <Nav>Help</Nav> and{" "}
+            <Nav>About</Nav>. The rail collapses to icons only on narrow windows, or
             with the collapse button at the top. Drag its right edge to resize
-            it, or double-click that edge to reset the width.
+            it, or double-click that edge to reset the width. Broadside opens
+            on <Nav>Hosts</Nav>; <Nav>Settings → Startup</Nav> picks a
+            different first tab.
           </p>
           <H3>Finding your way</H3>
           <Bullets>
@@ -377,11 +381,18 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Ctrl</Nav> and turn the wheel over a terminal, and watch the
               number rather than guessing. Hover any control and they step aside
               for its hint, then come back when you move off it, or after about
-              three and a half seconds with nobody at the machine. Reading a
+              seven seconds with nobody at the machine. Reading a
               hint counts as being there, because moving the mouse resets that
               clock; what it catches is a pointer left resting on a button with
               the room empty. Turning hints
               off in <Nav>Settings</Nav> leaves them showing all the time.
+              <br />
+              While the session timeout is switched on (<Nav>Settings →
+              Sessions</Nav>), a fourth item joins them:{" "}
+              <Nav>Session timeout 30m</Nav>, with whatever length you set. It
+              is there because the timeout closes shells without asking, so
+              having it on should not be something you have to remember. It
+              goes when you switch the timeout off.
             </li>
             <li>
               The current app version is shown next to the Broadside name at
@@ -805,6 +816,9 @@ export const SECTIONS: HelpSection[] = [
           </Bullets>
           <p>
             Choosing it on one template takes it off whichever one had it.
+            Either on position opens Broadside on <Nav>Terminals</Nav>, so while
+            a template has it, <Nav>Settings → Startup</Nav> is greyed and
+            names the template holding it.
             Warnings you turn off with a{" "}
             <em>do not warn me about this again</em> box are listed in{" "}
             <SectionLink id="help-sec-security">Security</SectionLink>, where
@@ -841,7 +855,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-terminals",
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes advanced grid settings collapsed section starting number seed default unchecking auto lands on your own numbers 80x24 classic terminal size reset defaults just the advanced section session timeout idle close automatically inactivity why did my terminal close by itself left it overnight closed while i was away keep alive keepalive nat firewall state table connection dropped silently hangs after a while disable the timeout never close sleep 120 long running command was closed while it was running foreground background job ampersand tmux screen vim editor full screen program never times out how does it know paste mode plain sh dash device cli no shell integration falls back spinner connecting forever stuck on connecting nothing happening is it frozen hung blank pane black screen after connecting no prompt taking ages slow to open which half is slow signed in waiting for the login screen wireless vpn latency why does it take ten seconds duplicate a profile copy clone make another one like this second profile same shell different folder profile copy numbered delete profile double click doubleclick two clicks confirm dialog ok cancel are you sure guard accidental deletion undo a deleted profile single click does nothing bin trash icon copy of a copy nested copy copy numbering collapses",
+      "terminal tab interactive shell local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes advanced grid settings collapsed section starting number seed default unchecking auto lands on your own numbers 80x24 classic terminal size reset defaults just the advanced section session timeout idle close automatically inactivity why did my terminal close by itself left it overnight closed while i was away keep alive keepalive nat firewall state table connection dropped silently hangs after a while disable the timeout never close sleep 120 long running command was closed while it was running foreground background job ampersand tmux screen vim editor full screen program never times out how does it know paste mode plain sh dash device cli no shell integration falls back spinner connecting forever stuck on connecting nothing happening is it frozen hung blank pane black screen after connecting no prompt taking ages slow to open which half is slow signed in waiting for the login screen wireless vpn latency why does it take ten seconds duplicate a profile copy clone make another one like this second profile same shell different folder profile copy numbered delete profile double click doubleclick two clicks confirm dialog ok cancel are you sure guard accidental deletion undo a deleted profile single click does nothing bin trash icon copy of a copy nested copy copy numbering collapses close others close other tabs keep only this one close everything except this tab close other ssh close other command prompts close other powershell right click a tab menu filter by kind show only ssh hide powershell hide local shells view filter all none tabs missing where did my tabs go hidden by filter select then right click to copy right click copies highlight does not copy any more clipboard overwritten by selecting",
     body: (
       <>
         <Lead>
@@ -1162,7 +1176,9 @@ export const SECTIONS: HelpSection[] = [
               ordinary. A pane closed this way keeps its scrollback, says in
               amber that the timeout is what closed it, links to the setting, and
               offers <Nav>Reconnect</Nav>. Local shells and serial consoles are
-              never closed by it.
+              never closed by it. While it is on, the bottom left of the status
+              bar says so, as <Nav>Session timeout 30m</Nav>, so a timeout left
+              switched on is never a surprise.
             </li>
           </Bullets>
           <H3>Working with tabs</H3>
@@ -1500,15 +1516,23 @@ export const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               <strong className="font-semibold">Copy</strong> by selecting text
-              with the mouse, and the selection is copied to the clipboard as soon
-              as you release the button (no menu, no shortcut needed). A brief{" "}
-              <Nav>Copied to clipboard</Nav> toast confirms it. You can also press{" "}
-              <Nav>Ctrl+Shift+C</Nav> to copy the current selection.
+              with the mouse and then right-clicking, or by pressing{" "}
+              <Nav>Ctrl+Shift+C</Nav>. A brief <Nav>Copied to clipboard</Nav>{" "}
+              toast confirms it and the highlight clears, so the next
+              right-click pastes. Selecting on its own copies nothing: a drag
+              made just to read a line more carefully leaves the clipboard as it
+              was. Double-click selects a word and triple-click a line, and
+              either copies the same way. A pane whose session has closed still
+              copies, which is how you get the last thing it printed out of it.
+              In a program that uses the mouse itself (tmux or vim with the
+              mouse on), hold <Nav>Shift</Nav> while you drag to select past it.
             </li>
             <li>
               <strong className="font-semibold">Paste</strong> with a{" "}
-              <Nav>right-click</Nav> in the terminal, or with{" "}
-              <Nav>Ctrl+Shift+V</Nav>. Plain <Nav>Ctrl+C</Nav> and{" "}
+              <Nav>right-click</Nav> when nothing is selected, or with{" "}
+              <Nav>Ctrl+Shift+V</Nav>. So one button does both halves: select,
+              right-click to copy, then right-click where it should go. Nothing
+              is pasted into a pane whose session has closed. Plain <Nav>Ctrl+C</Nav> and{" "}
               <Nav>Ctrl+V</Nav> are left alone so the shell still receives them
               (for example Ctrl+C to interrupt a running command). In Grid, a
               paste lands in the tile the pointer is over, which is the tile
@@ -1584,7 +1608,8 @@ export const SECTIONS: HelpSection[] = [
             <li>
               With many tabs open, use the <Nav>Sessions</Nav> menu at the top
               right to jump to any terminal; it also holds{" "}
-              <Nav>Close all</Nav>. If the tab you pick is scrolled out of view,
+              <Nav>Close others</Nav> and <Nav>Close all</Nav>. If the tab you
+              pick is scrolled out of view,
               the tab strip scrolls to bring it to the center so you do not have
               to hunt for it.
             </li>
@@ -1606,6 +1631,22 @@ export const SECTIONS: HelpSection[] = [
               telling you nothing is wrong.
             </li>
             <li>
+              <b>Closing everything but one.</b> Right-click a tab and{" "}
+              <Nav>Close others</Nav> closes every other tab on screen and keeps
+              that one, which ends up active. The <Nav>Sessions</Nav> menu has
+              the same entry for the active tab, beside <Nav>Close all</Nav>.
+              When the others are of more than one kind, an entry per kind
+              appears under it, such as <Nav>Close other SSH</Nav> or{" "}
+              <Nav>Close other Command Prompts</Nav>, each with its count, so a
+              strip of mixed tabs can lose its PowerShells and keep its hosts.
+              The entries grow and shrink with what is open: with only SSH tabs
+              there is just <Nav>Close others</Nav>, and with a single tab there
+              is nothing to offer. One tab closes straight away, the same as its
+              x; two or more ask first and list what they will close. Tabs hidden
+              by the <Nav>Filter</Nav> are never closed by it, because it is
+              about the tabs you can see.
+            </li>
+            <li>
               <b>How often you are asked "are you sure".</b> Bulk actions confirm
               first once they would touch more than five sessions, and five is
               only the default: <Nav>Ask before acting on more than</Nav> in{" "}
@@ -1619,17 +1660,22 @@ export const SECTIONS: HelpSection[] = [
               a keystroke you have stopped reading; lower it if a burst that size
               is never something you meant.
               <br />
-              Two things stay outside it. <Nav>Close all</Nav> asks every single
-              time, because it is the one action here that can take away work in
-              progress, and a setting for being asked less often should not be
-              able to reach it. And a launch profile that types a startup command
+              Three things stay outside it. <Nav>Close all</Nav> asks every
+              single time, because it is the one action here that can take away
+              work in progress, and a setting for being asked less often should
+              not be able to reach it. <Nav>Close others</Nav> asks whenever it
+              would close two or more, since the tab you pointed at is the only
+              one you chose and the rest are off to the side of it. And a launch
+              profile that types a startup command
               asks past a single copy whatever the setting says, since every copy
               runs that command again.
             </li>
             <li>
               <b>A second session on the same thing.</b> Hover a tab and one of
               the small icons on it is a copy button; right-click the tab and{" "}
-              <Nav>Open another session</Nav> does the same. It opens a fresh
+              <Nav>Open another session</Nav> does the same. (That right-click
+              menu has everything the tab&apos;s own icons do, plus{" "}
+              <Nav>Close others</Nav>.) It opens a fresh
               session on that host, or another of that local shell, and lands it
               directly after the tab it came from. Nothing is copied across:
               it is a new shell, with its own scrollback. The pair is told apart
@@ -1671,21 +1717,44 @@ export const SECTIONS: HelpSection[] = [
               for tile title bars stay out in the open because they are the ones
               you reach for. Everything else that shapes the view lives under{" "}
               <Nav>View</Nav>: fullscreen again (with the key beside it),{" "}
-              <Nav>Full tab labels</Nav>, <Nav>Tab bar</Nav>, flipping two
-              terminals between side-by-side and top/bottom,{" "}
-              <Nav>Reset grid</Nav> and <Nav>Reset display</Nav>.
+              <Nav>Full tab labels</Nav>, <Nav>Tab bar</Nav>,{" "}
+              <Nav>Filter</Nav>, flipping two terminals between side-by-side and
+              top/bottom, <Nav>Reset grid</Nav> and <Nav>Reset display</Nav>.
+            </li>
+            <li>
+              <b>Showing only some kinds of session.</b> <Nav>View</Nav> &gt;{" "}
+              <Nav>Filter</Nav> lists each kind of session that is open, with how
+              many: <Nav>SSH</Nav>, each local shell as the <Nav>+</Nav> launcher
+              names it (PowerShell, PowerShell 7, Command Prompt, each WSL distro,
+              each custom terminal) and <Nav>Serial consoles</Nav>. A tab opened
+              from a profile counts as the shell it runs. Untick a kind to take
+              its tabs off the strip and its tiles out of the grid, which closes
+              up around them; <Nav>All</Nav> and <Nav>None</Nav> do the lot, and
+              the list stays open while you tick. Hidden sessions keep running
+              and keep everything they print. While anything is hidden the{" "}
+              <Nav>View</Nav> button is marked, the status bar says how many, and{" "}
+              <Nav>Alt+Left</Nav> and <Nav>Alt+Right</Nav> step over them.
+              <br />
+              A hidden kind comes back by itself when you open another session of
+              it, or when you pick one of its sessions from the{" "}
+              <Nav>Sessions</Nav> menu or jump to one from{" "}
+              <Nav>PTY Broadcast</Nav> or <Nav>MultiTerminal</Nav>. Everything
+              that lists sessions rather than showing them still reaches the
+              hidden ones: the <Nav>Sessions</Nav> menu, <Nav>Close all</Nav>,
+              the broadcast rail and <Nav>PTY Broadcast</Nav>. The entry is greyed
+              until a second kind is open, and the filter is not remembered
+              across restarts, so the app always starts with every tab in view.
             </li>
             <li>
               <b>Rolling the tab strip away.</b> <Nav>View</Nav> &gt;{" "}
               <Nav>Tab bar</Nav>, in Grid only, unticks the strip and gives its
-              row to the tiles. The <Nav>+</Nav> launcher does not go with it: it
-              floats over the top right corner of the grid so a new local shell
-              is still one click away. Switch back to <Nav>Tabs</Nav> and the
-              strip returns on its own, because there it is the only way to
-              change session and hiding it would strand you; switch back to Grid
-              and it rolls up again. The choice lasts for as long as the app is
-              running and is not remembered across restarts: it is something you
-              want when the screen is full, not a standing preference.
+              row to the tiles. The <Nav>+</Nav> launcher is not on the strip: it
+              sits at the right-hand end of the controls row above, so it stays
+              where it is. Switch back to <Nav>Tabs</Nav> and the strip returns
+              on its own, because there it is the only way to change session and
+              hiding it would strand you; switch back to Grid and it rolls up
+              again. The choice is remembered across restarts, like the rest of
+              the view.
             </li>
             <li>
               <b>Greyed does not mean gone.</b> An entry that has nothing to act
@@ -2741,16 +2810,29 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored backup from someone else untrusted backup file",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored backup from someone else untrusted backup file startup start page open on which tab first tab home greyed template holds startup panel table of contents left side section list highlight follows scroll jump to hidden narrow window",
     body: (
       <>
         <Lead>
-          <Nav>Settings</Nav> is where you tune how Broadside behaves. Use the
-          search box at the top to jump straight to a section.
+          <Nav>Settings</Nav> is where you tune how Broadside behaves. It is
+          laid out like this page: a panel down the left lists every section,
+          the search box at its top narrows the list and the page together, the
+          section you are reading is lit as you scroll, and clicking a name goes
+          there. On a narrower window the panel steps aside, and the search box
+          and a <Nav>Jump to</Nav> list sit in the page header instead.
         </Lead>
         <Detail>
           <H3>What you can change</H3>
           <Bullets>
+            <li>
+              <Nav>Startup</Nav>: which tab Broadside opens on.{" "}
+              <Nav>Hosts</Nav> until you choose another, and after a{" "}
+              <Nav>Reset</Nav>. While a template is set to open at startup the
+              choice is greyed, because that template decides: it opens on{" "}
+              <Nav>Terminals</Nav>. The note under it names the template, and
+              setting that template back to <em>Don&apos;t open at startup</em>{" "}
+              frees the choice again.
+            </li>
             <li>
               <Nav>Performance</Nav>: how many hosts the app talks to at once.
             </li>
@@ -3160,7 +3242,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-shortcuts",
     title: "Keyboard shortcuts",
     keywords:
-      "keyboard shortcuts keys shortcut matrix table list all hotkeys key bindings chord ctrl shift alt f11 f10 esc escape tab enter arrow alt left right ctrl shift g fullscreen ctrl shift t controls strip ctrl shift c copy ctrl shift v paste ctrl f find search right click paste select mouse copy on select composer history up down shift enter newline sftp commander ctrl click shift click multi select rename commit cancel what does key do reference",
+      "keyboard shortcuts keys shortcut matrix table list all hotkeys key bindings chord ctrl shift alt f11 f10 esc escape tab enter arrow alt left right ctrl shift g fullscreen ctrl shift t controls strip ctrl shift c copy ctrl shift v paste ctrl f find search right click copy paste select then right click highlight mouse copy on select gone composer history up down shift enter newline sftp commander ctrl click shift click multi select rename commit cancel what does key do reference",
     body: (
       <>
         <Lead>

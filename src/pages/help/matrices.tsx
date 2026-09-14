@@ -145,7 +145,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Ctrl+Shift+C</Kbd>,
         where: "Terminals",
-        what: "Copy the selection. A terminal cannot see the Shift, so plain Ctrl+C is untouched and still interrupts what is running.",
+        what: "Copy the selection and clear it, the same as right-clicking it. A terminal cannot see the Shift, so plain Ctrl+C is untouched and still interrupts what is running.",
       },
       {
         keys: <Kbd>Ctrl+Shift+V</Kbd>,
@@ -154,13 +154,13 @@ const SHORTCUTS: ShortcutGroup[] = [
       },
       {
         keys: <Kbd>Right-click</Kbd>,
-        where: "Terminals",
-        what: "Paste, the PuTTY and Windows Terminal way. No context menu appears.",
+        where: "Terminals, Skills",
+        what: "With text selected, copy it (a short toast confirms) and clear the highlight. With nothing selected, paste, the Windows Terminal way. No context menu appears. A skill pane only copies: it never pastes into a run.",
       },
       {
         keys: <Kbd>Select with the mouse</Kbd>,
-        where: "Terminals",
-        what: "Copies as soon as you let go of the button, with a short toast to confirm it. There is no separate copy step.",
+        where: "Terminals, Skills",
+        what: "Highlights and nothing else. Nothing is copied until you right-click or press Ctrl+Shift+C, so a drag made to read a line leaves the clipboard alone. Hold Shift to select past tmux or vim with the mouse on.",
       },
       {
         keys: <Kbd>Ctrl+mouse wheel</Kbd>,

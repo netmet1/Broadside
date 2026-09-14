@@ -21,6 +21,7 @@ import { AboutDialog } from "@/components/AboutDialog";
 import { StatusBar } from "@/components/StatusBar";
 import logoUrl from "@/assets/rail_image.png";
 import { useHint, useStatus } from "@/lib/status";
+import { pageLabel } from "@/lib/pages";
 import { useAppVersion } from "@/lib/useAppVersion";
 import { cn } from "@/lib/utils";
 
@@ -42,71 +43,85 @@ export type Page =
  * the same page in two slightly different ways is worse than either alone. */
 export const HOSTS_NAV_HINT = "Manage SSH connection targets and credentials";
 
-const NAV_ITEMS: {
+type NavItem = {
   page: Page;
   label: string;
   icon: typeof ServerIcon;
   hint: string;
-}[] = [
+};
+
+/** The tabs you work in, down from the top of the rail. */
+const NAV_ITEMS: NavItem[] = [
   {
     page: "hosts",
-    label: "Hosts",
+    label: pageLabel("hosts"),
     icon: ServerIcon,
     hint: HOSTS_NAV_HINT,
   },
   {
     page: "templates",
-    label: "Templates",
+    label: pageLabel("templates"),
     icon: LayoutTemplateIcon,
     hint: "Build a saved arrangement of sessions; open it from the Hosts tab",
   },
   {
     page: "terminals",
-    label: "Terminals",
+    label: pageLabel("terminals"),
     icon: TerminalIcon,
     hint: "Interactive terminal sessions, one tab per host",
   },
   {
     page: "broadcast",
-    label: "Broadcast",
+    label: pageLabel("broadcast"),
     icon: RadioTowerIcon,
     hint: "Send one command to many hosts at once",
   },
   {
     page: "ptybroadcast",
-    label: "PTY Broadcast",
+    label: pageLabel("ptybroadcast"),
     icon: CastIcon,
     hint: "Type one command into every open terminal session",
   },
   {
     page: "multiterminal",
-    label: "MultiTerminal",
+    label: pageLabel("multiterminal"),
     icon: LayersIcon,
     hint: "Run a command across all terminals and see every host's output, color-tinted (needs 2+ open)",
   },
   {
     page: "skills",
-    label: "Skills",
+    label: pageLabel("skills"),
     icon: WandSparklesIcon,
     hint: "Run a saved multi-step operation on many hosts, answering prompts as it goes",
   },
   {
     page: "sftp",
-    label: "SFTP",
+    label: pageLabel("sftp"),
     icon: FolderTreeIcon,
     hint: "Browse and transfer files over SFTP",
   },
+];
+
+/** Where you go to look back or set things up, at the foot of the rail above
+ * Help (prompts111). Kept apart from the working tabs so those stay together. */
+const FOOT_NAV_ITEMS: NavItem[] = [
   {
     page: "logs",
-    label: "Logs",
+    label: pageLabel("logs"),
     icon: ScrollTextIcon,
     hint: "Saved sessions, audit log and command history",
   },
   {
     page: "settings",
-    label: "Settings",
+    label: pageLabel("settings"),
     icon: SettingsIcon,
     hint: "Performance, guard rules and application options",
+  },
+  {
+    page: "help",
+    label: pageLabel("help"),
+    icon: CircleHelpIcon,
+    hint: "Guided documentation for every tab and feature",
   },
 ];
 
@@ -244,6 +259,37 @@ export function AppShell({
   // separator and status bar via CSS and show a slim banner above the terminal.
   // Both fullscreen modes hide the same chrome; only the banner differs.
   const chromeHidden = maximized || gridFullscreen;
+
+  const navButton = ({ page, label, icon: Icon, hint: navHint }: NavItem) => (
+    <button
+      key={page}
+      type="button"
+      onClick={() => onNavigate(page)}
+      title={collapsed ? label : undefined}
+      {...hint(navHint)}
+      className={cn(
+        "relative flex w-full items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-sm font-medium",
+        collapsed && "justify-center px-0",
+        active === page
+          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {!collapsed && <span className="truncate">{label}</span>}
+      {page === "terminals" && terminalCount > 0 && (
+        <span
+          className={cn(
+            "shrink-0 rounded-full bg-sidebar-accent px-1.5 text-xs text-sidebar-accent-foreground",
+            collapsed ? "absolute -top-0.5 right-0.5" : "ml-auto",
+          )}
+        >
+          {terminalCount}
+        </span>
+      )}
+    </button>
+  );
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       {maximized && (
@@ -325,35 +371,7 @@ export function AppShell({
             </button>
           </div>
           <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-            {NAV_ITEMS.map(({ page, label, icon: Icon, hint: navHint }) => (
-              <button
-                key={page}
-                type="button"
-                onClick={() => onNavigate(page)}
-                title={collapsed ? label : undefined}
-                {...hint(navHint)}
-                className={cn(
-                  "relative flex w-full items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-sm font-medium",
-                  collapsed && "justify-center px-0",
-                  active === page
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {!collapsed && <span className="truncate">{label}</span>}
-                {page === "terminals" && terminalCount > 0 && (
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full bg-sidebar-accent px-1.5 text-xs text-sidebar-accent-foreground",
-                      collapsed ? "absolute -top-0.5 right-0.5" : "ml-auto",
-                    )}
-                  >
-                    {terminalCount}
-                  </span>
-                )}
-              </button>
-            ))}
+            {NAV_ITEMS.map(navButton)}
           </nav>
           <div className="shrink-0 space-y-1 p-2">
             {!collapsed && width >= SIDEBAR_MAX_WIDTH && (
@@ -376,22 +394,7 @@ export function AppShell({
                 />
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => onNavigate("help")}
-              title={collapsed ? "Help" : undefined}
-              {...hint("Guided documentation for every tab and feature")}
-              className={cn(
-                "flex w-full items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-sm font-medium",
-                collapsed && "justify-center px-0",
-                active === "help"
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-              )}
-            >
-              <CircleHelpIcon className="h-4 w-4 shrink-0" />
-              {!collapsed && <span className="truncate">Help</span>}
-            </button>
+            {FOOT_NAV_ITEMS.map(navButton)}
             <button
               type="button"
               onClick={() => setAboutOpen(true)}

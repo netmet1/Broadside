@@ -15,6 +15,7 @@ export function sectionDomId(title: string): string {
 
 /** Section render order, also the jump-to dropdown list. */
 export const SECTION_TITLES = [
+  "Startup",
   "Performance",
   "Network probe",
   "Destructive command guard",
@@ -46,6 +47,8 @@ export const SECTION_TITLES = [
  * Keep them lowercase; the filter lowercases the query.
  */
 export const SECTION_KEYWORDS: Record<string, string> = {
+  Startup:
+    "start startup launch open on opens on first tab home default page landing which tab when broadside starts begin boot initial terminals instead of hosts template startup greyed disabled",
   Performance: "sessions limit concurrent max how many cpu cores memory ram probe suggested capacity timeout slow confirm ask first guard threshold bulk are you sure reconnect all disconnect all close failed close all too many stop asking me",
   "Network probe": "ping latency reachable test hosts responds round trip ms speed check offline",
   "Destructive command guard": "rm dangerous confirm warning block rules pattern regex mkfs dd shutdown reboot guard rails safety typed confirmation",
@@ -64,13 +67,15 @@ export const SECTION_KEYWORDS: Record<string, string> = {
   "Audit log": "logs history record trail who what when broadcasts host keys sessions opened turn off",
   Security:
     "sudo password auto fill autofill admin lock passcode unlock protect credentials secrets argon2 privileged shell history bash_history history -d delete entry up arrow recalls a long line setup line broadside typed it not me keep my history clean histcontrol ignorespace leave my host alone do not run anything extra stop deleting dismissed warnings restore warnings do not warn me again stop asking turn warnings back on template startup export",
-  Reset: "defaults factory restore preferences start over clear settings",
+  Reset: "defaults factory restore preferences start over clear settings start page",
   "Danger Zone": "delete all hosts wipe destroy remove everything purge credentials",
 };
 
-// The search filter and scroll position persist across tab switches (Settings
-// unmounts on navigation) but NOT across restarts, sessionStorage clears when
-// the app window closes. Matches the existing rail/sort persistence pattern.
+// The search filter and the section scrolled to. Settings stays mounted once it
+// has been opened, so a trip to another tab keeps both without any storage;
+// sessionStorage is for the reload a restore does, and it clears when the app
+// window closes, so neither survives a restart. Matches the existing rail/sort
+// persistence pattern.
 export const SEARCH_STORAGE_KEY = "settings-search";
 export const SECTION_SCROLL_KEY = "settings-scroll-section";
 /** Sticky-header height to discount when finding the section nearest the top

@@ -4,7 +4,7 @@
  * Before this, a grid of terminals had *three* separate notions of "the pane
  * you mean", and showed none of them:
  *
- *   - right-click paste, copy-on-select and Ctrl+wheel zoom went to the pane
+ *   - the right-click (copy or paste) and Ctrl+wheel zoom went to the pane
  *     under the **pointer** (they are listeners on each pane's own container);
  *   - typed keys went to the pane holding **DOM focus**;
  *   - Find and the shortcut bar went to **`activeId`**, set only by a click.

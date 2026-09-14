@@ -5,6 +5,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import "@xterm/xterm/css/xterm.css";
 import { useTheme } from "next-themes";
 
+import { copyTerminalSelection } from "@/lib/terminalClipboard";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import { onPtyData, ptyResize } from "@/lib/tauri/pty";
@@ -137,13 +138,19 @@ export function SkillTerminalPane({
       syncSize(cols, rows);
     });
 
-    // Copy-on-select, matching the terminal tabs.
-    const onMouseUp = () => {
-      const sel = term.getSelection();
-      if (sel) navigator.clipboard?.writeText(sel).catch(() => {});
+    // Select, then right-click to copy, matching the terminal tabs (see
+    // lib/terminalClipboard). Without a selection a right-click does nothing
+    // here rather than paste: this pane only takes keys while the run has
+    // handed the operator the keyboard, and a right-click that typed the
+    // clipboard into a shell the engine is mid-step on is the very stray
+    // keystroke `interactive` exists to stop. The native menu is suppressed
+    // either way, or WebView2's own (Back, Refresh, Inspect) opens over the pane.
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      copyTerminalSelection(term);
     };
     const el = containerRef.current;
-    el?.addEventListener("mouseup", onMouseUp);
+    el?.addEventListener("contextmenu", onContextMenu);
 
     // Open the terminal only once its container actually has a size, and refit
     // on every later resize. Opening while the pane is hidden (display:none
@@ -194,7 +201,7 @@ export function SkillTerminalPane({
       resizeSub.dispose();
       observer.disconnect();
       io?.disconnect();
-      el?.removeEventListener("mouseup", onMouseUp);
+      el?.removeEventListener("contextmenu", onContextMenu);
       void unlistenData.then((fn) => fn());
       unregisterPaneSnapshot(sessionId);
       term.dispose();

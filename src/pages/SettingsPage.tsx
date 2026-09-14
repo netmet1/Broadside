@@ -68,12 +68,13 @@ import {
 import {
   SCOPE_LABELS,
   SECTION_KEYWORDS,
-  SECTION_SCROLL_KEY,
   SECTION_TITLES,
   SEARCH_STORAGE_KEY,
-  STICKY_OFFSET_PX,
   sectionDomId,
 } from "@/pages/settings/constants";
+import { SettingsToc } from "@/pages/settings/SettingsToc";
+import { StartupSection } from "@/pages/settings/StartupSection";
+import { useSectionNav } from "@/pages/settings/useSectionNav";
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { GridSection } from "@/pages/settings/GridSection";
 import { HostColumnsBox } from "@/pages/settings/HostColumnsBox";
@@ -253,6 +254,19 @@ export function SettingsPage({
   );
   const anyVisible = SECTION_TITLES.some(sectionVisible);
 
+  // Which section is in view, remembering it between visits, and going to one
+  // from the panel or the Jump to list. See ./settings/useSectionNav.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const clearQuery = useCallback(() => setQuery(""), []);
+  const nav = useSectionNav({
+    rootRef,
+    visible,
+    ready: settings !== null,
+    focusSection,
+    clearQuery,
+    layoutKey: query,
+  });
+
   // Progressive reveal: on first mount, render the first section right away then
   // one more each frame. The first paint stays cheap (the page feels instant)
   // and the cost of building this large tree is spread across frames instead of
@@ -261,12 +275,13 @@ export function SettingsPage({
   // or deep-link (focusSection) needs every section at once, so those jump
   // straight to fully revealed (and never step back, so nothing unmounts).
   const [revealCount, setRevealCount] = useState(1);
-  // A search or a deep link needs every section at once, so it jumps straight
-  // to fully revealed. That is a synchronous decision and belongs in render:
-  // in an effect it costs a frame in which the search has been typed and the
-  // sections it must match are not in the tree yet. It converges, because
-  // revealing them all makes the condition false.
-  const revealAllNow = query.trim() !== "" || focusSection !== null;
+  // A search, a deep link or a jump needs every section at once, so it jumps
+  // straight to fully revealed. That is a synchronous decision and belongs in
+  // render: in an effect it costs a frame in which the search has been typed
+  // (or the section clicked) and the section it must reach is not in the tree
+  // yet. It converges, because revealing them all makes the condition false.
+  const revealAllNow =
+    query.trim() !== "" || focusSection !== null || nav.wantsAllSections;
   if (revealCount < SECTION_TITLES.length && revealAllNow) {
     setRevealCount(SECTION_TITLES.length);
   }
@@ -284,114 +299,6 @@ export function SettingsPage({
     (title: string) => SECTION_TITLES.indexOf(title) < revealCount,
     [revealCount],
   );
-
-  // The page scroll lives on the shared <main>; remember the section nearest
-  // the top as the user scrolls so returning to Settings restores that spot.
-  // Saving is gated until the restore below has run: when this tab remounts,
-  // the shared <main> can be clamped to a shorter scrollHeight (e.g. coming
-  // back from the taller Help page), which fires a scroll event. Saving that
-  // clamped position would overwrite the real saved section with a near-bottom
-  // one before the restore reads it (the Settings<->Help drift bug).
-  const rootRef = useRef<HTMLDivElement>(null);
-  const saveEnabled = useRef(false);
-  useEffect(() => {
-    const scroller = rootRef.current?.closest("main");
-    if (!scroller) return;
-    let raf = 0;
-    const save = () => {
-      raf = 0;
-      if (!saveEnabled.current) return;
-      const anchor = scroller.getBoundingClientRect().top + STICKY_OFFSET_PX;
-      let best: string | null = null;
-      let bestDist = Infinity;
-      for (const title of SECTION_TITLES) {
-        const el = document.getElementById(sectionDomId(title));
-        if (!el) continue;
-        const dist = Math.abs(el.getBoundingClientRect().top - anchor);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = title;
-        }
-      }
-      if (best) sessionStorage.setItem(SECTION_SCROLL_KEY, best);
-    };
-    const onScroll = () => {
-      if (raf === 0) raf = requestAnimationFrame(save);
-    };
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      scroller.removeEventListener("scroll", onScroll);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, []);
-
-  // Restore the last-viewed section when returning to the tab, once per mount,
-  // and never when a deep-link (focusSection) is steering the scroll instead.
-  const didRestoreScroll = useRef(false);
-  useEffect(() => {
-    // Hidden but still mounted: stop saving, and re-arm so the scroll is
-    // restored again the next time the tab is shown.
-    if (!visible) {
-      saveEnabled.current = false;
-      didRestoreScroll.current = false;
-      return;
-    }
-    if (didRestoreScroll.current) return;
-    // A deep-link (focusSection) owns the scroll, let it win, don't restore.
-    if (focusSection) {
-      didRestoreScroll.current = true;
-      saveEnabled.current = true;
-      return;
-    }
-    // Wait until the async settings (and the probe panel they render) have
-    // loaded: restoring before that lets the Performance section grow AFTER we
-    // scroll, pushing the target down so we land above it (the reported drift).
-    if (!settings) return;
-    didRestoreScroll.current = true;
-    const saved = sessionStorage.getItem(SECTION_SCROLL_KEY);
-    if (!saved || saved === SECTION_TITLES[0]) {
-      // Nothing meaningful to restore. Reset to the top so we don't keep the
-      // scroll position inherited from the previously shown (possibly taller)
-      // page, which the browser clamps to this page's bottom (the lingering
-      // Settings<->Help "lands at the bottom" case).
-      rootRef.current?.closest("main")?.scrollTo({ top: 0 });
-      saveEnabled.current = true;
-      return;
-    }
-    // Double rAF: let this commit paint, then scroll once layout is settled.
-    // Only enable saving AFTER the restore scroll lands, so the restore itself
-    // (and any clamp on remount) cannot clobber the saved section.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        document
-          .getElementById(sectionDomId(saved))
-          ?.scrollIntoView({ block: "start" });
-        saveEnabled.current = true;
-      }),
-    );
-  }, [visible, settings, focusSection]);
-
-  // Jump-to-section dropdown: picking a section clears any search filter (so
-  // the target is mounted) and smooth-scrolls to it, no button needed.
-  // A scroll request, carrying a serial number rather than being cleared once
-  // it has been acted on. Clearing it meant the effect that performed the
-  // scroll also had to write state, and the number does the same job: asking
-  // for the same section twice produces a new object, so the second click
-  // scrolls again.
-  const [scrollRequest, setScrollRequest] = useState<{
-    title: string;
-    n: number;
-  } | null>(null);
-  const goToSection = useCallback((title: string) => {
-    setQuery("");
-    setScrollRequest((r) => ({ title, n: (r?.n ?? 0) + 1 }));
-  }, []);
-  useEffect(() => {
-    if (!scrollRequest) return;
-    document
-      .getElementById(sectionDomId(scrollRequest.title))
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [scrollRequest]);
 
   // Performance + network probe.
   const {
@@ -557,14 +464,28 @@ export function SettingsPage({
   const probe = settings?.local_probe ?? null;
 
   return (
-    <div ref={rootRef} className="mx-auto max-w-3xl space-y-10 p-6 pb-16">
-      {/* Sticky header (S2): the jump-to dropdown + search stay pinned to the
-          top of the tab while the sections scroll. -mx-6/px-6 lets the
-          background span the page padding so content doesn't peek at the edges. */}
-      <div className="sticky top-0 z-20 -mx-6 -mt-6 flex items-center justify-between gap-4 border-b border-border/50 bg-background px-6 py-3">
+    // Laid out like Help: a panel of sections down the left, the page beside
+    // it. The content column keeps the width the page had on its own (max-w-3xl
+    // of a max-w-5xl row, less the panel and the gap).
+    <div ref={rootRef} className="mx-auto flex max-w-5xl gap-8 px-6">
+      <aside className="hidden w-56 shrink-0 pt-6 lg:block">
+        <SettingsToc
+          query={query}
+          onQueryChange={setQuery}
+          titles={SECTION_TITLES.filter(sectionVisible)}
+          activeTitle={nav.activeTitle}
+          onPick={nav.scrollToSection}
+        />
+      </aside>
+      <div className="min-w-0 flex-1 space-y-10 pb-16 pt-6">
+      {/* Sticky header (S2), pinned to the top of the tab while the sections
+          scroll. Where the panel shows, it holds only the title; below that
+          width the panel hides, as Help's does, and the search box and the
+          Jump to list come back here so nothing is lost with it. */}
+      <div className="sticky top-0 z-20 -mt-6 flex items-center justify-between gap-4 border-b border-border/50 bg-background py-3">
         <h1 className="font-heading text-lg font-semibold">Settings</h1>
-        <div className="flex items-center gap-2">
-          <Select value="" onValueChange={goToSection}>
+        <div className="flex items-center gap-2 lg:hidden">
+          <Select value="" onValueChange={nav.goToSection}>
             <SelectTrigger
               size="sm"
               className="w-44"
@@ -616,6 +537,11 @@ export function SettingsPage({
         <p className="text-sm text-muted-foreground">
           No settings section matches “{query.trim()}”.
         </p>
+      )}
+
+      {/* Startup: which tab Broadside opens on. */}
+      {sectionVisible("Startup") && sectionReady("Startup") && (
+        <StartupSection id={sectionDomId("Startup")} visible={visible} />
       )}
 
       {/* Performance / probe */}
@@ -1855,8 +1781,8 @@ export function SettingsPage({
         <div className="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
           This resets <strong>preferences only</strong>: theme, sidebar &amp;
           rail layout, tab order, table column widths &amp; sorting, header
-          toggles, the broadcast timeout, fonts and help hints all go back to
-          their defaults. Your <strong>hosts, credentials, guard rules,
+          toggles, the broadcast timeout, fonts, help hints and the tab
+          Broadside opens on all go back to their defaults. Your <strong>hosts, credentials, guard rules,
           shortcuts, command history and logs are kept</strong>. The app
           reloads to apply.
         </div>
@@ -2106,6 +2032,7 @@ export function SettingsPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 }

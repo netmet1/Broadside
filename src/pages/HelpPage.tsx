@@ -22,6 +22,7 @@ import { exportHelpPdf, helpPdfAvailable } from "@/lib/tauri/help";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { useAppVersion } from "@/lib/useAppVersion";
 import { useHint } from "@/lib/status";
+import { nearestSectionId } from "@/lib/nearestSection";
 import { SECTIONS, scrollToId } from "@/pages/help/content";
 import { searchableText } from "@/pages/help/searchText";
 import { queryPattern, useHelpHighlight } from "@/pages/help/useHelpHighlight";
@@ -58,6 +59,8 @@ function Section({
 /** What each section can be found by: its title, its keywords, and every word
  * it actually says. Built once: the sections are fixed at module load, and
  * walking fourteen of them on every keystroke would be work for nothing. */
+const SECTION_IDS = SECTIONS.map((s) => s.id);
+
 const SECTION_TEXT = new Map<string, string>(
   SECTIONS.map((s) => [
     s.id,
@@ -147,20 +150,10 @@ export function HelpPage({
     const scroller = rootRef.current?.closest("main");
     if (!scroller) return;
 
+    // The same question Settings asks of its own panel (lib/nearestSection),
+    // so the two pages agree about which section is in view.
     const computeActive = () => {
-      const anchor = scroller.getBoundingClientRect().top + STICKY_OFFSET_PX;
-      let best: string | null = null;
-      let bestDist = Infinity;
-      for (const s of SECTIONS) {
-        const el = document.getElementById(s.id);
-        if (!el) continue;
-        const dist = Math.abs(el.getBoundingClientRect().top - anchor);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = s.id;
-        }
-      }
-      setActiveId(best);
+      setActiveId(nearestSectionId(scroller, SECTION_IDS, STICKY_OFFSET_PX));
     };
 
     // Restore (next frame, so the content has laid out), then allow saving.

@@ -39,12 +39,12 @@ const STARTUP_OPTIONS: {
   {
     value: "launch",
     label: "Open the tabs at startup",
-    hint: "Broadside starts with these tabs already made, each one sitting on its Reconnect button. Nothing connects until you say so.",
+    hint: "Broadside starts on Terminals with these tabs made, each on its Reconnect button. Nothing connects until you say so.",
   },
   {
     value: "connect",
     label: "Open and connect at startup",
-    hint: "Broadside starts by connecting every session in this template, before anyone has looked at the screen. Saving this asks you to confirm.",
+    hint: "Broadside starts on Terminals, connecting every session in this template before anyone has looked. Saving this asks you to confirm.",
   },
 ];
 

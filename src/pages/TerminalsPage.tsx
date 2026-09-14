@@ -6,6 +6,7 @@ import {
   Grid2x2Icon,
   Grid2x2XIcon,
   LayersIcon,
+  ListFilterIcon,
   Maximize2Icon,
   PencilIcon,
   PlusIcon,
@@ -88,6 +89,14 @@ import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { TerminalRail } from "@/pages/terminals/TerminalRail";
 import { useGridFocus } from "@/pages/terminals/useGridFocus";
+import {
+  closeOthersOptions,
+  kindPlural,
+  kindsPresent,
+} from "@/pages/terminals/sessionKinds";
+import { useKindFilter } from "@/pages/terminals/useKindFilter";
+import { useCloseOthers } from "@/pages/terminals/useCloseOthers";
+import { CloseOthersDialog } from "@/pages/terminals/CloseOthersDialog";
 import type { SearchOptions } from "@/lib/search";
 import {
   DEFAULT_BULK_CONFIRM_OVER,
@@ -586,6 +595,23 @@ export function TerminalsPage({
   // ./terminals/session for why the numbering works the way it does.
   const tabSuffix = useMemo(() => duplicateSuffixes(sessions), [sessions]);
 
+  // The View menu's Filter: which kinds of session are on screen. Up here
+  // because the grid layout below counts its tiles without the kinds it hides.
+  // Hidden panes stay mounted; see ./terminals/useKindFilter.
+  const kindFilter = useKindFilter({ sessions, activeId, onActivate });
+  const { visibleSessions } = kindFilter;
+  // The kinds open, in launcher order. All of them for the Filter's list, which
+  // has to offer a hidden kind back; only the visible ones for Close others,
+  // which never reaches behind the filter.
+  const allKinds = useMemo(
+    () => kindsPresent(sessions, localShells),
+    [sessions, localShells],
+  );
+  const visibleKinds = useMemo(
+    () => kindsPresent(visibleSessions, localShells),
+    [visibleSessions, localShells],
+  );
+
   // The scrolling grid container. Declared up here rather than beside the other
   // element refs below, because the layout hook measures it: how many columns
   // the grid can hold is a question about this pane's width, not the window's.
@@ -618,7 +644,13 @@ export function TerminalsPage({
     tileSpan,
     customGrid,
     gridStyle,
-  } = useGridLayout({ sessions, visible, maximized, paneRef: gridScrollRef });
+  } = useGridLayout({
+    sessions,
+    filteredOut: kindFilter.hiddenIds,
+    visible,
+    maximized,
+    paneRef: gridScrollRef,
+  });
 
   // Drag a tile's edge to set the tile size for the whole grid, for as long as
   // the program is running. Whether it also writes the Settings -> Grid numbers
@@ -958,10 +990,14 @@ export function TerminalsPage({
   // only one whose buttons are in the tab order, so Tab lands on a tab, the
   // arrows walk between them, and Tab again reaches that tab's own controls.
   const [tabStopId, setTabStopId] = useState<string | null>(null);
+  // Only tabs on screen can hold it: a stop on a tab the Filter hid would be a
+  // Tab press that lands nowhere.
   const rovingTabId =
-    tabStopId !== null && sessions.some((s) => s.id === tabStopId)
+    tabStopId !== null && visibleSessions.some((s) => s.id === tabStopId)
       ? tabStopId
-      : (activeId ?? sessions[0]?.id ?? null);
+      : activeId !== null && visibleSessions.some((s) => s.id === activeId)
+        ? activeId
+        : (visibleSessions[0]?.id ?? null);
 
   // Arrow keys walk the tab strip, Enter or Space picks one (see the tab's own
   // key handler). Deliberately not the other pattern, where arrowing switches
@@ -984,7 +1020,7 @@ export function TerminalsPage({
       if (!(el instanceof HTMLElement) || el.getAttribute("role") !== "tab") {
         return;
       }
-      const tabs = sessions
+      const tabs = visibleSessions
         .map((s) => ({ id: s.id, el: tabElRefs.current.get(s.id) }))
         .filter((t): t is { id: string; el: HTMLDivElement } => t.el !== undefined);
       const here = tabs.findIndex((t) => t.el === el);
@@ -1006,7 +1042,7 @@ export function TerminalsPage({
       setTabStopId(target.id);
       target.el.focus();
     },
-    [sessions],
+    [visibleSessions],
   );
 
   // A live map of each tile's element, so selecting a tab/session while in Grid
@@ -1179,12 +1215,19 @@ export function TerminalsPage({
     () => sessions.filter((s) => !isDown(s)).length,
     [sessions, isDown],
   );
-  usePageStatus(
+  const sessionCount =
     liveCount === sessions.length
       ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} open`
       : // Only when they differ, so the ordinary case still reads as a plain
         // count and the slash is a signal that something is down.
-        `${liveCount}/${sessions.length} sessions connected`,
+        `${liveCount}/${sessions.length} sessions connected`;
+  // Still counted over every session, hidden or not, and the hidden ones named
+  // after it: a count that dropped when the Filter hid a kind would read as
+  // sessions that had closed.
+  usePageStatus(
+    kindFilter.hiddenCount > 0
+      ? `${sessionCount} · ${kindFilter.hiddenCount} hidden by filter`
+      : sessionCount,
     visible,
   );
 
@@ -1398,6 +1441,15 @@ export function TerminalsPage({
     onCloseSession(id);
   };
 
+  // Close others, from a tab's right-click menu or the Sessions menu. Declared
+  // here, below closeSession, because it closes through it.
+  const closeOthers = useCloseOthers({
+    sessions,
+    visibleSessions,
+    closeSession,
+    activateDeliberately: gridFocus.activateDeliberately,
+  });
+
   // Reconnect a closed/failed session: bump its retry nonce so TerminalView's
   // connect effect re-runs and re-opens the PTY on the same session id (the
   // backend id is free again once the old session ended).
@@ -1508,22 +1560,24 @@ export function TerminalsPage({
   };
 
   // Alt+Left/Right cycle through the open tabs (wrapping around the ends),
-  // following the displayed tab order.
+  // following the displayed tab order. The tabs on screen only: stepping onto a
+  // tab the Filter hid would show it again, which is not what walking the strip
+  // asked for.
   const navTab = useCallback(
     (dir: "prev" | "next") => {
-      if (sessions.length < 2 || activeId === null) return;
-      const idx = sessions.findIndex((s) => s.id === activeId);
+      if (visibleSessions.length < 2 || activeId === null) return;
+      const idx = visibleSessions.findIndex((s) => s.id === activeId);
       if (idx < 0) return;
-      const n = sessions.length;
+      const n = visibleSessions.length;
       const nextIdx = dir === "next" ? (idx + 1) % n : (idx - 1 + n) % n;
       // Not the page's own onActivate: keyboard navigation outranks a resting
       // cursor (without that, Alt+Left lands on the right tab and the next
       // nudge of the mouse takes it back) and in a grid it has to carry the
       // keyboard with it, since every pane is on screen and none of them will
       // take it by itself.
-      gridFocus.activateDeliberately(sessions[nextIdx]!.id);
+      gridFocus.activateDeliberately(visibleSessions[nextIdx]!.id);
     },
-    [sessions, activeId, gridFocus],
+    [visibleSessions, activeId, gridFocus],
   );
 
   // Alt+Left/Right while the Terminals page is visible but a terminal pane is
@@ -1773,6 +1827,20 @@ export function TerminalsPage({
         onCloseFailed={requestCloseFailed}
         hiddenCount={excludedFromGrid.size}
         onUnhideAll={clearGridExcluded}
+        filterKinds={allKinds}
+        hiddenKinds={kindFilter.hiddenKinds}
+        filterHiddenCount={kindFilter.hiddenCount}
+        onToggleKind={kindFilter.toggle}
+        onShowAllKinds={kindFilter.showAll}
+        onHideAllKinds={kindFilter.hideAll}
+        closeOthers={
+          activeSession && !kindFilter.isHidden(activeSession)
+            ? closeOthersOptions(visibleKinds, activeSession)
+            : null
+        }
+        onCloseOthers={(kind) => {
+          if (activeId !== null) closeOthers.request({ keepId: activeId, kind });
+        }}
         // The "+" that opens a local shell, a saved profile or a serial
         // console. It lives here, at the end of the controls row, rather than
         // at the end of the tab strip where a terminal app usually puts it.
@@ -2151,13 +2219,15 @@ export function TerminalsPage({
           }}
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
         >
-        {sessions.map((s) => {
+        {visibleSessions.map((s) => {
           const isActive = s.id === activeId;
           // Whether this tab holds the strip's one Tab stop, for itself and for
           // the little buttons inside it.
           const isTabStop = s.id === rovingTabId;
           const stopIndex = isTabStop ? 0 : -1;
           const disconnected = isDown(s);
+          // What Close others offers from this tab's right-click menu.
+          const others = closeOthersOptions(visibleKinds, s);
           // The colour this tab wears: a host's, a shell kind's, or a profile's.
           // Local tabs used to have none of these and were all the same grey,
           // which is fine with two open and no help at all with ten.
@@ -2177,11 +2247,13 @@ export function TerminalsPage({
               ? { backgroundColor: `${tabColor}33`, borderTopColor: tabColor! }
               : { borderTopColor: "var(--foreground)" };
           return (
-          // Right-click offers the same actions the tab's own little buttons do.
-          // Deliberately the same set and no more: the buttons appear on hover,
-          // so on a strip of ten tabs they are findable only by sweeping the
-          // mouse along it, and the menu is where you go when you know what you
-          // want. Nothing here is reachable *only* from the menu.
+          // Right-click offers the same actions the tab's own little buttons do,
+          // plus Close others. The buttons appear on hover, so on a strip of ten
+          // tabs they are findable only by sweeping the mouse along it, and the
+          // menu is where you go when you know what you want. Close others is
+          // the one entry with no button, because it is not about this tab but
+          // about the rest of them, and a tab has no room to say so. It is not
+          // only here, though: the Sessions menu offers it for the active tab.
           <ContextMenu key={s.id}>
           <ContextMenuTrigger asChild>
           <div
@@ -2490,6 +2562,37 @@ export function TerminalsPage({
               <XIcon />
               Close tab
             </ContextMenuItem>
+            {/* The entries grow with what is open. Close others whenever there
+                is another tab on screen; one entry per kind only when the
+                others are mixed, since with one kind it would say the same
+                thing as Close others. Two or more ask first. */}
+            {others.total > 0 && (
+              <ContextMenuItem
+                onSelect={() =>
+                  closeOthers.request({ keepId: s.id, kind: null })
+                }
+                className="text-destructive focus:text-destructive"
+              >
+                <XIcon />
+                Close others
+                <ContextMenuShortcut>{others.total}</ContextMenuShortcut>
+              </ContextMenuItem>
+            )}
+            {others.perKind.map((k) => (
+              <ContextMenuItem
+                key={k.kind}
+                onSelect={() =>
+                  closeOthers.request({ keepId: s.id, kind: k.kind })
+                }
+                className="text-destructive focus:text-destructive"
+              >
+                <XIcon />
+                <span className="max-w-56 truncate">
+                  Close other {kindPlural(k)}
+                </span>
+                <ContextMenuShortcut>{k.count}</ContextMenuShortcut>
+              </ContextMenuItem>
+            ))}
           </ContextMenuContent>
           </ContextMenu>
           );
@@ -2498,6 +2601,12 @@ export function TerminalsPage({
           <p className="px-3 py-2 text-sm text-muted-foreground">
             No open terminals. Open an SSH host from the Hosts page, or a local
             shell with the + button.
+          </p>
+        )}
+        {sessions.length > 0 && visibleSessions.length === 0 && (
+          <p className="px-3 py-2 text-sm text-muted-foreground">
+            Every session is hidden by the filter. They are still running; View,
+            then Filter, brings them back.
           </p>
         )}
         </div>
@@ -2654,7 +2763,19 @@ export function TerminalsPage({
             second sentence ran together into something that looked like prose
             with a control stuck in the middle of it. Three lines make the
             button the middle of the three rather than an interruption. */}
-        {gridMode && gridCount === 0 && sessions.length > 0 && (
+        {/* The same state reached by the Filter instead, in either layout: the
+            tabs are gone from the strip too, so the way back has to be here. */}
+        {sessions.length > 0 && visibleSessions.length === 0 && (
+          <div className="col-span-full flex h-full flex-col items-center justify-center gap-3 p-4 text-center text-sm text-muted-foreground">
+            <span>Every session is hidden by the filter.</span>
+            <Button size="sm" variant="outline" onClick={kindFilter.showAll}>
+              <ListFilterIcon className="h-3.5 w-3.5" />
+              Show all ({kindFilter.hiddenCount})
+            </Button>
+            <span>They are all still running. The Filter is in the View menu.</span>
+          </div>
+        )}
+        {gridMode && gridCount === 0 && visibleSessions.length > 0 && (
           <div className="col-span-full flex h-full flex-col items-center justify-center gap-3 p-4 text-center text-sm text-muted-foreground">
             <span>Every terminal is hidden from the grid.</span>
             <Button size="sm" variant="outline" onClick={clearGridExcluded}>
@@ -2669,6 +2790,9 @@ export function TerminalsPage({
           // Taken out of the grid from its tab. The pane stays mounted (and its
           // shell alive); it is simply not laid out.
           const excluded = gridMode && excludedFromGrid.has(s.id);
+          // Hidden by the Filter, in either layout. Laid out as display:none
+          // and never unmounted: unmounting a TerminalView closes its shell.
+          const filtered = kindFilter.isHidden(s);
           const disconnected = isDown(s);
           // The active tile's header mirrors the tab tint: a ~20% fill in the
           // tab's colour and a top bar in it, falling back to the theme accent
@@ -2701,7 +2825,9 @@ export function TerminalsPage({
                 ...(!customGrid && gridCount > 2 ? { minHeight: tileMinH } : {}),
                 // Filling a short last row (Settings -> Grid). Nothing for most
                 // tiles; a span for the ones that take up the slack.
-                ...(excluded ? {} : tileSpan(gridSlot.get(s.id) ?? 0)),
+                ...(excluded || filtered
+                  ? {}
+                  : tileSpan(gridSlot.get(s.id) ?? 0)),
                 ...(hostTint
                   ? {
                       borderColor: tabColor!,
@@ -2722,10 +2848,12 @@ export function TerminalsPage({
               // inline colours no class can name, so muting it while the window
               // is asleep has nothing else to aim at. See the
               // [data-window-blurred] rules in index.css.
-              data-tile-active={gridMode && isActive ? "" : undefined}
+              data-tile-active={
+                gridMode && isActive && !filtered ? "" : undefined
+              }
               className={cn(
                 gridMode
-                  ? excluded
+                  ? excluded || filtered
                     ? "hidden"
                     : cn(
                       // relative: anchors the resize handles below.
@@ -2743,7 +2871,10 @@ export function TerminalsPage({
                           : "border-primary/70 ring-1 ring-primary/40"
                         : "border-border/50",
                     )
-                  : cn("h-full w-full", isActive ? "block" : "hidden"),
+                  : cn(
+                      "h-full w-full",
+                      isActive && !filtered ? "block" : "hidden",
+                    ),
               )}
               onClick={gridMode ? () => onActivate(s.id) : undefined}
               {...(gridMode ? gridFocus.tileProps(s.id) : {})}
@@ -2851,8 +2982,11 @@ export function TerminalsPage({
                   }
                   // A pane taken out of the grid is display:none, so it has no
                   // box to fit to, tell it so, exactly as a background tab in
-                  // tabs mode is told, or it would fit against a zero size.
-                  visible={visible && (gridMode ? !excluded : isActive)}
+                  // tabs mode is told, or it would fit against a zero size. The
+                  // same goes for a pane the Filter is hiding.
+                  visible={
+                    visible && !filtered && (gridMode ? !excluded : isActive)
+                  }
                   retryNonce={retryNonces.get(s.id) ?? 0}
                   resetNonce={resetNonces.get(s.id) ?? 0}
                   endNonce={endNonces.get(s.id) ?? 0}
@@ -2878,7 +3012,7 @@ export function TerminalsPage({
                   so the tiles stay uniform and overflow scrolls, rather than one
                   tile growing out of step with the rest. Invisible until hovered
                   so they don't clutter a wall of terminals. */}
-              {canResizeTiles && !excluded && (
+              {canResizeTiles && !excluded && !filtered && (
                 <>
                   <div
                     onMouseDown={(e) =>
@@ -2977,6 +3111,8 @@ export function TerminalsPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CloseOthersDialog closeOthers={closeOthers} shells={localShells} />
 
       {/* Not destructive, unlike the two dialogs either side of it: nothing is
           lost by saying yes, the cost is the size of the burst. So it is worded

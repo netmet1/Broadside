@@ -29,6 +29,7 @@ import {
 } from "@/lib/sessionPrefs";
 import { setSshKeepalive } from "@/lib/tauri/settings";
 import { rememberHostsSide } from "@/lib/hostsSide";
+import { loadStartPage } from "@/lib/startPage";
 import { HostsPage } from "@/pages/HostsPage";
 import { TemplatesPage, type TemplateFocus } from "@/pages/TemplatesPage";
 import {
@@ -84,7 +85,10 @@ function App() {
   // app stops looking alive while it is asleep. Nothing else here reads it.
   useWindowBlurredAttr();
 
-  const [page, setPage] = useState<Page>("hosts");
+  // The tab Broadside opens on, from Settings > Startup (Hosts by default). A
+  // template set to open at startup still takes over below, and lands on
+  // Terminals once it has resolved.
+  const [page, setPage] = useState<Page>(loadStartPage);
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [sessions, setSessions] = useState<TermSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
