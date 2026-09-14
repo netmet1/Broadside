@@ -347,11 +347,13 @@ export const SECTIONS: HelpSection[] = [
           <H3>The left rail</H3>
           <p>
             The buttons down the left side switch between the main areas of the
-            app: <Nav>Hosts</Nav>, <Nav>Terminals</Nav>, <Nav>Broadcast</Nav>,{" "}
-            <Nav>PTY Broadcast</Nav>, <Nav>MultiTerminal</Nav>, <Nav>Skills</Nav>,{" "}
-            <Nav>SFTP</Nav>, <Nav>Logs</Nav> and <Nav>Settings</Nav>. <Nav>Help</Nav> and{" "}
-            <Nav>About</Nav> sit at
-            the bottom. The rail collapses to icons only on narrow windows, or
+            app. The tabs you work in run down from the top:{" "}
+            <Nav>Hosts</Nav>, <Nav>Templates</Nav>, <Nav>Terminals</Nav>,{" "}
+            <Nav>Broadcast</Nav>, <Nav>PTY Broadcast</Nav>,{" "}
+            <Nav>MultiTerminal</Nav>, <Nav>Skills</Nav> and <Nav>SFTP</Nav>.
+            The ones for looking back and setting up sit at the bottom:{" "}
+            <Nav>Logs</Nav>, <Nav>Settings</Nav>, <Nav>Help</Nav> and{" "}
+            <Nav>About</Nav>. The rail collapses to icons only on narrow windows, or
             with the collapse button at the top. Drag its right edge to resize
             it, or double-click that edge to reset the width. Broadside opens
             on <Nav>Hosts</Nav>; <Nav>Settings → Startup</Nav> picks a
