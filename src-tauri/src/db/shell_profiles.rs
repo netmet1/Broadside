@@ -18,6 +18,15 @@
 //! (see `commands::backup::harden_restored_db`). Control characters are refused
 //! in every field so that nothing can hide text from that preview.
 //!
+//! **`wanted_shell` is a note, not a pointer.** A restore deletes every custom
+//! terminal, so the profiles that named one are re-pointed at nothing
+//! ([`orphan_custom_shells`]); the name of the terminal they wanted is kept
+//! there so the launcher and the edit form can say which shell to add back.
+//! Nothing launches from it: a re-pointed profile opens a program only once the
+//! operator has added that terminal here, in the Settings form, and picked it
+//! in Edit. What the name buys is not having to work out from `Resume Git`
+//! which of your shells that was.
+//!
 //! The id is text (a uuid the frontend makes), not an autoincrement integer,
 //! because saved templates already name a profile by that string.
 //!
@@ -64,6 +73,12 @@ pub struct ShellProfile {
     pub cwd: String,
     pub startup_command: String,
     pub color: String,
+    /// The name of the custom local shell this profile asked for, and empty
+    /// unless `shell_id` is [`UNMATCHED_CUSTOM`]. Written by
+    /// [`orphan_custom_shells`] and by an import that could not match a name,
+    /// read by the launcher and the edit form. Text for a person, never a
+    /// pointer: nothing is launched from it.
+    pub wanted_shell: String,
     pub sort_order: i64,
     pub created_at: String,
     pub updated_at: String,
@@ -80,6 +95,11 @@ pub struct ShellProfileInput {
     pub startup_command: String,
     #[serde(default)]
     pub color: String,
+    /// Carried through a save so editing a struck-through profile's name does
+    /// not lose the note. Cleared by [`normalize`] the moment the profile
+    /// names a shell, so the form never has to think about it.
+    #[serde(default)]
+    pub wanted_shell: String,
 }
 
 /// A profile to insert under an id the caller chose.
@@ -101,7 +121,7 @@ pub struct LegacyImport {
 }
 
 const SELECT_COLS: &str =
-    "id, label, shell_id, cwd, startup_command, color, sort_order, created_at, updated_at";
+    "id, label, shell_id, cwd, startup_command, color, wanted_shell, sort_order, created_at, updated_at";
 
 fn from_row(row: &Row) -> rusqlite::Result<ShellProfile> {
     Ok(ShellProfile {
@@ -111,9 +131,10 @@ fn from_row(row: &Row) -> rusqlite::Result<ShellProfile> {
         cwd: row.get(3)?,
         startup_command: row.get(4)?,
         color: row.get(5)?,
-        sort_order: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        wanted_shell: row.get(6)?,
+        sort_order: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
     })
 }
 
@@ -147,12 +168,13 @@ fn text_field(name: &str, value: &str, max: usize) -> AppResult<()> {
 /// Checks and trims a profile. Enforced on every write, including both kinds of
 /// import, so a stored row is always one the form could have produced.
 fn normalize(input: &ShellProfileInput) -> AppResult<ShellProfileInput> {
-    let out = ShellProfileInput {
+    let mut out = ShellProfileInput {
         label: input.label.trim().to_string(),
         shell_id: input.shell_id.trim().to_string(),
         cwd: input.cwd.trim().to_string(),
         startup_command: input.startup_command.trim().to_string(),
         color: input.color.trim().to_string(),
+        wanted_shell: input.wanted_shell.trim().to_string(),
     };
     if out.label.is_empty() {
         return Err(AppError::InvalidInput("name is required".into()));
@@ -164,6 +186,14 @@ fn normalize(input: &ShellProfileInput) -> AppResult<ShellProfileInput> {
     text_field("shell", &out.shell_id, MAX_SHELL_ID)?;
     text_field("working directory", &out.cwd, MAX_CWD)?;
     text_field("startup command", &out.startup_command, MAX_STARTUP)?;
+    text_field("custom shell name", &out.wanted_shell, MAX_LABEL)?;
+    // The note only means something while there is nothing to point at, so a
+    // profile that names a shell cannot carry one. That keeps a single rule
+    // ("a name here means the shell is missing") true for every reader, and
+    // means no writer has to remember to clear it.
+    if out.shell_id != UNMATCHED_CUSTOM {
+        out.wanted_shell.clear();
+    }
     let color_ok = out.color.is_empty()
         || (out.color.len() == 7
             && out.color.starts_with('#')
@@ -207,8 +237,9 @@ fn insert_row(
 ) -> AppResult<()> {
     conn.execute(
         "INSERT INTO shell_profiles
-             (id, label, shell_id, cwd, startup_command, color, sort_order, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+             (id, label, shell_id, cwd, startup_command, color, wanted_shell,
+              sort_order, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
         params![
             id,
             input.label,
@@ -216,6 +247,7 @@ fn insert_row(
             input.cwd,
             input.startup_command,
             input.color,
+            input.wanted_shell,
             sort_order,
             now
         ],
@@ -274,14 +306,15 @@ pub fn update(conn: &Connection, id: &str, input: &ShellProfileInput) -> AppResu
     let changed = conn.execute(
         "UPDATE shell_profiles
             SET label = ?1, shell_id = ?2, cwd = ?3, startup_command = ?4, color = ?5,
-                updated_at = ?6
-          WHERE id = ?7",
+                wanted_shell = ?6, updated_at = ?7
+          WHERE id = ?8",
         params![
             input.label,
             input.shell_id,
             input.cwd,
             input.startup_command,
             input.color,
+            input.wanted_shell,
             now,
             id
         ],
@@ -297,15 +330,77 @@ pub fn delete(conn: &Connection, id: &str) -> AppResult<usize> {
 }
 
 /// Points every profile that names a custom terminal at [`UNMATCHED_CUSTOM`],
-/// and says how many were changed.
+/// noting the name of the terminal it was pointing at, and says how many were
+/// changed.
 ///
 /// For the restore, which deletes every custom terminal: see the call site in
 /// `commands/backup.rs` for why a dangling `custom:<id>` cannot be left behind.
+/// **Call this before the terminals are deleted**, or there is no name left to
+/// read; the count is the same either way, so a wrong order loses only the
+/// note.
+///
+/// The note exists because "pick this profile's shell again" is a poor
+/// instruction when the profile is the only record of which shell that was.
+/// `Resume Git` is a guessable name and `Financial Dashboard Dev` is not.
+///
+/// Three statements, in this order, so that one rule holds afterwards however
+/// odd the database was on the way in: a name here means the shell is missing.
+/// Every note goes first, including any the file arrived with, because the only
+/// name this build trusts is one it read off the terminal a profile actually
+/// named. Then the names it could read, then the re-pointing.
 pub fn orphan_custom_shells(conn: &Connection) -> AppResult<usize> {
-    Ok(conn.execute(
+    let named = wanted_names(conn);
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "UPDATE shell_profiles SET wanted_shell = '' WHERE wanted_shell <> ''",
+        [],
+    )?;
+    for (id, label) in &named {
+        tx.execute(
+            "UPDATE shell_profiles SET wanted_shell = ?1 WHERE id = ?2",
+            params![label, id],
+        )?;
+    }
+    let changed = tx.execute(
         "UPDATE shell_profiles SET shell_id = ?1          WHERE shell_id LIKE 'custom:%' AND shell_id <> ?1",
         params![UNMATCHED_CUSTOM],
-    )?)
+    )?;
+    tx.commit()?;
+    Ok(changed)
+}
+
+/// Each profile that names a custom terminal, paired with that terminal's name.
+///
+/// Best effort on purpose. The names are read out of a database a restore just
+/// copied in from a file, so each one is held to what the form would accept and
+/// dropped if it is not (a name is shown in a menu, and an escape sequence in
+/// one could hide the rest of the row). A profile whose terminal cannot be
+/// found, or a `custom_terminals` table not shaped the way this build writes
+/// it, gives no name rather than an error: the re-pointing that follows is the
+/// security-carrying half and must happen whatever shape the file is in.
+fn wanted_names(conn: &Connection) -> Vec<(String, String)> {
+    let read = || -> AppResult<Vec<(String, String)>> {
+        let mut stmt = conn.prepare(
+            "SELECT p.id, COALESCE(t.label, '')
+               FROM shell_profiles p
+               LEFT JOIN custom_terminals t
+                      ON t.id = CAST(SUBSTR(p.shell_id, 8) AS INTEGER)
+              WHERE p.shell_id LIKE 'custom:%' AND p.shell_id <> ?1",
+        )?;
+        let rows = stmt.query_map(params![UNMATCHED_CUSTOM], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    };
+    read()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(id, label)| {
+            let label = label.trim().to_string();
+            let usable = text_field("custom shell name", &label, MAX_LABEL).is_ok();
+            (id, if usable { label } else { String::new() })
+        })
+        .collect()
 }
 
 /// Rewrites the order: `ids` first, in the order given, then any profile the
@@ -427,6 +522,10 @@ struct FileProfile {
     /// For a `custom:<id>` shell, that custom terminal's name. Ids are per
     /// machine, so an import matches by this name instead, and never trusts the
     /// number: id 1 on the other machine is whatever id 1 is here.
+    ///
+    /// A profile that already points at no shell exports the name it is still
+    /// asking for, so a profile orphaned by a restore can be carried to a
+    /// machine that has the shell and land on it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     custom_terminal: Option<String>,
 }
@@ -452,7 +551,10 @@ pub fn export_json(conn: &Connection) -> AppResult<(String, usize)> {
                     .strip_prefix("custom:")
                     .and_then(|raw| raw.parse::<i64>().ok())
                     .and_then(|id| customs.iter().find(|t| t.id == id))
-                    .map(|t| t.label.clone()),
+                    .map(|t| t.label.clone())
+                    .or_else(|| {
+                        Some(p.wanted_shell.clone()).filter(|w| !w.is_empty())
+                    }),
             })
             .collect(),
     };
@@ -479,7 +581,9 @@ pub fn read_file_text(path: &str) -> AppResult<String> {
 /// The whole file is refused if any profile in it is invalid, naming which one,
 /// the way a broken skill file is: a half-imported list is harder to reason
 /// about than a clear "fix profile 3". A `custom:` shell is re-pointed at this
-/// machine's custom terminal of the same name, or at [`UNMATCHED_CUSTOM`].
+/// machine's custom terminal of the same name, or at [`UNMATCHED_CUSTOM`] while
+/// keeping the name it wanted, so the preview and the launcher can say which
+/// shell to add rather than only that one is missing.
 pub fn parse_file(conn: &Connection, text: &str) -> AppResult<Vec<ShellProfileInput>> {
     let file: ProfileFile = serde_json::from_str(text).map_err(|_| {
         AppError::InvalidInput("this isn't a Broadside shell profile file".into())
@@ -504,6 +608,7 @@ pub fn parse_file(conn: &Connection, text: &str) -> AppResult<Vec<ShellProfileIn
     let customs = crate::db::custom_terminals::list(conn)?;
     let mut out = Vec::with_capacity(file.profiles.len());
     for (i, p) in file.profiles.into_iter().enumerate() {
+        let wanted = p.custom_terminal.clone().unwrap_or_default();
         let shell_id = if p.shell_id.trim().starts_with("custom:") {
             p.custom_terminal
                 .as_deref()
@@ -524,6 +629,10 @@ pub fn parse_file(conn: &Connection, text: &str) -> AppResult<Vec<ShellProfileIn
             cwd: p.cwd,
             startup_command: p.startup_command,
             color: p.color,
+            // Kept only where it means something: `normalize` drops it for a
+            // profile that matched a shell, and refuses a name the form could
+            // not have produced, so the preview shows all there is of it.
+            wanted_shell: wanted,
         };
         let input = normalize(&input).map_err(|e| {
             AppError::InvalidInput(format!("profile {} in the file: {e}", i + 1))
@@ -550,7 +659,19 @@ mod tests {
             cwd: r"C:\src".into(),
             startup_command: "claude".into(),
             color: String::new(),
+            wanted_shell: String::new(),
         }
+    }
+
+    /// The two custom terminals the id-versus-name tests use.
+    fn two_terminals(c: &Connection) {
+        c.execute(
+            "INSERT INTO custom_terminals (label, exe_path, args_json, family, sort_order, created_at, updated_at)
+             VALUES ('PowerShell 7', 'C:\\pwsh.exe', '[]', 'powershell', 0, 'now', 'now'),
+                    ('Git Bash', 'C:\\bash.exe', '[]', 'posix', 1, 'now', 'now')",
+            [],
+        )
+        .unwrap();
     }
 
     fn labels(c: &Connection) -> Vec<String> {
@@ -727,13 +848,7 @@ mod tests {
         let c = conn();
         // Id 1 on this machine is "PowerShell 7"; the file's custom:1 was
         // Git Bash on another machine, so it must not be pointed at id 1.
-        c.execute(
-            "INSERT INTO custom_terminals (label, exe_path, args_json, family, sort_order, created_at, updated_at)
-             VALUES ('PowerShell 7', 'C:\\pwsh.exe', '[]', 'powershell', 0, 'now', 'now'),
-                    ('Git Bash', 'C:\\bash.exe', '[]', 'posix', 1, 'now', 'now')",
-            [],
-        )
-        .unwrap();
+        two_terminals(&c);
         let got = parse_file(
             &c,
             r#"{"kind":"broadside-shell-profiles","version":1,"profiles":[
@@ -746,5 +861,131 @@ mod tests {
         assert_eq!(got[0].shell_id, "custom:2");
         assert_eq!(got[1].shell_id, UNMATCHED_CUSTOM);
         assert_eq!(got[2].shell_id, UNMATCHED_CUSTOM);
+        // A matched profile keeps no note; an unmatched one says what to add.
+        assert_eq!(got[0].wanted_shell, "");
+        assert_eq!(got[1].wanted_shell, "MSYS2");
+        assert_eq!(got[2].wanted_shell, "");
+    }
+
+    /// The note says which shell to re-add, and a profile that names a shell
+    /// cannot carry one whatever a writer passes in.
+    #[test]
+    fn a_note_only_lives_on_a_profile_with_no_shell() {
+        let c = conn();
+        let mut orphan = input("Resume Git");
+        orphan.shell_id = UNMATCHED_CUSTOM.into();
+        orphan.wanted_shell = "  Git Bash  ".into();
+        let made = create(&c, "p-1", &orphan, None).unwrap();
+        assert_eq!(made.wanted_shell, "Git Bash", "trimmed and kept");
+
+        // Picking a shell in Edit clears it, even though the form hands the
+        // note it was given straight back.
+        let mut fixed = orphan.clone();
+        fixed.shell_id = "custom:1".into();
+        assert_eq!(update(&c, "p-1", &fixed).unwrap().wanted_shell, "");
+
+        // A name the form could not have produced is refused, like every other
+        // text field: an escape sequence in one would hide the rest of a row.
+        let mut hostile = orphan.clone();
+        hostile.wanted_shell = "Git Bash\u{1b}[8m hidden".into();
+        assert!(create(&c, "p-2", &hostile, None).is_err());
+    }
+
+    /// The restore's re-pointing, at this layer: the name of the terminal each
+    /// profile actually named is kept, a file's own notes are not, and the
+    /// sweep still counts what it changed.
+    #[test]
+    fn orphaning_records_the_name_it_was_pointing_at() {
+        let c = conn();
+        two_terminals(&c);
+        let mut custom = input("Resume Git");
+        custom.shell_id = "custom:2".into();
+        create(&c, "p-1", &custom, None).unwrap();
+        let mut gone = input("Old work shell");
+        gone.shell_id = "custom:9".into();
+        create(&c, "p-2", &gone, None).unwrap();
+        create(&c, "p-3", &input("Plain pwsh"), None).unwrap();
+        // A note a restored file arrived with, on a profile whose shell is
+        // present. Only a file can put one there, so it is written directly.
+        c.execute(
+            "UPDATE shell_profiles SET wanted_shell = 'Planted' WHERE id = 'p-3'",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(orphan_custom_shells(&c).unwrap(), 2);
+        let p1 = get(&c, "p-1").unwrap();
+        assert_eq!(p1.shell_id, UNMATCHED_CUSTOM);
+        assert_eq!(p1.wanted_shell, "Git Bash", "which shell to add back");
+        let p2 = get(&c, "p-2").unwrap();
+        assert_eq!(p2.shell_id, UNMATCHED_CUSTOM);
+        assert_eq!(p2.wanted_shell, "", "nothing to read, so nothing said");
+        let p3 = get(&c, "p-3").unwrap();
+        assert_eq!(p3.shell_id, "pwsh", "a normal shell is untouched");
+        assert_eq!(p3.wanted_shell, "", "and the file's own note is not kept");
+    }
+
+    /// A restored file can carry any schema it likes, so the name can be
+    /// unreadable. The re-pointing is the half that matters and still happens.
+    #[test]
+    fn orphaning_survives_a_terminals_table_it_cannot_read() {
+        let c = conn();
+        let mut custom = input("Resume Git");
+        custom.shell_id = "custom:2".into();
+        create(&c, "p-1", &custom, None).unwrap();
+        c.execute_batch(
+            "DROP TABLE custom_terminals;
+             CREATE TABLE custom_terminals (id INTEGER PRIMARY KEY, nope TEXT);",
+        )
+        .unwrap();
+        assert_eq!(orphan_custom_shells(&c).unwrap(), 1);
+        let p = get(&c, "p-1").unwrap();
+        assert_eq!(p.shell_id, UNMATCHED_CUSTOM);
+        assert_eq!(p.wanted_shell, "");
+    }
+
+    /// A hostile name in the terminals table is dropped and the re-pointing
+    /// still happens: the note is a convenience, never a reason to stop.
+    #[test]
+    fn a_name_the_form_could_not_have_made_is_not_noted() {
+        let c = conn();
+        c.execute(
+            "INSERT INTO custom_terminals (id, label, exe_path, args_json, family, sort_order, created_at, updated_at)
+             VALUES (1, 'Git Bash' || char(27) || '[8m', 'x', '[]', 'posix', 0, 'now', 'now')",
+            [],
+        )
+        .unwrap();
+        let mut custom = input("Struck");
+        custom.shell_id = "custom:1".into();
+        create(&c, "p-1", &custom, None).unwrap();
+        assert_eq!(orphan_custom_shells(&c).unwrap(), 1);
+        let p = get(&c, "p-1").unwrap();
+        assert_eq!(p.shell_id, UNMATCHED_CUSTOM);
+        assert_eq!(p.wanted_shell, "");
+    }
+
+    /// An orphaned profile exported and imported on a machine that has the
+    /// shell lands on it. This is the one path that re-links a profile without
+    /// the form, and it goes through the import preview to get there.
+    #[test]
+    fn an_orphaned_profile_exports_the_name_it_wants() {
+        let c = conn();
+        let mut orphan = input("Resume Git");
+        orphan.shell_id = UNMATCHED_CUSTOM.into();
+        orphan.wanted_shell = "Git Bash".into();
+        create(&c, "p-1", &orphan, None).unwrap();
+        let (json, _) = export_json(&c).unwrap();
+        assert!(json.contains(r#""customTerminal": "Git Bash""#), "got: {json}");
+
+        // Read back where the shell is missing: still orphaned, still asking.
+        let there = parse_file(&c, &json).unwrap();
+        assert_eq!(there[0].shell_id, UNMATCHED_CUSTOM);
+        assert_eq!(there[0].wanted_shell, "Git Bash");
+
+        // And where it exists, the import points at it and drops the note.
+        two_terminals(&c);
+        let here = parse_file(&c, &json).unwrap();
+        assert_eq!(here[0].shell_id, "custom:2");
+        assert_eq!(here[0].wanted_shell, "");
     }
 }

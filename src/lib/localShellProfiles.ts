@@ -15,6 +15,12 @@
  * upgrades and finds something wrong. */
 const LEGACY_KEY = "local-shell-profiles";
 
+/** The shell id a profile carries when it points at no shell at all: a custom
+ * local shell that an import could not match, or that a restore deleted (see
+ * `db/shell_profiles.rs`). Custom ids start at 1, so this names no real shell,
+ * and the launcher strikes such a profile through. */
+export const UNMATCHED_CUSTOM = "custom:none";
+
 export type ShellProfile = {
   /** Stable id (uuid), the React key and the edit/delete handle. Saved
    * templates name a profile by it, so it never changes. */
@@ -33,6 +39,17 @@ export type ShellProfile = {
   /** Optional command run once the shell opens (typed into it, as if the user
    * had). Empty means none. */
   startupCommand: string;
+  /** The name of the custom local shell this profile is asking for, and empty
+   * unless {@link shellId} is {@link UNMATCHED_CUSTOM}. A restore deletes every
+   * custom local shell and re-points the profiles that used one, keeping the
+   * name here so the launcher and the edit form can say which shell to add back
+   * rather than leaving you to work it out from the profile's own name. An
+   * import that could not match a name keeps it the same way.
+   *
+   * Read, shown and carried back through a save. Nothing launches from it: a
+   * profile opens a program only once you have added that shell under Settings
+   * and picked it in Edit. */
+  wantedShell: string;
   /** Tab colour, `#rrggbb`. Empty means "follow the shell's own colour", which
    * is what every profile saved before this field existed does.
    *
@@ -58,6 +75,9 @@ export function readLegacyProfiles(): ShellProfile[] {
         cwd: typeof p.cwd === "string" ? p.cwd : "",
         startupCommand:
           typeof p.startupCommand === "string" ? p.startupCommand : "",
+        // Nothing in localStorage ever had one: the column arrived with the
+        // restore that writes it.
+        wantedShell: "",
         // Absent (saved before colours existed) or malformed both mean "follow
         // the shell", which is exactly what those profiles did.
         color:
@@ -69,6 +89,24 @@ export function readLegacyProfiles(): ShellProfile[] {
   } catch {
     return [];
   }
+}
+
+/** This machine's custom local shell of that name, if it has one. Ids are per
+ * machine and a restore empties the table, so a name is the only thing that can
+ * match a profile to the shell it used to open. Compared trimmed and
+ * case-insensitively, the way an import matches one (`db/shell_profiles.rs`).
+ *
+ * Takes the launchable shells rather than the custom terminals, so a shell
+ * hidden in Settings is not offered as a match it cannot honour. */
+export function matchingCustomShell<T extends { id: string; label: string }>(
+  shells: T[],
+  wanted: string,
+): T | undefined {
+  const name = wanted.trim().toLowerCase();
+  if (!name) return undefined;
+  return shells.find(
+    (s) => s.id.startsWith("custom:") && s.label.trim().toLowerCase() === name,
+  );
 }
 
 /** Strips one trailing ` (copy)` or ` (copy N)` off a label, so a copy of a

@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { UNMATCHED_CUSTOM } from "@/lib/localShellProfiles";
 import type { LocalShell } from "@/lib/tauri/local";
 import type { ShellProfileInput } from "@/lib/tauri/shellProfiles";
 import { cn } from "@/lib/utils";
@@ -14,10 +15,6 @@ import { cn } from "@/lib/utils";
 /** A profile read from a file, under the name it will be saved as.
  * `originalLabel` is the name in the file, kept so a rename can be shown. */
 export type ProfileImportRow = ShellProfileInput & { originalLabel: string };
-
-/** What the backend points an imported `custom:` profile at when no custom
- * terminal here has the same name (see db/shell_profiles.rs). */
-const UNMATCHED_CUSTOM = "custom:none";
 
 type Props = {
   /** The profiles to preview, or null when no import is in progress. */
@@ -105,7 +102,9 @@ export function ShellProfileImportDialog({
                     {shell
                       ? shell.label
                       : r.shellId === UNMATCHED_CUSTOM
-                        ? "A custom terminal that isn't on this machine"
+                        ? r.wantedShell
+                          ? `"${r.wantedShell}", a custom terminal that isn't on this machine`
+                          : "A custom terminal that isn't on this machine"
                         : `${r.shellId} (not on this machine)`}
                   </dd>
                   <dt className="text-muted-foreground">Folder</dt>

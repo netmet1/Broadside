@@ -304,6 +304,14 @@ const MIGRATIONS: &[&str] = &[
         created_at      TEXT NOT NULL,
         updated_at      TEXT NOT NULL
     );",
+    // 24: the name of the custom local shell a profile asked for, kept only
+    // while the profile points at no shell at all. A restore deletes every
+    // custom terminal and re-points the profiles that named one
+    // (commands::backup::harden_restored_db), and before this column the
+    // operator was left working out from a profile's own name which of their
+    // shells it had opened. A note for a person to read, never a pointer:
+    // nothing is ever launched from it. See db/shell_profiles.rs.
+    "ALTER TABLE shell_profiles ADD COLUMN wanted_shell TEXT NOT NULL DEFAULT '';",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -769,6 +777,29 @@ mod tests {
         .unwrap();
         assert_eq!(templates::list(&conn).unwrap().len(), 1);
         assert_eq!(hosts::list_all(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_build_69_database_gains_the_wanted_shell_note_without_losing_profiles() {
+        // Migration 24, on the database build 69 shipped: the profiles are the
+        // thing an operator would miss, and the column is added to the table
+        // holding them.
+        let conn = database_at_version(23);
+        conn.execute(
+            "INSERT INTO shell_profiles
+                 (id, label, shell_id, cwd, startup_command, color, sort_order, created_at, updated_at)
+             VALUES ('p-1', 'Resume Git', 'custom:1', '', '', '', 0, 'then', 'then')",
+            [],
+        )
+        .unwrap();
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        let p = shell_profiles::get(&conn, "p-1").unwrap();
+        assert_eq!(p.label, "Resume Git");
+        assert_eq!(p.shell_id, "custom:1");
+        assert_eq!(p.wanted_shell, "", "nothing to say until a restore says it");
     }
 
     #[test]

@@ -15,7 +15,10 @@
 import type { Host } from "@/lib/tauri/hosts";
 import type { LocalShell } from "@/lib/tauri/local";
 import type { TemplateItem } from "@/lib/tauri/templates";
-import type { ShellProfile } from "@/lib/localShellProfiles";
+import {
+  UNMATCHED_CUSTOM,
+  type ShellProfile,
+} from "@/lib/localShellProfiles";
 import { isTintable } from "@/lib/terminalColors";
 
 /** Everything on this machine a template item can be resolved against. */
@@ -106,9 +109,11 @@ export function resolveItem(
         shell,
         missing: !profile
           ? `The profile "${item.label}" isn't saved on this machine.`
-          : !shell
-            ? `"${profile.label}" uses a shell that isn't available on this machine.`
-            : null,
+          : shell
+            ? null
+            : profile.shellId === UNMATCHED_CUSTOM && profile.wantedShell
+              ? `"${profile.label}" opened the custom local shell "${profile.wantedShell}", which isn't on this machine.`
+              : `"${profile.label}" uses a shell that isn't available on this machine.`,
       };
     }
   }

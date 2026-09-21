@@ -166,6 +166,9 @@ export function useProfileActions(visible: boolean) {
           cwd: r.cwd,
           startupCommand: r.startupCommand,
           color: r.color,
+          // Empty unless the file named a custom terminal this machine has
+          // not got; the backend decided which, when it read the file.
+          wantedShell: r.wantedShell,
         })),
       );
       toast.success(`Imported ${plural(n)}`);

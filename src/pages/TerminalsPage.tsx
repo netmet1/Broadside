@@ -72,7 +72,10 @@ import {
 } from "@/lib/localShellPrefs";
 import { isTintable } from "@/lib/terminalColors";
 import { useShellColors } from "@/lib/useShellColors";
-import { type ShellProfile } from "@/lib/localShellProfiles";
+import {
+  UNMATCHED_CUSTOM,
+  type ShellProfile,
+} from "@/lib/localShellProfiles";
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
 import { ProfileLauncherList } from "@/pages/terminals/ProfileLauncherList";
@@ -540,8 +543,15 @@ export function TerminalsPage({
     (profile: ShellProfile) => {
       const shell = localShells.find((s) => s.id === profile.shellId);
       if (!shell) {
+        // A profile left pointing at nothing knows which custom shell it
+        // wanted (a restore deletes them all), so say so here: clicking the
+        // struck-through profile is the first thing anybody tries.
+        const wanted =
+          profile.shellId === UNMATCHED_CUSTOM ? profile.wantedShell : "";
         toast.error(
-          `"${profile.label}" uses a shell that isn't available on this machine.`,
+          wanted
+            ? `"${profile.label}" opened the custom local shell "${wanted}", which isn't on this machine. Add it under Settings > Local shells, then pick it in Edit.`
+            : `"${profile.label}" uses a shell that isn't available on this machine.`,
         );
         return;
       }

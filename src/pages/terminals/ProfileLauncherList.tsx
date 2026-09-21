@@ -9,7 +9,11 @@ import {
   UploadIcon,
 } from "lucide-react";
 
-import type { ShellProfile } from "@/lib/localShellProfiles";
+import {
+  matchingCustomShell,
+  UNMATCHED_CUSTOM,
+  type ShellProfile,
+} from "@/lib/localShellProfiles";
 import type { LocalShell } from "@/lib/tauri/local";
 import { useHint } from "@/lib/status";
 import { isTintable } from "@/lib/terminalColors";
@@ -155,6 +159,12 @@ export function ProfileLauncherList({
             // A profile can outlive a removed WSL distro; flag one whose shell
             // isn't currently available.
             const shell = shells.find((s) => s.id === p.shellId);
+            // A profile a restore (or an import) left pointing at nothing says
+            // which custom shell it wanted, so the tooltip can name it rather
+            // than only saying something is missing.
+            const wanted =
+              !shell && p.shellId === UNMATCHED_CUSTOM ? p.wantedShell : "";
+            const wantedIsBack = !!matchingCustomShell(shells, wanted);
             // The colour the tab will come out, so the launcher shows the same
             // thing the tab strip will: the profile's own if it set one,
             // otherwise its shell's.
@@ -227,7 +237,11 @@ export function ProfileLauncherList({
                   title={
                     shell
                       ? `${p.shellId}${p.cwd ? `: ${p.cwd}` : ""}`
-                      : "This profile's shell isn't available on this machine"
+                      : wanted
+                        ? wantedIsBack
+                          ? `This profile opened "${wanted}", which is on this machine again: open Edit and pick it`
+                          : `This profile opened the custom local shell "${wanted}", which isn't on this machine. Add it under Settings > Local shells`
+                        : "This profile's shell isn't available on this machine"
                   }
                 >
                   <LocalShellIcon
