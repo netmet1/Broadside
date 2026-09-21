@@ -77,6 +77,7 @@ export function useBackupRestore() {
         report.dropped_terminals > 0 ||
         report.cleared_host_keys > 0 ||
         report.cleared_startup_commands > 0 ||
+        report.orphaned_custom_profiles > 0 ||
         report.sudo_autofill_disabled
       ) {
         const parts: string[] = [];
@@ -92,6 +93,13 @@ export function useBackupRestore() {
             `${report.cleared_startup_commands} shell profile startup command${
               report.cleared_startup_commands === 1 ? "" : "s"
             } emptied (type them again in the + launcher)`,
+          );
+        }
+        if (report.orphaned_custom_profiles > 0) {
+          parts.push(
+            `${report.orphaned_custom_profiles} profile${
+              report.orphaned_custom_profiles === 1 ? "" : "s"
+            } used a custom local shell and now point at none (re-add the shell, then pick it again in Edit)`,
           );
         }
         if (report.cleared_host_keys > 0) {

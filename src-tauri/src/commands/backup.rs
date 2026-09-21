@@ -36,6 +36,10 @@ pub struct RestoreReport {
     /// Shell profiles whose startup command the restore emptied. The profiles
     /// themselves come back; see [`harden_restored_db`].
     pub cleared_startup_commands: usize,
+    /// Shell profiles that named a custom terminal. Those are all gone by the
+    /// time a restore finishes, so each such profile was re-pointed at nothing
+    /// and needs its shell picking again.
+    pub orphaned_custom_profiles: usize,
     /// Whether the restored file had sudo auto-fill on, in which case it was
     /// turned back off. False when it was already off, i.e. nothing changed.
     pub sudo_autofill_disabled: bool,
@@ -160,6 +164,7 @@ pub fn restore_app_data(path: String, state: State<'_, DbState>) -> AppResult<Re
         dropped_terminals: hardening.dropped_terminals,
         cleared_host_keys: hardening.cleared_host_keys,
         cleared_startup_commands: hardening.cleared_startup_commands,
+        orphaned_custom_profiles: hardening.orphaned_custom_profiles,
         sudo_autofill_disabled: hardening.sudo_autofill_disabled,
     })
 }
@@ -169,6 +174,8 @@ pub(crate) struct RestoreHardening {
     pub dropped_terminals: usize,
     pub cleared_host_keys: usize,
     pub cleared_startup_commands: usize,
+    /// Profiles left pointing at a custom terminal the sweep above deleted.
+    pub orphaned_custom_profiles: usize,
     pub sudo_autofill_disabled: bool,
 }
 
@@ -245,6 +252,16 @@ pub(crate) fn harden_restored_db(conn: &rusqlite::Connection) -> AppResult<Resto
         "UPDATE shell_profiles SET startup_command = '' WHERE startup_command <> ''",
         [],
     )?;
+    // Every custom terminal has just gone, so a profile naming one names
+    // nothing. `custom_terminals.id` is a plain INTEGER PRIMARY KEY, which
+    // SQLite hands out as max(rowid)+1, so with the table empty the next
+    // terminal the operator adds takes id 1, the one after it 2, and a profile
+    // still holding `custom:1` would silently start launching whatever
+    // programme that turned out to be. Re-pointed at the marker the import path
+    // already uses for a custom terminal this machine does not have, so the
+    // profile shows struck through and stays that way until somebody says what
+    // it should open.
+    let orphaned_custom_profiles = crate::db::shell_profiles::orphan_custom_shells(conn)?;
 
     // The one setting that is not a preference. Sudo auto-fill decides whether
     // stored passwords get typed into a session on the host's say-so, and the
@@ -267,6 +284,10 @@ pub(crate) fn harden_restored_db(conn: &rusqlite::Connection) -> AppResult<Resto
             conn,
             "SELECT COUNT(*) FROM shell_profiles WHERE startup_command <> ''",
         )? == 0
+        && count(
+            conn,
+            "SELECT COUNT(*) FROM shell_profiles              WHERE shell_id LIKE 'custom:%' AND shell_id <> 'custom:none'",
+        )? == 0
         && !crate::db::settings::get_bool(
             conn,
             crate::commands::settings::KEY_SUDO_AUTOFILL,
@@ -282,6 +303,7 @@ pub(crate) fn harden_restored_db(conn: &rusqlite::Connection) -> AppResult<Resto
         dropped_terminals,
         cleared_host_keys,
         cleared_startup_commands,
+        orphaned_custom_profiles,
         sudo_autofill_disabled,
     })
 }
@@ -561,5 +583,53 @@ mod tests {
             )
             .unwrap();
         assert_eq!(triggers, 0);
+    }
+
+    /// The custom terminals all go, so a profile naming one must not be left
+    /// holding its id: the table's ids restart from 1, and the next entry added
+    /// would inherit the profile.
+    #[test]
+    fn a_profile_naming_a_custom_terminal_is_left_pointing_at_nothing() {
+        use crate::db::shell_profiles::{self as profiles, ShellProfileInput};
+
+        let live = open_in_memory().unwrap();
+        let new = |id: &str, label: &str, shell: &str| {
+            profiles::create(
+                &live,
+                id,
+                &ShellProfileInput {
+                    label: label.into(),
+                    shell_id: shell.into(),
+                    cwd: String::new(),
+                    startup_command: String::new(),
+                    color: String::new(),
+                },
+                None,
+            )
+            .unwrap();
+        };
+        new("p-1", "Git Bash at work", "custom:1");
+        new("p-2", "Also custom", "custom:12");
+        new("p-3", "Plain pwsh", "pwsh");
+
+        let report = harden_restored_db(&live).unwrap();
+        assert_eq!(report.orphaned_custom_profiles, 2);
+
+        assert_eq!(
+            profiles::get(&live, "p-1").unwrap().shell_id,
+            crate::db::shell_profiles::UNMATCHED_CUSTOM,
+        );
+        assert_eq!(
+            profiles::get(&live, "p-2").unwrap().shell_id,
+            crate::db::shell_profiles::UNMATCHED_CUSTOM,
+        );
+        let kept = profiles::get(&live, "p-3").unwrap();
+        assert_eq!(kept.shell_id, "pwsh", "a normal shell is untouched");
+        assert_eq!(kept.label, "Plain pwsh");
+
+        // Already pointing at nothing, so a second pass changes nothing and
+        // counts nothing.
+        let again = harden_restored_db(&live).unwrap();
+        assert_eq!(again.orphaned_custom_profiles, 0);
     }
 }

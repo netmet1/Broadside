@@ -296,6 +296,18 @@ pub fn delete(conn: &Connection, id: &str) -> AppResult<usize> {
     Ok(conn.execute("DELETE FROM shell_profiles WHERE id = ?1", params![id])?)
 }
 
+/// Points every profile that names a custom terminal at [`UNMATCHED_CUSTOM`],
+/// and says how many were changed.
+///
+/// For the restore, which deletes every custom terminal: see the call site in
+/// `commands/backup.rs` for why a dangling `custom:<id>` cannot be left behind.
+pub fn orphan_custom_shells(conn: &Connection) -> AppResult<usize> {
+    Ok(conn.execute(
+        "UPDATE shell_profiles SET shell_id = ?1          WHERE shell_id LIKE 'custom:%' AND shell_id <> ?1",
+        params![UNMATCHED_CUSTOM],
+    )?)
+}
+
 /// Rewrites the order: `ids` first, in the order given, then any profile the
 /// list did not mention, in its existing order. Tolerant of a stale list (a
 /// profile deleted or added elsewhere in the meantime) rather than refusing the

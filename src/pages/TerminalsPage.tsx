@@ -1863,7 +1863,11 @@ export function TerminalsPage({
               <ChevronDownIcon className="h-3 w-3" />
             </button>
             {shellMenuOpen && (
-              <div className="absolute right-0 top-full z-50 mt-1 min-w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+              // The profile list caps its own height and scrolls (see
+              // ProfileLauncherList); this is the backstop for the rest, so a
+              // machine with a long list of WSL distributions cannot push the
+              // menu off the bottom of the window either.
+              <div className="absolute right-0 top-full z-50 mt-1 max-h-[calc(100vh-5rem)] min-w-56 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
                 {localShells.length === 0 ? (
                   <p className="px-2 py-1.5 text-xs text-muted-foreground">
                     {shellsError

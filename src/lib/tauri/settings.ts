@@ -287,6 +287,11 @@ export type RestoreReport = {
    * profile comes back; the command it would type into a shell on the next
    * click does not, because a file is not where that gets decided. */
   cleared_startup_commands: number;
+  /** Saved shell profiles that named a custom local shell. Every custom entry
+   * is dropped above, so each of these profiles was pointed at nothing rather
+   * than left holding an id the next entry added would take. Pick the shell
+   * again in Edit once the entry is back. */
+  orphaned_custom_profiles: number;
   /** True when the restored file had sudo auto-fill on and the restore turned
    * it back off. A backup carries no credentials, so a file arriving with that
    * switch on would be turning password injection on for passwords already on
