@@ -1123,9 +1123,11 @@ export function HostsPage({
                   )}
                 >
                   <DownloadIcon />
-                  {profileSelection.size === 1
-                    ? "Export the ticked profile…"
-                    : `Export ${profileSelection.size || ""} ticked profiles…`}
+                  {profileSelection.size === 0
+                    ? "Export ticked profiles…"
+                    : profileSelection.size === 1
+                      ? "Export the ticked profile…"
+                      : `Export ${profileSelection.size} ticked profiles…`}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={() => void exportProfiles()}
