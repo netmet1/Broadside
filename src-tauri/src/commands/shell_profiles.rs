@@ -62,10 +62,18 @@ pub fn import_legacy_shell_profiles(
     with_db(&state, |conn| repo::import_legacy(conn, &profiles))
 }
 
-/// Writes every profile to a file the operator chose. Returns how many.
+/// Writes profiles to a file the operator chose. Returns how many.
+///
+/// `ids` is the subset to write, for the Hosts tab's "export this one" and
+/// "export the ticked ones"; without it, every profile, which is what the
+/// launcher's Export does.
 #[tauri::command]
-pub fn export_shell_profiles(path: String, state: State<'_, DbState>) -> AppResult<usize> {
-    let (json, count) = with_db(&state, repo::export_json)?;
+pub fn export_shell_profiles(
+    path: String,
+    ids: Option<Vec<String>>,
+    state: State<'_, DbState>,
+) -> AppResult<usize> {
+    let (json, count) = with_db(&state, |conn| repo::export_json(conn, ids.as_deref()))?;
     std::fs::write(&path, json)?;
     Ok(count)
 }

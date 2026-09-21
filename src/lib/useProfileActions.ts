@@ -26,13 +26,33 @@ function plural(n: number): string {
   return `${n} profile${n === 1 ? "" : "s"}`;
 }
 
+/** A filename for one profile's export, built from its name. Only letters,
+ * digits and a few safe punctuation marks survive; everything else becomes a
+ * dash, which covers what Windows refuses in a filename and anything else a
+ * profile name might carry. A name made entirely of those still produces a
+ * file rather than an error. The operator can rename it in the save dialog;
+ * this is only what it opens on. */
+function oneFileName(label: string): string {
+  const slug = label
+    .trim()
+    .replace(/[^\w .()[\]-]+/g, "-")
+    .replace(/^[-.\s]+|[-.\s]+$/g, "")
+    .slice(0, 60);
+  return slug ? `broadside-profile-${slug}.json` : "broadside-profile.json";
+}
+
 /**
- * Everything the Terminals launcher does to saved profiles: save, delete,
- * duplicate, reorder, export and import. Each one is a database write followed
- * by a fresh read, so the list on screen is always what is stored.
+ * Everything a profile list does to saved profiles: save, delete, duplicate,
+ * reorder, export and import. Each one is a database write followed by a fresh
+ * read, so the list on screen is always what is stored.
  *
  * Split out of TerminalsPage, which is large enough already, and because none
- * of it is about terminals.
+ * of it is about terminals. It lives in `lib` because there are two of those
+ * lists now: the Terminals "+" launcher and the Hosts tab's Profiles side.
+ * Each holds its own copy of this hook, the way the two lists hold their own
+ * copy of anything else; every action ends in a re-read, and both lists re-read
+ * when their page is shown, so neither can sit on a stale list for longer than
+ * a tab switch.
  */
 export function useProfileActions(visible: boolean) {
   const { profiles: loaded, setProfiles, refresh } = useShellProfiles(visible);
@@ -103,16 +123,28 @@ export function useProfileActions(visible: boolean) {
     [setProfiles, refresh],
   );
 
-  const exportProfiles = useCallback(async () => {
+  /**
+   * Write profiles to a file the operator picks.
+   *
+   * `chosen` is the subset: one profile from its row on the Hosts tab, or the
+   * ones ticked there. Without it, every profile, which is what both Export
+   * buttons do when nothing is picked. The backend decides what the file holds,
+   * so a subset cannot be assembled here out of a list that is a read behind.
+   */
+  const exportProfiles = useCallback(async (chosen?: ShellProfile[]) => {
+    const ids = chosen?.map((p) => p.id);
+    const one = chosen?.length === 1 ? chosen[0] : undefined;
     try {
       const path = await saveDialog({
-        title: "Export shell profiles",
-        defaultPath: "broadside-shell-profiles.json",
+        title: one ? `Export "${one.label}"` : "Export shell profiles",
+        defaultPath: one
+          ? oneFileName(one.label)
+          : "broadside-shell-profiles.json",
         filters: FILE_FILTER,
       });
       if (typeof path !== "string") return;
-      const n = await exportShellProfiles(path);
-      toast.success(`Exported ${plural(n)}`);
+      const n = await exportShellProfiles(path, ids);
+      toast.success(one ? `Exported "${one.label}"` : `Exported ${plural(n)}`);
     } catch (e) {
       toast.error(errorMessage(e));
     }

@@ -52,9 +52,15 @@ export function importLegacyShellProfiles(
   return invoke<LegacyImport>("import_legacy_shell_profiles", { profiles });
 }
 
-/** Write every profile to `path`. Resolves to how many were written. */
-export function exportShellProfiles(path: string): Promise<number> {
-  return invoke<number>("export_shell_profiles", { path });
+/** Write profiles to `path`. Resolves to how many were written. `ids` writes
+ * just those (one profile, or the ones ticked on the Hosts tab); without it,
+ * every profile. The file is the same shape either way, so a one-profile export
+ * imports like any other. */
+export function exportShellProfiles(
+  path: string,
+  ids?: string[],
+): Promise<number> {
+  return invoke<number>("export_shell_profiles", { path, ids: ids ?? null });
 }
 
 /** Read a profile export for the import preview. Saves nothing. Rejects a file

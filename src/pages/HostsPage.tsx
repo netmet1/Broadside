@@ -20,6 +20,7 @@ import {
   PlusIcon,
   SearchIcon,
   ServerIcon,
+  SquareTerminalIcon,
   TagIcon,
   TerminalIcon,
   Trash2Icon,
@@ -93,6 +94,13 @@ import { useHostSort } from "@/pages/hosts/useHostSort";
 import { useColumnResize } from "@/pages/hosts/useColumnResize";
 import { useHostTagFilter } from "@/pages/hosts/useHostTagFilter";
 import { TemplatesView } from "@/pages/hosts/TemplatesView";
+import { ProfilesView } from "@/pages/hosts/ProfilesView";
+import { ShellProfileDialog } from "@/components/ShellProfileDialog";
+import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
+import { type ShellProfile } from "@/lib/localShellProfiles";
+import { listLocalShells, type LocalShell } from "@/lib/tauri/local";
+import { loadDisabledShells } from "@/lib/localShellPrefs";
+import { useProfileActions } from "@/lib/useProfileActions";
 import {
   deleteTemplate,
   listTemplates,
@@ -101,6 +109,7 @@ import {
 import {
   HELP_HOSTS,
   HELP_TEMPLATES,
+  HELP_TERMINALS,
   type HelpSectionId,
 } from "@/pages/help/sections";
 import {
@@ -158,6 +167,74 @@ export function HostsPage({
   const [deletingTemplate, setDeletingTemplate] = useState<Template | null>(
     null,
   );
+  // Saved launch profiles, the third side. The Hosts page is built fresh on
+  // every visit (App renders it behind `page === "hosts"`), so the hook is
+  // always "visible" while this component exists and re-reads on each arrival.
+  const {
+    profiles,
+    loading: profilesLoading,
+    saveProfile,
+    deleteProfile,
+    duplicateProfile,
+    exportProfiles,
+    importRows,
+    importing,
+    startImport,
+    cancelImport,
+    confirmImport,
+  } = useProfileActions(true);
+  /** Ticked for an export. Ids, so a profile deleted elsewhere just drops out. */
+  const [profileSelection, setProfileSelection] = useState<Set<string>>(
+    new Set(),
+  );
+  /** The ticked profiles themselves, in launcher order, or undefined when
+   * nothing is ticked: that is what "export everything" looks like to the
+   * hook, so the two Export items differ only in what they pass. */
+  const pickedProfiles = useMemo(() => {
+    const picked = profiles.filter((p) => profileSelection.has(p.id));
+    return picked.length > 0 ? picked : undefined;
+  }, [profiles, profileSelection]);
+  const toggleProfile = useCallback((id: string) => {
+    setProfileSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const toggleAllProfiles = useCallback(
+    (checked: boolean) => {
+      setProfileSelection(checked ? new Set(profiles.map((p) => p.id)) : new Set());
+    },
+    [profiles],
+  );
+  /** The profile editor: null = closed; { profile: null } = new; else edit. */
+  const [profileEdit, setProfileEdit] = useState<{
+    profile: ShellProfile | null;
+  } | null>(null);
+  /** Held rather than its id, so the dialog can name it whatever happens to
+   * the list underneath while the question is on screen. */
+  const [profileDelete, setProfileDelete] = useState<ShellProfile | null>(null);
+  // Every shell that can launch here, minus the ones hidden in Settings: the
+  // same list the "+" launcher offers, so a profile cannot be pointed at a
+  // shell from here that cannot be picked there.
+  const [localShells, setLocalShells] = useState<LocalShell[]>([]);
+  // Read at mount, which is every arrival on this tab, so a shell hidden in
+  // Settings is hidden here the next time you look. Nothing to subscribe to:
+  // the page is built fresh each visit.
+  const [disabledShells] = useState<Set<string>>(loadDisabledShells);
+  useEffect(() => {
+    listLocalShells()
+      .then(setLocalShells)
+      .catch(() => {
+        // Costs the shell column its names, never the list of profiles.
+      });
+  }, []);
+  const enabledShells = useMemo(
+    () => localShells.filter((s) => !disabledShells.has(s.id)),
+    [localShells, disabledShells],
+  );
+
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<Host | null>(null);
@@ -683,7 +760,17 @@ export function HostsPage({
   };
 
   usePageStatus(
-    side === "templates"
+    side === "profiles"
+      ? profilesLoading
+        ? null
+        : profileSelection.size > 0
+          ? `Showing ${profiles.length} ${
+              profiles.length === 1 ? "profile" : "profiles"
+            } · ${profileSelection.size} ticked`
+          : `Showing ${profiles.length} ${
+              profiles.length === 1 ? "profile" : "profiles"
+            }`
+      : side === "templates"
       ? templatesLoading
         ? null
         : `Showing ${templates.length} ${
@@ -944,7 +1031,7 @@ export function HostsPage({
               is the list. */}
           <div
             role="group"
-            aria-label="Hosts or templates"
+            aria-label="Hosts, templates or profiles"
             className="flex shrink-0 items-center gap-0.5 rounded-md border border-input p-0.5"
           >
             <button
@@ -979,9 +1066,98 @@ export function HostsPage({
               <LayoutTemplateIcon className="h-3.5 w-3.5" />
               Templates
             </button>
+            {/* The third list. A profile is a saved way of opening a session,
+                the same kind of thing as the two beside it, and until now it
+                could only be managed from a dropdown on another tab: a folder
+                path and a startup command had to be read through a tooltip.
+                The "+" launcher is still where they are used. */}
+            <button
+              type="button"
+              onClick={() => chooseSide("profiles")}
+              aria-pressed={side === "profiles"}
+              className={cn(
+                "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
+                side === "profiles"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              {...hint(
+                "Saved local-shell launch profiles: a shell, a folder and an optional startup command. Open them from the Terminals + menu.",
+              )}
+            >
+              <SquareTerminalIcon className="h-3.5 w-3.5" />
+              Profiles
+            </button>
           </div>
         </div>
-        {side === "templates" ? (
+        {side === "profiles" ? (
+          <div className="flex shrink-0 gap-2">
+            {/* Export is the button, because per-profile export is the reason
+                this side has an Import/Export of its own: the "+" menu can only
+                write the lot. What it writes follows the ticks, and with none
+                it writes everything, so the plain case needs no ticking. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  aria-label="Import / Export profiles"
+                  {...hint(
+                    "Move profiles in or out of Broadside as a JSON file. No credentials are included.",
+                  )}
+                >
+                  <ArrowUpDownIcon />
+                  {!compact && (
+                    <>
+                      Import / Export
+                      <ChevronDownIcon className="-mr-1 opacity-60" />
+                    </>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() => void exportProfiles(pickedProfiles)}
+                  disabled={profilesLoading || profileSelection.size === 0}
+                  {...hint(
+                    "Write the ticked profiles to a file. One ticked profile writes one profile.",
+                  )}
+                >
+                  <DownloadIcon />
+                  {profileSelection.size === 1
+                    ? "Export the ticked profile…"
+                    : `Export ${profileSelection.size || ""} ticked profiles…`}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => void exportProfiles()}
+                  disabled={profilesLoading || profiles.length === 0}
+                  {...hint(
+                    "Write every profile to a file, in launcher order, re-importable here or on another PC",
+                  )}
+                >
+                  <DownloadIcon />
+                  Export all profiles…
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => void startImport()}
+                  {...hint(
+                    "Add profiles from a file. You see every profile, startup command included, before anything is saved.",
+                  )}
+                >
+                  <UploadIcon />
+                  Import profiles…
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              onClick={() => setProfileEdit({ profile: null })}
+              aria-label="New profile"
+              {...hint("Save a shell, a folder and an optional startup command as a profile")}
+            >
+              <PlusIcon />
+              {!compact && "New profile"}
+            </Button>
+          </div>
+        ) : side === "templates" ? (
           <div className="flex shrink-0 gap-2">
             <Button
               variant="outline"
@@ -1106,7 +1282,33 @@ export function HostsPage({
         )}
       </div>
 
-      {side === "templates" ? (
+      {side === "profiles" ? (
+        profilesLoading || profiles.length > 0 ? (
+          <ProfilesView
+            profiles={profiles}
+            loading={profilesLoading}
+            shells={localShells}
+            selectedIds={profileSelection}
+            onToggle={toggleProfile}
+            onToggleAll={toggleAllProfiles}
+            onEdit={(p) => setProfileEdit({ profile: p })}
+            onDuplicate={duplicateProfile}
+            onExportOne={(p) => void exportProfiles([p])}
+            onDelete={setProfileDelete}
+          />
+        ) : (
+          <EmptyState
+            icon={SquareTerminalIcon}
+            title="Profiles"
+            actionLabel="Create your first profile"
+            onAction={() => setProfileEdit({ profile: null })}
+            actionHint="A shell, a folder and an optional startup command, saved under a name"
+            description="A profile is a saved way of opening a local shell: which shell, which folder, and a command to run once it opens. Saved here, launched from the Terminals + menu."
+            helpSection={HELP_TERMINALS}
+            onOpenHelp={onOpenHelp}
+          />
+        )
+      ) : side === "templates" ? (
         templatesLoading || templates.length > 0 ? (
           <TemplatesView
             templates={templates}
@@ -1367,6 +1569,64 @@ export function HostsPage({
             <AlertDialogAction
               variant="destructive"
               onClick={() => void runDeleteTemplate()}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* The profile editor, the same dialog the Terminals "+" menu opens: one
+          form for one thing, wherever you reached it from. */}
+      <ShellProfileDialog
+        open={profileEdit !== null}
+        onOpenChange={(open) => {
+          if (!open) setProfileEdit(null);
+        }}
+        shells={enabledShells}
+        initial={profileEdit?.profile ?? null}
+        onSave={saveProfile}
+      />
+
+      {/* The import preview. Every profile in the file, startup commands in
+          full, before anything is saved. */}
+      <ShellProfileImportDialog
+        rows={importRows}
+        shells={localShells}
+        busy={importing}
+        onCancel={cancelImport}
+        onConfirm={() => void confirmImport()}
+      />
+
+      {/* Deleting a profile. The "+" menu asks for a double-click first,
+          because the bin sits a few pixels from Edit in a menu people move
+          through quickly; here the row is a table row with room around it, so
+          the dialog is the whole guard, as it is for a host. */}
+      <AlertDialog
+        open={profileDelete !== null}
+        onOpenChange={(o) => {
+          if (!o) setProfileDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete &ldquo;{profileDelete?.label}&rdquo;?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The profile goes, here and in the Terminals + menu. Nothing open
+              is affected, and a template that opens this profile will say it is
+              missing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (profileDelete) deleteProfile(profileDelete.id);
+                setProfileDelete(null);
+              }}
             >
               Delete
             </AlertDialogAction>

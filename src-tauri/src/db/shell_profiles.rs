@@ -530,10 +530,26 @@ struct FileProfile {
     custom_terminal: Option<String>,
 }
 
-/// Every profile as an export file, in launcher order, and how many there are.
-/// The caller writes it, outside the database lock.
-pub fn export_json(conn: &Connection) -> AppResult<(String, usize)> {
-    let profiles = list(conn)?;
+/// Profiles as an export file, in launcher order, and how many there are. The
+/// caller writes it, outside the database lock.
+///
+/// `ids` picks a subset (the Hosts tab exports one profile, or the ones
+/// ticked); `None` is every profile, which is what the launcher's Export does.
+/// The order is always the launcher's, never the order the ids were given in:
+/// an export file is a list of profiles, and the list has an order already.
+///
+/// A subset that matches nothing is an error rather than an empty file, since
+/// the only way to ask for one is to tick profiles that have since gone.
+pub fn export_json(conn: &Connection, ids: Option<&[String]>) -> AppResult<(String, usize)> {
+    let mut profiles = list(conn)?;
+    if let Some(ids) = ids {
+        profiles.retain(|p| ids.contains(&p.id));
+        if profiles.is_empty() {
+            return Err(AppError::InvalidInput(
+                "those profiles are no longer saved".into(),
+            ));
+        }
+    }
     let customs = crate::db::custom_terminals::list(conn)?;
     let file = ProfileFile {
         kind: FILE_KIND.into(),
@@ -813,13 +829,43 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("profiles.json");
         let path = path.to_string_lossy().into_owned();
-        let (json, count) = export_json(&c).unwrap();
+        let (json, count) = export_json(&c, None).unwrap();
         assert_eq!(count, 2);
         std::fs::write(&path, json).unwrap();
         let back = parse_file(&c, &read_file_text(&path).unwrap()).unwrap();
         assert_eq!(back.len(), 2);
         assert_eq!(back[0], input("A"));
         assert_eq!(back[1], b);
+    }
+
+    /// The Hosts tab exports one profile, or the ones ticked. The file is the
+    /// same shape either way, and the order is the launcher's.
+    #[test]
+    fn export_can_take_a_subset_in_launcher_order() {
+        let c = conn();
+        create(&c, "a", &input("A"), None).unwrap();
+        create(&c, "b", &input("B"), None).unwrap();
+        create(&c, "d", &input("D"), None).unwrap();
+
+        // Asked for out of order, written in the order the launcher shows.
+        let (json, count) =
+            export_json(&c, Some(&["d".to_string(), "a".to_string()])).unwrap();
+        assert_eq!(count, 2);
+        let back = parse_file(&c, &json).unwrap();
+        assert_eq!(
+            back.iter().map(|p| p.label.as_str()).collect::<Vec<_>>(),
+            ["A", "D"],
+        );
+
+        // One profile is the same path, and the whole list is still the default.
+        assert_eq!(export_json(&c, Some(&["b".to_string()])).unwrap().1, 1);
+        assert_eq!(export_json(&c, None).unwrap().1, 3);
+
+        // Ticking profiles that have since gone is an error, not an empty file.
+        let err = export_json(&c, Some(&["gone".to_string()]))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no longer saved"), "got: {err}");
     }
 
     #[test]
@@ -974,7 +1020,7 @@ mod tests {
         orphan.shell_id = UNMATCHED_CUSTOM.into();
         orphan.wanted_shell = "Git Bash".into();
         create(&c, "p-1", &orphan, None).unwrap();
-        let (json, _) = export_json(&c).unwrap();
+        let (json, _) = export_json(&c, None).unwrap();
         assert!(json.contains(r#""customTerminal": "Git Bash""#), "got: {json}");
 
         // Read back where the shell is missing: still orphaned, still asking.
