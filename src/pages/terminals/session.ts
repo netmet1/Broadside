@@ -80,9 +80,20 @@ export function sessionLabel(s: TermSession): string {
 }
 
 /** What two tabs have to share before one of them is a duplicate of the other:
- * the host for an SSH tab, the shell for a local one. */
+ * the host for an SSH tab, and for a local one the shell *and* the profile that
+ * opened it.
+ *
+ * The profile is in the key because the suffix exists to tell apart tabs that
+ * would otherwise read the same, and two profiles on one shell do not: keyed on
+ * the shell alone, opening "BroadSide Dev" and "AI Usage Widget" together named
+ * the second one "AI Usage Widget 02" when there was no other tab of that name
+ * anywhere. Opening the same profile twice still numbers, because then the
+ * names really do collide, and two plain PowerShell tabs are unchanged: they
+ * share an empty profile and so share a key. */
 function dedupKey(s: TermSession): string {
-  return s.type === "ssh" ? `ssh:${s.host.id}` : `local:${s.shell.id}`;
+  return s.type === "ssh"
+    ? `ssh:${s.host.id}`
+    : `local:${s.shell.id}:${s.profileLabel ?? ""}`;
 }
 
 /**
