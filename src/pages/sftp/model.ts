@@ -130,3 +130,54 @@ export const WARN_BYTES = 100 * 1024 * 1024; // 100 MB
 export function isLargeTransfer(files: number, bytes: number): boolean {
   return files > WARN_FILES || bytes > WARN_BYTES;
 }
+
+/** What one finished transfer delivered, for the summary toast at the end of a
+ *  drop. A single file is `files: 1`. */
+export type TransferOutcome = {
+  name: string;
+  isDir: boolean;
+  files: number;
+  bytes: number;
+  skipped: number;
+};
+
+/**
+ * The one success toast a drop gets once everything in it has settled.
+ *
+ * One item keeps the message it always had, naming the file or folder. Several
+ * are added up into one line, because a toast per file stacked over the
+ * transfer rail and hid the Cancel buttons while the rest were still going.
+ * Null when nothing succeeded: failures and cancels have already said so.
+ */
+export function transferSummary(
+  direction: "put" | "get",
+  done: TransferOutcome[],
+): string | null {
+  const verb = direction === "put" ? "Uploaded" : "Downloaded";
+  if (done.length === 0) return null;
+  const skipped = done.reduce((n, o) => n + o.skipped, 0);
+  const skip = skipped > 0 ? `, ${skipped} skipped` : "";
+  if (done.length === 1) {
+    const o = done[0];
+    return o.isDir
+      ? `${verb} folder ${o.name} (${o.files} files, ${formatSize(o.bytes)}${skip})`
+      : `${verb} ${o.name} (${formatSize(o.bytes)})`;
+  }
+  const files = done.reduce((n, o) => n + o.files, 0);
+  const bytes = done.reduce((n, o) => n + o.bytes, 0);
+  return `${verb} ${done.length} items (${files} files, ${formatSize(bytes)}${skip})`;
+}
+
+/** The toast for a folder transfer stopped part-way. It says what was kept,
+ *  since whole files stay where they landed and only the part-written one (and
+ *  any folder left empty) is removed. */
+export function folderCancelText(
+  direction: "put" | "get",
+  name: string,
+  stats: { files: number; bytes: number },
+): string {
+  const what = direction === "put" ? "Upload" : "Download";
+  if (stats.files === 0) return `${what} cancelled: ${name}. Nothing was kept.`;
+  const n = stats.files === 1 ? "1 finished file" : `${stats.files} finished files`;
+  return `${what} cancelled: ${name}. Kept ${n} (${formatSize(stats.bytes)}).`;
+}

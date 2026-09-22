@@ -135,12 +135,19 @@ export type TransferStats = {
 /** What a folder transfer does when a file already exists at the destination. */
 export type TransferMode = "overwrite_all" | "newer_only" | "skip_existing";
 
-/** Recursively counts files + bytes under a remote directory (pre-flight). */
+/** Recursively counts files + bytes under a remote directory (pre-flight).
+ *  With a `scanId`, `sftpCancelTransfer` stops it like a transfer, and it comes
+ *  back with `cancelled` set. */
 export function sftpScanDir(
   sessionId: string,
   path: string,
+  scanId?: string,
 ): Promise<TransferStats> {
-  return invoke<TransferStats>("sftp_scan_dir", { sessionId, path });
+  return invoke<TransferStats>("sftp_scan_dir", {
+    sessionId,
+    path,
+    scanId: scanId ?? null,
+  });
 }
 
 /** Recursively uploads a local directory; resolves with the transfer stats.

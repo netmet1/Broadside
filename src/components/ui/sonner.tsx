@@ -4,13 +4,22 @@ import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
+import { useToastLift } from "@/lib/toastLift"
+
+// Sonner's own default distance from the window edge.
+const EDGE_OFFSET = 24
+
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme()
+  // Raised clear of anything a page has pinned to the bottom edge (the SFTP
+  // transfer rail), never lower than the default.
+  const lift = useToastLift()
 
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      offset={{ bottom: Math.max(EDGE_OFFSET, lift) }}
       icons={{
         success: (
           <CircleCheckIcon className="size-4" />
