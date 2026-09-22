@@ -123,6 +123,9 @@ function H3({ children }: { children: ReactNode }) {
   );
 }
 
+// Listed under its section in the Help rail. See ./help/subheadings.
+H3.isSubheading = true as const;
+
 function Bullets({ children }: { children: ReactNode }) {
   return <ul className="list-disc space-y-1.5 pl-5">{children}</ul>;
 }
@@ -1154,7 +1157,7 @@ export const SECTIONS: HelpSection[] = [
               the copy is numbered rather than named the same thing twice.
               Duplicating a copy carries on the numbering instead of stacking
               the word: a copy of <Nav>Web (copy)</Nav> is{" "}
-              <Nav>Web (copy 2)</Nav>, never <Nav>Web (copy) (copy)</Nav>.
+              <Nav>Web (copy 2)</Nav>.
             </li>
             <li>
               <Nav>Delete</Nav> takes a double-click, and then asks. Double-click

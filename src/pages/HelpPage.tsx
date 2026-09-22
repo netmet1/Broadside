@@ -22,9 +22,13 @@ import { exportHelpPdf, helpPdfAvailable } from "@/lib/tauri/help";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { useAppVersion } from "@/lib/useAppVersion";
 import { useHint } from "@/lib/status";
-import { nearestSectionId } from "@/lib/nearestSection";
+import { containingSectionId } from "@/lib/nearestSection";
 import { SECTIONS, scrollToId } from "@/pages/help/content";
 import { searchableText } from "@/pages/help/searchText";
+import {
+  subheadingElements,
+  subheadingsOf,
+} from "@/pages/help/subheadings";
 import { queryPattern, useHelpHighlight } from "@/pages/help/useHelpHighlight";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +65,28 @@ function Section({
  * walking fourteen of them on every keystroke would be work for nothing. */
 const SECTION_IDS = SECTIONS.map((s) => s.id);
 
+/** Each section's sub-headers, listed under it in the rail while it is the one
+ * in view. Fixed at module load, like the text below. */
+const SECTION_SUBS = new Map<string, string[]>(
+  SECTIONS.map((s) => [s.id, subheadingsOf(s.body)]),
+);
+
+/** Scrolls the rail itself (not the page) so the lit row is visible. */
+function keepInView(container: HTMLElement | null) {
+  const row = container?.querySelector<HTMLElement>('[data-rail-lit="true"]');
+  if (!container || !row) return;
+  const top =
+    row.getBoundingClientRect().top -
+    container.getBoundingClientRect().top +
+    container.scrollTop;
+  const bottom = top + row.offsetHeight;
+  if (top < container.scrollTop) {
+    container.scrollTop = top;
+  } else if (bottom > container.scrollTop + container.clientHeight) {
+    container.scrollTop = bottom - container.clientHeight;
+  }
+}
+
 const SECTION_TEXT = new Map<string, string>(
   SECTIONS.map((s) => [
     s.id,
@@ -96,6 +122,10 @@ export function HelpPage({
   // The id of the section nearest the top of the scroll area, for the live TOC
   // highlight.
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Which of the active section's sub-headers the reader has scrolled past
+  // last, or null while they are still above the first one.
+  const [activeSub, setActiveSub] = useState<number | null>(null);
+  const navRef = useRef<HTMLElement>(null);
 
   const hint = useHint();
   const version = useAppVersion();
@@ -150,10 +180,19 @@ export function HelpPage({
     const scroller = rootRef.current?.closest("main");
     if (!scroller) return;
 
-    // The same question Settings asks of its own panel (lib/nearestSection),
-    // so the two pages agree about which section is in view.
+    // The section the reader is inside (lib/nearestSection), then the last of
+    // its sub-headers to have reached the same line.
     const computeActive = () => {
-      setActiveId(nearestSectionId(scroller, SECTION_IDS, STICKY_OFFSET_PX));
+      const id = containingSectionId(scroller, SECTION_IDS, STICKY_OFFSET_PX);
+      setActiveId(id);
+      let sub: number | null = null;
+      if (id) {
+        const line = scroller.getBoundingClientRect().top + STICKY_OFFSET_PX + 2;
+        subheadingElements(id).forEach((el, i) => {
+          if (el.getBoundingClientRect().top <= line) sub = i;
+        });
+      }
+      setActiveSub(sub);
     };
 
     // Restore (next frame, so the content has laid out), then allow saving.
@@ -193,6 +232,12 @@ export function HelpPage({
     // `landOn` never changes after mount (it is a useState initial value), so
     // this is still the once-per-mount effect it has always been.
   }, [landOn]);
+
+  // The rail scrolls on its own once a section's sub-headers make it taller
+  // than the window; keep whatever is lit on screen as the reader moves.
+  useEffect(() => {
+    keepInView(navRef.current);
+  }, [activeId, activeSub]);
 
   return (
     <div ref={rootRef} className="mx-auto flex max-w-5xl gap-8 px-6 py-6">
@@ -258,7 +303,10 @@ export function HelpPage({
               )}
             </div>
           )}
-          <nav className="space-y-0.5">
+          <nav
+            ref={navRef}
+            className="max-h-[calc(100vh-11rem)] space-y-0.5 overflow-y-auto"
+          >
             {/* While filtering, each section says how many marks are in it, so
                 a section kept for a keyword, a word deliberately not written on
                 the page, reads as "keyword" instead of looking like a match the
@@ -267,12 +315,17 @@ export function HelpPage({
               const marks = searching
                 ? (highlight.countsById.get(s.id) ?? 0)
                 : 0;
+              const subs =
+                activeId === s.id ? (SECTION_SUBS.get(s.id) ?? []) : [];
               return (
+                <div key={s.id}>
                 <button
-                  key={s.id}
                   type="button"
                   onClick={() => scrollToId(s.id)}
                   aria-current={activeId === s.id ? "true" : undefined}
+                  data-rail-lit={
+                    activeId === s.id && activeSub === null ? "true" : undefined
+                  }
                   title={
                     !searching
                       ? undefined
@@ -296,6 +349,36 @@ export function HelpPage({
                     </span>
                   )}
                 </button>
+                {/* The section in view opens out into its sub-headers. Found
+                    in the page by position when clicked, so the headings need
+                    no ids of their own (see pages/help/subheadings). */}
+                {subs.length > 0 && (
+                  <div className="mb-1 ml-3 mt-0.5 space-y-px border-l border-border/60 pl-2">
+                    {subs.map((title, i) => (
+                      <button
+                        key={`${i}-${title}`}
+                        type="button"
+                        onClick={() =>
+                          subheadingElements(s.id)[i]?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          })
+                        }
+                        data-rail-lit={activeSub === i ? "true" : undefined}
+                        className={cn(
+                          "block w-full truncate rounded-sm px-2 py-0.5 text-left text-xs hover:bg-accent hover:text-accent-foreground",
+                          activeSub === i
+                            ? "font-medium text-foreground"
+                            : "text-muted-foreground",
+                        )}
+                        title={title}
+                      >
+                        {title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                </div>
               );
             })}
             {visibleSections.length === 0 && (

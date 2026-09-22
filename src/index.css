@@ -275,6 +275,10 @@
   [id^="help-sec-"] {
     scroll-margin-top: 4rem;
   }
+  /* A sub-header the Help rail jumps to lands under the pinned title too. */
+  [id^="help-sec-"] h3[data-h="h3"] {
+    scroll-margin-top: 4rem;
+  }
 
   /* Custom narrow scrollbars throughout the app (theme-aware). */
   * {

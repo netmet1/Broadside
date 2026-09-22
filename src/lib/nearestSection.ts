@@ -26,3 +26,37 @@ export function nearestSectionId(
   }
   return best;
 }
+
+/**
+ * The section the reader is *inside*: the last one whose top edge has reached
+ * the line under the sticky header.
+ *
+ * Help uses this rather than `nearestSectionId`, because Help lists the section
+ * in view's sub-headers under it. Nearest-edge changes its answer halfway
+ * through a long section (the next heading being closer than the one far
+ * above), which lit the neighbour and would list the neighbour's sub-headers
+ * beside the text of this one. At the very bottom of the page, where a short
+ * last section can never reach the line, it falls back to nearest, so a click
+ * on that section still lights it.
+ */
+export function containingSectionId(
+  scroller: Element,
+  ids: readonly string[],
+  offsetPx: number,
+): string | null {
+  if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+    return nearestSectionId(scroller, ids, offsetPx);
+  }
+  const anchor = scroller.getBoundingClientRect().top + offsetPx;
+  let first: string | null = null;
+  let inside: string | null = null;
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    first ??= id;
+    // A couple of pixels of slack: a smooth scroll to a heading can settle a
+    // fraction short of the line.
+    if (el.getBoundingClientRect().top <= anchor + 2) inside = id;
+  }
+  return inside ?? first;
+}
