@@ -129,6 +129,7 @@ export function HostsPage({
   openHostIds,
   onEditTemplate,
   onOpenTemplate,
+  onOpenProfiles,
   onOpenHelp,
 }: {
   onOpenTerminal: (host: Host) => void;
@@ -145,6 +146,10 @@ export function HostsPage({
   /** Open every session in this template. The App layer owns what happens when
    * terminals are already open, because it is the one that knows. */
   onOpenTemplate: (template: Template) => void;
+  /** Open these saved profiles as terminal tabs: one from its row, or every one
+   * ticked. Resolved and opened by the App layer, through the same path a
+   * template launch and the "+" launcher take. */
+  onOpenProfiles: (profiles: ShellProfile[]) => void;
   onOpenHelp: (section: HelpSectionId) => void;
 }) {
   const [hosts, setHosts] = useState<Host[]>([]);
@@ -183,13 +188,15 @@ export function HostsPage({
     cancelImport,
     confirmImport,
   } = useProfileActions(true);
-  /** Ticked for an export. Ids, so a profile deleted elsewhere just drops out. */
+  /** Ticked for a launch or an export, the way the Hosts side's ticks are for
+   * Multi-terminal. Ids, so a profile deleted elsewhere just drops out. */
   const [profileSelection, setProfileSelection] = useState<Set<string>>(
     new Set(),
   );
   /** The ticked profiles themselves, in launcher order, or undefined when
    * nothing is ticked: that is what "export everything" looks like to the
-   * hook, so the two Export items differ only in what they pass. */
+   * hook, so the two Export items differ only in what they pass. Multi-profile
+   * takes the same list, and is disabled when there is none. */
   const pickedProfiles = useMemo(() => {
     const picked = profiles.filter((p) => profileSelection.has(p.id));
     return picked.length > 0 ? picked : undefined;
@@ -208,6 +215,18 @@ export function HostsPage({
     },
     [profiles],
   );
+  /** Open every ticked profile at once, then clear the ticks: the same
+   * gesture, and the same clearing, as Multi-terminal on the Hosts side.
+   *
+   * No already-open question here, deliberately. Two terminals on one machine
+   * is worth asking about because a second login can matter; a second shell in
+   * the same folder is just a second shell, and the "+" launcher has always
+   * opened one without asking. */
+  const openSelectedProfiles = useCallback(() => {
+    if (!pickedProfiles) return;
+    onOpenProfiles(pickedProfiles);
+    setProfileSelection(new Set());
+  }, [pickedProfiles, onOpenProfiles]);
   /** The profile editor: null = closed; { profile: null } = new; else edit. */
   const [profileEdit, setProfileEdit] = useState<{
     profile: ShellProfile | null;
@@ -693,9 +712,16 @@ export function HostsPage({
   // count is in the key because the Multi-terminal label changes width with it.
   const railRef = useRef<HTMLDivElement>(null);
   const { prefs } = useUiPrefs();
+  // `side` is in the key because the three rails are different widths, and the
+  // two selection counts because both Multi- buttons change width with them.
   const compact = useRailCompact(
     railRef,
-    [prefs.appFontSize, selectedIds.size > 0].join("|"),
+    [
+      prefs.appFontSize,
+      side,
+      selectedIds.size > 0,
+      profileSelection.size > 0,
+    ].join("|"),
   );
 
   const toggleSelected = (id: number) =>
@@ -1082,7 +1108,7 @@ export function HostsPage({
                   : "text-muted-foreground hover:text-foreground",
               )}
               {...hint(
-                "Saved local-shell launch profiles: a shell, a folder and an optional startup command. Open them from the Terminals + menu.",
+                "Saved local-shell launch profiles: a shell, a folder and an optional startup command. Open one from its row, or tick several and open them together.",
               )}
             >
               <SquareTerminalIcon className="h-3.5 w-3.5" />
@@ -1092,6 +1118,29 @@ export function HostsPage({
         </div>
         {side === "profiles" ? (
           <div className="flex shrink-0 gap-2">
+            {/* The same button the Hosts side has, doing the same thing to the
+                same kind of list: open every ticked one at once. A profile is
+                a saved way of opening a session, so a list of them that could
+                not open one was the odd thing out on this tab. */}
+            <Button
+              variant="outline"
+              onClick={openSelectedProfiles}
+              disabled={profileSelection.size === 0}
+              aria-label="Multi-profile"
+              {...hint(
+                profileSelection.size > 0
+                  ? "Open a terminal tab for every ticked profile at once"
+                  : "Tick some profiles first. This opens a terminal tab for each of them at once.",
+              )}
+            >
+              <TerminalIcon />
+              {compact ? "" : "Multi-profile"}
+              {profileSelection.size > 0
+                ? compact
+                  ? profileSelection.size
+                  : ` (${profileSelection.size})`
+                : ""}
+            </Button>
             {/* Export is the button, because per-profile export is the reason
                 this side has an Import/Export of its own: the "+" menu can only
                 write the lot. What it writes follows the ticks, and with none
@@ -1293,6 +1342,7 @@ export function HostsPage({
             selectedIds={profileSelection}
             onToggle={toggleProfile}
             onToggleAll={toggleAllProfiles}
+            onOpen={(p) => onOpenProfiles([p])}
             onEdit={(p) => setProfileEdit({ profile: p })}
             onDuplicate={duplicateProfile}
             onExportOne={(p) => void exportProfiles([p])}
@@ -1305,7 +1355,7 @@ export function HostsPage({
             actionLabel="Create your first profile"
             onAction={() => setProfileEdit({ profile: null })}
             actionHint="A shell, a folder and an optional startup command, saved under a name"
-            description="A profile is a saved way of opening a local shell: which shell, which folder, and a command to run once it opens. Saved here, launched from the Terminals + menu."
+            description="A profile is a saved way of opening a local shell: which shell, which folder, and a command to run once it opens. Kept here, opened from here or from the Terminals + menu."
             helpSection={HELP_TERMINALS}
             onOpenHelp={onOpenHelp}
           />

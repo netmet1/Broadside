@@ -1,8 +1,9 @@
 /** Saved local-shell launch profiles: a named shell + a working directory +
  * an optional startup command, so an advanced user can open a shell configured
  * exactly how they want it (e.g. "Broadside dev" = pwsh in the project folder,
- * running `claude`). Launched from the Terminals "+" launcher and created,
- * edited, reordered, exported and imported there. Never holds credentials.
+ * running `claude`). Launched and reordered from the Terminals "+" launcher,
+ * and listed, launched, created, edited, exported and imported on the Hosts
+ * tab's Profiles side. Never holds credentials.
  *
  * Stored in the database since build 69 (see `lib/tauri/shellProfiles` and
  * `src-tauri/src/db/shell_profiles.rs`). They used to live in localStorage as a
@@ -107,6 +108,29 @@ export function matchingCustomShell<T extends { id: string; label: string }>(
   return shells.find(
     (s) => s.id.startsWith("custom:") && s.label.trim().toLowerCase() === name,
   );
+}
+
+/**
+ * Why a profile will not launch, as one sentence that names it.
+ *
+ * One wording in one place, because four places have to say it: the "+"
+ * launcher's toast, a launch from the Hosts tab, the Profiles table's amber
+ * cell, and the skipped list a template launch reports. They had drifted into
+ * three slightly different sentences already.
+ *
+ * `advise` appends what to do about it, and only the custom-shell case gets it:
+ * a WSL distro that has been uninstalled is not something Settings can add
+ * back, so there would be nothing useful to append.
+ */
+export function missingShellNote(p: ShellProfile, advise = false): string {
+  const wanted = p.shellId === UNMATCHED_CUSTOM ? p.wantedShell : "";
+  if (!wanted) {
+    return `"${p.label}" uses a shell that isn't available on this machine.`;
+  }
+  const note = `"${p.label}" opened the custom local shell "${wanted}", which isn't on this machine.`;
+  return advise
+    ? `${note} Add it under Settings > Local shells, then pick it in Edit.`
+    : note;
 }
 
 /** Strips one trailing ` (copy)` or ` (copy N)` off a label, so a copy of a

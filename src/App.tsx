@@ -51,7 +51,11 @@ import {
   type SshTermSession,
   type LocalShellOpenOpts,
 } from "@/pages/terminals/session";
-import type { LocalShell } from "@/lib/tauri/local";
+import { listLocalShells, type LocalShell } from "@/lib/tauri/local";
+import {
+  missingShellNote,
+  type ShellProfile,
+} from "@/lib/localShellProfiles";
 import { PtyBroadcastPage } from "@/pages/PtyBroadcastPage";
 import { MultiTerminalPage } from "@/pages/MultiTerminalPage";
 import { SkillsPage } from "@/pages/SkillsPage";
@@ -457,6 +461,68 @@ function App() {
     [nextSeq],
   );
 
+  /**
+   * Open saved profiles as local shell tabs: one from its row on the Hosts
+   * tab's Profiles side, or every one ticked there.
+   *
+   * The shells are read here and now rather than taken from the list the page
+   * is holding, for the same reason a template resolves its references at
+   * launch: a WSL distro can be uninstalled between the table being drawn and
+   * the button being pressed, and the answer that matters is the one at the
+   * moment of opening.
+   *
+   * A profile whose shell has gone is reported and the others still open, which
+   * is what a template launch does with an item it cannot resolve. Nothing asks
+   * first when the same profile is already open, unlike opening a host twice:
+   * two shells in one folder is an ordinary way to work, and the "+" launcher
+   * has never asked either.
+   */
+  const openProfiles = useCallback(
+    (picked: ShellProfile[]) => {
+      if (picked.length === 0) return;
+      void (async () => {
+        try {
+          const shells = await listLocalShells();
+          const byId = new Map(shells.map((s) => [s.id, s] as const));
+          const ready: LaunchSession[] = [];
+          const missing: string[] = [];
+          for (const p of picked) {
+            const shell = byId.get(p.shellId);
+            if (!shell) {
+              // The advice only fits when this is the whole message, which is
+              // the single-profile case.
+              missing.push(missingShellNote(p, picked.length === 1));
+              continue;
+            }
+            ready.push({
+              type: "local",
+              shell,
+              opts: {
+                cwd: p.cwd || undefined,
+                startupCommand: p.startupCommand || undefined,
+                profileLabel: p.label,
+                profileColor: p.color || undefined,
+              },
+            });
+          }
+          // The same path a template and the "+" launcher take. There is one
+          // way to open a terminal in this application.
+          if (ready.length > 0) launchTemplate(ready, "end", true);
+          if (missing.length === 1) {
+            toast.error(missing[0]);
+          } else if (missing.length > 1) {
+            toast.error(
+              `${missing.length} of these ${picked.length} profiles could not open: the shells they name are not on this machine.`,
+            );
+          }
+        } catch (e) {
+          toast.error(errorMessage(e));
+        }
+      })();
+    },
+    [launchTemplate],
+  );
+
   /** A launch waiting on the operator: either because terminals are already
    * open and the arrangement will not match, or because there is something
    * about this one worth reading before it happens. */
@@ -771,6 +837,7 @@ function App() {
           openHostIds={openHostIds}
           onEditTemplate={editTemplate}
           onOpenTemplate={openTemplate}
+          onOpenProfiles={openProfiles}
           onOpenHelp={openHelpAt}
         />
       )}
