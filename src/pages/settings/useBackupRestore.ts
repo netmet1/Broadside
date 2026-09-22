@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { errorMessage } from "@/lib/tauri/hosts";
 import { backupAppData, restoreAppData } from "@/lib/tauri/settings";
+import { queueToastAfterReload } from "@/lib/toastsAfterReload";
 
 /** Backup & Restore section state + handlers. `backupIncludeCsv`/`runBackup`
  * are also consumed by the Danger Zone dialog's "back up first" offer, so the
@@ -64,11 +65,13 @@ export function useBackupRestore() {
     setRestoring(true);
     try {
       const report = await restoreAppData(restorePath);
-      toast.success(
-        `Restored ${report.host_count} ${
-          report.host_count === 1 ? "host" : "hosts"
-        }, reloading…`,
-      );
+      const restored = `Restored ${report.host_count} ${
+        report.host_count === 1 ? "host" : "hosts"
+      }`;
+      toast.success(`${restored}, reloading…`);
+      // The reload is 700 ms away, far too soon to read anything, so what the
+      // restore has to say is said again on the page that comes back.
+      queueToastAfterReload("success", `${restored} from ${restoreFileName}`);
       // Said separately, and as a warning rather than folded into the success
       // line, because both are things the operator now has to do something
       // about: an entry to re-add, or a host that will ask about its key on the
@@ -112,7 +115,9 @@ export function useBackupRestore() {
         if (report.sudo_autofill_disabled) {
           parts.push("sudo auto-fill turned off (Settings > Security)");
         }
-        toast.warning(parts.join("; "));
+        // Only after the reload: shown now, it would be torn down mid-read.
+        // It stays until closed, since each part is something to go and do.
+        queueToastAfterReload("warning", parts.join("; "));
       }
       setRestorePath(null);
       setTimeout(() => window.location.reload(), 700);

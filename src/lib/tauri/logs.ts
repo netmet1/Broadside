@@ -97,3 +97,41 @@ export async function loadErrorLogFile(path: string): Promise<ErrorEntry[]> {
   }
   return entries;
 }
+
+/** One remembered toast (the Logs page's Toasts History). */
+export type ToastEntry = {
+  ts: string;
+  kind: "success" | "error" | "warning" | "info" | "message";
+  message: string;
+  description?: string;
+};
+
+export function appendToastLog(
+  kind: ToastEntry["kind"],
+  message: string,
+  description: string | null,
+): Promise<void> {
+  return invoke<void>("toast_log_append", { kind, message, description });
+}
+
+export async function toastLogTail(maxLines: number): Promise<ToastEntry[]> {
+  const lines = await invoke<string[]>("toast_log_tail", { maxLines });
+  const entries: ToastEntry[] = [];
+  for (const line of lines) {
+    try {
+      entries.push(JSON.parse(line) as ToastEntry);
+    } catch {
+      // A corrupt line shouldn't hide the rest.
+      entries.push({ ts: "", kind: "message", message: line });
+    }
+  }
+  return entries;
+}
+
+export function clearToastLog(): Promise<boolean> {
+  return invoke<boolean>("clear_toast_log");
+}
+
+export function exportToastLog(dest: string): Promise<number> {
+  return invoke<number>("export_toast_log", { dest });
+}

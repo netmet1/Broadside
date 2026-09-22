@@ -73,6 +73,7 @@ const HelpPage = lazy(() =>
 import { UnlockDialog } from "@/components/UnlockDialog";
 import { SettingsLoading } from "@/components/SettingsLoading";
 import { Toaster } from "@/components/ui/sonner";
+import { ToastRecorder } from "@/components/ToastRecorder";
 import { StatusProvider } from "@/components/StatusProvider";
 import { UiPrefsProvider } from "@/components/UiPrefsProvider";
 import {
@@ -1060,6 +1061,7 @@ function App() {
           </AlertDialogContent>
         </AlertDialog>
         <Toaster />
+        <ToastRecorder />
       </AppShell>
       </UiPrefsProvider>
     </StatusProvider>

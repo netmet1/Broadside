@@ -19,6 +19,7 @@ pub mod serial;
 pub mod session;
 pub mod skilllog;
 pub mod ssh;
+pub mod toastlog;
 
 use tauri::Manager;
 use tauri_plugin_window_state::{StateFlags, WindowExt};
@@ -109,6 +110,10 @@ pub fn run() {
 
             // Rolling error log (D-055): always-on, separate from audit.
             app.manage(errlog::ErrLogState::new(app_data_dir.clone()));
+
+            // Every toast shown, so one that went by too fast can be read
+            // again from Logs. A file, so a restore does not wipe it.
+            app.manage(toastlog::ToastLogState::new(app_data_dir.clone()));
 
             // What a skill run leaves behind, in Broadside rather than in the
             // host's shell history. Written only when the operator's Skills
@@ -245,6 +250,10 @@ pub fn run() {
             commands::errlog::clear_error_log,
             commands::errlog::export_error_log,
             commands::errlog::read_log_lines,
+            commands::toastlog::toast_log_append,
+            commands::toastlog::toast_log_tail,
+            commands::toastlog::clear_toast_log,
+            commands::toastlog::export_toast_log,
             commands::skilllog::skill_log_tail,
             commands::skilllog::clear_skill_log,
             commands::skilllog::export_skill_log,
