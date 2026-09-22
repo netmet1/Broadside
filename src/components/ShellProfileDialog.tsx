@@ -180,7 +180,7 @@ export function ShellProfileDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" keepOpenOnOutsideClick>
         {/* Swallows the click that dismisses the colour popup, so it cannot
             land on Cancel (or Save) underneath. Deliberately covers the whole
             dialog rather than just the footer: the popup can open over any of

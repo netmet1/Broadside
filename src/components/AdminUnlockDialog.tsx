@@ -52,7 +52,7 @@ export function AdminUnlockDialog({ open, onOpenChange, onUnlocked }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" keepOpenOnOutsideClick>
         <DialogHeader>
           <DialogTitle>Unlock security controls</DialogTitle>
           <DialogDescription>

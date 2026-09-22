@@ -81,7 +81,7 @@ export function SaveSessionDialog({ open, onOpenChange, buildLines }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" keepOpenOnOutsideClick>
         <DialogHeader>
           <DialogTitle>Save session</DialogTitle>
           <DialogDescription>

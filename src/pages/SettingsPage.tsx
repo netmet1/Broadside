@@ -1977,7 +1977,7 @@ export function SettingsPage({
         open={recoveryCode !== null}
         onOpenChange={(open) => !open && setRecoveryCode(null)}
       >
-        <DialogContent>
+        <DialogContent keepOpenOnOutsideClick>
           <DialogHeader>
             <DialogTitle>Save your recovery code</DialogTitle>
             <DialogDescription>
@@ -2010,7 +2010,7 @@ export function SettingsPage({
 
       {/* Reset the passcode with the recovery code. */}
       <Dialog open={recoverOpen} onOpenChange={setRecoverOpen}>
-        <DialogContent>
+        <DialogContent keepOpenOnOutsideClick>
           <DialogHeader>
             <DialogTitle>Reset admin passcode</DialogTitle>
             <DialogDescription>

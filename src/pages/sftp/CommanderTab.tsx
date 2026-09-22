@@ -444,7 +444,7 @@ export function CommanderTab({
         open={newFolderSide !== null}
         onOpenChange={(o) => !o && setNewFolderSide(null)}
       >
-        <DialogContent>
+        <DialogContent keepOpenOnOutsideClick>
           <DialogHeader>
             <DialogTitle>New folder</DialogTitle>
           </DialogHeader>
