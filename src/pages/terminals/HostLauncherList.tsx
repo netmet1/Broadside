@@ -1,4 +1,4 @@
-import { ServerIcon } from "lucide-react";
+import { PlusIcon, ServerIcon } from "lucide-react";
 
 import type { Host } from "@/lib/tauri/hosts";
 import { useHint } from "@/lib/status";
@@ -20,6 +20,8 @@ type Props = {
   open: boolean;
   onToggle: () => void;
   onOpen: (host: Host) => void;
+  /** Go and add a host: the Hosts tab, with its form open. */
+  onNew: () => void;
 };
 
 /**
@@ -47,10 +49,19 @@ export function HostLauncherList({
   open,
   onToggle,
   onOpen,
+  onNew,
 }: Props) {
   const hint = useHint();
+  const showsRows = open && !loading && !error && hosts.length > 0;
   return (
-    <div className="mt-1 border-t border-border/60 pt-1">
+    // A flex item of the menu's column: it gives up height down to its header
+    // and one row, and the list below is what shrinks (see TerminalsPage).
+    <div
+      className={cn(
+        "mt-1 flex flex-col border-t border-border/60 pt-1",
+        showsRows && "min-h-[5.25rem]",
+      )}
+    >
       <LauncherSectionHeader
         title="Hosts"
         count={loading ? null : hosts.length}
@@ -61,7 +72,19 @@ export function HostLauncherList({
             ? "Roll the host list away. It stays rolled up until you open it again, restarts included"
             : "Show the saved hosts, to open one from here"
         }
-      />
+      >
+        {/* Adding a host needs the full form, which lives on the Hosts tab:
+            this goes there with the form already open rather than growing a
+            second, smaller form in a menu. */}
+        <button
+          type="button"
+          onClick={onNew}
+          className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          {...hint("Add a host: goes to the Hosts tab with the new-host form open")}
+        >
+          <PlusIcon className="h-3.5 w-3.5" /> New
+        </button>
+      </LauncherSectionHeader>
       {!open ? null : loading ? null : error ? (
         <p className="px-2 py-1 text-xs text-muted-foreground">
           Couldn't read the host list. The Hosts tab will say why.
@@ -73,10 +96,11 @@ export function HostLauncherList({
       ) : (
         // Its own scroller, like the profiles below it: thirty hosts must not
         // push the serial section off the bottom of the window, and the header
-        // above stays put so the twisty is always reachable.
-        // `overscroll-contain` keeps a wheel that reaches the end of this list
-        // from scrolling whatever is behind it.
-        <div className="max-h-[40vh] overflow-y-auto overscroll-contain">
+        // above stays put so the twisty is always reachable. It takes what
+        // room the menu has left rather than a fixed cap, so a taller window
+        // shows more of it. `overscroll-contain` keeps a wheel that reaches the
+        // end of this list from scrolling whatever is behind it.
+        <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain">
           {hosts.map((h) => {
             const already = openHostIds.has(h.id);
             const where = `${h.username}@${h.hostname}:${h.port}`;

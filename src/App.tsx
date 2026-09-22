@@ -595,6 +595,17 @@ function App() {
     setPage("hosts");
   }, []);
 
+  // New, on the Hosts section of the Terminals "+" menu: the Hosts tab on its
+  // Hosts side, with the new-host form open. A one-shot like the Help focus,
+  // cleared as soon as the page has taken it, so a later visit is a plain one.
+  const [newHostRequested, setNewHostRequested] = useState(false);
+  const openNewHost = useCallback(() => {
+    rememberHostsSide("hosts");
+    setNewHostRequested(true);
+    setPage("hosts");
+  }, []);
+  const clearNewHostRequest = useCallback(() => setNewHostRequested(false), []);
+
   // The one template that opens itself. Read once, at launch, and acted on
   // before anything is on screen: `launch` makes the tabs and stops, `connect`
   // goes on to open the shells.
@@ -840,6 +851,8 @@ function App() {
           onOpenTemplate={openTemplate}
           onOpenProfiles={openProfiles}
           onOpenHelp={openHelpAt}
+          startWithNewHost={newHostRequested}
+          onNewHostConsumed={clearNewHostRequest}
         />
       )}
       {/* Templates stays mounted so a half-built arrangement survives a trip to
@@ -894,6 +907,7 @@ function App() {
           onGridFullscreen={setGridFullscreen}
           onOpenLocalShell={openLocalShell}
           onOpenHosts={openTerminals}
+          onNewHost={openNewHost}
           onManageShortcuts={openShortcutSettings}
           onOpenSessionSettings={openSessionSettings}
         />

@@ -83,8 +83,16 @@ export function ProfileLauncherList({
   const rowButton =
     "shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent group-hover:opacity-100";
 
+  const showsRows = open && !loading && profiles.length > 0;
   return (
-    <div className="mt-1 border-t border-border/60 pt-1">
+    // A flex item of the menu's column: it gives up height down to its header
+    // and one row, and the list below is what shrinks (see TerminalsPage).
+    <div
+      className={cn(
+        "mt-1 flex flex-col border-t border-border/60 pt-1",
+        showsRows && "min-h-[4.75rem]",
+      )}
+    >
       <LauncherSectionHeader
         title="Profiles"
         count={loading ? null : profiles.length}
@@ -137,10 +145,10 @@ export function ProfileLauncherList({
         // Enough profiles and the list is taller than the window. It scrolls
         // here rather than pushing the menu off the bottom of the app: the
         // header above stays put, so New, Import and Export are always reachable
-        // and the rest of the menu never moves. `overscroll-contain` keeps a
-        // wheel that reaches the end of this list from scrolling whatever is
-        // behind it.
-        <div className="max-h-[40vh] overflow-y-auto overscroll-contain">
+        // and the rest of the menu never moves. It takes what room the menu has
+        // left rather than a fixed cap. `overscroll-contain` keeps a wheel that
+        // reaches the end of this list from scrolling whatever is behind it.
+        <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain">
           {profiles.map((p) => {
             // A profile can outlive a removed WSL distro; flag one whose shell
             // isn't currently available.

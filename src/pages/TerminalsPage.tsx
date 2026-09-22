@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ChevronDownIcon,
   CopyPlusIcon,
@@ -111,6 +118,7 @@ import { useHint, usePageStatus } from "@/lib/status";
 import { useDismissOnOutside } from "@/lib/useDismissOnOutside";
 import { useShortcuts } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
+import { useWindowSize } from "@/lib/useWindowSize";
 
 const TABS_COMPACT_KEY = "terminal-tabs-compact";
 /** "1" shows the broadcast rail beside the panes. Persisted so the choice
@@ -232,6 +240,9 @@ type Props = {
    * list rather than one host because the launcher's count can ask for several
    * copies of the same one, and App makes a session per entry. */
   onOpenHosts: (hosts: Host[]) => void;
+  /** Go to the Hosts tab with the new-host form open (the launcher's Hosts
+   * section's New). */
+  onNewHost: () => void;
 };
 
 /** Whether this session's shell treats a form feed (Ctrl-L) as "redraw the
@@ -269,6 +280,7 @@ export function TerminalsPage({
   onGridFullscreen,
   onOpenLocalShell,
   onOpenHosts,
+  onNewHost,
 }: Props) {
   const shortcuts = useShortcuts(visible);
   // Local shells available on this machine, for the "+" launcher menu.
@@ -322,6 +334,25 @@ export function TerminalsPage({
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const launcherRef = useRef<HTMLDivElement>(null);
   const closeShellMenu = useCallback(() => setShellMenuOpen(false), []);
+
+  // The menu is as tall as the room between its top and the bottom of the
+  // page, measured, and measured again whenever the window changes size
+  // (smoke test 69-6, O9). A fixed `100vh - 5rem` did not know where the
+  // menu starts, so with enough hosts the serial section hung below the
+  // window and the page scrolled to reach it. Inside that height the sections
+  // share the room (see the flex classes on each): every header stays, every
+  // open list keeps at least one row, and the lists scroll within themselves.
+  // Written straight onto the element because it is layout, not state.
+  const shellMenuRef = useRef<HTMLDivElement>(null);
+  const windowSize = useWindowSize();
+  useLayoutEffect(() => {
+    const menu = shellMenuRef.current;
+    if (!shellMenuOpen || !menu) return;
+    const page = menu.closest("main")?.getBoundingClientRect().bottom;
+    const floor = Math.min(page ?? window.innerHeight, window.innerHeight);
+    const room = Math.floor(floor - menu.getBoundingClientRect().top - 8);
+    menu.style.maxHeight = `${Math.max(room, 160)}px`;
+  }, [shellMenuOpen, windowSize]);
 
   // Sessions whose hand-typed commands MultiTerminal is copying into its log
   // (Show Manual Activity, for the hosts checked there). Marked on the tab,
@@ -1982,11 +2013,15 @@ export function TerminalsPage({
               <ChevronDownIcon className="h-3 w-3" />
             </button>
             {shellMenuOpen && (
-              // The profile list caps its own height and scrolls (see
-              // ProfileLauncherList); this is the backstop for the rest, so a
-              // machine with a long list of WSL distributions cannot push the
-              // menu off the bottom of the window either.
-              <div className="absolute right-0 top-full z-50 mt-1 max-h-[calc(100vh-5rem)] min-w-56 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+              // A column whose height is measured above. Each section is a
+              // flex item that gives up height down to its header plus one
+              // row; its list is the part that shrinks and scrolls. The
+              // menu's own scrollbar is only a backstop for a window too
+              // short even for that, which the 700px minimum rules out.
+              <div
+                ref={shellMenuRef}
+                className="absolute right-0 top-full z-50 mt-1 flex max-h-[calc(100vh-5rem)] min-w-56 flex-col overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+              >
                 {/* How many to open at once. Picking a shell, a host or a
                     profile below opens this many; a large batch confirms first.
                     Capped at the max concurrent sessions from Settings.
@@ -1997,7 +2032,15 @@ export function TerminalsPage({
                     so hiding it with the shells would take the control away
                     from the two lists still on screen. The twisty rolls up the
                     shells themselves. */}
-                <div className="mb-1 flex items-center gap-1.5 border-b border-border/60 px-1.5 py-1.5">
+                <div
+                  className={cn(
+                    "flex flex-col",
+                    !collapsed.has("shells") &&
+                      enabledShells.length > 0 &&
+                      "min-h-[4.5rem]",
+                  )}
+                >
+                <div className="mb-1 flex shrink-0 items-center gap-1.5 border-b border-border/60 px-1.5 py-1.5">
                   <LauncherTwisty
                     open={!collapsed.has("shells")}
                     onToggle={() => toggleSection("shells")}
@@ -2054,21 +2097,24 @@ export function TerminalsPage({
                     Appearance.
                   </p>
                 ) : (
-                  enabledShells.map((sh) => (
-                    <button
-                      key={sh.id}
-                      type="button"
-                      onClick={() => requestOpenShells(sh)}
-                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <LocalShellIcon
-                        kind={sh.kind}
-                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                      />
-                      {sh.label}
-                    </button>
-                  ))
+                  <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain">
+                    {enabledShells.map((sh) => (
+                      <button
+                        key={sh.id}
+                        type="button"
+                        onClick={() => requestOpenShells(sh)}
+                        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <LocalShellIcon
+                          kind={sh.kind}
+                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        />
+                        {sh.label}
+                      </button>
+                    ))}
+                  </div>
                 )}
+                </div>
 
                 {/* Saved hosts. Between the shells and the profiles because
                     that is the order of how far away the thing you are opening
@@ -2083,6 +2129,10 @@ export function TerminalsPage({
                   open={!collapsed.has("hosts")}
                   onToggle={() => toggleSection("hosts")}
                   onOpen={requestOpenHost}
+                  onNew={() => {
+                    setShellMenuOpen(false);
+                    onNewHost();
+                  }}
                 />
 
                 {/* Saved launch profiles: a named shell + folder + optional
@@ -2138,8 +2188,13 @@ export function TerminalsPage({
                     about to start: two cables in the same machine routinely
                     want different speeds, and what each one wanted last time
                     is the answer you want offered. */}
-                <div className="mt-1 border-t border-border/60 pt-1">
-                  <div className="px-2 py-1">
+                <div
+                  className={cn(
+                    "mt-1 flex flex-col border-t border-border/60 pt-1",
+                    serialPorts.length > 0 && "min-h-[5rem]",
+                  )}
+                >
+                  <div className="shrink-0 px-2 py-1">
                     <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                       Serial console
                     </span>
@@ -2150,7 +2205,8 @@ export function TerminalsPage({
                       adapter and open this menu again.
                     </p>
                   ) : (
-                    serialPorts.map((p) => {
+                    <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain">
+                    {serialPorts.map((p) => {
                       const alreadyOpen = openSerialPorts.has(p.name);
                       return (
                       <div
@@ -2214,7 +2270,8 @@ export function TerminalsPage({
                         </select>
                       </div>
                       );
-                    })
+                    })}
+                    </div>
                   )}
                 </div>
               </div>

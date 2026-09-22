@@ -133,6 +133,8 @@ export function HostsPage({
   onOpenTemplate,
   onOpenProfiles,
   onOpenHelp,
+  startWithNewHost = false,
+  onNewHostConsumed,
 }: {
   onOpenTerminal: (host: Host) => void;
   /** Open terminal tabs for several hosts at once (multi-select). */
@@ -153,6 +155,10 @@ export function HostsPage({
    * template launch and the "+" launcher take. */
   onOpenProfiles: (profiles: ShellProfile[]) => void;
   onOpenHelp: (section: HelpSectionId) => void;
+  /** Arrive with the new-host form open (New, in the Terminals "+" menu's
+   * Hosts section). One-shot: cleared by the caller once taken. */
+  startWithNewHost?: boolean;
+  onNewHostConsumed?: () => void;
 }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
@@ -257,7 +263,13 @@ export function HostsPage({
     [localShells, disabledShells],
   );
 
-  const [formOpen, setFormOpen] = useState(false);
+  // Captured once, the way Help captures its focus: the prop is cleared the
+  // moment it is taken, and the form must not then close again.
+  const [formOpen, setFormOpen] = useState(startWithNewHost);
+  const [arrivedForNew] = useState(startWithNewHost);
+  useEffect(() => {
+    if (arrivedForNew) onNewHostConsumed?.();
+  }, [arrivedForNew, onNewHostConsumed]);
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<Host | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);

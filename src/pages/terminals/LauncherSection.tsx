@@ -76,7 +76,7 @@ export function LauncherSectionHeader({
 }) {
   const hint = useHint();
   return (
-    <div className="flex items-center justify-between gap-1 px-1.5 py-1">
+    <div className="flex shrink-0 items-center justify-between gap-1 px-1.5 py-1">
       <button
         type="button"
         onClick={onToggle}
