@@ -2,13 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { errorMessage } from "@/lib/tauri/hosts";
-import {
-  HOST_COLUMNS_EVENT,
-  loadColumnOrder,
-  loadHiddenCols,
-  resetHostColumns,
-  saveHiddenCols,
-} from "@/lib/hostColumns";
+import { hostColumnPrefs } from "@/lib/hostColumns";
+import { profileColumnPrefs } from "@/lib/profileColumns";
+import { useColumnPrefs } from "@/lib/useColumnPrefs";
 import {
   GENERIC_MONOSPACE,
   detectMonospaceFonts,
@@ -33,41 +29,15 @@ import { MAX_TERMINAL_SCROLLBACK, useUiPrefs } from "@/lib/uiPrefs";
 export function useAppearance() {
   const { prefs, apply: applyUiPrefs } = useUiPrefs();
 
-  // Host-table column visibility (Appearance). Read by the Hosts tab on mount;
-  // saved immediately on toggle.
-  const [hiddenCols, setHiddenCols] = useState(loadHiddenCols);
-  const toggleColumn = (id: string, visible: boolean) => {
-    setHiddenCols((prev) => {
-      const next = new Set(prev);
-      if (visible) next.delete(id);
-      else next.add(id);
-      saveHiddenCols(next);
-      return next;
-    });
-  };
-
-  // The order those columns are drawn in, which is dragged on the Hosts table
-  // rather than set here. Shown in Settings because a "reset the columns"
-  // button that put back an order you cannot see would be reset-in-the-dark,
-  // and picked up from the event so dragging one over there redraws it here.
-  const [colOrder, setColOrder] = useState(loadColumnOrder);
-  useEffect(() => {
-    const read = () => {
-      setColOrder(loadColumnOrder());
-      setHiddenCols(loadHiddenCols());
-    };
-    window.addEventListener(HOST_COLUMNS_EVENT, read);
-    return () => window.removeEventListener(HOST_COLUMNS_EVENT, read);
-  }, []);
-
-  /** Every column back, in the order Broadside ships, and nothing else touched.
-   * Scoped this tightly on purpose: it sits inside the columns box, and a
-   * Reset that reached the fonts above it would be a nasty surprise. */
-  const resetColumns = useCallback(() => {
-    resetHostColumns();
-    setHiddenCols(loadHiddenCols());
-    setColOrder(loadColumnOrder());
-  }, []);
+  // The Hosts table's and the Profiles table's columns (Appearance): which are
+  // hidden, saved at once on toggle, and the order they are drawn in, which is
+  // mostly dragged on the table itself. The order is shown here because a
+  // "reset the columns" button that put back an order you cannot see would be
+  // reset-in-the-dark. Each Reset reaches its own table's columns and nothing
+  // else: it sits inside that table's box, and a Reset that reached the fonts
+  // above it would be a nasty surprise.
+  const hostColumns = useColumnPrefs(hostColumnPrefs);
+  const profileColumns = useColumnPrefs(profileColumnPrefs);
 
   // Local-shell launcher visibility (Appearance). The detected shells plus the
   // user's hide list (stored by id); the Terminals "+" menu reads the same list.
@@ -262,10 +232,8 @@ export function useAppearance() {
   };
 
   return {
-    hiddenCols,
-    toggleColumn,
-    colOrder,
-    resetColumns,
+    hostColumns,
+    profileColumns,
     shells,
     disabledShells,
     toggleShell,

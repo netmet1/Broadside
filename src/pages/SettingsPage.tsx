@@ -78,7 +78,12 @@ import { StartupSection } from "@/pages/settings/StartupSection";
 import { useSectionNav } from "@/pages/settings/useSectionNav";
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { GridSection } from "@/pages/settings/GridSection";
-import { HostColumnsBox } from "@/pages/settings/HostColumnsBox";
+import { TableColumnsBox } from "@/pages/settings/TableColumnsBox";
+import { HIDEABLE_COLUMNS, ORDERABLE_COLUMNS } from "@/lib/hostColumns";
+import {
+  PROFILE_HIDEABLE_COLUMNS,
+  PROFILE_ORDERABLE_COLUMNS,
+} from "@/lib/profileColumns";
 import { SessionsSection } from "@/pages/settings/SessionsSection";
 import { CustomTerminalsSection } from "@/pages/settings/CustomTerminalsSection";
 import { DismissedWarnings } from "@/pages/settings/DismissedWarnings";
@@ -115,10 +120,8 @@ export function SettingsPage({
 
   // Appearance: fonts, host-table column visibility, local-shell launcher list.
   const {
-    hiddenCols,
-    toggleColumn,
-    colOrder,
-    resetColumns,
+    hostColumns,
+    profileColumns,
     shells,
     disabledShells,
     toggleShell,
@@ -1348,11 +1351,21 @@ export function SettingsPage({
               </Button>
             </div>
           </div>
-          <HostColumnsBox
-            hiddenCols={hiddenCols}
-            toggleColumn={toggleColumn}
-            colOrder={colOrder}
-            resetColumns={resetColumns}
+          <TableColumnsBox
+            title="Host table columns"
+            tableName="the Hosts table"
+            alwaysShown="Label, hostname and actions"
+            hideable={HIDEABLE_COLUMNS}
+            orderable={ORDERABLE_COLUMNS}
+            {...hostColumns}
+          />
+          <TableColumnsBox
+            title="Profile table columns"
+            tableName="the Profiles table (Hosts tab, Profiles side)"
+            alwaysShown="Name and actions"
+            hideable={PROFILE_HIDEABLE_COLUMNS}
+            orderable={PROFILE_ORDERABLE_COLUMNS}
+            {...profileColumns}
           />
           <div className="grid gap-1.5">
             <Label>Local shells in the launcher</Label>

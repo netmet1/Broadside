@@ -1,26 +1,35 @@
 import { useCallback, useRef, useState } from "react";
 
-import { loadHiddenCols } from "@/lib/hostColumns";
-import { COLS, COL_WIDTHS_KEY, MIN_COL_W } from "@/pages/hosts/constants";
+import { MIN_COL_W } from "@/pages/hosts/constants";
 
-/** Drag-to-resize + double-click-to-fit for the hosts table columns. Widths
- * persist in localStorage (across tab switches and restarts); `hiddenCols`
- * reflects the latest Settings → Appearance choice (read on mount). */
-export function useColumnResize(orderedIds: string[]) {
+/** Drag-to-resize + double-click-to-fit for a table's columns: the Hosts
+ * table, and the Profiles table beside it. Widths persist in localStorage
+ * under `widthsKey` (across tab switches and restarts); hidden columns take no
+ * width. */
+export function useColumnResize(
+  orderedIds: string[],
+  {
+    cols,
+    widthsKey,
+    hiddenCols,
+  }: {
+    /** Every column with its shipped width. */
+    cols: { id: string; w: number }[];
+    widthsKey: string;
+    hiddenCols: Set<string>;
+  },
+) {
   // Persisted column widths (drag-to-resize). Survives tab switches + restart.
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
-    const defaults = Object.fromEntries(COLS.map((c) => [c.id, c.w]));
+    const defaults = Object.fromEntries(cols.map((c) => [c.id, c.w]));
     try {
-      const saved = JSON.parse(localStorage.getItem(COL_WIDTHS_KEY) ?? "{}");
+      const saved = JSON.parse(localStorage.getItem(widthsKey) ?? "{}");
       return { ...defaults, ...saved };
     } catch {
       return defaults;
     }
   });
-  // Columns the user hid from Settings → Appearance (read on mount; the Hosts
-  // tab remounts when shown, so it always reflects the latest choice).
-  const [hiddenCols] = useState(loadHiddenCols);
-  const tableWidth = COLS.filter((c) => !hiddenCols.has(c.id)).reduce(
+  const tableWidth = cols.filter((c) => !hiddenCols.has(c.id)).reduce(
     (sum, c) => sum + (colWidths[c.id] ?? c.w),
     0,
   );
@@ -40,7 +49,7 @@ export function useColumnResize(orderedIds: string[]) {
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
         setColWidths((prev) => {
-          localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(prev));
+          localStorage.setItem(widthsKey, JSON.stringify(prev));
           return prev;
         });
       };
@@ -49,7 +58,7 @@ export function useColumnResize(orderedIds: string[]) {
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
     },
-    [colWidths],
+    [colWidths, widthsKey],
   );
 
   // Double-click a divider to auto-size the column to its widest cell (H14).
@@ -81,10 +90,10 @@ export function useColumnResize(orderedIds: string[]) {
     const width = Math.max(MIN_COL_W, Math.ceil(max) + 28);
     setColWidths((prev) => {
       const next = { ...prev, [id]: width };
-      localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(next));
+      localStorage.setItem(widthsKey, JSON.stringify(next));
       return next;
     });
-  }, [orderedIds]);
+  }, [orderedIds, widthsKey]);
 
   /** A thin drag strip on a column header's right edge. Returns JSX (not a
    * component) so it isn't remounted each render. */
@@ -101,7 +110,6 @@ export function useColumnResize(orderedIds: string[]) {
 
   return {
     colWidths,
-    hiddenCols,
     tableWidth,
     tableScrollRef,
     resizeHandle,

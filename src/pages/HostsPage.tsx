@@ -72,6 +72,7 @@ import {
   HIDEABLE_COLUMNS,
   HOST_COLUMNS_EVENT,
   loadColumnOrder,
+  loadHiddenCols,
   saveColumnOrder,
 } from "@/lib/hostColumns";
 import { useColumnDrag } from "@/lib/columnDrag";
@@ -85,6 +86,7 @@ import { useRailCompact } from "@/lib/useRailCompact";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import {
   COLS,
+  COL_WIDTHS_KEY,
   UNTAGGED_KEY,
   dtStamp,
 } from "@/pages/hosts/constants";
@@ -181,6 +183,7 @@ export function HostsPage({
     saveProfile,
     deleteProfile,
     duplicateProfile,
+    reorderProfiles,
     exportProfiles,
     importRows,
     importing,
@@ -332,9 +335,16 @@ export function HostsPage({
     [colOrder],
   );
 
-  // Drag-to-resize / double-click-to-fit columns + the hidden-column set.
-  const { colWidths, hiddenCols, tableWidth, tableScrollRef, resizeHandle } =
-    useColumnResize(orderedIds);
+  // Columns the user hid from Settings → Appearance (read on mount; the Hosts
+  // tab remounts when shown, so it always reflects the latest choice).
+  const [hiddenCols] = useState(loadHiddenCols);
+  // Drag-to-resize / double-click-to-fit columns.
+  const { colWidths, tableWidth, tableScrollRef, resizeHandle } =
+    useColumnResize(orderedIds, {
+      cols: COLS,
+      widthsKey: COL_WIDTHS_KEY,
+      hiddenCols,
+    });
 
   /**
    * Everything that makes a column header draggable, and a target for another
@@ -1347,6 +1357,7 @@ export function HostsPage({
             onDuplicate={duplicateProfile}
             onExportOne={(p) => void exportProfiles([p])}
             onDelete={setProfileDelete}
+            onReorder={reorderProfiles}
           />
         ) : (
           <EmptyState

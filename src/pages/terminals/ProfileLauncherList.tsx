@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   CopyIcon,
   DownloadIcon,
@@ -17,27 +16,11 @@ import {
 import type { LocalShell } from "@/lib/tauri/local";
 import { useHint } from "@/lib/status";
 import { isTintable } from "@/lib/terminalColors";
+import { useProfileRowDrag } from "@/lib/useProfileRowDrag";
 import { useShellColors } from "@/lib/useShellColors";
 import { cn } from "@/lib/utils";
 import { LauncherSectionHeader } from "@/pages/terminals/LauncherSection";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
-
-type DropSide = "before" | "after";
-
-/** `ids` with `from` moved to just before or just after `to`. Pure. */
-function moveProfileId(
-  ids: string[],
-  from: string,
-  to: string,
-  side: DropSide,
-): string[] {
-  if (from === to) return ids;
-  const rest = ids.filter((id) => id !== from);
-  const at = rest.indexOf(to);
-  if (at === -1) return ids;
-  rest.splice(side === "before" ? at : at + 1, 0, from);
-  return rest;
-}
 
 type Props = {
   profiles: ShellProfile[];
@@ -69,12 +52,8 @@ type Props = {
  * The Profiles section of the Terminals "+" launcher: a header with New,
  * Import and Export, then one row per saved profile.
  *
- * **Dragging is by the grip only.** The row is a launch button with three
- * hover buttons on it, so a whole-row drag would turn a slightly moving click
- * into a drag and a slightly short drag into a launch. Pressing the grip arms
- * that one row as draggable, and letting go disarms it. The pattern is the tab
- * strip's (native drag events, no library), with the drop line drawn above or
- * below the row under the pointer, so a profile can go to the very end.
+ * Dragging is by the grip only, shared with the Profiles table on the Hosts
+ * tab (lib/useProfileRowDrag, which says why).
  */
 export function ProfileLauncherList({
   profiles,
@@ -94,15 +73,10 @@ export function ProfileLauncherList({
 }: Props) {
   const hint = useHint();
   const shellColors = useShellColors();
-  const [armedId, setArmedId] = useState<string | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [over, setOver] = useState<{ id: string; side: DropSide } | null>(null);
-
-  const endDrag = () => {
-    setArmedId(null);
-    setDragId(null);
-    setOver(null);
-  };
+  const drag = useProfileRowDrag(
+    profiles.map((p) => p.id),
+    onReorder,
+  );
 
   const headerButton =
     "flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
@@ -182,61 +156,28 @@ export function ProfileLauncherList({
             // otherwise its shell's.
             const profileColor =
               p.color || shellColors[shell?.kind ?? ""] || null;
+            const side = drag.dropSide(p.id);
             return (
               <div
                 key={p.id}
-                draggable={armedId === p.id}
-                onDragStart={(e) => {
-                  setDragId(p.id);
-                  e.dataTransfer.effectAllowed = "move";
-                  // Some webviews need drag data set or the drag is rejected.
-                  e.dataTransfer.setData("text/plain", p.id);
-                }}
-                onDragOver={(e) => {
-                  if (!dragId || dragId === p.id) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  const box = e.currentTarget.getBoundingClientRect();
-                  const side: DropSide =
-                    e.clientY < box.top + box.height / 2 ? "before" : "after";
-                  if (over?.id !== p.id || over.side !== side) {
-                    setOver({ id: p.id, side });
-                  }
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (dragId && over && dragId !== over.id) {
-                    onReorder(
-                      moveProfileId(
-                        profiles.map((x) => x.id),
-                        dragId,
-                        over.id,
-                        over.side,
-                      ),
-                    );
-                  }
-                  endDrag();
-                }}
-                onDragEnd={endDrag}
+                {...drag.rowProps(p.id)}
                 className={cn(
                   "group relative flex items-center gap-1 rounded-sm py-1.5 pl-0.5 pr-2 text-sm hover:bg-accent hover:text-accent-foreground",
-                  dragId === p.id && "opacity-40",
+                  drag.isDragging(p.id) && "opacity-40",
                 )}
               >
-                {over?.id === p.id && (
+                {side && (
                   <span
                     aria-hidden="true"
                     className={cn(
                       "pointer-events-none absolute inset-x-1 h-0.5 rounded-full bg-primary",
-                      over.side === "before" ? "-top-px" : "-bottom-px",
+                      side === "before" ? "-top-px" : "-bottom-px",
                     )}
                   />
                 )}
                 <span
                   aria-hidden="true"
-                  onPointerDown={() => setArmedId(p.id)}
-                  onPointerUp={() => setArmedId(null)}
-                  onPointerCancel={() => setArmedId(null)}
+                  {...drag.gripProps(p.id)}
                   className="shrink-0 cursor-grab rounded p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 active:cursor-grabbing"
                   {...hint("Drag to change this profile's place in the list")}
                 >

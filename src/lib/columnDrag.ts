@@ -1,14 +1,14 @@
 import { useState } from "react";
 import type { DragEvent } from "react";
 
-import { reorderColumns } from "@/lib/hostColumns";
+import { reorderColumns } from "@/lib/tableColumns";
 
 /**
  * Drag-to-reorder over a list of column ids.
  *
- * Shared because the order can be dragged in two places now: the Hosts table's
- * own headers, and the chips in Settings that show what that order currently
- * is. They are the same gesture on the same list, and the awkward half of it
+ * Shared because an order can be dragged in two places: a table's own headers
+ * (Hosts, and Profiles beside it), and the chips in Settings that show what
+ * that order currently is. They are the same gesture on the same list, and the awkward half of it
  * (a dragover that must refuse the default, a drop that must not bubble, the
  * highlight clearing on every exit path) is worth writing once.
  *
