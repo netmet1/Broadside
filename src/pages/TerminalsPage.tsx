@@ -55,7 +55,7 @@ import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { SearchBar } from "@/components/SearchBar";
 import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
-import { errorMessage } from "@/lib/tauri/hosts";
+import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
 import {
   duplicateSuffixes,
@@ -78,6 +78,8 @@ import {
 } from "@/lib/localShellProfiles";
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
+import { HostLauncherList } from "@/pages/terminals/HostLauncherList";
+import { LauncherTwisty } from "@/pages/terminals/LauncherSection";
 import { ProfileLauncherList } from "@/pages/terminals/ProfileLauncherList";
 import { useProfileActions } from "@/lib/useProfileActions";
 import { useGridLayout } from "@/pages/terminals/useGridLayout";
@@ -99,6 +101,11 @@ import {
   DEFAULT_BULK_CONFIRM_OVER,
   getAppSettings,
 } from "@/lib/tauri/settings";
+import {
+  loadCollapsedSections,
+  rememberCollapsedSections,
+  type LauncherSection,
+} from "@/lib/launcherSections";
 import { useMirroredSessions } from "@/lib/mirroredSessions";
 import { useHint, usePageStatus } from "@/lib/status";
 import { useDismissOnOutside } from "@/lib/useDismissOnOutside";
@@ -221,6 +228,10 @@ type Props = {
    * `opts` carries a saved profile's cwd / startup command / name when the open
    * came from a profile rather than a plain shell pick. */
   onOpenLocalShell: (shell: LocalShell, opts?: LocalShellOpenOpts) => void;
+  /** Open an SSH tab per host, from the "+" launcher's Hosts section. Takes a
+   * list rather than one host because the launcher's count can ask for several
+   * copies of the same one, and App makes a session per entry. */
+  onOpenHosts: (hosts: Host[]) => void;
 };
 
 /** Whether this session's shell treats a form feed (Ctrl-L) as "redraw the
@@ -257,6 +268,7 @@ export function TerminalsPage({
   gridFullscreen,
   onGridFullscreen,
   onOpenLocalShell,
+  onOpenHosts,
 }: Props) {
   const shortcuts = useShortcuts(visible);
   // Local shells available on this machine, for the "+" launcher menu.
@@ -353,6 +365,71 @@ export function TerminalsPage({
     };
   }, [shellMenuOpen]);
 
+  // Which of the launcher's three lists are rolled up. One preference for all
+  // of them, held here rather than in each section, because the sections are
+  // written as separate components and the menu is what remembers. Loaded once
+  // at mount: nothing else in the app writes this key, so re-reading it on
+  // every visit would only cost a parse.
+  const [collapsed, setCollapsed] = useState<Set<LauncherSection>>(
+    loadCollapsedSections,
+  );
+  // Built from the current value rather than inside a state updater, because
+  // the write to localStorage goes with it and an updater that touches the
+  // outside world is not a pure function of its argument: React is entitled to
+  // call one twice. A twisty is a click, so there is nothing to batch against.
+  const toggleSection = useCallback(
+    (section: LauncherSection) => {
+      const next = new Set(collapsed);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      rememberCollapsedSections(next);
+      setCollapsed(next);
+    },
+    [collapsed],
+  );
+
+  // Saved hosts, for the launcher's Hosts section. Read every time the menu
+  // opens, like the COM ports and unlike the shells: hosts are added and edited
+  // on another tab, this page stays mounted for the life of the app, and a list
+  // fixed at startup would mean a host you added five minutes ago is missing
+  // from the one menu whose job is to open it.
+  const [launcherHosts, setLauncherHosts] = useState<Host[]>([]);
+  const [launcherHostsLoading, setLauncherHostsLoading] = useState(true);
+  const [launcherHostsError, setLauncherHostsError] = useState<string | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!shellMenuOpen) return;
+    let cancelled = false;
+    listHosts()
+      .then((list) => {
+        if (cancelled) return;
+        setLauncherHosts(list);
+        setLauncherHostsError(null);
+        setLauncherHostsLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        // The section says so and the rest of the menu is unaffected: a database
+        // that will not answer is the Hosts tab's problem to explain.
+        console.error("[TerminalsPage] listHosts failed", e);
+        setLauncherHostsError(errorMessage(e));
+        setLauncherHostsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shellMenuOpen]);
+
+  // Hosts that already have a tab, so the launcher can say so on the row. Not a
+  // guard: see HostLauncherList for why a second session is allowed to happen
+  // without a question.
+  const openHostIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const sn of sessions) if (sn.type === "ssh") ids.add(sn.host.id);
+    return ids;
+  }, [sessions]);
+
   // Open one serial console. Deliberately not routed through requestOpenShells:
   // that exists to open N copies of a shell, and a COM port is exclusive, so the
   // second copy could only ever fail. One cable, one tab.
@@ -409,28 +486,66 @@ export function TerminalsPage({
     },
     [onOpenLocalShell],
   );
-  // Launcher pick: clamp the requested count to [1, maxShells]; if it's an
-  // excessive batch, confirm first, otherwise open immediately. Shared by the
-  // plain shell rows and the profile rows (the latter pass `opts`). A profile
-  // that types a startup command confirms past a single copy, not past 7.
+  // What the "How many" box is actually asking for: the typed value, clamped to
+  // [1, maxShells], with anything unreadable (an empty box mid-edit) counting as
+  // one. One number for the whole menu, because one box governs the whole menu:
+  // the shells, the profiles and now the hosts.
+  const launchCount = useMemo(() => {
+    const parsed = Number.parseInt(shellCount, 10);
+    return Math.min(
+      Math.max(Number.isFinite(parsed) ? parsed : 1, 1),
+      maxShells,
+    );
+  }, [shellCount, maxShells]);
+
+  // Launcher pick: if it's an excessive batch, confirm first, otherwise open
+  // immediately. Shared by the plain shell rows and the profile rows (the latter
+  // pass `opts`). A profile that types a startup command confirms past a single
+  // copy, not past 7.
   const requestOpenShells = useCallback(
     (shell: LocalShell, opts?: LocalShellOpenOpts) => {
       setShellMenuOpen(false);
-      const parsed = Number.parseInt(shellCount, 10);
-      const n = Math.min(
-        Math.max(Number.isFinite(parsed) ? parsed : 1, 1),
-        maxShells,
-      );
       const warnAt = opts?.startupCommand
         ? BULK_STARTUP_WARN
         : bulkConfirmOver;
-      if (n > warnAt) {
-        setBulkConfirm({ shell, count: n, opts });
+      if (launchCount > warnAt) {
+        setBulkConfirm({ shell, count: launchCount, opts });
       } else {
-        openShells(shell, n, opts);
+        openShells(shell, launchCount, opts);
       }
     },
-    [shellCount, maxShells, openShells, bulkConfirmOver],
+    [launchCount, openShells, bulkConfirmOver],
+  );
+
+  // A pending batch of SSH tabs awaiting the "that's a lot" confirmation. Its
+  // own state and its own dialog rather than a shape bolted onto `bulkConfirm`:
+  // what the question has to say is different (a connection to a machine, not a
+  // process on this one), and the two can never be open at once anyway.
+  const [hostBulkConfirm, setHostBulkConfirm] = useState<{
+    host: Host;
+    count: number;
+  } | null>(null);
+  // `count` copies of the same host, as one call: App makes a session per entry,
+  // each with its own id, so the same host object appearing N times is N tabs.
+  const openHostTabs = useCallback(
+    (host: Host, count: number) => {
+      onOpenHosts(Array.from({ length: count }, () => host));
+    },
+    [onOpenHosts],
+  );
+  // The Hosts section's click. Past the bulk threshold it asks first, the same
+  // way the shells do; a host that already has a tab does not ask, which
+  // HostLauncherList explains.
+  const requestOpenHost = useCallback(
+    (host: Host) => {
+      setShellMenuOpen(false);
+      if (launchCount > bulkConfirmOver) {
+        setHostBulkConfirm({ host, count: launchCount });
+      } else {
+        openHostTabs(host, launchCount);
+      }
+    },
+    [launchCount, bulkConfirmOver, openHostTabs],
   );
 
   // A duplicate that would re-run a profile's startup command, held for the
@@ -1872,115 +1987,146 @@ export function TerminalsPage({
               // machine with a long list of WSL distributions cannot push the
               // menu off the bottom of the window either.
               <div className="absolute right-0 top-full z-50 mt-1 max-h-[calc(100vh-5rem)] min-w-56 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
-                {localShells.length === 0 ? (
+                {/* How many to open at once. Picking a shell, a host or a
+                    profile below opens this many; a large batch confirms first.
+                    Capped at the max concurrent sessions from Settings.
+
+                    This row is the local-shell section's header, and it is the
+                    one header that does not roll away with its section: the
+                    count governs the hosts and the profiles further down too,
+                    so hiding it with the shells would take the control away
+                    from the two lists still on screen. The twisty rolls up the
+                    shells themselves. */}
+                <div className="mb-1 flex items-center gap-1.5 border-b border-border/60 px-1.5 py-1.5">
+                  <LauncherTwisty
+                    open={!collapsed.has("shells")}
+                    onToggle={() => toggleSection("shells")}
+                    label="local shells"
+                    hintText={
+                      collapsed.has("shells")
+                        ? "Show the local shells"
+                        : "Roll the local shells away. It stays rolled up until you open it again, restarts included"
+                    }
+                  />
+                  <label
+                    htmlFor="shell-count"
+                    className="text-xs text-muted-foreground"
+                  >
+                    How many
+                  </label>
+                  {/* The box is sized for the widest count it will ever hold
+                      (three digits plus the spinner), and the reset sits
+                      against it rather than out by the cap, so the pair reads
+                      as one control. */}
+                  <input
+                    id="shell-count"
+                    type="number"
+                    min={1}
+                    max={maxShells}
+                    value={shellCount}
+                    onChange={(e) => setShellCount(e.target.value)}
+                    className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShellCount("1")}
+                    disabled={shellCount === "1"}
+                    aria-label="Reset the count to 1"
+                    title="Back to 1"
+                    {...hint("Set the number of copies to open back to 1")}
+                    className="-ml-1 rounded p-0.5 text-muted-foreground not-disabled:hover:bg-accent not-disabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <RotateCcwIcon className="h-3 w-3" />
+                  </button>
+                  <span className="ml-auto text-[11px] text-muted-foreground">
+                    max {maxShells}
+                  </span>
+                </div>
+                {collapsed.has("shells") ? null : localShells.length === 0 ? (
                   <p className="px-2 py-1.5 text-xs text-muted-foreground">
                     {shellsError
                       ? "Couldn't list local shells. Rebuild the app and try again."
                       : "No local shells found."}
                   </p>
+                ) : enabledShells.length === 0 ? (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                    All local shells are hidden. Enable them in Settings,
+                    Appearance.
+                  </p>
                 ) : (
-                  <>
-                    {/* How many to open at once. Picking a shell or profile below
-                        opens this many; a large batch confirms first. Capped at
-                        the max concurrent sessions from Settings. */}
-                    <div className="mb-1 flex items-center gap-2 border-b border-border/60 px-2 py-1.5">
-                      <label
-                        htmlFor="shell-count"
-                        className="text-xs text-muted-foreground"
-                      >
-                        How many
-                      </label>
-                      {/* The box is sized for the widest count it will ever hold
-                          (three digits plus the spinner), and the reset sits
-                          against it rather than out by the cap, so the pair reads
-                          as one control. */}
-                      <input
-                        id="shell-count"
-                        type="number"
-                        min={1}
-                        max={maxShells}
-                        value={shellCount}
-                        onChange={(e) => setShellCount(e.target.value)}
-                        className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center font-mono text-xs"
+                  enabledShells.map((sh) => (
+                    <button
+                      key={sh.id}
+                      type="button"
+                      onClick={() => requestOpenShells(sh)}
+                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <LocalShellIcon
+                        kind={sh.kind}
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShellCount("1")}
-                        disabled={shellCount === "1"}
-                        aria-label="Reset the count to 1"
-                        title="Back to 1"
-                        {...hint("Set the number of copies to open back to 1")}
-                        className="-ml-1 rounded p-0.5 text-muted-foreground not-disabled:hover:bg-accent not-disabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
-                      >
-                        <RotateCcwIcon className="h-3 w-3" />
-                      </button>
-                      <span className="ml-auto text-[11px] text-muted-foreground">
-                        max {maxShells}
-                      </span>
-                    </div>
-                    {enabledShells.length === 0 ? (
-                      <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                        All local shells are hidden. Enable them in Settings,
-                        Appearance.
-                      </p>
-                    ) : (
-                      enabledShells.map((sh) => (
-                        <button
-                          key={sh.id}
-                          type="button"
-                          onClick={() => requestOpenShells(sh)}
-                          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                        >
-                          <LocalShellIcon
-                            kind={sh.kind}
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                          />
-                          {sh.label}
-                        </button>
-                      ))
-                    )}
-
-                    {/* Saved launch profiles: a named shell + folder + optional
-                        startup command. Shown regardless of the hide-list (a
-                        profile may launch a shell hidden from the plain list) and
-                        managed inline: edit, duplicate, delete, drag to reorder,
-                        import and export. Import and export close the menu, since
-                        each opens a file dialog and the import preview. */}
-                    <ProfileLauncherList
-                      profiles={profiles}
-                      loading={profilesLoading}
-                      shells={localShells}
-                      onNew={() => {
-                        setShellMenuOpen(false);
-                        setProfileEdit({ profile: null });
-                      }}
-                      onImport={() => {
-                        setShellMenuOpen(false);
-                        void startImport();
-                      }}
-                      onExport={() => {
-                        setShellMenuOpen(false);
-                        void exportProfiles();
-                      }}
-                      onOpen={openProfile}
-                      onEdit={(p) => {
-                        cancelDeleteHint();
-                        setShellMenuOpen(false);
-                        setProfileEdit({ profile: p });
-                      }}
-                      onDuplicate={(p) => {
-                        cancelDeleteHint();
-                        duplicateProfile(p);
-                      }}
-                      onDeleteClick={hintDeleteGesture}
-                      onDeleteRequest={(p) => {
-                        cancelDeleteHint();
-                        setProfileDelete(p);
-                      }}
-                      onReorder={reorderProfiles}
-                    />
-                  </>
+                      {sh.label}
+                    </button>
+                  ))
                 )}
+
+                {/* Saved hosts. Between the shells and the profiles because
+                    that is the order of how far away the thing you are opening
+                    is: this machine, then a machine you have saved, then a
+                    saved way of opening this machine. */}
+                <HostLauncherList
+                  hosts={launcherHosts}
+                  loading={launcherHostsLoading}
+                  error={launcherHostsError}
+                  openHostIds={openHostIds}
+                  count={launchCount}
+                  open={!collapsed.has("hosts")}
+                  onToggle={() => toggleSection("hosts")}
+                  onOpen={requestOpenHost}
+                />
+
+                {/* Saved launch profiles: a named shell + folder + optional
+                    startup command. Shown regardless of the hide-list (a
+                    profile may launch a shell hidden from the plain list) and
+                    managed inline: edit, duplicate, delete, drag to reorder,
+                    import and export. Import and export close the menu, since
+                    each opens a file dialog and the import preview. */}
+                <ProfileLauncherList
+                  open={!collapsed.has("profiles")}
+                  onToggle={() => toggleSection("profiles")}
+                  profiles={profiles}
+                  loading={profilesLoading}
+                  shells={localShells}
+                  onNew={() => {
+                    setShellMenuOpen(false);
+                    setProfileEdit({ profile: null });
+                  }}
+                  onImport={() => {
+                    setShellMenuOpen(false);
+                    void startImport();
+                  }}
+                  onExport={() => {
+                    setShellMenuOpen(false);
+                    void exportProfiles();
+                  }}
+                  onOpen={openProfile}
+                  onEdit={(p) => {
+                    cancelDeleteHint();
+                    setShellMenuOpen(false);
+                    setProfileEdit({ profile: p });
+                  }}
+                  onDuplicate={(p) => {
+                    cancelDeleteHint();
+                    duplicateProfile(p);
+                  }}
+                  onDeleteClick={hintDeleteGesture}
+                  onDeleteRequest={(p) => {
+                    cancelDeleteHint();
+                    setProfileDelete(p);
+                  }}
+                  onReorder={reorderProfiles}
+                />
+
                 {/* Serial consoles. A COM port is not a shell and does not
                     belong in the list above: nothing is spawned, there is no
                     working directory, and the port is exclusive, so "how
@@ -3134,6 +3280,44 @@ export function TerminalsPage({
               }}
             >
               Open {bulkConfirm?.count}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* The same guard for the launcher's Hosts section, asking about the
+          thing that is actually expensive there. Copies of a local shell cost
+          processes on this machine; copies of a host cost logins on somebody
+          else's, which a server may well be counting. */}
+      <AlertDialog
+        open={hostBulkConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setHostBulkConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Open that many sessions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You're about to open{" "}
+              <span className="font-semibold text-foreground">
+                {hostBulkConfirm?.count} terminals on{" "}
+                {hostBulkConfirm?.host.label}
+              </span>
+              . Each one is a separate SSH connection to that machine, and it
+              will see every one of them. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (hostBulkConfirm)
+                  openHostTabs(hostBulkConfirm.host, hostBulkConfirm.count);
+                setHostBulkConfirm(null);
+              }}
+            >
+              Open {hostBulkConfirm?.count}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

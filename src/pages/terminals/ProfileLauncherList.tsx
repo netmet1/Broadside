@@ -19,6 +19,7 @@ import { useHint } from "@/lib/status";
 import { isTintable } from "@/lib/terminalColors";
 import { useShellColors } from "@/lib/useShellColors";
 import { cn } from "@/lib/utils";
+import { LauncherSectionHeader } from "@/pages/terminals/LauncherSection";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 
 type DropSide = "before" | "after";
@@ -58,6 +59,10 @@ type Props = {
   onDeleteRequest: (profile: ShellProfile) => void;
   /** The whole order after a drag, as ids. */
   onReorder: (ids: string[]) => void;
+  /** Whether the section is rolled down. Remembered by the page, because the
+   * three sections share one stored preference. */
+  open: boolean;
+  onToggle: () => void;
 };
 
 /**
@@ -84,6 +89,8 @@ export function ProfileLauncherList({
   onDeleteClick,
   onDeleteRequest,
   onReorder,
+  open,
+  onToggle,
 }: Props) {
   const hint = useHint();
   const shellColors = useShellColors();
@@ -104,11 +111,17 @@ export function ProfileLauncherList({
 
   return (
     <div className="mt-1 border-t border-border/60 pt-1">
-      <div className="flex items-center justify-between px-2 py-1">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Profiles
-        </span>
-        <div className="flex items-center gap-0.5">
+      <LauncherSectionHeader
+        title="Profiles"
+        count={loading ? null : profiles.length}
+        open={open}
+        onToggle={onToggle}
+        hintText={
+          open
+            ? "Roll the profile list away. It stays rolled up until you open it again, restarts included"
+            : "Show the saved launch profiles"
+        }
+      >
           <button
             type="button"
             onClick={onImport}
@@ -140,9 +153,8 @@ export function ProfileLauncherList({
           >
             <PlusIcon className="h-3.5 w-3.5" /> New
           </button>
-        </div>
-      </div>
-      {loading ? null : profiles.length === 0 ? (
+      </LauncherSectionHeader>
+      {!open ? null : loading ? null : profiles.length === 0 ? (
         <p className="px-2 py-1 text-xs text-muted-foreground">
           None yet. A profile opens a shell in a chosen folder and can run a
           command on start.

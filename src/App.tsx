@@ -892,6 +892,7 @@ function App() {
           gridFullscreen={gridFullscreen}
           onGridFullscreen={setGridFullscreen}
           onOpenLocalShell={openLocalShell}
+          onOpenHosts={openTerminals}
           onManageShortcuts={openShortcutSettings}
           onOpenSessionSettings={openSessionSettings}
         />
