@@ -23,7 +23,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { type LocalShell } from "@/lib/tauri/local";
-import { type ShellProfile } from "@/lib/localShellProfiles";
+import {
+  matchingCustomShell,
+  UNMATCHED_CUSTOM,
+  type ShellProfile,
+} from "@/lib/localShellProfiles";
 import { PALETTE } from "@/lib/palette";
 import { useShellColors } from "@/lib/useShellColors";
 
@@ -55,6 +59,11 @@ export function ShellProfileDialog({
   const [cwd, setCwd] = useState("");
   const [startupCommand, setStartupCommand] = useState("");
   const [color, setColor] = useState("");
+  /** The custom shell this profile is asking for, when it has none. Held so a
+   * save that does not fix the shell (a rename, a new folder) keeps the note,
+   * and carried straight back: the backend drops it the moment the profile
+   * names a shell, so this form never has to clear it. */
+  const [wantedShell, setWantedShell] = useState("");
 
   // The native colour picker is open. It is a browser-level popup, drawn over
   // the page and outside our DOM, and it opens *downwards* from a swatch that
@@ -81,6 +90,17 @@ export function ShellProfileDialog({
     return () => el.removeEventListener("change", done);
   }, [open]);
 
+  // A profile that points at no shell, naming the custom one it wants, and
+  // that shell is on this machine now. The dropdown opens on it rather than on
+  // "custom:none (unavailable)", so re-pointing a profile a restore orphaned is
+  // Edit then Save. Not done for the operator: nothing about a restored file
+  // gets to decide what a click launches, and picking the shell is the moment a
+  // person says it should.
+  const rematch =
+    initial && initial.shellId === UNMATCHED_CUSTOM
+      ? matchingCustomShell(shells, initial.wantedShell)
+      : undefined;
+
   // Seed the form when the dialog opens (new = blank; edit = the profile).
   // Adjusted during render rather than in an effect, React's documented way to
   // reset state derived from props: an effect would paint the previous
@@ -94,10 +114,11 @@ export function ShellProfileDialog({
     setPickerOpen(false);
     if (open) {
       setLabel(initial?.label ?? "");
-      setShellId(initial?.shellId ?? shells[0]?.id ?? "");
+      setShellId(rematch?.id ?? initial?.shellId ?? shells[0]?.id ?? "");
       setCwd(initial?.cwd ?? "");
       setStartupCommand(initial?.startupCommand ?? "");
       setColor(initial?.color ?? "");
+      setWantedShell(initial?.wantedShell ?? "");
     }
   }
 
@@ -115,7 +136,15 @@ export function ShellProfileDialog({
   const shellOptions = useMemo(() => {
     const opts = shells.map((s) => ({ id: s.id, label: s.label }));
     if (shellId && !shells.some((s) => s.id === shellId)) {
-      opts.push({ id: shellId, label: `${shellId} (unavailable)` });
+      // A profile pointing at nothing is not naming a shell that got hidden,
+      // so it reads as the blank it is rather than as an id.
+      opts.push({
+        id: shellId,
+        label:
+          shellId === UNMATCHED_CUSTOM
+            ? "No shell yet"
+            : `${shellId} (unavailable)`,
+      });
     }
     return opts;
   }, [shells, shellId]);
@@ -144,13 +173,14 @@ export function ShellProfileDialog({
       cwd: cwd.trim(),
       startupCommand: startupCommand.trim(),
       color,
+      wantedShell,
     });
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" keepOpenOnOutsideClick>
         {/* Swallows the click that dismisses the colour popup, so it cannot
             land on Cancel (or Save) underneath. Deliberately covers the whole
             dialog rather than just the footer: the popup can open over any of
@@ -204,6 +234,18 @@ export function ShellProfileDialog({
                 ))}
               </SelectContent>
             </Select>
+            {/* Which shell this profile used to open, for a profile that has
+                none. A restore deletes every custom local shell, and the
+                profile's own name is a poor record of which one it was. */}
+            {initial?.shellId === UNMATCHED_CUSTOM && initial.wantedShell && (
+              <p className="text-xs text-muted-foreground">
+                This profile opened the custom local shell{" "}
+                <b>{initial.wantedShell}</b>.{" "}
+                {rematch
+                  ? "You have one by that name, so it is picked above: save to use it again."
+                  : "Add it under Settings > Local shells, then pick it here."}
+              </p>
+            )}
           </div>
 
           <div className="grid gap-1">

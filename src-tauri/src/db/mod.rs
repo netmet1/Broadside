@@ -13,6 +13,7 @@ pub mod hosts;
 pub mod omni_history;
 pub mod pty_history;
 pub mod settings;
+pub mod shell_profiles;
 pub mod skills;
 pub mod templates;
 
@@ -282,6 +283,35 @@ const MIGRATIONS: &[&str] = &[
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
     );",
+    // 23: saved local-shell launch profiles (build 69), moved out of
+    // localStorage. The note on 22 said a profile "stays where it is"; that
+    // changed when Settings > Reset everything cleared localStorage and every
+    // profile with it. A profile is content, not a preference. See
+    // db/shell_profiles.rs.
+    //
+    // `id` is text because templates already reference a profile by its uuid.
+    // `label` is not UNIQUE: an import collision is renamed, not failed.
+    // `startup_command` is typed into a shell on launch, which is why a restore
+    // clears it (commands::backup::harden_restored_db).
+    "CREATE TABLE IF NOT EXISTS shell_profiles (
+        id              TEXT PRIMARY KEY,
+        label           TEXT NOT NULL,
+        shell_id        TEXT NOT NULL,
+        cwd             TEXT NOT NULL DEFAULT '',
+        startup_command TEXT NOT NULL DEFAULT '',
+        color           TEXT NOT NULL DEFAULT '',
+        sort_order      INTEGER NOT NULL DEFAULT 0,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+    );",
+    // 24: the name of the custom local shell a profile asked for, kept only
+    // while the profile points at no shell at all. A restore deletes every
+    // custom terminal and re-points the profiles that named one
+    // (commands::backup::harden_restored_db), and before this column the
+    // operator was left working out from a profile's own name which of their
+    // shells it had opened. A note for a person to read, never a pointer:
+    // nothing is ever launched from it. See db/shell_profiles.rs.
+    "ALTER TABLE shell_profiles ADD COLUMN wanted_shell TEXT NOT NULL DEFAULT '';",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -747,6 +777,29 @@ mod tests {
         .unwrap();
         assert_eq!(templates::list(&conn).unwrap().len(), 1);
         assert_eq!(hosts::list_all(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_build_69_database_gains_the_wanted_shell_note_without_losing_profiles() {
+        // Migration 24, on the database build 69 shipped: the profiles are the
+        // thing an operator would miss, and the column is added to the table
+        // holding them.
+        let conn = database_at_version(23);
+        conn.execute(
+            "INSERT INTO shell_profiles
+                 (id, label, shell_id, cwd, startup_command, color, sort_order, created_at, updated_at)
+             VALUES ('p-1', 'Resume Git', 'custom:1', '', '', '', 0, 'then', 'then')",
+            [],
+        )
+        .unwrap();
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        let p = shell_profiles::get(&conn, "p-1").unwrap();
+        assert_eq!(p.label, "Resume Git");
+        assert_eq!(p.shell_id, "custom:1");
+        assert_eq!(p.wanted_shell, "", "nothing to say until a restore says it");
     }
 
     #[test]

@@ -15,7 +15,10 @@
 import type { Host } from "@/lib/tauri/hosts";
 import type { LocalShell } from "@/lib/tauri/local";
 import type { TemplateItem } from "@/lib/tauri/templates";
-import type { ShellProfile } from "@/lib/localShellProfiles";
+import {
+  missingShellNote,
+  type ShellProfile,
+} from "@/lib/localShellProfiles";
 import { isTintable } from "@/lib/terminalColors";
 
 /** Everything on this machine a template item can be resolved against. */
@@ -106,9 +109,11 @@ export function resolveItem(
         shell,
         missing: !profile
           ? `The profile "${item.label}" isn't saved on this machine.`
-          : !shell
-            ? `"${profile.label}" uses a shell that isn't available on this machine.`
-            : null,
+          : shell
+            ? null
+            : // No advice appended: this goes into a list of skipped items,
+              // where a sentence of instructions per line does not read.
+              missingShellNote(profile),
       };
     }
   }

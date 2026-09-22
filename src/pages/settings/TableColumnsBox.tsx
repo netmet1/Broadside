@@ -3,16 +3,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useColumnDrag } from "@/lib/columnDrag";
-import {
-  HIDEABLE_COLUMNS,
-  ORDERABLE_COLUMNS,
-  saveColumnOrder,
-} from "@/lib/hostColumns";
 import { useHint } from "@/lib/status";
+import type { ColumnDef } from "@/lib/tableColumns";
 
 /**
- * The two settings about the Hosts table's columns, boxed together with the one
- * button that puts them both back.
+ * The two settings about one table's columns, boxed together with the one
+ * button that puts them both back. Used for the Hosts table and the Profiles
+ * table beside it on the Hosts tab.
  *
  * They were a checkbox row on their own; the order is a second thing about the
  * same table, and a Reset that quietly took in the whole Appearance section
@@ -24,34 +21,49 @@ import { useHint } from "@/lib/status";
  * these columns is set here, and a row of names you can see but not touch
  * invites the drag anyway.
  */
-export function HostColumnsBox({
+export function TableColumnsBox({
+  title,
+  tableName,
+  alwaysShown,
+  hideable,
+  orderable,
   hiddenCols,
   toggleColumn,
   colOrder,
+  saveOrder,
   resetColumns,
 }: {
+  /** "Host table columns". */
+  title: string;
+  /** How the prose names the table: "the Hosts table". */
+  tableName: string;
+  /** The columns that cannot be hidden, as a phrase: "Label, hostname and
+   * actions". */
+  alwaysShown: string;
+  hideable: readonly ColumnDef[];
+  orderable: readonly ColumnDef[];
   hiddenCols: Set<string>;
   toggleColumn: (id: string, show: boolean) => void;
   colOrder: string[];
+  /** Saves a dragged order. The write announces itself, and both this page
+   * and an already-open table read the new order back off that event. */
+  saveOrder: (order: string[]) => void;
   resetColumns: () => void;
 }) {
   const hint = useHint();
-  // Saving is all this has to do: the write announces itself, and both this
-  // page and an already-open Hosts table read the new order back off that
-  // event. Nothing here has to know the table exists.
-  const { dragProps, isTarget } = useColumnDrag(colOrder, saveColumnOrder);
+  const { dragProps, isTarget } = useColumnDrag(colOrder, saveOrder);
 
   return (
     <div className="grid gap-3 rounded-lg border border-border/70 p-3">
       <div className="flex items-center justify-between gap-2">
-        <Label className="text-sm">Host table columns</Label>
+        <Label className="text-sm">{title}</Label>
         <Button
           variant="outline"
           size="sm"
           className="h-7"
           onClick={() => {
             resetColumns();
-            toast.success("Host table columns reset");
+            toast.success(`${title} reset`);
           }}
           {...hint(
             "Show every column again, in the order Broadside ships. Nothing else in Settings is touched.",
@@ -62,11 +74,11 @@ export function HostColumnsBox({
       </div>
       <div className="grid gap-1.5">
         <p className="text-xs text-muted-foreground">
-          Hide nice-to-have columns from the Hosts table. Label, hostname and
-          actions always show.
+          Hide nice-to-have columns from {tableName}. {alwaysShown} always
+          show.
         </p>
         <div className="flex flex-wrap gap-x-5 gap-y-1.5 pt-1">
-          {HIDEABLE_COLUMNS.map((col) => (
+          {hideable.map((col) => (
             <label
               key={col.id}
               className="flex cursor-pointer items-center gap-2 text-sm"
@@ -88,11 +100,11 @@ export function HostColumnsBox({
         </Label>
         <p className="text-xs text-muted-foreground">
           Drag a chip onto another to move that column, or drag a column's name
-          in the Hosts table itself. The order is remembered across restarts.
+          in {tableName} itself. The order is remembered across restarts.
         </p>
         <div className="flex flex-wrap gap-1 pt-0.5">
           {colOrder.map((id) => {
-            const col = ORDERABLE_COLUMNS.find((c) => c.id === id);
+            const col = orderable.find((c) => c.id === id);
             if (!col) return null;
             const hidden = hiddenCols.has(id);
             return (

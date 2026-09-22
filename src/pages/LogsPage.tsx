@@ -22,23 +22,28 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { SearchBar, type SearchMode } from "@/components/SearchBar";
+import { SearchBar } from "@/components/SearchBar";
 import { HighlightedLine } from "@/components/Highlight";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import {
   auditInfo,
   auditTail,
   clearErrorLog,
+  clearToastLog,
   errorLogTail,
   exportAuditLog,
   exportErrorLog,
+  exportToastLog,
   loadErrorLogFile,
   loadSession,
   sessionIsEncrypted,
   setAuditEnabled,
+  toastDisplayText,
+  toastLogTail,
   type AuditInfo,
   type ErrorEntry,
   type OtlogLine,
+  type ToastEntry,
 } from "@/lib/tauri/logs";
 import {
   type HistoryEntry,
@@ -57,16 +62,12 @@ import {
 } from "@/lib/tauri/skilllog";
 import { onSkillDone } from "@/lib/tauri/skills";
 import { announceCommandHistory } from "@/lib/commandHistory";
-import {
-  buildMatcher,
-  isMatcher,
-  matchLine,
-  type LineMatch,
-  type SearchOptions,
-} from "@/lib/search";
 import { cn } from "@/lib/utils";
 
-type Tab = "session" | "audit" | "history" | "errors" | "skills";
+import { ToastsTab } from "./logs/ToastsTab";
+import { useLineSearch } from "./logs/useLineSearch";
+
+type Tab = "session" | "audit" | "history" | "errors" | "skills" | "toasts";
 
 /** Colour for a host we can't resolve live (deleted, or a source without ids). */
 const HOST_UNKNOWN_COLOR = "#6b7280";
@@ -146,96 +147,6 @@ function HistoryHosts({
   );
 }
 
-/** Search state shared by both tabs: scan a flat list of lines. */
-function useLineSearch(lines: { key: string; text: string }[]) {
-  const [mode, setMode] = useState<SearchMode | null>(null);
-  const [pattern, setPattern] = useState("");
-  const [options, setOptions] = useState<SearchOptions | null>(null);
-  const [activeIdx, setActiveIdx] = useState(0);
-
-  const matcherOrError = useMemo(
-    () =>
-      mode !== null && options !== null ? buildMatcher(pattern, options) : null,
-    [mode, pattern, options],
-  );
-  const matcher = isMatcher(matcherOrError) ? matcherOrError : null;
-
-  const scan = useMemo(() => {
-    if (!matcher) return null;
-    const perLine = new Map<number, LineMatch[]>();
-    const hits: { lineIdx: number; match: LineMatch }[] = [];
-    for (let i = 0; i < lines.length; i++) {
-      const matches = matchLine(matcher, lines[i].text);
-      if (matches.length > 0) {
-        perLine.set(i, matches);
-        for (const m of matches) hits.push({ lineIdx: i, match: m });
-      }
-    }
-    return { perLine, hits };
-  }, [matcher, lines]);
-
-  // Back to the first hit whenever the search itself changes, adjusted during
-  // render so the counter never shows the old position against a new pattern.
-  const [prevSearch, setPrevSearch] = useState({ pattern, options });
-  if (prevSearch.pattern !== pattern || prevSearch.options !== options) {
-    setPrevSearch({ pattern, options });
-    setActiveIdx(0);
-  }
-
-  const navigate = useCallback(
-    (dir: 1 | -1) => {
-      if (!scan || scan.hits.length === 0) return;
-      setActiveIdx((i) => (i + dir + scan.hits.length) % scan.hits.length);
-    },
-    [scan],
-  );
-
-  const close = useCallback(() => {
-    setMode(null);
-    setPattern("");
-    setOptions(null);
-    setActiveIdx(0);
-  }, []);
-
-  const status = (() => {
-    if (matcherOrError && "error" in matcherOrError) {
-      return { text: matcherOrError.error, tone: "error" as const };
-    }
-    if (!scan || !pattern) return { text: "", tone: "normal" as const };
-    if (scan.hits.length === 0)
-      return { text: "No matches", tone: "normal" as const };
-    const base = `${scan.hits.length} ${scan.hits.length === 1 ? "match" : "matches"}`;
-    return {
-      text:
-        mode === "find" ? `${activeIdx + 1}/${scan.hits.length} · ${base}` : base,
-      tone: "normal" as const,
-    };
-  })();
-
-  const activeHit =
-    mode === "find" && scan && scan.hits.length > 0
-      ? scan.hits[Math.min(activeIdx, scan.hits.length - 1)]
-      : null;
-
-  return {
-    mode,
-    setMode,
-    setQuery: (p: string, o: SearchOptions) => {
-      setPattern(p);
-      setOptions(o);
-    },
-    pattern,
-    scan,
-    activeHit,
-    navigate,
-    close,
-    status,
-    filterActive: mode === "filter" && matcher !== null && pattern !== "",
-    // Find hides nothing (D-015) but dims non-matching rows for contrast.
-    findActive: mode === "find" && matcher !== null && pattern !== "",
-  };
-}
-
 export function LogsPage({ visible }: { visible: boolean }) {
   const [tab, setTab] = useState<Tab>("session");
 
@@ -264,6 +175,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
 
   // Error log tab state (D-055)
   const [errorEntries, setErrorEntries] = useState<ErrorEntry[]>([]);
+
+  // Toasts History tab state: newest first.
+  const [toastEntries, setToastEntries] = useState<ToastEntry[]>([]);
 
   // Skill log tab state. The rendering style is a Settings choice rather than a
   // control here, so it is re-read with the entries: a run written at one
@@ -320,11 +234,18 @@ export function LogsPage({ visible }: { visible: boolean }) {
     [skillDisplay],
   );
 
+  const toastSearchLines = useMemo(
+    () =>
+      toastEntries.map((e, i) => ({ key: `${i}`, text: toastDisplayText(e) })),
+    [toastEntries],
+  );
+
   const sessionSearch = useLineSearch(sessionSearchLines);
   const auditSearch = useLineSearch(auditSearchLines);
   const historySearch = useLineSearch(historySearchLines);
   const errorSearch = useLineSearch(errorSearchLines);
   const skillSearch = useLineSearch(skillSearchLines);
+  const toastSearch = useLineSearch(toastSearchLines);
   const search =
     tab === "session"
       ? sessionSearch
@@ -334,7 +255,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
           ? historySearch
           : tab === "skills"
             ? skillSearch
-            : errorSearch;
+            : tab === "toasts"
+              ? toastSearch
+              : errorSearch;
 
   // Ctrl+F / Ctrl+Shift+F while this page is visible (D-015).
   useEffect(() => {
@@ -415,6 +338,22 @@ export function LogsPage({ visible }: { visible: boolean }) {
       alive = false;
     };
   }, [visible, tab, errorsNonce]);
+
+  const [toastsNonce, setToastsNonce] = useState(0);
+  const refreshToasts = useCallback(() => setToastsNonce((n) => n + 1), []);
+  useEffect(() => {
+    if (!visible || tab !== "toasts") return;
+    let alive = true;
+    toastLogTail(500)
+      .then((tail) => {
+        // Newest first (LG6), the tail is chronological (oldest first).
+        if (alive) setToastEntries(tail.reverse());
+      })
+      .catch((e) => toast.error(errorMessage(e)));
+    return () => {
+      alive = false;
+    };
+  }, [visible, tab, toastsNonce]);
 
   const [skillsNonce, setSkillsNonce] = useState(0);
   const refreshSkills = useCallback(() => setSkillsNonce((n) => n + 1), []);
@@ -516,7 +455,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
   };
 
   /** Export the audit/error/skill log to a chosen path (LG3/LG4). */
-  const exportLog = async (kind: "audit" | "errors" | "skills") => {
+  const exportLog = async (kind: "audit" | "errors" | "skills" | "toasts") => {
     try {
       const d = new Date();
       const p = (n: number) => String(n).padStart(2, "0");
@@ -530,7 +469,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
             ? "Export audit log"
             : kind === "skills"
               ? "Export skill log"
-              : "Export error log",
+              : kind === "toasts"
+                ? "Export toast history"
+                : "Export error log",
         defaultPath: `${stamp}-broadside-${kind}.jsonl`,
       });
       if (typeof path !== "string") return;
@@ -539,7 +480,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
           ? await exportAuditLog(path)
           : kind === "skills"
             ? await exportSkillLog(path)
-            : await exportErrorLog(path);
+            : kind === "toasts"
+              ? await exportToastLog(path)
+              : await exportErrorLog(path);
       toast.success(`Exported ${(bytes / 1024).toFixed(1)} KB`);
     } catch (e) {
       toast.error(errorMessage(e));
@@ -575,7 +518,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-4 border-b border-border/50 px-4 pt-3">
-        {(["session", "audit", "history", "skills", "errors"] as const).map((t) => (
+        {(
+          ["session", "audit", "history", "skills", "toasts", "errors"] as const
+        ).map((t) => (
           <button
             key={t}
             type="button"
@@ -595,7 +540,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
                   ? "Command history"
                   : t === "skills"
                     ? "Skills"
-                    : "Errors"}
+                    : t === "toasts"
+                      ? "Toasts History"
+                      : "Errors"}
           </button>
         ))}
       </div>
@@ -895,6 +842,21 @@ export function LogsPage({ visible }: { visible: boolean }) {
             )}
           </div>
         </div>
+      ) : tab === "toasts" ? (
+        <ToastsTab
+          entries={toastEntries}
+          search={toastSearch}
+          onRefresh={refreshToasts}
+          onClear={async () => {
+            try {
+              await clearToastLog();
+              setToastEntries([]);
+            } catch (e) {
+              toast.error(errorMessage(e));
+            }
+          }}
+          onExport={() => exportLog("toasts")}
+        />
       ) : tab === "history" ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-3 px-4 py-2">
@@ -1064,7 +1026,7 @@ export function LogsPage({ visible }: { visible: boolean }) {
       )}
 
       <Dialog open={passphraseOpen} onOpenChange={setPassphraseOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" keepOpenOnOutsideClick>
           <DialogHeader>
             <DialogTitle>Encrypted session</DialogTitle>
             <DialogDescription>

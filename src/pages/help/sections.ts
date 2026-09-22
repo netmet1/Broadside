@@ -13,8 +13,10 @@
 export const HELP_HOSTS = "help-sec-hosts";
 export const HELP_SKILLS = "help-sec-skills";
 export const HELP_TEMPLATES = "help-sec-templates";
+export const HELP_TERMINALS = "help-sec-terminals";
 
 export type HelpSectionId =
   | typeof HELP_HOSTS
   | typeof HELP_SKILLS
-  | typeof HELP_TEMPLATES;
+  | typeof HELP_TEMPLATES
+  | typeof HELP_TERMINALS;

@@ -19,6 +19,7 @@ pub mod serial;
 pub mod session;
 pub mod skilllog;
 pub mod ssh;
+pub mod toastlog;
 
 use tauri::Manager;
 use tauri_plugin_window_state::{StateFlags, WindowExt};
@@ -110,6 +111,10 @@ pub fn run() {
             // Rolling error log (D-055): always-on, separate from audit.
             app.manage(errlog::ErrLogState::new(app_data_dir.clone()));
 
+            // Every toast shown, so one that went by too fast can be read
+            // again from Logs. A file, so a restore does not wipe it.
+            app.manage(toastlog::ToastLogState::new(app_data_dir.clone()));
+
             // What a skill run leaves behind, in Broadside rather than in the
             // host's shell history. Written only when the operator's Skills
             // setting says so; the state is always here because the choice is
@@ -195,6 +200,15 @@ pub fn run() {
             commands::pty::create_custom_terminal,
             commands::pty::update_custom_terminal,
             commands::pty::delete_custom_terminal,
+            commands::shell_profiles::list_shell_profiles,
+            commands::shell_profiles::create_shell_profile,
+            commands::shell_profiles::update_shell_profile,
+            commands::shell_profiles::delete_shell_profile,
+            commands::shell_profiles::reorder_shell_profiles,
+            commands::shell_profiles::import_legacy_shell_profiles,
+            commands::shell_profiles::export_shell_profiles,
+            commands::shell_profiles::read_shell_profile_file,
+            commands::shell_profiles::import_shell_profiles,
             commands::pty::pty_write,
             commands::pty::pty_resize,
             commands::pty::pty_close,
@@ -236,6 +250,10 @@ pub fn run() {
             commands::errlog::clear_error_log,
             commands::errlog::export_error_log,
             commands::errlog::read_log_lines,
+            commands::toastlog::toast_log_append,
+            commands::toastlog::toast_log_tail,
+            commands::toastlog::clear_toast_log,
+            commands::toastlog::export_toast_log,
             commands::skilllog::skill_log_tail,
             commands::skilllog::clear_skill_log,
             commands::skilllog::export_skill_log,

@@ -54,6 +54,7 @@ import {
   setHistoryScrubEnabled,
 } from "@/lib/tauri/settings";
 import { isExitGuardEnabled, setExitGuardEnabled } from "@/lib/exitGuard";
+import { migrateLegacyProfiles } from "@/lib/useShellProfiles";
 import { AdminUnlockDialog } from "@/components/AdminUnlockDialog";
 import {
   AlertDialog,
@@ -77,7 +78,12 @@ import { StartupSection } from "@/pages/settings/StartupSection";
 import { useSectionNav } from "@/pages/settings/useSectionNav";
 import { ScopeIcon, SectionHeading } from "@/pages/settings/shared";
 import { GridSection } from "@/pages/settings/GridSection";
-import { HostColumnsBox } from "@/pages/settings/HostColumnsBox";
+import { TableColumnsBox } from "@/pages/settings/TableColumnsBox";
+import { HIDEABLE_COLUMNS, ORDERABLE_COLUMNS } from "@/lib/hostColumns";
+import {
+  PROFILE_HIDEABLE_COLUMNS,
+  PROFILE_ORDERABLE_COLUMNS,
+} from "@/lib/profileColumns";
 import { SessionsSection } from "@/pages/settings/SessionsSection";
 import { CustomTerminalsSection } from "@/pages/settings/CustomTerminalsSection";
 import { DismissedWarnings } from "@/pages/settings/DismissedWarnings";
@@ -114,10 +120,8 @@ export function SettingsPage({
 
   // Appearance: fonts, host-table column visibility, local-shell launcher list.
   const {
-    hiddenCols,
-    toggleColumn,
-    colOrder,
-    resetColumns,
+    hostColumns,
+    profileColumns,
     shells,
     disabledShells,
     toggleShell,
@@ -181,15 +185,27 @@ export function SettingsPage({
   const resetEverything = async () => {
     setResetting(true);
     try {
+      // Before anything is cleared, make sure the profiles an older build kept
+      // in localStorage have been copied into the database. Somebody who
+      // upgrades and resets before ever opening Terminals would otherwise lose
+      // them exactly the way build 69 exists to stop. A copy that fails stops
+      // the reset.
+      await migrateLegacyProfiles();
       await resetAppSettings();
     } catch (e) {
       toast.error(errorMessage(e));
       setResetting(false);
       return;
     }
-    // localStorage/sessionStorage hold only UI prefs in this app (theme, tab
-    // order, sort, column widths, rail/header toggles), clearing them resets
-    // every persisted preference. Reload so all providers re-init from defaults.
+    // Clearing localStorage/sessionStorage resets every UI preference kept there
+    // (theme, tab order, sorts, column widths, rail and header toggles). The
+    // test for what may live there: losing it costs the operator a moment to
+    // set again. Anything they typed and would miss is content and belongs in
+    // the database, which this never touches. Shell profiles failed that test
+    // and were wiped by this line until build 69 moved them. The remembered
+    // serial speed per port was weighed and stays: it is one pick from a list,
+    // made again the next time that port is opened. Reload so all providers
+    // re-init from defaults.
     try {
       localStorage.clear();
       sessionStorage.clear();
@@ -1335,11 +1351,21 @@ export function SettingsPage({
               </Button>
             </div>
           </div>
-          <HostColumnsBox
-            hiddenCols={hiddenCols}
-            toggleColumn={toggleColumn}
-            colOrder={colOrder}
-            resetColumns={resetColumns}
+          <TableColumnsBox
+            title="Host table columns"
+            tableName="the Hosts table"
+            alwaysShown="Label, hostname and actions"
+            hideable={HIDEABLE_COLUMNS}
+            orderable={ORDERABLE_COLUMNS}
+            {...hostColumns}
+          />
+          <TableColumnsBox
+            title="Profile table columns"
+            tableName="the Profiles table (Hosts tab, Profiles side)"
+            alwaysShown="Name and actions"
+            hideable={PROFILE_HIDEABLE_COLUMNS}
+            orderable={PROFILE_ORDERABLE_COLUMNS}
+            {...profileColumns}
           />
           <div className="grid gap-1.5">
             <Label>Local shells in the launcher</Label>
@@ -1912,9 +1938,12 @@ export function SettingsPage({
           <AlertDialogHeader>
             <AlertDialogTitle>Reset everything to defaults?</AlertDialogTitle>
             <AlertDialogDescription>
-              Every preference returns to its default and the app reloads.
-              Hosts, credentials, guard rules, shortcuts, command history and
-              logs are <strong>not</strong> affected. This can't be undone.
+              Every preference returns to its default and the app reloads:
+              theme, fonts, layouts, column widths and order, sorts, timeouts,
+              the tab Broadside opens on, and the warnings you dismissed. Hosts,
+              credentials, saved shell profiles, templates, skills, guard rules,
+              shortcuts, command history and logs are <strong>not</strong>{" "}
+              affected. This can&apos;t be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1961,7 +1990,7 @@ export function SettingsPage({
         open={recoveryCode !== null}
         onOpenChange={(open) => !open && setRecoveryCode(null)}
       >
-        <DialogContent>
+        <DialogContent keepOpenOnOutsideClick>
           <DialogHeader>
             <DialogTitle>Save your recovery code</DialogTitle>
             <DialogDescription>
@@ -1994,7 +2023,7 @@ export function SettingsPage({
 
       {/* Reset the passcode with the recovery code. */}
       <Dialog open={recoverOpen} onOpenChange={setRecoverOpen}>
-        <DialogContent>
+        <DialogContent keepOpenOnOutsideClick>
           <DialogHeader>
             <DialogTitle>Reset admin passcode</DialogTitle>
             <DialogDescription>

@@ -283,6 +283,15 @@ export type RestoreReport = {
   /** Trusted host keys the restore cleared, so the first connect to each host
    * asks again instead of trusting whatever the file said. */
   cleared_host_keys: number;
+  /** Saved shell profiles whose startup command the restore emptied. The
+   * profile comes back; the command it would type into a shell on the next
+   * click does not, because a file is not where that gets decided. */
+  cleared_startup_commands: number;
+  /** Saved shell profiles that named a custom local shell. Every custom entry
+   * is dropped above, so each of these profiles was pointed at nothing rather
+   * than left holding an id the next entry added would take. Pick the shell
+   * again in Edit once the entry is back. */
+  orphaned_custom_profiles: number;
   /** True when the restored file had sudo auto-fill on and the restore turned
    * it back off. A backup carries no credentials, so a file arriving with that
    * switch on would be turning password injection on for passwords already on
@@ -291,11 +300,12 @@ export type RestoreReport = {
 };
 
 /** Restores a backup `.db` over the live database (hosts, settings, command
- * history). This OVERWRITES all current data. Credentials are never in a
- * backup, so restored hosts may need their password re-entered. Two things
- * deliberately do NOT come back: custom local-shell entries and trusted host
- * keys, both of which would otherwise let a file somebody else made decide what
- * runs or what is trusted (see the backend command for the reasoning).
+ * history, shell profiles). This OVERWRITES all current data. Credentials are
+ * never in a backup, so restored hosts may need their password re-entered.
+ * Three things deliberately do NOT come back: custom local-shell entries,
+ * trusted host keys, and the startup commands on shell profiles, each of which
+ * would otherwise let a file somebody else made decide what runs or what is
+ * trusted (see the backend command for the reasoning).
  * Reload the app afterwards so every page re-reads the restored database. */
 export function restoreAppData(path: string): Promise<RestoreReport> {
   return invoke<RestoreReport>("restore_app_data", { path });

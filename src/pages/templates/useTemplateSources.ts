@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { listLocalShells, type LocalShell } from "@/lib/tauri/local";
 import { loadDisabledShells } from "@/lib/localShellPrefs";
-import { loadProfiles, type ShellProfile } from "@/lib/localShellProfiles";
+import { useShellProfiles } from "@/lib/useShellProfiles";
 import { sortForRail } from "@/lib/railSort";
 import { useShellColors } from "@/lib/useShellColors";
 import type { ItemSources } from "@/pages/templates/items";
@@ -40,20 +40,20 @@ export function useTemplateSources({
   const [hostsError, setHostsError] = useState<string | null>(null);
   const [shells, setShells] = useState<LocalShell[]>([]);
   const [disabled, setDisabled] = useState<Set<string>>(new Set());
-  const [profiles, setProfiles] = useState<ShellProfile[]>(loadProfiles);
+  // Profiles are a database read since build 69, re-read on every show like
+  // the hosts. Empty until the first read lands.
+  const { profiles: loadedProfiles } = useShellProfiles(visible);
+  const profiles = useMemo(() => loadedProfiles ?? [], [loadedProfiles]);
   const shellColors = useShellColors();
 
-  // The two localStorage reads are done during render rather than in the effect
-  // below, for the reason TerminalsPage records at length: reading storage is
-  // synchronous, so an effect only delays showing the truth by a frame, and the
-  // rail would paint the previous visit's list first.
+  // The hide list is read during render rather than in the effect below, for
+  // the reason TerminalsPage records at length: reading storage is synchronous,
+  // so an effect only delays showing the truth by a frame, and the rail would
+  // paint the previous visit's list first.
   const [wasVisible, setWasVisible] = useState(visible);
   if (wasVisible !== visible) {
     setWasVisible(visible);
-    if (visible) {
-      setProfiles(loadProfiles());
-      setDisabled(loadDisabledShells());
-    }
+    if (visible) setDisabled(loadDisabledShells());
   }
 
   useEffect(() => {
