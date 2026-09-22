@@ -88,10 +88,20 @@ pub fn local_mkdir(path: String) -> AppResult<()> {
 
 /// Pre-flight: counts files + total bytes under a local directory (drives the
 /// large-folder warning before a recursive put). Symlinks are skipped.
+///
+/// Async, with the walk on a blocking thread: a sync command runs on the main
+/// thread, and a big tree would hold every other IPC call (transfer progress
+/// included) until it finished.
 #[tauri::command]
-pub fn local_scan_dir(path: String) -> AppResult<TransferStats> {
+pub async fn local_scan_dir(path: String) -> AppResult<TransferStats> {
+    tauri::async_runtime::spawn_blocking(move || scan_local(&path))
+        .await
+        .map_err(|e| AppError::LocalFs(format!("scan did not finish: {e}")))
+}
+
+fn scan_local(path: &str) -> TransferStats {
     let mut stats = TransferStats::default();
-    let mut stack = vec![PathBuf::from(&path)];
+    let mut stack = vec![PathBuf::from(path)];
     while let Some(dir) = stack.pop() {
         let read_dir = match fs::read_dir(&dir) {
             Ok(r) => r,
@@ -113,7 +123,7 @@ pub fn local_scan_dir(path: String) -> AppResult<TransferStats> {
             }
         }
     }
-    Ok(stats)
+    stats
 }
 
 /// Moves a local file or folder to the Recycle Bin (recoverable), rather than

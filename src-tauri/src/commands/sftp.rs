@@ -286,14 +286,19 @@ pub async fn sftp_download(
 }
 
 /// Pre-flight: counts files + total bytes under a remote directory (drives the
-/// large-folder warning before a recursive get).
+/// large-folder warning before a recursive get). `scan_id` makes it cancellable
+/// through `sftp_cancel_transfer` like a transfer, and a disconnect stops it.
 #[tauri::command]
 pub async fn sftp_scan_dir(
     session_id: String,
     path: String,
+    scan_id: Option<String>,
     sftp_state: State<'_, SftpState>,
 ) -> AppResult<TransferStats> {
-    sftp::scan_remote_dir(&sftp_state, &session_id, &path).await
+    let (key, cancel) = sftp_state.begin_transfer(&session_id, scan_id.as_deref());
+    let result = sftp::scan_remote_dir(&sftp_state, &session_id, &path, &cancel).await;
+    sftp_state.end_transfer(&key);
+    result
 }
 
 /// Recursively uploads a local directory and audits the transfer. Emits

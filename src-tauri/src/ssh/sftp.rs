@@ -623,8 +623,12 @@ fn walk_local_inner(dir: &Path, rel: &str, out: &mut Vec<LocalWalkEntry>) -> std
 /// flood the UI with events.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(120);
 
-/// Recursively uploads a local directory to `remote_root` (which is created).
+/// Recursively uploads a local directory to `remote_root` (created if missing).
 /// `on_progress(files_done, bytes_done)` is called periodically + at the end.
+///
+/// A folder transfer that is cancelled or fails keeps the whole files it
+/// delivered, but not the empty folders it made on the way to files it never
+/// got to: those are removed on the way out (see [`prune_remote_dirs`]).
 pub async fn upload_dir(
     state: &SftpState,
     session_id: &str,
@@ -635,8 +639,37 @@ pub async fn upload_dir(
     on_progress: impl Fn(u64, u64),
 ) -> AppResult<TransferStats> {
     let conn = state.get(session_id)?;
-    // Create the destination root; ignore "already exists".
-    let _ = conn.sftp.create_dir(remote_root.to_string()).await;
+    let mut created: Vec<String> = Vec::new();
+    let result = upload_dir_walk(
+        &conn,
+        local_root,
+        remote_root,
+        mode,
+        cancel,
+        on_progress,
+        &mut created,
+    )
+    .await;
+    if !matches!(&result, Ok(stats) if !stats.cancelled) {
+        prune_remote_dirs(&conn, &created).await;
+    }
+    result
+}
+
+async fn upload_dir_walk(
+    conn: &SftpConn,
+    local_root: &str,
+    remote_root: &str,
+    mode: TransferMode,
+    cancel: &AtomicBool,
+    on_progress: impl Fn(u64, u64),
+    created: &mut Vec<String>,
+) -> AppResult<TransferStats> {
+    // Create the destination root; "already exists" is fine, and is the one
+    // case that is not ours to remove afterwards.
+    if conn.sftp.create_dir(remote_root.to_string()).await.is_ok() {
+        created.push(remote_root.to_string());
+    }
     let base = remote_root.trim_end_matches('/');
 
     let walk = walk_local(Path::new(local_root))?;
@@ -653,7 +686,10 @@ pub async fn upload_dir(
         }
         let remote_path = format!("{base}/{}", item.rel);
         if item.is_dir {
-            let _ = conn.sftp.create_dir(remote_path).await; // ignore if it exists
+            // An error here is almost always "already exists", which is fine.
+            if conn.sftp.create_dir(remote_path.clone()).await.is_ok() {
+                created.push(remote_path);
+            }
             continue;
         }
 
@@ -706,13 +742,13 @@ pub async fn upload_dir(
                 // removed, and it counts as neither transferred nor skipped: the
                 // files reported are the whole ones that were left behind.
                 Ok((_, true)) => {
-                    discard_remote(&conn, file, &remote_path).await;
+                    discard_remote(conn, file, &remote_path).await;
                     done_files -= 1;
                     stats.cancelled = true;
                     break;
                 }
                 Err(e) => {
-                    discard_remote(&conn, file, &remote_path).await;
+                    discard_remote(conn, file, &remote_path).await;
                     return Err(AppError::Ssh(format!(
                         "sftp upload {remote_path}: {e}"
                     )));
@@ -797,8 +833,29 @@ fn safe_local_destination(local_path: &str) -> AppResult<&Path> {
     Ok(path)
 }
 
+/// Removes the folders a stopped folder download made, if they are still empty,
+/// deepest first so a parent empties as its children go. `remove_dir` refuses a
+/// folder with anything in it, so a folder holding a whole file, or one that
+/// was there before and was only ever written into, is never touched.
+async fn prune_local_dirs(created: &[PathBuf]) {
+    for dir in created.iter().rev() {
+        let _ = tokio::fs::remove_dir(dir).await;
+    }
+}
+
+/// The remote half of [`prune_local_dirs`]. The server refuses to remove a
+/// folder that is not empty, which is the same guarantee.
+async fn prune_remote_dirs(conn: &SftpConn, created: &[String]) {
+    for dir in created.iter().rev() {
+        let _ = conn.sftp.remove_dir(dir.clone()).await;
+    }
+}
+
 /// Recursively downloads a remote directory to `local_root` (which is created).
 /// `on_progress(files_done, bytes_done)` is called periodically + at the end.
+///
+/// As with [`upload_dir`], a stopped or failed download keeps its whole files
+/// and removes the empty folders it made (see [`prune_local_dirs`]).
 pub async fn download_dir(
     state: &SftpState,
     session_id: &str,
@@ -814,6 +871,32 @@ pub async fn download_dir(
     // `safe_local_child`'s job.
     safe_local_destination(local_root)?;
     let conn = state.get(session_id)?;
+    let mut created: Vec<PathBuf> = Vec::new();
+    let result = download_dir_walk(
+        &conn,
+        remote_root,
+        local_root,
+        mode,
+        cancel,
+        on_progress,
+        &mut created,
+    )
+    .await;
+    if !matches!(&result, Ok(stats) if !stats.cancelled) {
+        prune_local_dirs(&created).await;
+    }
+    result
+}
+
+async fn download_dir_walk(
+    conn: &SftpConn,
+    remote_root: &str,
+    local_root: &str,
+    mode: TransferMode,
+    cancel: &AtomicBool,
+    on_progress: impl Fn(u64, u64),
+    created: &mut Vec<PathBuf>,
+) -> AppResult<TransferStats> {
     let mut stats = TransferStats::default();
     // Progress covers processed (transferred + skipped) files, so the bar still
     // completes when the clash mode skips some.
@@ -823,7 +906,12 @@ pub async fn download_dir(
     // (remote dir, matching local dir) worklist.
     let mut stack: Vec<(String, PathBuf)> = vec![(remote_root.to_string(), PathBuf::from(local_root))];
     'walk: while let Some((rpath, ldir)) = stack.pop() {
-        tokio::fs::create_dir_all(&ldir).await?;
+        // Its parent is either the folder the user dropped into or one this
+        // walk made, so only `ldir` itself can be new.
+        if !ldir.exists() {
+            tokio::fs::create_dir_all(&ldir).await?;
+            created.push(ldir.clone());
+        }
         let read_dir = conn
             .sftp
             .read_dir(rpath.clone())
@@ -920,15 +1008,24 @@ pub async fn download_dir(
 
 /// Recursively counts files + total bytes under a remote directory (pre-flight
 /// for the large-folder warning).
+///
+/// `cancel` is polled before each directory is read, so a scan of a huge tree
+/// can be stopped, and a disconnect stops it too. A stopped scan comes back
+/// with `cancelled` set and counts that mean nothing.
 pub async fn scan_remote_dir(
     state: &SftpState,
     session_id: &str,
     path: &str,
+    cancel: &AtomicBool,
 ) -> AppResult<TransferStats> {
     let conn = state.get(session_id)?;
     let mut stats = TransferStats::default();
     let mut stack = vec![path.to_string()];
     while let Some(p) = stack.pop() {
+        if cancel.load(Ordering::Relaxed) {
+            stats.cancelled = true;
+            break;
+        }
         let read_dir = conn
             .sftp
             .read_dir(p.clone())
@@ -953,6 +1050,36 @@ pub async fn scan_remote_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stopped folder download takes away the folders it made and left empty,
+    /// and nothing else: not one holding a whole file, and not the folder the
+    /// user dropped into.
+    #[tokio::test]
+    async fn prune_local_dirs_removes_only_empty_folders_it_made() {
+        let base = std::env::temp_dir().join(format!(
+            "broadside-prune-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let root = base.join("root");
+        let kept = root.join("kept");
+        let empty = root.join("empty");
+        let nested = empty.join("deeper");
+        fs::create_dir_all(&kept).unwrap();
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(kept.join("whole.txt"), b"done").unwrap();
+
+        prune_local_dirs(&[root.clone(), kept.clone(), empty.clone(), nested.clone()]).await;
+
+        assert!(!nested.exists() && !empty.exists());
+        assert!(kept.join("whole.txt").exists());
+        assert!(root.exists(), "root still holds a folder with a file in it");
+        assert!(base.exists(), "the drop folder was never ours to remove");
+        fs::remove_dir_all(&base).unwrap();
+    }
 
     #[test]
     fn safe_local_child_accepts_ordinary_names() {
