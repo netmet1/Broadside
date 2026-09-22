@@ -2035,10 +2035,10 @@ export function TerminalsPage({
                 <div
                   className={cn(
                     // Short lists give way last: the proportional shrink
-                    // would otherwise take five shells down to one row while
-                    // sixty profiles kept eight. `shrink-[0.1]` still lets
+                    // would otherwise take eight shells down to one row while
+                    // sixty profiles kept eight. `shrink-[0.3]` still lets
                     // it give up height once the long lists are at theirs.
-                    "flex shrink-[0.1] flex-col",
+                    "flex shrink-[0.3] flex-col",
                     !collapsed.has("shells") &&
                       enabledShells.length > 0 &&
                       "min-h-[4.5rem]",
@@ -2194,7 +2194,7 @@ export function TerminalsPage({
                     is the answer you want offered. */}
                 <div
                   className={cn(
-                    "mt-1 flex shrink-[0.1] flex-col border-t border-border/60 pt-1",
+                    "mt-1 flex shrink-[0.3] flex-col border-t border-border/60 pt-1",
                     serialPorts.length > 0 && "min-h-[5rem]",
                   )}
                 >

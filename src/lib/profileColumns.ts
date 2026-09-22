@@ -23,7 +23,7 @@ export const PROFILE_HIDEABLE_COLUMNS = [
 ] as const;
 
 /** Every column with its shipped width, fixed ones included. They add up to
- * 910 px, so the whole row, the open button in Actions included, fits the
+ * 900 px, so the whole row, the open button in Actions included, fits the
  * table's width at the smallest window (1024 wide, less the rail and padding)
  * without a sideways scroll. Widen any of them by dragging. */
 export const PROFILE_COLS: { id: string; w: number }[] = [
@@ -33,7 +33,7 @@ export const PROFILE_COLS: { id: string; w: number }[] = [
   { id: "name", w: 170 },
   { id: "shell", w: 120 },
   { id: "folder", w: 180 },
-  { id: "startup", w: 160 },
+  { id: "startup", w: 150 },
   { id: "actions", w: 176 },
 ];
 
