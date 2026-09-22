@@ -1801,7 +1801,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files",
     body: (
       <>
         <Lead>
@@ -1829,28 +1829,28 @@ export const SECTIONS: HelpSection[] = [
               any of them to transfer the whole selection.
             </li>
             <li>
-              A few transfer at a time and the rest wait their turn, so the bar
-              along the bottom gains a row as each one starts and loses it as each
-              one finishes, with a line underneath counting whatever is still
-              queued. Each row has its own <Nav>Cancel</Nav>, and there is a{" "}
-              <Nav>Cancel all</Nav> for the queue.
+              Up to four transfer at a time and the rest wait. Each running
+              transfer, and each folder still being scanned, gets a row in the bar
+              along the bottom with its own <Nav>Cancel</Nav>;{" "}
+              <Nav>Cancel all</Nav> also clears whatever is waiting.
             </li>
             <li>
-              Cancelling leaves only whole files. Files that had already finished
-              stay; the one that was part-way through is deleted, because a
-              half-written file carrying the right name looks like the real thing
-              and nothing about it says it is short. The same applies when a
-              transfer fails rather than being cancelled. Note that a file being
-              <em>overwritten</em> cannot be brought back this way: it was
-              emptied the moment it was opened for writing, so cancelling leaves
-              you with neither the old copy nor the new one.
+              A folder over 100 files or 100 MB asks before it starts. Dragging
+              several large folders asks about each one in turn.
             </li>
             <li>
-              Several at once is faster on a distant host and barely different on
-              your own network. Everything shares one connection, so the gain is
-              not extra bandwidth: it is that a file is fetched in small pieces,
-              each one waited for, and waiting for four files at once is quicker
-              than waiting for them one after another.
+              When everything in one drag has finished, a single message sums it
+              up. Anything that failed or was cancelled gets its own message.
+            </li>
+            <li>
+              Cancelling keeps the files that had already finished and deletes the
+              one that was part-way through, along with any folder it left empty. A
+              failed transfer does the same. A file that was being overwritten is
+              not restored: cancelling leaves neither the old copy nor the new one.
+            </li>
+            <li>
+              Several at once helps most on a distant host; on your own network it
+              is barely faster.
             </li>
             <li>
               You can make a new folder on either side and delete items. Local
