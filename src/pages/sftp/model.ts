@@ -165,6 +165,9 @@ export function transferSummary(
   }
   const files = done.reduce((n, o) => n + o.files, 0);
   const bytes = done.reduce((n, o) => n + o.bytes, 0);
+  if (done.every((o) => !o.isDir)) {
+    return `${verb} ${files} files (${formatSize(bytes)})`;
+  }
   return `${verb} ${done.length} items (${files} files, ${formatSize(bytes)}${skip})`;
 }
 
