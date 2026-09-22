@@ -2,7 +2,7 @@ import { RefreshCwIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { HighlightedLine } from "@/components/Highlight";
-import type { ToastEntry } from "@/lib/tauri/logs";
+import { toastDisplayText, type ToastEntry } from "@/lib/tauri/logs";
 import { cn } from "@/lib/utils";
 
 import type { useLineSearch } from "./useLineSearch";
@@ -23,11 +23,6 @@ const KIND_LABEL: Record<ToastEntry["kind"], string> = {
   info: "Info",
   message: "Note",
 };
-
-/** What a toast row shows and what Find searches: message, then description. */
-export function toastDisplayText(e: ToastEntry): string {
-  return e.description ? `${e.message} (${e.description})` : e.message;
-}
 
 /**
  * Logs > Toasts History: every toast the app has shown, newest first, the last

@@ -38,6 +38,7 @@ import {
   loadSession,
   sessionIsEncrypted,
   setAuditEnabled,
+  toastDisplayText,
   toastLogTail,
   type AuditInfo,
   type ErrorEntry,
@@ -63,7 +64,7 @@ import { onSkillDone } from "@/lib/tauri/skills";
 import { announceCommandHistory } from "@/lib/commandHistory";
 import { cn } from "@/lib/utils";
 
-import { ToastsTab, toastDisplayText } from "./logs/ToastsTab";
+import { ToastsTab } from "./logs/ToastsTab";
 import { useLineSearch } from "./logs/useLineSearch";
 
 type Tab = "session" | "audit" | "history" | "errors" | "skills" | "toasts";

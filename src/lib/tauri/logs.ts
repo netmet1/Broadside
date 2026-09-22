@@ -106,6 +106,11 @@ export type ToastEntry = {
   description?: string;
 };
 
+/** What a toast row shows and what Find searches: message, then description. */
+export function toastDisplayText(e: ToastEntry): string {
+  return e.description ? `${e.message} (${e.description})` : e.message;
+}
+
 export function appendToastLog(
   kind: ToastEntry["kind"],
   message: string,
