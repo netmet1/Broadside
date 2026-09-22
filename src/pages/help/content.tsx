@@ -140,8 +140,6 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
       <>
         A network protocol for running commands on another computer over an
         encrypted connection. Broadside uses SSH to reach every host you add.
-        All traffic between the app and a host travels inside this encrypted
-        channel.
       </>
     ),
   },
@@ -152,8 +150,7 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
       <>
         A way to browse and copy files over an <Term term="SSH" /> connection,
         using the same login and encrypted channel as a remote shell. Broadside's
-        SFTP tab uses it to move files to and from your hosts; nothing travels
-        outside the SSH session.
+        SFTP tab uses it to move files to and from your hosts.
       </>
     ),
   },
@@ -245,12 +242,9 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     label: "Key passphrase",
     def: (
       <>
-        A secret that unlocks an SSH private key file, so that simply copying
-        the file is not enough to use it. Optional when the key is created, but
-        required to use a key that has one. It never reaches the host: it
-        decrypts the file on your own machine before the connection is made.
-        Broadside stores it for you in the same protected place as your other
-        secrets, and checks it when you pick the key.
+        A secret that unlocks an SSH private key file, so that a copy of the
+        file alone is useless. It is only used on your own machine and never
+        sent to the host. Broadside stores it with your other secrets.
       </>
     ),
   },
@@ -297,18 +291,6 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
         collect its output, without opening a full interactive screen. Broadcast
         uses this. It is faster for one-shot commands but cannot drive
         interactive programs.
-      </>
-    ),
-  },
-  {
-    term: "ansi",
-    label: "ANSI and xterm",
-    def: (
-      <>
-        ANSI codes are the invisible control sequences a program sends to color
-        text, move the cursor and clear the screen. xterm is the long-standing
-        terminal standard those codes follow. Broadside renders them so remote
-        output looks the way it would in a native terminal.
       </>
     ),
   },
@@ -507,8 +489,7 @@ export const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               The <Nav>Status</Nav> column shows whether each host currently
-              answers on the network. Its header is the single letter S when the
-              column is narrow.
+              answers on the network.
             </li>
             <li>
               A colored dot marks hosts that have a live terminal connection open
@@ -519,9 +500,8 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               The <Nav>Find by label…</Nav> box at the top right narrows the table
-              to hosts whose label matches what you type (case-insensitive), the
-              same as the search boxes on the broadcast rails. It combines with the
-              tag filter and clears with the <Nav>x</Nav>.
+              to hosts whose label matches what you type. It works together with
+              the tag filter and clears with the <Nav>x</Nav>.
             </li>
             <li>
               You can hide columns you do not use from <Nav>Settings</Nav>, under{" "}
@@ -555,10 +535,9 @@ export const SECTIONS: HelpSection[] = [
             <li>
               The filter icon in the <Nav>Tag</Nav> header opens a checklist of
               every tag in use. Uncheck tags to hide the hosts that only carry
-              them; a host stays visible as long as one of its tags is still
-              checked. The icon is highlighted while a filter is active, and the
-              status bar shows how many hosts are being shown. The filter lasts for
-              the session and resets when you restart the app.
+              them; a host stays visible while any of its tags is checked. The
+              icon is highlighted while a filter is on, and the filter resets
+              when you restart the app.
             </li>
             <li>
               Drag the separator on the right edge of the <Nav>Tag</Nav> column to
@@ -610,8 +589,7 @@ export const SECTIONS: HelpSection[] = [
               corner is the order it opens in.
             </li>
             <li>
-              The same host may appear more than once. Two tabs on one machine
-              is an ordinary way to work.
+              The same host can appear more than once.
             </li>
           </Bullets>
           <H3>The preview</H3>
@@ -803,11 +781,10 @@ export const SECTIONS: HelpSection[] = [
           <H3>How local shells are detected (important)</H3>
           <Bullets>
             <li>
-              Detection uses your Windows PATH, not a fixed install folder, so the
-              install location does not matter as long as the installer added the
-              shell to PATH. A shell installed without being put on PATH (for
-              example an unzipped portable build, or a disabled app execution
-              alias) will not appear in the list.
+              Broadside finds shells through your Windows PATH, so it does not
+              matter where they are installed as long as the installer added them
+              to PATH. A shell that is not on PATH (an unzipped portable copy, for
+              example) will not appear in the list.
             </li>
             <li>
               Broadside reads PATH when it starts. If you install a new shell
@@ -815,10 +792,8 @@ export const SECTIONS: HelpSection[] = [
               show up in the launcher.
             </li>
             <li>
-              You can hide shells you do not use from the launcher in{" "}
-              <Nav>Settings</Nav> under <Nav>Appearance</Nav>. Every detected
-              shell is shown by default; a newly installed one appears
-              automatically once detected.
+              Hide shells you do not use in <Nav>Settings</Nav> under{" "}
+              <Nav>Appearance</Nav>.
             </li>
           </Bullets>
           <H3>Your own terminal applications</H3>
@@ -827,9 +802,8 @@ export const SECTIONS: HelpSection[] = [
               Detection only finds the shells Broadside knows how to look for.
               For anything else, such as <Nav>Git Bash</Nav>, MSYS2 or Cygwin,
               open <Nav>Settings</Nav> and the <Nav>Custom terminals</Nav>{" "}
-              section and add it yourself. There is an <Nav>Add Git Bash</Nav>{" "}
-              button that fills in the usual path and options for you, so that
-              case is normally one click and a save.
+              section and add it yourself. <Nav>Add Git Bash</Nav> fills in the
+              usual path and options for you.
             </li>
             <li>
               Give it a name (used in the launcher and as the tab title), the
@@ -1020,18 +994,13 @@ export const SECTIONS: HelpSection[] = [
               change the active tile; click a tile to come back to Broadside.
             </li>
             <li>
-              <b>Short of room?</b> From most space saved to least:{" "}
-              <Nav>Ctrl+Shift+G</Nav> gives the grid the whole screen (see
-              below); <Nav>Grid Titles</Nav> (the eye) hides every tile's title
-              bar; the grid button on a tab takes that terminal out of the grid
-              without closing it; and <Nav>F11</Nav> gives one terminal the whole
-              window.
-            </li>
-            <li>
-              The grid button on a tab (shown only in Grid) hides that
-              terminal's tile. The button turns amber, the shell keeps running,
-              and clicking it again brings the tile back. <Nav>Unhide all</Nav>{" "}
-              in the <Nav>Sessions</Nav> menu brings back every hidden tile.
+              <b>Short of room?</b> <Nav>Ctrl+Shift+G</Nav> gives the grid the
+              whole screen (see below). <Nav>Grid Titles</Nav> (the eye) hides
+              every tile's title bar. The grid button on a tab takes that
+              terminal out of the grid without closing it (the button turns
+              amber; click it again, or <Nav>Unhide all</Nav> in the{" "}
+              <Nav>Sessions</Nav> menu, to bring it back). <Nav>F11</Nav> gives
+              one terminal the whole window.
             </li>
             <li>
               <Nav>Fullscreen</Nav> (<Nav>Ctrl+Shift+G</Nav>) gives the grid the
@@ -1097,8 +1066,7 @@ export const SECTIONS: HelpSection[] = [
               suits every session it reaches. The safety checks are the same as
               on the <Nav>PTY Broadcast</Nav> tab: a destructive command asks
               before going to SSH hosts, and every local-shell send is
-              confirmed. That tab keeps a saved history and a full report of
-              each run; the rail is the quick version.
+              confirmed.
             </li>
             <li>
               <Nav>Up</Nav> and <Nav>Down</Nav> recall commands sent from any of
@@ -1223,11 +1191,6 @@ export const SECTIONS: HelpSection[] = [
               <Nav>View</Nav> &gt; <Nav>Tab bar</Nav> (Grid only) hides the tab
               strip to give its row to the tiles. The strip always comes back
               in <Nav>Tabs</Nav> view.
-            </li>
-            <li>
-              On a narrow window, or with a large app font, the toolbar buttons
-              drop their labels and show only their icons. Hovering one still
-              names it in the status bar.
             </li>
           </Bullets>
           <H3>Full-screen prompts, and a stuck one</H3>
@@ -1452,9 +1415,8 @@ export const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               Pick which open sessions to target in the host rail on the left, type
-              a command in the composer, and send. You need at least two terminals
-              open for the combined view to be meaningful. The rail collapses to
-              color dots; its actions shrink to icons when collapsed.
+              a command in the composer, and send. The rail collapses to color
+              dots with the arrow button.
             </li>
             <li>
               The rail carries the same <Nav>Find by label…</Nav> box and{" "}
@@ -1849,8 +1811,7 @@ export const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               A two-pane view: your PC on the left, the remote host on the right.
-              Open folders to navigate, and use the path bar to jump around; both
-              sides show the same columns so they read alike.
+              Open folders to navigate, or type a path in the path bar.
             </li>
             <li>
               Transfer by dragging an item from one side to the other, or with the
@@ -1858,17 +1819,15 @@ export const SECTIONS: HelpSection[] = [
               running byte count.
             </li>
             <li>
-              Select several items to move at once, the same way Windows Explorer
-              works: <Nav>Ctrl+click</Nav> to add or remove individual files, and{" "}
-              <Nav>Shift+click</Nav> to select a whole range between two rows. A
-              plain click selects a single file (or opens a folder). Dragging any
-              selected item then transfers the whole selection in one go.
+              Select several items as in Windows Explorer (<Nav>Ctrl+click</Nav>{" "}
+              for individual files, <Nav>Shift+click</Nav> for a range), then drag
+              any of them to transfer the whole selection.
             </li>
             <li>
               You can make a new folder on either side and delete items. Local
               deletes go to the Windows <Nav>Recycle Bin</Nav> so they are
-              recoverable; a non-empty remote folder is refused with a clear
-              message rather than failing silently.
+              recoverable. A remote folder must be empty before it can be
+              deleted.
             </li>
           </Bullets>
           <H3>Broadcast (many hosts)</H3>
@@ -1878,9 +1837,9 @@ export const SECTIONS: HelpSection[] = [
               sends one local file or folder to every selected host;{" "}
               <Nav>GET</Nav> pulls one remote path from every host into its own
               subfolder on your PC (one folder per host label, so files from
-              different hosts never collide). Each host gets its own progress bar,
-              and a few hosts transfer at a time so many targets are queued rather
-              than opened all at once.
+              different hosts never collide). Each host gets its own progress
+              bar, and a few hosts transfer at a time while the rest wait their
+              turn.
             </li>
             <li>
               On <Nav>GET</Nav>, the remote path may end in a wildcard (
@@ -1902,10 +1861,10 @@ export const SECTIONS: HelpSection[] = [
               session-only toggle that resets on restart.
             </li>
             <li>
-              First contact with a host is verified with <Term term="TOFU" /> just
-              like elsewhere: unknown keys are gathered into one <Nav>trust</Nav>{" "}
-              dialog after the run, and trusting them retries those hosts. A host
-              whose key has <em>changed</em> is refused, never offered for trust.
+              Hosts you have not connected to before are gathered into one{" "}
+              <Nav>trust</Nav> dialog after the run (see <Term term="TOFU" />),
+              and trusting them retries those hosts. A host whose key has{" "}
+              <em>changed</em> is refused.
             </li>
           </Bullets>
           <H3>When a file already exists</H3>
@@ -1913,10 +1872,9 @@ export const SECTIONS: HelpSection[] = [
             The selector on the tab row applies to <em>both</em> tabs:{" "}
             <Nav>Overwrite all</Nav> always replaces, <Nav>Newer only</Nav>{" "}
             replaces only when the source is newer, and <Nav>Skip existing</Nav>{" "}
-            leaves same-named files untouched. It governs recursive folder
-            transfers (a single file always overwrites), is remembered across
-            restarts, and so is the tab (Commander or Broadcast) you last had
-            open.
+            leaves same-named files untouched. It applies to folder transfers
+            (a single file always overwrites) and is remembered across
+            restarts.
           </p>
         </Detail>
       </>
@@ -2118,8 +2076,7 @@ export const SECTIONS: HelpSection[] = [
               color) live in a local database in plain text.
             </li>
             <li>
-              Once saved, a secret is never shown again in the app. You can
-              replace it, but the stored value is never displayed.
+              Once saved, a secret is never shown again. You can replace it.
             </li>
           </Bullets>
           <H3>What is sent over the network</H3>
@@ -2176,11 +2133,10 @@ export const SECTIONS: HelpSection[] = [
               regain access if you forget the passcode.
             </li>
             <li>
-              The admin lock is not a wall between separate people on one Windows
-              account. The real boundary for limiting a less-trusted operator is
-              to give them their own Windows login and have them import hosts from
-              a credential-free <Term term="csv" /> file, so they never receive
-              your stored secrets.
+              The admin lock does not keep people who share one Windows account
+              apart. To limit a less-trusted colleague, give them their own
+              Windows login and a <Term term="csv" /> of hosts (which never
+              contains passwords), so they never receive your stored secrets.
             </li>
           </Bullets>
         </Detail>
@@ -2195,9 +2151,8 @@ export const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          Broadside is a native Windows desktop app and runs comfortably on
-          modest hardware. The table lists what it needs at a minimum, and what
-          makes for a smoother ride when you are driving many hosts at once.
+          Broadside is a Windows desktop app and runs comfortably on modest
+          hardware.
         </Lead>
         <Detail>
           <H3>Minimum and recommended</H3>
@@ -2290,17 +2245,14 @@ export const SECTIONS: HelpSection[] = [
               neither of which exists on macOS or Linux.
             </li>
             <li>
-              No administrator rights are needed to run it. WebView2 ships with
+              No administrator rights are needed to run it. WebView2 comes with
               Windows 11 and recent Windows 10; on an older system the installer
-              adds the Evergreen runtime, which is what draws the app's interface.
+              adds it.
             </li>
             <li>
-              Memory and processor use scale with how many terminals you keep open
-              and the concurrency you set for <Nav>Broadcast</Nav> and{" "}
-              <Nav>Skills</Nav> in <Nav>Settings</Nav>; each terminal also keeps
-              its own scrollback in memory, which is the one you can set
-              yourself (<Nav>Settings</Nav> &rarr; <Nav>Appearance</Nav> &rarr;{" "}
-              <Nav>Terminal scrollback</Nav>).
+              Memory use grows with the number of open terminals and how much
+              scrollback each keeps (<Nav>Settings</Nav> &rarr;{" "}
+              <Nav>Appearance</Nav> &rarr; <Nav>Terminal scrollback</Nav>).
             </li>
             <li>
               Disk use grows with saved sessions, the audit log and backups, all
@@ -2312,18 +2264,14 @@ export const SECTIONS: HelpSection[] = [
           <H3>If Windows Security flags Broadside</H3>
           <Bullets>
             <li>
-              It can happen, and it is a false alarm. An application that is not
-              yet code-signed, is only days old, has few users, and opens shell
-              sessions matches the pattern Windows Defender's automatic
-              heuristics are built to be suspicious of. Opening terminals means
-              starting processes, which is the behaviour being scored, and it is
-              also the entire purpose of the app.
+              It can happen, and it is a false alarm: a new, unsigned app that
+              starts shell processes is exactly what Windows Defender's automatic
+              checks are wary of.
             </li>
             <li>
-              A detection name ending in <code>!ml</code> means no known malware
-              was matched at all: a model simply judged the file to look
-              unusual. Broadside has been flagged this way once, as{" "}
-              <code>Trojan:Win32/Bearfoos.A!ml</code>.
+              A detection name ending in <code>!ml</code> (Broadside has been
+              flagged once as <code>Trojan:Win32/Bearfoos.A!ml</code>) means no
+              known malware was found; the file just looked unusual.
             </li>
             <li>
               If the app disappears, restore it from{" "}
@@ -2334,12 +2282,10 @@ export const SECTIONS: HelpSection[] = [
               are restoring the file that was actually built.
             </li>
             <li>
-              Please report it if it happens, with the detection name and
-              version. Each report goes to Microsoft as a false positive, which
-              is what gets the detection corrected for everyone. Adding a
-              Defender exclusion silences the warnings but also stops Defender
-              watching that folder, so treat it as a temporary measure rather
-              than a solution.
+              Please report it, with the detection name and version, so it can
+              be sent to Microsoft as a false positive. A Defender exclusion
+              stops the warnings but also stops Defender checking that folder,
+              so use one only as a stopgap.
             </li>
           </Bullets>
         </Detail>
@@ -2369,16 +2315,15 @@ export const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          What Broadside can put in front of you, and what each one actually
-          means. Warnings name the thing that went wrong rather than the thing
-          you should do about it, so this is the other half.
+          What each message Broadside can show you means, and what to do about
+          it.
         </Lead>
         <WarningMatrix />
         <p>
           Anything that reaches the{" "}
           <SectionLink id="help-sec-logs">Logs</SectionLink> tab is recorded
-          with the host it happened on and the operation that was running, which
-          is the place to look when a message went by too quickly to read.
+          with the host and what was running, so look there for a message that
+          went by too quickly.
         </p>
       </>
     ),

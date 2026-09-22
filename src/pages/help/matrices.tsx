@@ -126,7 +126,7 @@ const SHORTCUTS: ShortcutGroup[] = [
           </>
         ),
         where: "Terminals",
-        what: "Previous / next terminal tab, wrapping at the ends. Works with the focus inside a terminal; the shell never sees the key.",
+        what: "Previous / next terminal tab, wrapping at the ends. Works even while you are typing in a terminal.",
       },
       {
         keys: (
@@ -145,7 +145,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Ctrl+Shift+C</Kbd>,
         where: "Terminals",
-        what: "Copy the selection and clear it, the same as right-clicking it. A terminal cannot see the Shift, so plain Ctrl+C is untouched and still interrupts what is running.",
+        what: "Copy the selection and clear it, the same as right-clicking it. Plain Ctrl+C still interrupts what is running.",
       },
       {
         keys: <Kbd>Ctrl+Shift+V</Kbd>,
@@ -170,7 +170,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Tab</Kbd>,
         where: "Terminals",
-        what: "The shell's own completion, always. Nothing in Broadside takes it.",
+        what: "Always goes to the shell (for completion).",
       },
     ],
   },
@@ -180,7 +180,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Enter</Kbd>,
         where: "Tab rename",
-        what: "Commit the new name. An empty name clears the override and the tab goes back to its shell name.",
+        what: "Save the new name. An empty name puts the shell's own name back.",
       },
       {
         keys: <Kbd>Esc</Kbd>,
@@ -234,7 +234,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Type in the filter</Kbd>,
         where: "Help",
-        what: "Narrows the help to the sections that mention what you type, including these tables. Matches are marked in amber, with arrows beside the count to move between them. Punctuation is optional: ctrl shift g finds Ctrl+Shift+G. Each section in the list on the left shows how many matches it has, or says keyword when it matched a related word it does not actually use.",
+        what: "Narrows the help to the sections that mention what you type, including these tables. Matches are marked in amber, with arrows beside the count to move between them. Punctuation is optional: ctrl shift g finds Ctrl+Shift+G. The list on the left shows how many matches each section has.",
       },
     ],
   },
@@ -302,7 +302,7 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>An amber chip naming a shell (fish, csh, tcsh, …)</Msg>,
         where: "Hosts in full; a triangle alone in the picker rails",
         means:
-          "This host's login shell is not one Broadside can fully work with. Terminals, broadcasts, file transfer and sudo auto-fill all work as normal, but MultiTerminal cannot separate its output into command blocks and skills cannot run here. In the Broadcast, PTY Broadcast, MultiTerminal and Skills lists the same warning is an amber triangle; hover it for the words. The host can still be selected, but a command written for bash may not mean the same thing to its shell.",
+          "This host's login shell is not one Broadside can fully work with. Terminals, broadcasts, file transfer and sudo auto-fill all work as normal, but MultiTerminal cannot separate its output into command blocks and skills cannot run here. A command written for bash may not behave the same in its shell.",
       },
       {
         message: <Msg>An amber “no shell” chip</Msg>,
@@ -344,7 +344,7 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>A latency in milliseconds after a test</Msg>,
         where: "Hosts",
         means:
-          "Not a warning. The connection was made, authenticated and closed again, and that is how long connect and auth took.",
+          "Not a warning: the test connection worked, and this is how long it took to connect and log in.",
       },
     ],
   },
@@ -355,7 +355,7 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>Unreachable: …</Msg>,
         where: "Terminal pane",
         means:
-          "Broadside never got as far as a login. The rest of the line is the operating system's own words for why. Try again is beside Close tab, because most of these are worth a second attempt.",
+          "Broadside could not reach the host; the rest of the line is Windows' explanation. Most of these are worth a Try again.",
       },
       {
         message: (
@@ -372,7 +372,7 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>Unreachable: connection timed out after 10s</Msg>,
         where: "Terminal pane",
         means:
-          "Nothing answered on that address and port. The host is off, the port is wrong, or a firewall is dropping it. Not retried automatically: a host that is not there does not become there.",
+          "Nothing answered on that address and port. The host is off, the port is wrong, or a firewall is dropping it. Not retried automatically.",
       },
       {
         message: <Msg>Authentication failed: …</Msg>,
@@ -394,13 +394,13 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>This key is encrypted. Enter its passphrase to save it</Msg>,
         where: "Host form, under Key passphrase",
         means:
-          "Broadside opened the key file you chose and found it encrypted, so the passphrase is required rather than optional for this one. The label above the field says so too.",
+          "The key file you chose is encrypted, so a passphrase is required for it.",
       },
       {
         message: <Msg>That passphrase does not open this key</Msg>,
         where: "Host form, under Key passphrase",
         means:
-          "The file is a key and it is encrypted, but the passphrase entered does not decrypt it. Caught on save rather than at the first connect.",
+          "The passphrase you entered does not unlock this key file.",
       },
       {
         message: <Msg>No credentials stored. Edit the host on the Hosts page.</Msg>,
@@ -422,13 +422,13 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>This host's key is not known yet</Msg>,
         where: "Host-key dialog",
         means:
-          "First connection to this address and port. Broadside has no key on record, so it is showing you the fingerprint the server presented and asking whether to trust it. Check it against the host itself before accepting.",
+          "First connection to this host. Check the fingerprint shown against the host itself before trusting it.",
       },
       {
         message: <Msg>The host key has changed: the connection was refused</Msg>,
         where: "Host-key dialog",
         means:
-          "The server presented a different key from the one on record. That is either a rebuilt or re-keyed server, or the connection being intercepted. Nothing was sent and no password was offered. Do not accept it until you know which.",
+          "The server's key is different from the one on record: either the server was rebuilt or re-keyed, or the connection is being intercepted. Nothing was sent. Do not accept it until you know which.",
       },
       {
         message: <Msg>host key changed: refused</Msg>,
@@ -444,7 +444,7 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>A slim banner across the bottom of a tile</Msg>,
         where: "Terminal pane",
         means:
-          "The shell has exited or the connection dropped. The scrollback is kept and stays readable; Reconnect starts a fresh shell on the same host, Close tab throws it away.",
+          "The shell has exited or the connection dropped. The output stays readable; Reconnect starts a fresh shell, Close tab closes it.",
       },
       {
         message: <Msg>A pill on that banner reading “SSH 12/14 86%”</Msg>,
@@ -464,7 +464,7 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>Every terminal is hidden from the grid.</Msg>,
         where: "Grid",
         means:
-          "Not a failure. Terminals are open but every one has been taken out of the grid from its tab. Use the grid button on a tab to bring one back.",
+          "Every open terminal has been taken out of the grid. Use the grid button on a tab, or Unhide all in the Sessions menu, to bring them back.",
       },
     ],
   },
