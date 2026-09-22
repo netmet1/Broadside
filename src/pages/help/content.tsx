@@ -196,15 +196,11 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     label: "POSIX",
     def: (
       <>
-        The standard that Unix-like systems agree on, and the reason a command
-        typed for Linux usually works on macOS or inside WSL. In Broadside it is
-        the name of a <Term term="shell" /> family: a Bash-like terminal such as
-        Git Bash, MSYS2 or Cygwin speaks the same command language as a Linux
-        host, so those tabs are grouped with WSL rather than with PowerShell or
-        Command Prompt. A custom terminal set to the Bash-like language is shown
-        with a <code>posix</code> tag and joins the <Nav>WSL / POSIX</Nav> tab in{" "}
-        <Nav>PTY Broadcast</Nav>, which keeps a broadcast command valid for
-        everything it reaches.
+        The standard that Unix-like systems follow, which is why a command
+        written for Linux usually works on macOS or inside WSL. In Broadside,
+        Bash-like terminals such as Git Bash, MSYS2 and Cygwin count as POSIX:
+        they are tagged <code>posix</code> and join the{" "}
+        <Nav>WSL / POSIX</Nav> tab in <Nav>PTY Broadcast</Nav>.
       </>
     ),
   },
@@ -351,60 +347,31 @@ export const SECTIONS: HelpSection[] = [
           <H3>The left rail</H3>
           <p>
             The buttons down the left side switch between the main areas of the
-            app. The tabs you work in run down from the top:{" "}
-            <Nav>Hosts</Nav>, <Nav>Templates</Nav>, <Nav>Terminals</Nav>,{" "}
+            app: <Nav>Hosts</Nav>, <Nav>Templates</Nav>, <Nav>Terminals</Nav>,{" "}
             <Nav>Broadcast</Nav>, <Nav>PTY Broadcast</Nav>,{" "}
-            <Nav>MultiTerminal</Nav>, <Nav>Skills</Nav> and <Nav>SFTP</Nav>.
-            The ones for looking back and setting up sit at the bottom:{" "}
-            <Nav>Logs</Nav>, <Nav>Settings</Nav>, <Nav>Help</Nav> and{" "}
-            <Nav>About</Nav>. The rail collapses to icons only on narrow windows, or
-            with the collapse button at the top. Drag its right edge to resize
-            it, or double-click that edge to reset the width. Broadside opens
-            on <Nav>Hosts</Nav>; <Nav>Settings → Startup</Nav> picks a
-            different first tab.
+            <Nav>MultiTerminal</Nav>, <Nav>Skills</Nav> and <Nav>SFTP</Nav> at
+            the top, and <Nav>Logs</Nav>, <Nav>Settings</Nav>, <Nav>Help</Nav>{" "}
+            and <Nav>About</Nav> at the bottom. The rail shrinks to icons on
+            narrow windows, or with the collapse button at the top. Drag its
+            right edge to resize it, or double-click that edge to reset the
+            width. Broadside opens on <Nav>Hosts</Nav>;{" "}
+            <Nav>Settings → Startup</Nav> picks a different first tab.
           </p>
           <H3>Finding your way</H3>
           <Bullets>
             <li>
               Hover almost any control and a short explanation appears in the
               status bar along the bottom of the window. The right-hand end of
-              that bar counts what the page is showing. On{" "}
-              <Nav>Terminals</Nav> that is how many tabs are open, and it
-              becomes a pair like <Nav>16/20 sessions connected</Nav> as soon as
-              one of them is not: the second number is the tabs, the first is
-              the ones with a live connection, and the difference is the tabs
-              showing red.
+              the bar counts what the page is showing. On <Nav>Terminals</Nav>,{" "}
+              <Nav>16/20 sessions connected</Nav> means 20 tabs are open and 4
+              of them (the red ones) have no live connection.
             </li>
             <li>
-              When nothing is being hovered, that same left-hand end shows three
-              live numbers instead: the window size, the terminal font size and
-              the app font size. The window size is the drawing area in the
-              units the window is sized in, so dragging the window as small as
-              it goes reads <Nav>1024x700</Nav>. All three follow a change as
-              you make it, which is the point of them: drag an edge, or hold{" "}
-              <Nav>Ctrl</Nav> and turn the wheel over a terminal, and watch the
-              number rather than guessing. Hover any control and they step aside
-              for its hint, then come back when you move off it, or after about
-              seven seconds with nobody at the machine. Reading a
-              hint counts as being there, because moving the mouse resets that
-              clock; what it catches is a pointer left resting on a button with
-              the room empty. Turning hints
-              off in <Nav>Settings</Nav> leaves them showing all the time.
-              <br />
-              While the session timeout is switched on (<Nav>Settings →
-              Sessions</Nav>), a fourth item joins them:{" "}
-              <Nav>Session timeout 30m</Nav>, with whatever length you set. It
-              is there because the timeout closes shells without asking, so
-              having it on should not be something you have to remember. It
-              goes when you switch the timeout off.
-            </li>
-            <li>
-              A dialog you type into (a new profile, saving a session, a
-              passphrase or passcode, a new SFTP folder) does not close when you
-              click outside it, so a stray click cannot throw away what you
-              typed. Its own buttons close it, and so do the <Nav>X</Nav> and{" "}
-              <Nav>Esc</Nav>. A dialog that only asks you to confirm something
-              still closes on a click outside.
+              When nothing is hovered, the left-hand end shows the window size,
+              the terminal font size and the app font size, and updates them as
+              you resize or zoom. While the session timeout is on, it is shown
+              there too (<Nav>Session timeout 30m</Nav>), so you always know it
+              is set.
             </li>
             <li>
               Every message that pops up in the bottom corner (a toast) is also
@@ -412,13 +379,8 @@ export const SECTIONS: HelpSection[] = [
               that went by too fast can be read again.
             </li>
             <li>
-              In <Nav>Help</Nav>, the section you are reading opens out in the
-              list on the left into its sub-headers, smaller and indented, with
-              the one you have scrolled past last lit. Click one to jump to it.
-            </li>
-            <li>
-              The current app version is shown next to the Broadside name at
-              the top of the rail and in the About dialog.
+              The app version is shown next to the Broadside name at the top of
+              the rail and in the About dialog.
             </li>
             <li>
               Switch between light and dark appearance in <Nav>Settings</Nav>,
@@ -427,16 +389,11 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Press <Nav>F11</Nav> (or the maximize button on a terminal tab) to
               fill the whole window with a single terminal, and <Nav>F11</Nav>{" "}
-              again to return. <b>Esc does not come back out</b>, in either
-              fullscreen, and that is deliberate: Esc is the key{" "}
-              <code>vi</code> is built around, and the program most likely to be
-              running full-screen in a terminal is an editor. Taking a press of
-              it to resize a window would cost more than it saved, so Esc goes
-              straight through to whatever you are running. Use <Nav>F11</Nav>,
-              or the restore button in the banner along the top. The banner
-              names the terminal you are looking at, and{" "}
-              <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav> still change sessions
-              while you are maximized, so the name changes with them.
+              again to return. <Nav>Esc</Nav> does not come back out: it goes to
+              the program in the terminal, because editors such as{" "}
+              <code>vi</code> depend on it. <Nav>Alt+Left</Nav> /{" "}
+              <Nav>Alt+Right</Nav> still change sessions while you are
+              maximized.
             </li>
           </Bullets>
         </Detail>
@@ -469,13 +426,11 @@ export const SECTIONS: HelpSection[] = [
               <Term term="sudo" /> password for administrator commands.
             </li>
             <li>
-              Pick a key file and Broadside opens it there and then, so it can
-              tell you whether it is encrypted before you save. If it is, the
-              passphrase field changes from optional to required and saving
-              without one is refused, as is a passphrase that does not open the
-              key. This is the only place a key passphrase can be asked for: it
-              decrypts a file on your own machine before the connection is made,
-              so the host never sees it and a terminal can never prompt for it.
+              When you pick a key file, Broadside checks straight away whether
+              it is protected by a passphrase. If it is, the passphrase becomes
+              required, and a wrong one is refused before you save. This is the
+              only place a key passphrase is asked for: a terminal never prompts
+              for it.
             </li>
             <li>
               For your safety, saved passwords and passphrases are never shown
@@ -485,101 +440,51 @@ export const SECTIONS: HelpSection[] = [
               for where these are kept.
             </li>
             <li>
-              A host row can carry a small amber chip, most often the name of a
-              login shell Broadside cannot fully drive.{" "}
+              A host row can carry a small amber chip, most often naming a login
+              shell Broadside cannot fully work with (fish, for example). Other
+              pages show the same mark as an amber triangle beside the host. The
+              host is never hidden, and terminals and broadcasts to it still
+              work.{" "}
               <SectionLink id="help-sec-warnings">
                 Warnings and messages
               </SectionLink>{" "}
-              lists every chip, banner and error the app can show you and what
-              each one actually means.
+              explains every chip, banner and error.
             </li>
             <li>
-              <b>Shell integration</b>, its own card at the foot of the host's
-              form, is the answer to that chip. When a terminal opens,
-              Broadside normally sends one setup line that installs the markers
-              command block tracking reads, clears the login banner and reprints
-              it, so the tab looks like a fresh login. Whether that line is safe
-              depends on what is on the other end, and the form shows what the
-              last connection found. <Nav>Auto</Nav> believes it, and is the
-              default. <Nav>Always</Nav> says the host really is bash or zsh
-              whatever it reports, which is what to use for a machine that will
-              not answer the question (a forced command, a restricted account)
-              and is losing command block tracking because of it. It answers a
-              question the connection could not, rather than overruling one it
-              could: a host that named its shell keeps its chip, because sending
-              the line to fish does not make fish able to use it.{" "}
-              <Nav>Never</Nav> sends the host nothing at all and leaves its
-              login screen exactly as it draws it. Appliances that greet you
-              with a console menu rather than a shell are detected and left
-              alone on their own, without needing this set. The setting is read
-              when a terminal opens, so it applies to the next tab you open on
-              that host rather than to one already running.
+              <b>Shell integration</b>, at the foot of the host's form, controls
+              a short setup line Broadside sends when a terminal opens. It lets
+              Broadside see where each command starts and ends, which{" "}
+              <Nav>MultiTerminal</Nav> and <Nav>Skills</Nav> rely on.{" "}
+              <Nav>Auto</Nav>, the default, decides from what the host reports.{" "}
+              <Nav>Always</Nav> is for a bash or zsh host that will not say what
+              its shell is (a restricted account, for example).{" "}
+              <Nav>Never</Nav> sends nothing and leaves the login screen exactly
+              as the host draws it. Devices that greet you with a menu instead
+              of a shell are detected and left alone automatically. A change
+              applies to the next terminal you open on that host.
             </li>
             <li>
-              <b>You are not meant to see that line.</b> The host reads it back
-              before it runs it, the way it reads back anything typed at a
-              prompt, and Broadside holds the whole first screen until the host
-              has finished with it: the pane goes from <Nav>connecting</Nav>
-              straight to the finished login in one paint. What it waits for is
-              the host, not the network, so a slow link or a VPN makes the wait
-              longer rather than making the line flash past. On the rare host
-              that does not do what the line asks, you get what the host said,
-              still without the line itself in it. It is written with a space in
-              front of it, which is a request that the host's shell keep it out
-              of the history list, and stock Debian and Ubuntu honour it. A host
-              that does not will record the line, and an <Nav>Up</Nav> arrow
-              there finds it instead of your last command. Broadside can delete
-              that entry as it goes past, but it will not do so unless you ask:
-              the switch is in <Nav>Settings &gt; Security</Nav> and it is off
-              to begin with, because running a <code>history -d</code> on your
-              machines is your decision and not ours.
+              On some hosts that setup line is saved in the shell's history, so
+              the <Nav>Up</Nav> arrow finds it instead of your last command.{" "}
+              <Nav>Settings &gt; Security</Nav> can remove it for you; see the{" "}
+              <SectionLink id="help-sec-security">Security section</SectionLink>.
             </li>
             <li>
-              <b>Reconnect check</b>, the card above it, is for the machine you
-              have just rebooted. When a terminal on this host loses its
-              connection and drops to the banner with <Nav>Reconnect</Nav> on it,
-              a pill appears on that banner and keeps asking the host whether it
-              is back. It is red while the host is dark and turns green the
-              moment it answers, so you can watch a reboot come round instead of
-              clicking <Nav>Reconnect</Nav> every few seconds to find out.
+              <b>Reconnect check</b> helps when you have just rebooted a
+              machine. When a terminal on this host loses its connection, a pill
+              on its <Nav>Reconnect</Nav> banner keeps checking whether the host
+              is back: red while it is down, green once it answers, so you do
+              not have to keep clicking <Nav>Reconnect</Nav> to find out.
               <br />
-              Watch the words on it and not just the colour, because for the
-              first few seconds of a reboot the pill reads{" "}
-              <Nav>SSH still answering</Nav>. That is not the host coming back
-              impossibly fast. When you type <code>reboot</code> your login
-              shell is killed before <code>sshd</code> is, so your terminal
-              drops to this banner while the machine is still listening and will
-              go on answering for another ten or twenty seconds. Nothing has
-              gone down yet, and the pill says so in those words rather than
-              pretending not to have an answer. Once the host really goes the
-              pill turns red, and when it comes back it reads{" "}
-              <Nav>SSH back</Nav> with the figures beside it. <b>Back</b> is the
-              one that means what you are waiting for.
+              Right after you type <code>reboot</code> the pill may read{" "}
+              <Nav>SSH still answering</Nav>, because the machine has not gone
+              down yet. Wait for <Nav>SSH back</Nav>: that is the one that means
+              you can reconnect.
               <br />
-              This setting is how often it asks, from every second to every ten,
-              three by default, or <Nav>Disable</Nav> for a host you would
-              rather were not asked at all. Disabled means no checking and no
-              pill;{" "}
-              <Nav>Reconnect</Nav> still works, you just have to try it to find
-              out. What the check does is open a connection to the host's SSH
-              port, not send a ping, and the difference is the point: a Linux
-              machine answers a ping some tens of seconds before{" "}
-              <code>sshd</code> is listening, so a pill fed by pings would go
-              green while <Nav>Reconnect</Nav> still failed. Nothing is sent to
-              the host, nothing logs in, and the checking runs only while a pane
-              of yours is sitting there closed. Reconnect the tab or close it and
-              it stops.
-            </li>
-            <li>
-              The same mark appears wherever a host is picked: the{" "}
-              <Nav>Broadcast</Nav>, <Nav>PTY Broadcast</Nav>,{" "}
-              <Nav>MultiTerminal</Nav> and <Nav>Skills</Nav> lists, as the
-              amber triangle on its own, with the words on hover. Those lists
-              are narrow and the label is what you are reading there. Nothing is
-              ever hidden from a list for this: broadcasting to a shell
-              Broadside cannot drive works perfectly well, and a host that
-              quietly vanished would be far harder to explain than one that is
-              marked.
+              The setting picks how often it checks (every 1 to 10 seconds, 3 by
+              default), or <Nav>Disable</Nav> turns it off for this host. The
+              check only looks for the host's SSH port answering. It never logs
+              in, and it stops when you reconnect or close the tab.
             </li>
           </Bullets>
           <H3>Importing many hosts</H3>
@@ -625,26 +530,12 @@ export const SECTIONS: HelpSection[] = [
               values for the hidden columns.
             </li>
             <li>
-              Drag a column's <em>name</em> in the header to move that column
-              somewhere else in the table. The one you are over is highlighted
-              as you go, and the order is remembered across restarts. Drag the
-              thin strip on the header's right edge instead and you resize the
-              column, as before: the two gestures are on different parts of the
-              header so neither can be mistaken for the other.
-            </li>
-            <li>
-              The checkbox, the colour swatch and <Nav>Actions</Nav> stay where
-              they are. The first two are the row's left-hand grip and the last
-              is its tail, and a table with <Nav>Connect</Nav> in the middle of
-              the address is not an order anyone wants.
-            </li>
-            <li>
-              <Nav>Settings → Appearance</Nav> shows the current order as a row
-              of chips, and those can be dragged onto one another too if you
-              would rather set the order there than on the table. The same box
-              has a <Nav>Reset defaults</Nav> button, which brings back every
-              column in the order Broadside ships. It is scoped to that box:
-              fonts, sizes and everything else in Settings are untouched.
+              Drag a column's name in the header to move the column, or drag the
+              thin strip on the header's right edge to resize it. The order is
+              remembered across restarts. You can also reorder the columns in{" "}
+              <Nav>Settings → Appearance</Nav>, where <Nav>Reset defaults</Nav>{" "}
+              puts them back. The checkbox, colour swatch and{" "}
+              <Nav>Actions</Nav> columns stay where they are.
             </li>
           </Bullets>
           <H3>Tags</H3>
@@ -693,14 +584,10 @@ export const SECTIONS: HelpSection[] = [
           by hand every morning.
         </Lead>
         <p>
-          It lives in two places, and the split is deliberate. The{" "}
-          <Nav>Templates</Nav> tab on the left rail is the editor and only the
-          editor: nothing launches from it. The <Nav>Hosts</Nav> tab has a{" "}
-          <Nav>Hosts</Nav> | <Nav>Templates</Nav> | <Nav>Profiles</Nav> switch
-          at the top, and the Templates side is the list you open one from. So
-          the screen you build on has no button that opens twelve connections,
-          and the screen you launch from has no way to change what it is about
-          to open. The switch remembers where you left it.
+          The <Nav>Templates</Nav> tab on the left rail is where you build and
+          edit templates; nothing launches from it. You open them from the{" "}
+          <Nav>Hosts</Nav> tab, using the <Nav>Hosts</Nav> |{" "}
+          <Nav>Templates</Nav> | <Nav>Profiles</Nav> switch at the top.
         </p>
         <Detail>
           <H3>Building one</H3>
@@ -713,17 +600,9 @@ export const SECTIONS: HelpSection[] = [
               it to add it at the end.
             </li>
             <li>
-              Sorting applies <span className="font-medium">inside</span> each
-              group and never across them, so a sort never puts a WSL distro
-              between two hosts. Hosts take the whole sort list; shells and
-              custom terminals keep the order the launcher gives them; profiles
-              sort by name only.
-            </li>
-            <li>
-              A shell hidden in <Nav>Settings</Nav>, <Nav>Appearance</Nav>,{" "}
-              <Nav>Local shells in the launcher</Nav> is hidden here too.
-              Profiles ignore that list, exactly as the{" "}
-              <Nav>plus button</Nav> on the Terminals tab does.
+              Sorting works within each group, so hosts, shells and profiles
+              never get mixed together. A shell hidden in{" "}
+              <Nav>Settings → Appearance</Nav> is hidden here too.
             </li>
             <li>
               Drag a box onto another to change the order, and use the small{" "}
@@ -735,64 +614,36 @@ export const SECTIONS: HelpSection[] = [
               is an ordinary way to work.
             </li>
           </Bullets>
-          <H3>The preview is not a picture</H3>
+          <H3>The preview</H3>
           <p>
-            The boxes are laid out by your own <Nav>Settings</Nav>,{" "}
-            <Nav>Grid</Nav> values: the column count, the tile size, and what
-            happens to a short last row. It is the same arithmetic the{" "}
-            <SectionLink id="help-sec-terminals">Terminals</SectionLink> grid
-            uses, so what you see is what launching will build.
+            The boxes are laid out with the same grid settings as the{" "}
+            <SectionLink id="help-sec-terminals">Terminals</SectionLink> grid,
+            so what you see is what launching will build.{" "}
+            <Nav>Grid settings</Nav>, in the line under the canvas, changes them
+            without leaving the page. There is one set of grid settings, so a
+            change here changes Terminals too. Drop new sessions on the dashed{" "}
+            <Nav>Drag a session here</Nav> strip.
           </p>
           <p>
-            You do not have to leave the page to change them. The line under the
-            canvas says what the grid is doing in words, and{" "}
-            <Nav>Grid settings</Nav> in that line opens the same four controls
-            in a panel: the arrangement above re-lays itself as you change them.
-            There is one set of these settings, shared with the Terminals grid,
-            so a change here is a change everywhere. The full section in{" "}
-            <Nav>Settings</Nav> also has <Nav>Strict</Nav> and the three
-            defaults, which are about dragging a real tile and have no meaning
-            on a preview. The gear beside <Nav>Grid Settings</Nav> at the foot
-            of the panel takes you there.
-          </p>
-          <p>
-            The dashed <Nav>Drag a session here</Nav> strip at the foot of the
-            canvas is not one of the boxes. It used to be, and the arrangement
-            was then worked out for one tile more than the template opens, which
-            got the short-row fill backwards at two columns. Now the grid shows
-            the sessions, the strip takes the drop, and the line underneath says
-            how many will open.
-          </p>
-          <p>
-            A template stores <span className="font-medium">only</span> the
-            ordered list. No layout is saved: not tabs versus grid, not a column
-            count, not a tile size. That is what lets the same template look
-            right on a laptop and on a wall of monitors, and it means a template
-            can never argue with your own grid settings.
+            A template saves only the sessions and their order, not a layout, so
+            the same template looks right on a laptop or a wall of monitors.
           </p>
           <H3>Names, and finding one again</H3>
           <Bullets>
             <li>
-              Two templates cannot be called the same thing. Save a second
-              &ldquo;Morning check&rdquo; and it is stored as{" "}
-              <Nav>Morning check 02</Nav>, the next as <Nav>03</Nav>, and the
-              editor shows you the name it actually got. A name is how you tell
-              them apart in a list, a menu and a startup setting, so two the
-              same is two you cannot.
+              Two templates cannot share a name. Save a second &ldquo;Morning
+              check&rdquo; and it is stored as <Nav>Morning check 02</Nav>.
             </li>
             <li>
-              Closing the editor with the <Nav>x</Nav> leaves a screen with{" "}
-              <Nav>New template</Nav>, <Nav>Import</Nav> and the five you edited
-              most recently. It is a way back in, not a second copy of the list:{" "}
-              <Nav>Show all</Nav> goes to the Hosts tab, where every one of them
-              is.
+              Closing the editor with the <Nav>x</Nav> shows{" "}
+              <Nav>New template</Nav>, <Nav>Import</Nav> and the five templates
+              you edited most recently. <Nav>Show all</Nav> goes to the full list
+              on the Hosts tab.
             </li>
             <li>
-              Delete a template on the Hosts tab while the editor is holding it
-              and the editor says so when you come back. Nothing on the canvas
-              is lost: the button goes back to <Nav>Create</Nav>, and pressing
-              it writes the arrangement back as a new template.{" "}
-              <Nav>Discard</Nav> closes the editor instead.
+              If you delete a template on the Hosts tab while it is open in the
+              editor, nothing on the canvas is lost: <Nav>Create</Nav> saves it
+              again as a new template, or <Nav>Discard</Nav> closes the editor.
             </li>
           </Bullets>
           <H3>Opening one</H3>
@@ -804,70 +655,53 @@ export const SECTIONS: HelpSection[] = [
               tab.
             </li>
             <li>
-              A radio rather than tick boxes, because opening two arrangements
-              at once is not a thing anybody means to do.
-            </li>
-            <li>
               With terminals already open you are asked where the new tabs go:{" "}
               <Nav>add to the front</Nav>, <Nav>add to the end</Nav>, or{" "}
-              <Nav>cancel</Nav>. There is no replace. A launch never closes
-              anything.
+              <Nav>cancel</Nav>. Opening a template never closes anything.
             </li>
             <li>
               Anything the template names that this machine does not have (a
-              host that has been deleted, a WSL distro that has been removed) is
-              listed in that dialog and skipped. The rest still opens.
+              deleted host, a removed WSL distro) is listed in that dialog and
+              skipped. The rest still opens.
             </li>
           </Bullets>
           <H3>Opening at startup</H3>
           <p>
             One template, at most, can open itself when Broadside starts. The
-            setting is in the editor top bar and has two on positions:
+            setting is in the editor's top bar and has two on positions:
           </p>
           <Bullets>
             <li>
-              <Nav>Open the tabs at startup</Nav> makes the tabs and stops. Every
-              pane sits on its <Nav>Reconnect</Nav> button, and nothing connects
-              until you say so.
+              <Nav>Open the tabs at startup</Nav> opens the tabs without
+              connecting. Each one waits on its <Nav>Reconnect</Nav> button.
             </li>
             <li>
-              <Nav>Open and connect at startup</Nav> goes on to open the shells.
-              That means live sessions on those machines from the moment the
-              application launches, before anyone has looked at the screen, so
-              saving it asks you to confirm.
+              <Nav>Open and connect at startup</Nav> also connects them, so live
+              sessions start as soon as Broadside does. Saving this asks you to
+              confirm.
             </li>
           </Bullets>
           <p>
             Choosing it on one template takes it off whichever one had it.
-            Either on position opens Broadside on <Nav>Terminals</Nav>, so while
-            a template has it, <Nav>Settings → Startup</Nav> is greyed and
-            names the template holding it.
-            Warnings you turn off with a{" "}
-            <em>do not warn me about this again</em> box are listed in{" "}
-            <SectionLink id="help-sec-security">Security</SectionLink>, where
-            one button puts them all back.
+            While a template opens at startup, Broadside starts on{" "}
+            <Nav>Terminals</Nav> and <Nav>Settings → Startup</Nav> is greyed.
           </p>
           <H3>Export and import</H3>
           <Bullets>
             <li>
-              An exported file holds each host by label, address, port and user
-              name. No credentials are written to it, and no internal ids: those
-              name a row in one database and nothing anywhere else.
+              An exported file lists each host by label, address, port and user
+              name. It never contains credentials.
             </li>
             <li>
-              Importing matches those fields against this machine&apos;s hosts.
-              Anything that does not match arrives as a named box for you to
-              point at a real host, and the file always imports: an
-              unresolvable reference is never a reason to refuse it.
+              Importing matches those against this PC's hosts. Anything that
+              does not match arrives as a named box for you to point at a real
+              host. Importing never creates or changes a host, and never sets a
+              template to open at startup.
             </li>
             <li>
-              Import never creates or changes a host, and a file can never
-              arrive already set to open at startup.
-            </li>
-            <li>
-              Local shells and profiles are per machine by nature. They travel
-              with their names, so a template made elsewhere tells you what it
-              wanted even when this PC has no such shell.
+              Local shells and profiles belong to one PC. They travel by name,
+              so a template made elsewhere still tells you what it wanted when
+              this PC does not have it.
             </li>
           </Bullets>
         </Detail>
@@ -891,125 +725,79 @@ export const SECTIONS: HelpSection[] = [
           <H3>Remote and local shells</H3>
           <Bullets>
             <li>
-              Open a remote shell by starting a terminal for a host from the{" "}
-              <Nav>Hosts</Nav> tab, or from the <Nav>Hosts</Nav> section of the{" "}
-              <Nav>plus button</Nav> menu here, which lists every saved host so
-              that opening one does not mean leaving the terminals. The
-              connection runs over <Term term="SSH" /> either way.
+              Open a remote shell from the <Nav>Hosts</Nav> tab, or from the{" "}
+              <Nav>Hosts</Nav> section of the <Nav>plus button</Nav> menu at the
+              end of the tab strip. The connection runs over{" "}
+              <Term term="SSH" />.
             </li>
             <li>
-              Open a local Windows shell with the <Nav>plus button</Nav> at the
-              end of the tab strip. It lists the shells installed on your PC:
-              Windows PowerShell, PowerShell 7 (pwsh), Command Prompt and any
-              installed WSL distributions. Local shells run through{" "}
-              <Term term="ConPTY" />.
+              The same <Nav>plus button</Nav> opens local Windows shells: Windows
+              PowerShell, PowerShell 7 (pwsh), Command Prompt and any installed
+              WSL distributions.
             </li>
             <li>
-              That menu is in sections: <Nav>How many</Nav> with the local
-              shells under it, then <Nav>Hosts</Nav>, then <Nav>Profiles</Nav>,
-              then <Nav>Serial console</Nav>. The first three roll away with
-              the twisty beside their name and stay rolled up until you open
-              them again, restarts included, so thirty hosts need not be
-              scrolled past to reach two profiles. A rolled-up section still
-              says how many things are behind it. <Nav>How many</Nav> stays on
-              screen whatever is rolled up, because it governs the whole menu.
-              The menu is never taller than the window: however many hosts and
-              profiles you have, every section's name stays on screen with at
-              least one of its rows, and each list scrolls inside itself. Make
-              the window taller and the lists show more.
+              The menu has four sections: <Nav>How many</Nav> with the local
+              shells under it, then <Nav>Hosts</Nav>, <Nav>Profiles</Nav> and{" "}
+              <Nav>Serial console</Nav>. Click the arrow beside a section's name
+              to roll it up; it stays rolled up until you open it again. Long
+              lists scroll inside the menu.
             </li>
             <li>
-              <Nav>New</Nav> on the <Nav>Hosts</Nav> section's heading takes you
-              to the <Nav>Hosts</Nav> tab with the form for a new host already
-              open. Save it and it is in this menu the next time you open it.
-            </li>
-            <li>
-              The <Nav>Hosts</Nav> section opens a session per click, and
-              honours <Nav>How many</Nav>: set it to three and one click opens
-              three sessions to that host, with a batch past your confirmation
-              threshold asking first. A host that already has a tab is marked{" "}
-              <Nav>already open</Nav> and opens another one anyway if you pick
-              it, which is not what the <Nav>Hosts</Nav> tab does. The
-              difference is deliberate: a row on that tab is the one obvious
-              thing to click, while getting here means walking past a count in
-              a menu whose only job is opening sessions. The list is read each
-              time the menu opens, so a host you added a minute ago is in it.
+              <Nav>How many</Nav> applies to hosts as well: set it to three and
+              one click opens three sessions. A host that already has a tab is
+              marked <Nav>already open</Nav>, and picking it opens another.{" "}
+              <Nav>New</Nav> beside the <Nav>Hosts</Nav> heading takes you to the
+              form for adding a host.
             </li>
             <li>
               Rename a local shell tab with the <Nav>pencil</Nav> on the tab:
               type a name and press <Nav>Enter</Nav> (or <Nav>Esc</Nav> to
-              cancel). The name is used everywhere that tab appears, including
-              the grid tile and the broadcast lists, and an empty name puts the
-              shell's own name back. The rename lasts for the rest of the
-              session and is not kept across restarts. Tabs opened from a
-              profile already carry the profile's name, so they have no pencil.
+              cancel). An empty name puts the shell's own name back. The new
+              name lasts until you close Broadside.
             </li>
             <li>
-              A second tab on the same shell or the same host is numbered:{" "}
+              A second tab on the same shell or host is numbered:{" "}
               <Nav>PowerShell</Nav>, then <Nav>PowerShell 02</Nav>,{" "}
-              <Nav>PowerShell 03</Nav>. The number counts the order you opened
-              them in, not the order they sit in, so dragging a tab about never
-              renames anything. A tab you have renamed keeps its number without
-              showing it, which is why renaming the second one leaves you with{" "}
-              <Nav>PowerShell</Nav>, your own name, and{" "}
-              <Nav>PowerShell 03</Nav>: renaming one tab is not a reason to
-              relabel a different one under you.
+              <Nav>PowerShell 03</Nav>. Moving tabs around never changes the
+              numbers.
             </li>
           </Bullets>
           <H3>Serial consoles (COM ports)</H3>
           <Bullets>
             <li>
-              The <Nav>plus button</Nav> menu also lists the COM ports on this
-              PC, under <Nav>Serial console</Nav>. Picking one opens the console
-              cable as an ordinary terminal tab, so the switch, router or
-              firewall you are plugged into sits beside your SSH sessions
-              instead of in a second program. Where the OS knows what a port is
-              (the product name of a USB serial adapter, say) it is shown under
-              the port name, which is the only way to tell two identical black
-              dongles apart.
+              The <Nav>plus button</Nav> menu lists this PC's COM ports under{" "}
+              <Nav>Serial console</Nav>. Picking one opens the console cable as
+              an ordinary terminal tab, beside your SSH sessions. Where Windows
+              knows the adapter's product name, it is shown under the port.
             </li>
             <li>
-              The box beside each port is the <Nav>line speed</Nav> in baud. It
-              starts at <Nav>9600</Nav>, which is what a console port is set to
-              unless someone changed it; a board that wants{" "}
-              <Nav>115200</Nav> says so in its documentation. Whatever you open
-              a port at is remembered for that port, so the next time is one
-              click. The other line settings are the usual 8 data bits, no
-              parity, one stop bit, no flow control.
+              The box beside each port is the <Nav>line speed</Nav> (baud). It
+              starts at <Nav>9600</Nav>, the usual console speed; if your device
+              wants another, such as <Nav>115200</Nav>, its documentation will
+              say. The speed you use is remembered for that port.
             </li>
             <li>
-              A serial tab looks empty when it opens, and that is normal: the
-              port is a piece of wire and nothing has spoken yet. Press{" "}
-              <Nav>Enter</Nav> to make the device draw its prompt. The tab's
-              label carries the speed (<Nav>COM3 @ 9600</Nav>), which is the
-              first thing to check if what comes back is garbage rather than
-              text.
+              A new serial tab stays empty until the device says something.
+              Press <Nav>Enter</Nav> to bring up its prompt. If you get garbage
+              instead of text, the speed is probably wrong; it is shown on the
+              tab (<Nav>COM3 @ 9600</Nav>).
             </li>
             <li>
-              A COM port belongs to one program at a time. A port you already
-              have a tab on is shown in the menu as{" "}
-              <Nav>already open</Nav> and cannot be picked twice, so the only
-              way to meet this is another program holding it: PuTTY, Tera Term,
-              a script of your own. Then the tab says the port is already open
-              elsewhere and names the fix; close the other one and press{" "}
-              <Nav>Try again</Nav>. Unplugging the adapter mid-session ends the
-              tab with the reason on its banner.
+              A COM port can be open in only one program at a time. If another
+              program (PuTTY, Tera Term) has it, close that one and press{" "}
+              <Nav>Try again</Nav>.
             </li>
             <li>
-              Unlike a shell, a serial port has no size and no working
-              directory, so <Nav>How many</Nav> does not apply to it (one cable
-              is one tab) and resizing the pane does not tell the far end
-              anything. Devices that care are told by hand, usually with a{" "}
-              <Nav>terminal width</Nav> command of their own.
+              <Nav>How many</Nav> does not apply to serial ports, and resizing
+              the pane does not tell the device its new size.
             </li>
             <li>
-              Serial tabs have their own family in{" "}
+              Serial tabs can be broadcast to from{" "}
               <SectionLink id="help-sec-ptybroadcast">
                 PTY Broadcast
               </SectionLink>{" "}
-              and in the <Nav>Broadcast</Nav> rail, so one line can go to a rack
-              of console cables at once. Every serial send asks for confirmation
-              first.
+              and the <Nav>Broadcast</Nav> rail. Every serial send asks for
+              confirmation first.
             </li>
           </Bullets>
           <H3>How local shells are detected (important)</H3>
@@ -1045,30 +833,20 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               Give it a name (used in the launcher and as the tab title), the
-              full path to the program (the <Nav>Browse</Nav> button finds it),
-              any arguments it needs, and which command language it speaks. Git
-              Bash is normally given <code>--login -i</code>. It opens without
-              those, because a program started in a terminal tab already has a
-              screen and a keyboard and Bash goes interactive on its own; what
-              <code> --login</code> adds is the profile Git for Windows ships,
-              which is where the coloured <code>MINGW64</code> prompt with the
-              branch name and the full set of Unix tools on the path come from.
-              Without it you get a working but plain <code>bash-5.2$</code>{" "}
-              shell.
+              full path to the program (<Nav>Browse</Nav> finds it), any
+              arguments it needs, and which command language it speaks. For Git
+              Bash, the arguments <code>--login -i</code> give you its familiar
+              coloured prompt and the full set of Unix tools.
             </li>
             <li>
-              The program must be a full path to a real <code>.exe</code>.
-              Broadside checks that when you save, so a typo is caught there
-              rather than when you try to open a tab. Arguments are handed to
-              the program directly rather than through a shell, so there is no
-              quoting to get right.
+              The program must be a full path to a real <code>.exe</code>;
+              Broadside checks this when you save.
             </li>
             <li>
-              The command language matters for more than the icon: it decides
-              which <Nav>PTY Broadcast</Nav> tab the terminal belongs to, so a
-              broadcast command is always valid for everything it reaches. A
-              Bash-like (<Term term="posix" />) terminal joins the{" "}
-              <Nav>WSL / POSIX</Nav> tab.
+              The command language decides which <Nav>PTY Broadcast</Nav> tab
+              the terminal joins, so a broadcast command always suits every
+              shell it reaches. A Bash-like (<Term term="posix" />) terminal
+              joins the <Nav>WSL / POSIX</Nav> tab.
             </li>
             <li>
               A terminal you add appears in the <Nav>+</Nav> menu straight away,
@@ -1080,40 +858,18 @@ export const SECTIONS: HelpSection[] = [
           <H3>Tab colours</H3>
           <Bullets>
             <li>
-              A saved host carries a colour, and its tabs and grid tiles wear
-              it. Local tabs do too, set in <Nav>Settings</Nav> under{" "}
-              <Nav>Custom terminals</Nav>. The colour belongs to the{" "}
-              <b>kind of shell</b>, not to the tab: one for PowerShell, one for
-              Command Prompt, one for WSL, one for the Bash-like terminals, one
-              for serial. A custom terminal takes the colour of the command
-              language it declares, so Git Bash and MSYS2 are both Bash-like and
-              wear the same one.
-            </li>
-            <li>
-              Two PowerShell tabs being the same colour is the point rather than
-              a limitation. A host's colour answers <i>which machine</i>; a
-              local tab has no machine to name, so what is worth saying is{" "}
-              <i>which language am I about to type in</i>, which is the thing
-              that stops a Linux command going into a Command Prompt.
-            </li>
-            <li>
-              The defaults are dark blues from the Windows console family,
-              chosen to sit quietly behind text that still has to be readable in
-              both themes; the loud reds and greens of the host palette are
-              spoken for, and a local tab borrowing one would be saying
-              something it does not mean. <Nav>Serial</Nav> starts with no
-              colour at all, because a console cable is the one session that is
-              a piece of hardware rather than a program and leaving it plain is
-              what makes the coloured tabs read as the shells. Any of them can
-              be changed, or set to <Nav>None</Nav>, and{" "}
+              A host's tabs and grid tiles wear the host's colour. Local tabs are
+              coloured by the kind of shell (one colour each for PowerShell,
+              Command Prompt, WSL, Bash-like terminals and serial), so you can
+              see at a glance which command language you are about to type in.
+              Change them, or set any to <Nav>None</Nav>, in{" "}
+              <Nav>Settings</Nav> under <Nav>Custom terminals</Nav>;{" "}
               <Nav>Defaults</Nav> puts them all back.
             </li>
             <li>
-              A <b>profile</b> can override its shell's colour, picked when you
-              create it. A profile is a purpose rather than a language, which is
-              the same kind of thing a host is, so two profiles on the same pwsh
-              can be told apart the way two hosts can. Left alone, a profile
-              follows its shell.
+              A <b>profile</b> can have its own colour, picked when you create
+              it, so two profiles on the same shell can be told apart. Left
+              alone, it uses its shell's colour.
             </li>
           </Bullets>
           <H3>Shell profiles</H3>
@@ -1126,185 +882,98 @@ export const SECTIONS: HelpSection[] = [
               the bottom of the menu to create, launch, edit or delete them.
             </li>
             <li>
-              <b>There is a fuller list on the Hosts tab.</b> The{" "}
-              <Nav>Hosts</Nav> | <Nav>Templates</Nav> | <Nav>Profiles</Nav>{" "}
-              switch at the top of the <Nav>Hosts</Nav> tab has a Profiles side
-              that shows every profile as a table, with the folder and the
-              startup command written out rather than hidden in a tooltip. New,
-              edit, duplicate, delete and import all work there, through the
-              same form as the launcher, and it is the only place that exports
-              a <i>single</i> profile: each row has its own export button, and
-              the tick boxes export whatever you tick. Drag a row by the grip at
-              its left edge to change the order, exactly as in the launcher: it
-              is the same order, so a move in either place shows in both. The
-              columns work like the <Nav>Hosts</Nav> table's: drag a column's
-              name to move it, drag its right edge to make it wider or narrower
-              (double-click the edge to fit), and hide <Nav>Shell</Nav>,{" "}
-              <Nav>Folder</Nav> or <Nav>Startup command</Nav> in{" "}
-              <Nav>Settings</Nav> &rarr; <Nav>Appearance</Nav>, under{" "}
-              <Nav>Profile table columns</Nav>, where the order can be dragged
-              too.
+              <Nav>New</Nav> opens a short form: a name (which becomes the tab
+              label), the shell, a <Nav>Working directory</Nav> (type it or use{" "}
+              <Nav>Browse</Nav>; leave it empty to start in your home folder), an
+              optional <Nav>Startup command</Nav> and an optional{" "}
+              <Nav>Tab colour</Nav>.
             </li>
             <li>
-              <b>Profiles open from that list too</b>, the way hosts do on the
-              other side of the same switch. The terminal button on a row opens
-              that one profile, and <Nav>Multi-profile</Nav> opens every profile
-              you have ticked, each in its own tab. Either way you land on the{" "}
-              <Nav>Terminals</Nav> tab with the shells opening. A ticked profile
-              whose shell is not on this machine is reported and the others
-              still open, and nothing asks before opening a profile you already
-              have open: a second shell in the same folder is just a second
-              shell.
+              Launching a profile opens the shell in that folder and, once the
+              prompt appears, types the startup command and presses Enter for
+              you. For example, a profile can open PowerShell 7 in a project
+              folder and start a command-line tool there in one click.
             </li>
             <li>
-              <Nav>New</Nav> opens a short form. Give the profile a name, pick
-              the shell, choose the <Nav>Working directory</Nav> (type it, or
-              use <Nav>Browse</Nav> to pick a folder), and optionally set a{" "}
-              <Nav>Startup command</Nav>. The name becomes the tab label, so a
-              profile tab is easy to tell apart from a plain shell tab. Leave the
-              working directory empty to start in your home folder, the same as a
-              plain shell. <Nav>Tab colour</Nav> is optional and defaults to{" "}
-              <Nav>Shell&apos;s colour</Nav>, whose swatch shows you which colour
-              that is.
+              Profiles honour the <Nav>How many</Nav> count. A profile with a
+              startup command asks before opening more than one copy, since each
+              copy runs the command again.
             </li>
             <li>
-              Launching a profile opens the shell in that folder and, a moment
-              later, types the startup command for you and presses Enter, exactly
-              as if you had typed it. The short pause lets the shell finish
-              drawing its prompt first. As one example, a profile can open
-              PowerShell 7 in a project folder and start a command-line tool
-              there in a single click.
-            </li>
-            <li>
-              Profiles honour the <Nav>How many</Nav> count, so you can open
-              several copies of the same profile at once, and a large batch asks
-              first. A profile with a startup command asks before opening more
-              than one copy, because every copy runs that command again.
-            </li>
-            <li>
-              Hover a profile in the launcher for three buttons:{" "}
-              <Nav>edit</Nav>, <Nav>duplicate</Nav> and <Nav>delete</Nav>.{" "}
-              <Nav>Duplicate</Nav> makes a copy called{" "}
-              <Nav>(copy)</Nav> directly under the original and leaves the menu
-              open, which is the quick way to build the set of profiles that
-              differ by one field: the same shell in a different folder, or the
-              same folder running a different command. Duplicate it again and
-              the copy is numbered rather than named the same thing twice.
-              Duplicating a copy carries on the numbering instead of stacking
-              the word: a copy of <Nav>Web (copy)</Nav> is{" "}
-              <Nav>Web (copy 2)</Nav>.
-            </li>
-            <li>
-              <Nav>Delete</Nav> takes a double-click, and then asks. Double-click
-              the bin and a dialog names the profile and waits for{" "}
-              <Nav>Delete</Nav> or <Nav>Cancel</Nav>. A single click deletes
-              nothing and reminds you of the gesture instead. A profile is saved
-              work with nothing to undo it, and the button sits a few pixels
-              from <Nav>Edit</Nav> in a menu people move through quickly, so it
-              is deliberately more work than the other two buttons. The launcher
-              stays open behind the dialog, and terminals already opened from a
-              profile keep running after it is deleted.
+              Hover a profile in the launcher for <Nav>edit</Nav>,{" "}
+              <Nav>duplicate</Nav> and <Nav>delete</Nav>. <Nav>Duplicate</Nav>{" "}
+              puts a <Nav>(copy)</Nav> just below the original, which is the
+              quick way to make profiles that differ by one setting.{" "}
+              <Nav>Delete</Nav> needs a double-click and then a confirmation, so
+              a stray click cannot remove one. Terminals already opened from a
+              deleted profile keep running.
             </li>
             <li>
               Drag a profile by the grip at the left of its row to change its
-              place in the list. The line shows where it will land, the order
-              is saved as soon as you let go, and a duplicate still lands
-              directly under its original.
+              place in the list.
             </li>
             <li>
-              The two buttons beside <Nav>New</Nav> are <Nav>Import</Nav> and{" "}
-              <Nav>Export</Nav>. Export writes every profile, in order, to a
-              file you choose, which is how you carry them to another PC.
-              Import reads such a file and shows every profile in it before
-              anything is saved: its shell, its folder, and its startup command
-              in full. Read those commands. A startup command runs every time
-              the profile opens, so only import a file you trust. A profile
-              whose name you already use comes in as a numbered copy and never
-              replaces yours. A profile that used a custom terminal is matched
-              to yours by that terminal&apos;s name, and is struck through if
-              you have none by that name. The preview and the launcher both name
-              the terminal it is asking for, and an export carries that name on,
-              so a profile struck through here lands on the right shell on a PC
-              that has it.
+              <b>The Hosts tab has a fuller list.</b> Set the{" "}
+              <Nav>Hosts</Nav> | <Nav>Templates</Nav> | <Nav>Profiles</Nav>{" "}
+              switch at the top of the <Nav>Hosts</Nav> tab to{" "}
+              <Nav>Profiles</Nav> for a table that shows each profile's folder
+              and startup command. Everything the launcher does works there too,
+              and you can also export a single profile, or just the ones you
+              tick. The terminal button on a row opens that profile, and{" "}
+              <Nav>Multi-profile</Nav> opens every ticked one, each in its own
+              tab. The columns can be moved, resized and hidden like the Hosts
+              table's (hide them in <Nav>Settings</Nav> &rarr;{" "}
+              <Nav>Appearance</Nav>).
             </li>
             <li>
-              Profiles are kept in Broadside&apos;s database on this PC and never
-              store passwords or keys. <Nav>Settings → Reset everything</Nav>{" "}
-              leaves them alone, and a backup includes them. A restore brings
-              them back with their startup commands emptied, so type those
-              again afterwards. A profile that opened a custom terminal comes
-              back pointing at none, because custom terminals are not restored
-              either. It remembers the name of the terminal it wanted, so hover
-              the struck-through profile to see which one to re-add; add it under{" "}
-              <Nav>Settings → Local shells</Nav>, and the next time you open{" "}
-              <Nav>Edit</Nav> on that profile the shell is already picked for
-              you. Saving is still yours to do, which is the point: nothing a
-              restored file brought with it decides what a click launches. A
-              profile keeps working even if you hide its
-              shell from the plain list. If a profile points at a shell that is
-              no longer detected (for example a WSL distribution you removed),
-              its name is shown struck through and it will not launch until that
-              shell is back.
+              <Nav>Export</Nav> saves all your profiles to a file, to carry them
+              to another PC. <Nav>Import</Nav> shows every profile in a file,
+              including its startup command in full, before anything is saved.{" "}
+              <b>Read those commands</b>: a startup command runs every time the
+              profile opens, so only import a file you trust. A profile whose
+              name you already use comes in as a numbered copy.
+            </li>
+            <li>
+              A profile whose shell is not on this PC (a removed WSL
+              distribution, or a custom terminal you do not have) is shown struck
+              through and will not launch. Hover it to see which shell it wants.
+              Once you add that shell, <Nav>Edit</Nav> on the profile has it
+              already picked, and you just save.
+            </li>
+            <li>
+              Profiles never store passwords or keys. They are kept by{" "}
+              <Nav>Settings → Reset everything</Nav> and included in backups. A
+              restore brings them back with their startup commands empty, so
+              type those again afterwards.
             </li>
           </Bullets>
           <H3>How long a session stays open</H3>
           <Bullets>
             <li>
-              <Nav>Settings → Sessions → Keep alive</Nav> sends a small packet
-              every minute so a firewall or router between you and the host does
-              not quietly forget the connection while nothing is being typed.
-              Without it, a session left sitting can be cut in the middle, and
-              the way you find out is that a keystroke goes nowhere and the tab
-              hangs. On by default. It applies to connections opened from then
-              on, not to terminals that are already open.
+              <Nav>Settings → Sessions → Keep alive</Nav> stops a firewall or
+              router quietly dropping a connection you have left idle. It is on
+              by default and applies to connections opened after you change it.
             </li>
             <li>
-              <Nav>Settings → Sessions → Session timeout</Nav> is the opposite:
-              close an SSH terminal that has been idle for a set number of
-              seconds. Idle is a strict test, and all three parts of it have to
-              hold. Nothing typed, nothing printed, and nothing running in the
-              foreground. A command that is holding the terminal is the session
-              doing what it was asked to, so <code>sleep 120</code>, a restore
-              that says nothing for twenty minutes, or an editor left open, all
-              keep the session. Keepalives do not count as traffic here, or the
-              two settings would cancel each other out.
+              <Nav>Settings → Sessions → Session timeout</Nav> closes an SSH
+              terminal that has been idle for the time you set. It is{" "}
+              <strong className="font-semibold">off</strong> by default. Idle
+              means nothing typed, nothing printed and no command running, so a
+              long quiet command, an editor, <code>tmux</code> or{" "}
+              <code>screen</code> keeps the session open; a job left running in
+              the background does not. On a very basic shell (a plain{" "}
+              <code>sh</code>, or a device's own menu) Broadside cannot tell
+              whether a command is running, so only silence counts.
             </li>
             <li>
-              Something left running in the <em>background</em> is a different
-              matter. Once the shell has the terminal back and is sitting at a
-              prompt, the session is idle whatever a <code>&amp;</code> job is
-              still doing, unless that job prints something. When a foreground
-              command does finish, the countdown starts again from that moment
-              rather than carrying on from before it started.
-            </li>
-            <li>
-              Broadside knows the difference because the shell says so: bash,
-              zsh and fish switch the terminal in and out of paste mode around
-              every command they run, and a full-screen program takes the whole
-              screen. Two things follow. A session sitting in{" "}
-              <code>tmux</code>, <code>screen</code> or an editor is never
-              closed by the timeout, because a full-screen program is a
-              foreground command as far as any terminal can tell. And a shell
-              that does neither (a plain <code>sh</code>, a very old bash, a
-              device's own menu) leaves nothing to read, so the timeout falls
-              back to quiet alone: it can still close a session with a silent
-              command running on it.
-            </li>
-            <li>
-              The timeout is <strong className="font-semibold">off</strong> until
-              you turn it on, and worth leaving off unless you want it: sitting
-              at a prompt for half an hour during a maintenance window is
-              ordinary. A pane closed this way keeps its scrollback, says in
-              amber that the timeout is what closed it, links to the setting, and
-              offers <Nav>Reconnect</Nav>. Local shells and serial consoles are
-              never closed by it. While it is on, the bottom left of the status
-              bar says so, as <Nav>Session timeout 30m</Nav>, so a timeout left
-              switched on is never a surprise.
+              A pane closed by the timeout keeps its output, says the timeout
+              closed it, and offers <Nav>Reconnect</Nav>. Local shells and
+              serial consoles are never timed out.
             </li>
           </Bullets>
           <H3>Working with tabs</H3>
           <Bullets>
-            <li>Drag tabs to reorder them. Their identity stays stable, so reordering never disconnects a session.</li>
+            <li>Drag tabs to reorder them. Reordering never disconnects a session.</li>
             <li>
               A remote tab whose connection is down (still connecting, dropped or
               failed) shows its label in <span className="font-medium text-red-600 dark:text-red-400">red</span>; use{" "}
@@ -1312,652 +981,276 @@ export const SECTIONS: HelpSection[] = [
               this.
             </li>
             <li>
-              A pane that is still opening says <Nav>Connecting</Nav> over a
-              turning spinner, and keeps saying it until there is something to
-              show: the login screen is held back until the host has finished
-              drawing it, so the moment the shell is granted is not the moment
-              there is anything to look at. If the wait passes a few seconds a
-              second line appears saying which half of it is slow, which is
-              worth reading, because a host that has already accepted your login
-              and is taking its time is not a network problem. The spinner takes
-              no clicks, so you can put the cursor in the pane and start typing
-              at a shell that is already listening.
+              A pane that is opening shows <Nav>Connecting</Nav>. If that takes
+              more than a few seconds, a second line says whether the wait is on
+              the network or on the host.
             </li>
             <li>
-              Switch tabs from the keyboard with <Nav>Alt+Right</Nav> (next tab)
-              and <Nav>Alt+Left</Nav> (previous), even while a terminal is
-              focused. The selection wraps around the ends, and plain arrow keys
-              still do normal line-editing inside the shell.
+              <Nav>Alt+Right</Nav> and <Nav>Alt+Left</Nav> switch to the next
+              and previous tab, even while you are typing in a terminal. To reach
+              the tabs without a mouse, <Nav>Tab</Nav> into the tab strip, move
+              along it with <Nav>Left</Nav> and <Nav>Right</Nav>, and press{" "}
+              <Nav>Enter</Nav> to choose one.
             </li>
             <li>
-              The tab strip itself is one stop in the tab order: <Nav>Tab</Nav>{" "}
-              into it, then <Nav>Left</Nav> and <Nav>Right</Nav> walk along the
-              tabs (<Nav>Home</Nav> and <Nav>End</Nav> jump to the ends) and{" "}
-              <Nav>Enter</Nav> chooses the one you have reached. Walking is not
-              choosing, deliberately: passing over four sessions on the way to
-              the fifth is not four decisions, and in Grid it would point your
-              typing at each of them in turn. Only the tab you have reached is
-              in the tab order, along with its own rename, hide, maximize and
-              close buttons, which <Nav>Tab</Nav> reaches next. So the strip
-              costs you one stop and the tab you are on, however many sessions
-              are open.
+              Maximize a single terminal to fill the window (also{" "}
+              <Nav>F11</Nav>). Close one tab with its <Nav>x</Nav>, or all of
+              them with <Nav>Close all</Nav> in the <Nav>Sessions</Nav> menu.
+            </li>
+          </Bullets>
+          <H3>Grid view</H3>
+          <Bullets>
+            <li>
+              The <Nav>Tabs</Nav> / <Nav>Grid</Nav> toggle above the tab strip
+              switches between one terminal at a time and every terminal tiled
+              at once. Tiles follow the order of the tabs and resize with the
+              window. When there are too many to read comfortably, they keep a
+              readable size and the grid scrolls. Each tile has its own maximize
+              and close buttons.
             </li>
             <li>
-              Opening a second tab for the same host adds a small number to the
-              tab so you can tell duplicates apart.
+              <b>In Grid, the tile under the mouse is the active one.</b> It is
+              outlined in its host's colour, and it gets whatever you type,
+              paste, search for or run from the shortcut menu. Passing over a
+              tile does not select it; the pointer has to rest there for a
+              moment (a click selects it straight away). Choosing a tab, using{" "}
+              <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav> or picking from{" "}
+              <Nav>Sessions</Nav> selects a tile until you move the mouse onto a
+              different one. While another app is in front, the mouse does not
+              change the active tile; click a tile to come back to Broadside.
             </li>
             <li>
-              Use the <Nav>find box</Nav> to search the visible output of the
-              active terminal. The match count is shown, and clearing the search
-              removes the highlight.
+              <b>Short of room?</b> From most space saved to least:{" "}
+              <Nav>Ctrl+Shift+G</Nav> gives the grid the whole screen (see
+              below); <Nav>Grid Titles</Nav> (the eye) hides every tile's title
+              bar; the grid button on a tab takes that terminal out of the grid
+              without closing it; and <Nav>F11</Nav> gives one terminal the whole
+              window.
             </li>
             <li>
-              Maximize a single terminal to fill the window (also <Nav>F11</Nav>),
-              and close a single tab or use <Nav>Close all</Nav>, in the{" "}
-              <Nav>Sessions</Nav> menu, to clear them with a confirmation.
+              The grid button on a tab (shown only in Grid) hides that
+              terminal's tile. The button turns amber, the shell keeps running,
+              and clicking it again brings the tile back. <Nav>Unhide all</Nav>{" "}
+              in the <Nav>Sessions</Nav> menu brings back every hidden tile.
             </li>
             <li>
-              Switch the pane area between <Nav>Tabs</Nav> and <Nav>Grid</Nav>{" "}
-              with the toggle above the tab strip. <Nav>Tabs</Nav> shows one
-              terminal at a time; <Nav>Grid</Nav> tiles every open terminal at
-              once so you can watch several together. One terminal fills the
-              area, two split it, and three or more tile two-across, sharing the
-              height between them until there are too many to fit, at which
-              point they keep a readable size and the grid scrolls. Two-across
-              needs the room for two readable columns, and the sidebar and the
-              broadcast rail come out of the same space, so on a narrow window
-              with either of those open the tiles stack in one column instead of
-              being squeezed to a width nothing will fit in. Resize the
-              window and they follow it, larger or smaller, unless you have
-              pinned a tile size in <Nav>Settings</Nav> or dragged one out.
-              Each grid tile has its own maximize and close buttons, and its
-              header shows the same colour as the tab. Your choice is
-              remembered between visits and restarts; maximizing a terminal
-              always shows it on its own.
+              <Nav>Fullscreen</Nav> (<Nav>Ctrl+Shift+G</Nav>) gives the grid the
+              whole screen. The toolbar, tabs, sidebar and status bar slide away
+              behind a small tab in the middle of the top edge; hover or click
+              that tab to bring them back, and they hide again once you have used
+              one. <Nav>Ctrl+Shift+T</Nav> also brings them down and moves the
+              keyboard into them: <Nav>Tab</Nav> moves between controls and{" "}
+              <Nav>Esc</Nav> goes back to the terminal. Press{" "}
+              <Nav>Ctrl+Shift+G</Nav> again to leave (closing the last terminal
+              also leaves). <Nav>Esc</Nav> does not leave fullscreen, so it
+              still reaches programs such as <code>vi</code>.
             </li>
             <li>
-              <b>Grid wants room, and there is a point past which no window is
-              big enough.</b>{" "}
-              A tile is the pane divided by the number of terminals in it, so
-              five tiles on a small window are the same size as twenty on a
-              large one. Broadside will not shrink a tile past what you can read
-              in: it holds the size and scrolls instead. When you find yourself
-              scrolling, these are the four things that buy space back, roughly
-              in order of how much. <Nav>Ctrl+Shift+G</Nav> gives the grid the
-              whole screen and folds every bar away behind a tab at the top.{" "}
-              <Nav>Grid Titles</Nav> (the eye) takes a title bar off every tile.
-              The grid button on a tab drops that terminal out of the grid
-              without closing it, so a session you only need occasionally stops
-              claiming a tile. And <Nav>F11</Nav> gives one terminal the whole
-              window when you want to stop watching and start working. The
-              status bar shows the window size at the bottom left while you
-              resize, if you want to see what you are working with.
+              Drag the right or bottom edge of a tile (or its corner) to resize{" "}
+              <strong className="font-semibold">every</strong> tile at once. A
+              dragged size is forgotten when Broadside closes, unless you untick{" "}
+              <Nav>Strict</Nav> in <Nav>Settings → Grid</Nav>, which saves it.{" "}
+              <Nav>Reset grid</Nav> goes back to tiles that fit the window.
             </li>
             <li>
-              <b>In Grid, focus follows the mouse.</b> Whichever tile the
-              pointer comes to rest on is the active one, outlined in that
-              host's own colour, and it is where everything goes: what you type,
-              what you paste, what <Nav>find</Nav> searches and what a shortcut
-              command runs. Move the mouse to another tile, stop, and the outline
-              moves with it. Nothing needs clicking first, and there is no
-              setting for this: one tile is highlighted and it is the one that is
-              listening.
-            </li>
-            <li>
-              Tiles you only <i>cross</i> are left alone. It takes a moment of
-              stillness to hand the grid over, so reaching from a tile at the
-              bottom up to the toolbar does not give your typing, and the
-              shortcut list, to whichever tile happened to be on the way.
-              Clicking a tile takes it at once, without the wait.
-            </li>
-            <li>
-              Choosing a tab, pressing <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav>{" "}
-              or picking from <Nav>Sessions</Nav> overrides the mouse, and keeps
-              the tile it chose until you move the pointer off whatever tile it
-              was resting on. So a terminal you selected deliberately does not
-              get taken away by a stray nudge of the mouse. The pointer is also
-              ignored while you are typing anywhere that is not a terminal (a
-              search field, a tab rename, a dialog), while a tile is being
-              drag-resized, and while you are dragging out a selection across a
-              tile edge.
-            </li>
-            <li>
-              <b>None of this happens while another window has the keyboard.</b>{" "}
-              Windows goes on sending mouse movement to whatever sits under the
-              pointer even when that window is not the one you are typing in, so
-              passing over Broadside on the way somewhere else would otherwise
-              move the outline and leave your next keystrokes aimed at a host
-              you never chose. The grid stops following the mouse until
-              Broadside is the active window, and stops looking active while it
-              is not: the outline goes quiet and tiles no longer raise a scroll
-              bar under the pointer. Scrolling a tile from another window still
-              scrolls it, and does nothing else. One click in a tile brings the
-              window back and selects that tile in the same movement.
-            </li>
-            <li>
-              Anything you press in the toolbar leaves the keyboard there, which
-              is right for a menu and wrong for <Nav>Go</Nav>: a shortcut command
-              runs in a terminal, so the keyboard goes back to that terminal with
-              it and you can answer what it prints. From anywhere else in the
-              toolbar, rest the pointer over the tile you want and it takes the
-              keyboard back.
-            </li>
-            <li>
-              The <Nav>Grid Titles</Nav> button (the eye, next to{" "}
-              <Nav>Broadcast</Nav>) hides every tile's title bar for a denser,
-              chrome-free wall of terminals; a crossed-out eye marks the hidden
-              state and clicking again brings the bars back. It appears only in
-              Grid and the choice is remembered across restarts.
-            </li>
-            <li>
-              The grid tiles follow the order of the tabs above them. Drag a tab
-              to a new position and the grid rearranges to match straight away,
-              without disturbing any running terminal.
-            </li>
-            <li>
-              The <Nav>Broadcast</Nav> button opens a rail down the left side:
-              pick a shell language, tick the sessions you want, type a command
-              at the bottom, and it is typed into all of them at once. Because
-              you never leave the page, the panes you are watching are the ones
-              that answer, which is the whole point of pairing it with{" "}
-              <Nav>Grid</Nav>. The button remembers whether it was open across
-              restarts.
-            </li>
-            <li>
-              One shell language at a time, deliberately, so a command is always
-              valid for everything it reaches. The safety checks are the same as
-              on the <Nav>PTY Broadcast</Nav> tab: a destructive command asks for
-              confirmation before going to SSH hosts, and every local-shell send
-              is confirmed. That tab is still there and unchanged; it keeps the
-              saved history and the full per-run report, while the rail is the
-              quick, in-place version.
-            </li>
-            <li>
-              The rail's command box is the same composer as the one on{" "}
-              <Nav>PTY Broadcast</Nav>, and it recalls the same commands:{" "}
-              <Nav>Up</Nav> and <Nav>Down</Nav> walk one shared list, so
-              something you sent from that tab is a keypress away here and the
-              other way around. <Nav>Clear history</Nav>, under the send button,
-              empties the recall here and only here: the list is shared for
-              reading, not for tidying, so clearing the box in front of you is
-              never an act on another tab. Nothing is deleted either, so the{" "}
-              <SectionLink id="help-sec-logs">Logs</SectionLink> record of what
-              was run is untouched.
-            </li>
-            <li>
-              A session that has dropped its connection stays in the list and
-              turns red, but its checkbox is disabled: a checked box on a
-              terminal that cannot receive anything is a command going quietly
-              nowhere. Reconnect the terminal and it can be checked again.{" "}
-              <Nav>Select all</Nav> passes over anything disconnected.
-            </li>
-            <li>
-              <Nav>Fullscreen</Nav> (also <Nav>Ctrl+Shift+G</Nav>) gives the
-              grid the whole screen: the toolbar, the tab strip, the sidebar and
-              the status bar all slide away, leaving one small tab in the middle
-              of the top edge. Put the mouse on that tab and everything slides
-              back down, so you can pick a tab, close one, or use the dropdown
-              without leaving fullscreen. Clicking the tab does the same thing,
-              for when the strip is being stubborn. The tab is the only place
-              that does it, and deliberately so: the rest of the top edge is
-              yours, so reaching for the top row of tiles does not keep pulling
-              the controls down over what you are working in. It is somewhere to
-              go and do one thing, so it hides again the moment you do it:
-              clicking any button, choosing from any menu, or picking a tab sends
-              it away without waiting for you to move the mouse off. Going back
-              to the tab brings it down again, and so does{" "}
-              <Nav>Ctrl+Shift+T</Nav>, which needs no aim at all. The one thing
-              that does not send it away is clicking into a box you are about to
-              type in, such as renaming a tab. Closing the last terminal ends
-              fullscreen as well, whether one tab at a time or with{" "}
-              <Nav>Close all</Nav>: there is nothing left to fill the screen
-              with, and an empty screen with the chrome still hidden gives you
-              nothing to work with.{" "}
-              <Nav>Ctrl+Shift+G</Nav> or the button brings the chrome back. The
-              shortcut is a Ctrl+Shift one on purpose: a terminal cannot tell
-              Ctrl+Shift+G from Ctrl+G, so nothing is taken away from a program
-              running in a tile, which a function key like F10 would have been.
-              For the same reason <b>Esc does not leave fullscreen</b>: a wall
-              of terminals is the worst possible place to claim the key{" "}
-              <code>vi</code> is built around.
-            </li>
-            <li>
-              <Nav>Ctrl+Shift+T</Nav> puts the keyboard into the controls, which
-              slides the strip down as it goes, and puts a ring around the
-              button that has the focus. <Nav>Tab</Nav> and <Nav>Shift+Tab</Nav>{" "}
-              then move along the toolbar and into the tab strip, which is one
-              stop for the strip and one for the tab you are on: that tab's own
-              buttons show themselves as they take the focus instead of waiting
-              for the mouse, and the other tabs stay out of the way until{" "}
-              <Nav>Left</Nav> and <Nav>Right</Nav> take you to them. Tab wraps
-              round at the last control rather
-              than walking off into the grid, and <Nav>Esc</Nav> hands the
-              keyboard back to the terminal you came from. That is the one thing
-              Esc does here, and it is safe to claim precisely because the
-              keyboard is in the toolbar rather than in a terminal at the time.
-              Tab on its own cannot get you in here: a terminal has the focus in
-              a grid, and Tab there belongs to the shell.
-            </li>
-            <li>
-              Drag the right or bottom edge of any tile (or its bottom-right
-              corner) to set the tile size. It sets the size for{" "}
-              <strong className="font-semibold">every</strong> tile, not just
-              that one, so the grid stays even; tiles that no longer fit scroll
-              rather than shrink. A dragged size lasts as long as Broadside is
-              running and is then forgotten, and it does not change the{" "}
-              <Nav>Grid</Nav> settings described below, which stay the one place
-              a size is set for good. <Nav>Reset grid</Nav> in the toolbar goes
-              back to tiles that fit the window, clearing both.
-            </li>
-            <li>
-              That last part is the <Nav>Strict</Nav> checkbox in{" "}
-              <Nav>Settings → Grid</Nav>, and it is on to start with. Turn it
-              off if you would rather a drag counted: the tile width and height
-              you drag out are written into the settings as you go, Settings
-              shows the new numbers straight away, and the size is still there
-              after a restart. Nothing else follows the drag either way, the
-              column count, the layout, the tile headers and the side-by-side
-              flip are yours to set and are never written by dragging.
-            </li>
-            <li>
-              To take one terminal out of the grid, click the small{" "}
-              <Nav>grid button</Nav> on its tab (it appears in Grid only). The
-              tile disappears and the remaining tiles fill the space, while the
-              shell keeps running untouched; the button turns amber so you can
-              see which tabs are hidden, and clicking it again puts the tile
-              back. Hidden tabs still work normally in <Nav>Tabs</Nav>. A hidden
-              session can still be selected in Grid, from <Nav>Sessions</Nav> or
-              with <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav>, and there is then
-              no tile to type into: rather than leave your keystrokes going to
-              the terminal you were last in, the keyboard is set down and typing
-              goes nowhere until you put the tile back or switch to{" "}
-              <Nav>Tabs</Nav>.
-            </li>
-            <li>
-              To pin the grid, open <Nav>Settings</Nav> and the <Nav>Grid</Nav>{" "}
-              section. Leave everything on <Nav>Auto</Nav> for the layout above,
-              or set the <Nav>Columns across</Nav> and the tile{" "}
-              <Nav>Item width</Nav> / <Nav>Item height</Nav> in characters
-              (columns and rows). Fixed tile widths that add up to more than the
-              window scroll sideways rather than shrinking, so panes keep the
-              character size you asked for. Changing the terminal font resizes
-              pinned tiles to keep those dimensions. The settings apply the next
-              time you open the Terminals page. One and two terminals are the
-              exception: a single terminal fills the whole area and two take the
-              full window side by side or stacked, both ignoring the Grid
-              settings entirely, because at those counts a pinned size can only
-              waste screen you could have been using. The same four controls sit
-              on the line under the{" "}
+              To fix the layout, open <Nav>Settings → Grid</Nav>. Leave
+              everything on <Nav>Auto</Nav>, or set <Nav>Columns across</Nav>{" "}
+              and the tile <Nav>Item width</Nav> / <Nav>Item height</Nav> in
+              characters. Tiles too wide for the window scroll sideways rather
+              than shrink. One or two terminals always fill the space whatever
+              these say, and a column count larger than the number of open
+              terminals is reduced to fit. Changes apply the next time you open
+              the Terminals page. The{" "}
               <SectionLink id="help-sec-templates">Templates</SectionLink>{" "}
-              canvas, beside the preview they lay out; there is one set of them.
+              editor uses the same settings.
             </li>
             <li>
-              A pinned <Nav>Columns across</Nav> is trimmed to the number of
-              terminals actually open, so six columns with three terminals up
-              lays out three across the window rather than using half of it and
-              leaving the rest empty. It follows as you open and close them, and
-              it only ever narrows the count, a tile's pinned width or height
-              is untouched and stays exactly what you set.
+              The collapsed <Nav>Advanced</Nav> part of{" "}
+              <Nav>Settings → Grid</Nav> sets the number a field starts at when
+              you untick its <Nav>Auto</Nav> (3 columns and 80x24 unless you
+              change it).
             </li>
             <li>
-              Unchecking a field's <Nav>Auto</Nav> box has to start it at some
-              number, and by default that is 3 columns / 80x24, the classic
-              terminal size. The collapsed <Nav>Advanced</Nav> section at the
-              foot of <Nav>Settings → Grid</Nav> lets you change what that
-              starting number is for each of the three fields, so unchecking{" "}
-              <Nav>Auto</Nav> lands on your own numbers instead. It only sets
-              where a field starts once you take it off <Nav>Auto</Nav>; it does
-              not move anything already pinned. <Nav>Reset defaults</Nav> there
-              puts those three starting numbers back to 3 / 80 / 24 without
-              touching anything else in the section.
-            </li>
-            <li>
-              When the terminals do not divide evenly into columns, the last row
-              is short and something has to fill the gap.{" "}
               <Nav>Short last row</Nav> in <Nav>Settings → Grid</Nav> decides
-              what:{" "}
+              what happens when the terminals do not fill the last row:{" "}
               <strong className="font-semibold">Stretch the row</strong> (the
-              default) widens the tiles on it to take the whole width, so three
-              tiles in two columns give two on top and one full-width
-              underneath;{" "}
+              default) widens the tiles on it,{" "}
               <strong className="font-semibold">
                 Tall tile in the last column
               </strong>{" "}
-              instead grows the tile above the gap down into it, giving one top
-              left, one full height on the right and one bottom left; and{" "}
+              grows the tile above the gap down into it, and{" "}
               <strong className="font-semibold">Leave the gap</strong> keeps
-              every tile the same shape and lets the empty cell stay empty. A
-              size you pinned wins over all of this: a stretched tile is wider
-              than the <Nav>Item width</Nav> and a tall one is taller than the{" "}
-              <Nav>Item height</Nav>, so where you have set that dimension by
-              hand the gap simply stays.
+              every tile the same size. A width or height you have set yourself
+              always wins, and the gap stays.
             </li>
           </Bullets>
-          <H3>Copy, paste and jumping to a tab</H3>
+          <H3>The broadcast rail</H3>
+          <Bullets>
+            <li>
+              The <Nav>Broadcast</Nav> button opens a rail down the left side:
+              pick a shell language, tick the sessions you want, type a command
+              at the bottom, and it is typed into all of them at once. Pair it
+              with <Nav>Grid</Nav> to watch them all answer.
+            </li>
+            <li>
+              It works on one shell language at a time, so a command always
+              suits every session it reaches. The safety checks are the same as
+              on the <Nav>PTY Broadcast</Nav> tab: a destructive command asks
+              before going to SSH hosts, and every local-shell send is
+              confirmed. That tab keeps a saved history and a full report of
+              each run; the rail is the quick version.
+            </li>
+            <li>
+              <Nav>Up</Nav> and <Nav>Down</Nav> recall commands sent from any of
+              the broadcast pages. <Nav>Clear history</Nav> clears the recall on
+              this rail only, and the{" "}
+              <SectionLink id="help-sec-logs">Logs</SectionLink> record is left
+              as it was.
+            </li>
+            <li>
+              A disconnected session stays in the list in red, but cannot be
+              ticked until you reconnect it.
+            </li>
+          </Bullets>
+          <H3>Copy, paste and find</H3>
           <Bullets>
             <li>
               <strong className="font-semibold">Copy</strong> by selecting text
-              with the mouse and then right-clicking, or by pressing{" "}
-              <Nav>Ctrl+Shift+C</Nav>. A brief <Nav>Copied to clipboard</Nav>{" "}
-              toast confirms it and the highlight clears, so the next
-              right-click pastes. Selecting on its own copies nothing: a drag
-              made just to read a line more carefully leaves the clipboard as it
-              was. Double-click selects a word and triple-click a line, and
-              either copies the same way. A pane whose session has closed still
-              copies, which is how you get the last thing it printed out of it.
-              In a program that uses the mouse itself (tmux or vim with the
-              mouse on), hold <Nav>Shift</Nav> while you drag to select past it.
+              and right-clicking, or with <Nav>Ctrl+Shift+C</Nav>. Selecting on
+              its own copies nothing. Double-click selects a word and
+              triple-click a line. In a program that uses the mouse itself (tmux
+              or vim with the mouse on), hold <Nav>Shift</Nav> while you drag.
             </li>
             <li>
               <strong className="font-semibold">Paste</strong> with a{" "}
               <Nav>right-click</Nav> when nothing is selected, or with{" "}
-              <Nav>Ctrl+Shift+V</Nav>. So one button does both halves: select,
-              right-click to copy, then right-click where it should go. Nothing
-              is pasted into a pane whose session has closed. Plain <Nav>Ctrl+C</Nav> and{" "}
-              <Nav>Ctrl+V</Nav> are left alone so the shell still receives them
-              (for example Ctrl+C to interrupt a running command). In Grid, a
-              paste lands in the tile the pointer is over, which is the tile
-              outlined in the host's colour, because that is also the tile that
-              is listening for the keyboard. Copy from one, move to another,
-              paste, press <Nav>Enter</Nav>: it runs where you are looking. A{" "}
-              <Nav>Pasted from clipboard</Nav> toast confirms it, and when the
-              clipboard held more than one line it says how many went in, since
-              that is the paste that can run several commands at once.
+              <Nav>Ctrl+Shift+V</Nav>. Plain <Nav>Ctrl+C</Nav> and{" "}
+              <Nav>Ctrl+V</Nav> go to the shell as usual, so Ctrl+C still stops a
+              running command. In Grid, a paste goes to the outlined tile. A
+              toast confirms each copy and paste, and says how many lines a
+              multi-line paste contained.
             </li>
             <li>
-              <strong className="font-semibold">Find</strong> in a terminal's
-              scrollback with <Nav>Ctrl+F</Nav>, which opens a bar rather than
-              sending the key to the shell. Every match is highlighted as you
-              type and the bar counts them: <Nav>3 of 17</Nav> tells you which
-              one you are standing on, so the up and down arrows (or{" "}
-              <Nav>Enter</Nav> and <Nav>Shift+Enter</Nav>) are walking a list you
-              can see the length of. The three toggles beside the box are a
-              regular expression, match case and whole word; typing{" "}
-              <code>/pattern/i</code> turns the first one on for you.{" "}
-              <Nav>Esc</Nav> closes the bar and takes the highlighting with it.
-              It searches the terminal that is listening, which in Grid is the
-              tile the pointer is resting on, and moving to another one runs the
-              same search there.
+              <strong className="font-semibold">Find</strong> with{" "}
+              <Nav>Ctrl+F</Nav>. Matches are highlighted and counted (
+              <Nav>3 of 17</Nav>); the arrows, or <Nav>Enter</Nav> and{" "}
+              <Nav>Shift+Enter</Nav>, move between them. The toggles beside the
+              box are regular expression, match case and whole word.{" "}
+              <Nav>Esc</Nav> closes the bar.
             </li>
             <li>
-              <strong className="font-semibold">Text too small</strong> is fixed
-              from where you are reading it: hold <Nav>Ctrl</Nav> and turn the
-              mouse wheel over a terminal to zoom the text in or out. Every open
-              terminal changes together,
-              one step a notch, between 8 and 32 px, and the size you stop on is
-              saved as the terminal font size in <Nav>Settings</Nav> under{" "}
-              <Nav>Appearance</Nav>.
+              <strong className="font-semibold">Text too small?</strong> Hold{" "}
+              <Nav>Ctrl</Nav> and turn the mouse wheel over a terminal to zoom
+              every terminal in or out. The size is saved in{" "}
+              <Nav>Settings</Nav> under <Nav>Appearance</Nav>. If a program you
+              use needs Ctrl and the wheel for itself, tick <Nav>Strict</Nav>{" "}
+              beside the terminal font size there to turn the zoom off.
             </li>
             <li>
-              <strong className="font-semibold">
-                Giving Ctrl and the wheel back
-              </strong>
-              : while the zoom is on, that combination belongs to Broadside and
-              the terminal never sees it. Two things go with it. The scrollback
-              no longer scrolls faster when you hold <Nav>Ctrl</Nav>, and a
-              full-screen program running with mouse reporting on (tmux with{" "}
-              <code>mouse on</code>, vim with <code>set mouse=a</code>, htop) no
-              longer receives the notch, so a mapping such as{" "}
-              <code>&lt;C-ScrollWheelUp&gt;</code> stops firing. Little binds it
-              by default, but if you rely on one, tick <Nav>Strict</Nav> beside
-              the terminal font size in <Nav>Settings</Nav> under{" "}
-              <Nav>Appearance</Nav>: the zoom stops, the size then only changes
-              by being typed there, and Ctrl with the wheel goes back to the
-              terminal exactly as it behaved before. The plain wheel, without
-              Ctrl, is never taken either way.
+              <strong className="font-semibold">Scrollback</strong> is 5,000
+              lines per pane by default, and older lines are dropped. Change it
+              with <Nav>Terminal scrollback</Nav> in <Nav>Settings</Nav> under{" "}
+              <Nav>Appearance</Nav>. More lines use more memory (5,000 is about
+              12 MB per pane), and lowering it drops lines above the new limit
+              straight away.
             </li>
             <li>
-              <strong className="font-semibold">How far you can scroll back</strong>{" "}
-              is 5,000 lines a pane out of the box, set by{" "}
-              <Nav>Terminal scrollback</Nav> in <Nav>Settings</Nav> under{" "}
-              <Nav>Appearance</Nav>. Anything older than that is dropped as new
-              output arrives, so a command that prints more lines than the limit
-              cannot be scrolled back to in full, and neither <Nav>Ctrl+F</Nav>{" "}
-              nor a save can reach what has already gone. Raise it if you work
-              with long output; it costs roughly 2KB a line at 200 columns, and
-              that is per open pane, so 5,000 lines is about 12MB each. Lowering
-              it takes effect the moment you save, on every pane that is already
-              open, and the lines above the new limit are gone.
-            </li>
-            <li>
-              Every key Broadside takes, here and everywhere else, is listed in{" "}
+              Every key Broadside takes is listed in{" "}
               <SectionLink id="help-sec-shortcuts">
                 Keyboard shortcuts
               </SectionLink>
               .
             </li>
+          </Bullets>
+          <H3>The Sessions and View menus</H3>
+          <Bullets>
             <li>
-              With many tabs open, use the <Nav>Sessions</Nav> menu at the top
-              right to jump to any terminal; it also holds{" "}
-              <Nav>Close others</Nav> and <Nav>Close all</Nav>. If the tab you
-              pick is scrolled out of view,
-              the tab strip scrolls to bring it to the center so you do not have
-              to hunt for it.
+              <Nav>Sessions</Nav>, at the top right, lists every terminal: pick
+              one to jump to it. It also holds the bulk actions, each shown only
+              when there is something for it to do: <Nav>Reconnect all</Nav> and{" "}
+              <Nav>Close failed</Nav> for panes whose connection failed or
+              dropped, <Nav>Disconnect all</Nav> to end every session but keep
+              the tabs, <Nav>Unhide all</Nav>, <Nav>Close others</Nav> and{" "}
+              <Nav>Close all</Nav>.
             </li>
             <li>
-              The same menu is where you deal with a lot of tabs at once instead
-              of one at a time. <Nav>Reconnect all</Nav> reconnects every pane
-              sitting on a <Nav>Try again</Nav> or <Nav>Reconnect</Nav> button,
-              and <Nav>Close failed</Nav> clears the same set away instead; both
-              carry the count, and the count is the same number because the pane
-              you would reconnect is the pane you would give up on. Panes still
-              connecting are left alone, and so is any pane waiting on a host key
-              answer, since neither is waiting to be reconnected.{" "}
-              <Nav>Disconnect all</Nav> is the other bulk action: it ends the
-              shell on every connected session at once and keeps all the tabs,
-              which is the unplug button below applied to the lot of them.{" "}
-              <Nav>Unhide all</Nav> puts every terminal you have taken out of the
-              grid back into it. Each of these is in the menu only while there is
-              something for it to do, so a menu with none of them in it is
-              telling you nothing is wrong.
+              The small unplug button on each row of the <Nav>Sessions</Nav>{" "}
+              menu ends that one session but keeps its tab and output, as if you
+              had typed <code>exit</code>. The pane then offers{" "}
+              <Nav>Reconnect</Nav>.
             </li>
             <li>
-              <b>Closing everything but one.</b> Right-click a tab and{" "}
-              <Nav>Close others</Nav> closes every other tab on screen and keeps
-              that one, which ends up active. The <Nav>Sessions</Nav> menu has
-              the same entry for the active tab, beside <Nav>Close all</Nav>.
-              When the others are of more than one kind, an entry per kind
-              appears under it, such as <Nav>Close other SSH</Nav> or{" "}
-              <Nav>Close other Command Prompts</Nav>, each with its count, so a
-              strip of mixed tabs can lose its PowerShells and keep its hosts.
-              The entries grow and shrink with what is open: with only SSH tabs
-              there is just <Nav>Close others</Nav>, and with a single tab there
-              is nothing to offer. One tab closes straight away, the same as its
-              x; two or more ask first and list what they will close. Tabs hidden
-              by the <Nav>Filter</Nav> are never closed by it, because it is
-              about the tabs you can see.
+              Right-click a tab for the same actions as its icons, plus{" "}
+              <Nav>Open another session</Nav> (a new session on the same host or
+              shell, placed next to it) and <Nav>Close others</Nav>. When the
+              other tabs are of mixed kinds you also get entries such as{" "}
+              <Nav>Close other SSH</Nav> or{" "}
+              <Nav>Close other Command Prompts</Nav>. Tabs hidden by the{" "}
+              <Nav>Filter</Nav> are never closed this way.
             </li>
             <li>
-              <b>How often you are asked "are you sure".</b> Bulk actions confirm
-              first once they would touch more than five sessions, and five is
-              only the default: <Nav>Ask before acting on more than</Nav> in{" "}
-              <Nav>Settings</Nav> under <Nav>Performance</Nav> sets it anywhere
-              from 1 to 11. One number covers the lot, so there is a single
-              answer to "how many is a lot" on this page rather than several that
-              drift apart: opening a batch of local shells from the{" "}
-              <Nav>+</Nav> launcher, <Nav>Reconnect all</Nav>,{" "}
-              <Nav>Disconnect all</Nav> and <Nav>Close failed</Nav>. Raise it if
-              you routinely work eight machines at a time and the dialog is just
-              a keystroke you have stopped reading; lower it if a burst that size
-              is never something you meant.
-              <br />
-              Three things stay outside it. <Nav>Close all</Nav> asks every
-              single time, because it is the one action here that can take away
-              work in progress, and a setting for being asked less often should
-              not be able to reach it. <Nav>Close others</Nav> asks whenever it
-              would close two or more, since the tab you pointed at is the only
-              one you chose and the rest are off to the side of it. And a launch
-              profile that types a startup command
-              asks past a single copy whatever the setting says, since every copy
-              runs that command again.
+              <b>Confirmations.</b> Bulk actions ask first when they would
+              affect more than five sessions. Change that number (1 to 11) with{" "}
+              <Nav>Ask before acting on more than</Nav> in <Nav>Settings</Nav>{" "}
+              under <Nav>Performance</Nav>. <Nav>Close all</Nav> always asks,{" "}
+              <Nav>Close others</Nav> asks whenever it would close two or more,
+              and a profile with a startup command asks before opening more than
+              one copy.
             </li>
             <li>
-              <b>A second session on the same thing.</b> Hover a tab and one of
-              the small icons on it is a copy button; right-click the tab and{" "}
-              <Nav>Open another session</Nav> does the same. (That right-click
-              menu has everything the tab&apos;s own icons do, plus{" "}
-              <Nav>Close others</Nav>.) It opens a fresh
-              session on that host, or another of that local shell, and lands it
-              directly after the tab it came from. Nothing is copied across:
-              it is a new shell, with its own scrollback. The pair is told apart
-              by the number the second one picks up, <code>web-01 02</code>, and
-              that number follows them into the broadcast lists.
-              <br />
-              The only time it asks first is a tab launched from a profile that
-              types a startup command, because the copy runs that command again.
+              After a reconnect, the old session's output stays in the
+              scrollback above a line showing when it ended, and the new session
+              starts on a clean screen.
             </li>
             <li>
-              <b>Ending one session without losing the tab.</b> Each row of the{" "}
-              <Nav>Sessions</Nav> menu has a small unplug button at its right
-              hand end. It hangs up on that host and leaves the tab exactly where
-              it is, so everything the session printed stays on screen and the
-              pane offers <Nav>Reconnect</Nav> when you want it back, the same as
-              if you had typed <code>exit</code>. It is in the menu rather than
-              on the tab on purpose: the tab already has an x, and a button a few
-              pixels from it that also means "get rid of this" is how you close
-              the wrong thing. The unplug goes pale when there is no shell behind
-              that row to end.
+              The <Nav>View</Nav> menu holds the display options: fullscreen,{" "}
+              <Nav>Full tab labels</Nav>, <Nav>Tab bar</Nav>, <Nav>Filter</Nav>,
+              flipping two terminals between side by side and stacked,{" "}
+              <Nav>Reset grid</Nav> and <Nav>Reset display</Nav>. An entry that
+              cannot be used right now is greyed; hover it and the status bar
+              says why.
             </li>
             <li>
-              <b>What a reconnect looks like.</b> The pane holds the dead
-              session's last screen until the new one actually says something,
-              which is where you read why it dropped. Then the new session
-              starts at the top of a clean screen, and nothing is thrown away:
-              the old screen is pushed up into the scrollback with a divider
-              under it saying when the session ended. A tab you have reconnected
-              five times reads as a stack of five sessions rather than one long
-              run. Terminal state the old session left switched on goes with it,
-              so a session killed while <code>htop</code> or another full-screen
-              program had the display cannot hand its mouse reporting to the
-              shell you come back to.
+              <Nav>View</Nav> &gt; <Nav>Filter</Nav> shows or hides whole kinds
+              of session (SSH, each local shell, serial consoles). Hidden
+              sessions keep running, <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav>{" "}
+              skip them, and the <Nav>View</Nav> button is marked while anything
+              is hidden. A kind comes back by itself when you open or jump to one
+              of its sessions, and every kind is shown again when Broadside
+              restarts.
             </li>
             <li>
-              The controls above the tab strip are grouped so they fit whatever
-              window you run Broadside in. <Nav>Tabs</Nav> / <Nav>Grid</Nav>,{" "}
-              <Nav>Broadcast</Nav>, the fullscreen icon and, in Grid, the icon
-              for tile title bars stay out in the open because they are the ones
-              you reach for. Everything else that shapes the view lives under{" "}
-              <Nav>View</Nav>: fullscreen again (with the key beside it),{" "}
-              <Nav>Full tab labels</Nav>, <Nav>Tab bar</Nav>,{" "}
-              <Nav>Filter</Nav>, flipping two terminals between side-by-side and
-              top/bottom, <Nav>Reset grid</Nav> and <Nav>Reset display</Nav>.
+              <Nav>View</Nav> &gt; <Nav>Tab bar</Nav> (Grid only) hides the tab
+              strip to give its row to the tiles. The strip always comes back
+              in <Nav>Tabs</Nav> view.
             </li>
             <li>
-              <b>Showing only some kinds of session.</b> <Nav>View</Nav> &gt;{" "}
-              <Nav>Filter</Nav> lists each kind of session that is open, with how
-              many: <Nav>SSH</Nav>, each local shell as the <Nav>+</Nav> launcher
-              names it (PowerShell, PowerShell 7, Command Prompt, each WSL distro,
-              each custom terminal) and <Nav>Serial consoles</Nav>. A tab opened
-              from a profile counts as the shell it runs. Untick a kind to take
-              its tabs off the strip and its tiles out of the grid, which closes
-              up around them; <Nav>All</Nav> and <Nav>None</Nav> do the lot, and
-              the list stays open while you tick. Hidden sessions keep running
-              and keep everything they print. While anything is hidden the{" "}
-              <Nav>View</Nav> button is marked, the status bar says how many, and{" "}
-              <Nav>Alt+Left</Nav> and <Nav>Alt+Right</Nav> step over them.
-              <br />
-              A hidden kind comes back by itself when you open another session of
-              it, or when you pick one of its sessions from the{" "}
-              <Nav>Sessions</Nav> menu or jump to one from{" "}
-              <Nav>PTY Broadcast</Nav> or <Nav>MultiTerminal</Nav>. Everything
-              that lists sessions rather than showing them still reaches the
-              hidden ones: the <Nav>Sessions</Nav> menu, <Nav>Close all</Nav>,
-              the broadcast rail and <Nav>PTY Broadcast</Nav>. The entry is greyed
-              until a second kind is open, and the filter is not remembered
-              across restarts, so the app always starts with every tab in view.
-            </li>
-            <li>
-              <b>Rolling the tab strip away.</b> <Nav>View</Nav> &gt;{" "}
-              <Nav>Tab bar</Nav>, in Grid only, unticks the strip and gives its
-              row to the tiles. The <Nav>+</Nav> launcher is not on the strip: it
-              sits at the right-hand end of the controls row above, so it stays
-              where it is. Switch back to <Nav>Tabs</Nav> and the strip returns
-              on its own, because there it is the only way to change session and
-              hiding it would strand you; switch back to Grid and it rolls up
-              again. The choice is remembered across restarts, like the rest of
-              the view.
-            </li>
-            <li>
-              <b>Greyed does not mean gone.</b> An entry that has nothing to act
-              on right now stays where it is and goes pale: fullscreen with no
-              terminal open, <Nav>Reset grid</Nav> with nothing pinned,{" "}
-              <Nav>Reset display</Nav> with no active tab. The point is that you
-              can find out an action exists before the moment you need it, and
-              that the menu keeps the same shape from one visit to the next.
-              Hover a pale entry and the status bar says what it is waiting for.
-              The one thing that still comes and goes is the two-terminal flip,
-              which describes an arrangement rather than offering an action, and
-              only exists when exactly two tiles are on screen.
-            </li>
-            <li>
-              If the row still runs out of room, the buttons keep their icons
-              and drop their words rather than letting one fall off the edge.
-              Nothing moves and nothing is removed; each button is in the same
-              place doing the same thing, and hovering one still names it in the
-              status bar. This happens on a narrow window, and sooner if you
-              have raised the app font size in <Nav>Settings</Nav>, since the
-              controls are sized in that font. Widen the window (or collapse the
-              sidebar) and the words come back. The same is true of the row of
-              buttons at the top of <Nav>Hosts</Nav>.
-            </li>
-            <li>
-              <b>Fullscreen means the layout you are in.</b> In Tabs it fills
-              the window with the terminal you are looking at, which is what{" "}
-              <Nav>F11</Nav> has always done; in Grid it fills the screen with
-              the whole wall (<Nav>Ctrl+Shift+G</Nav>) and folds the chrome away
-              behind a tab in the middle of the top edge, which you hover or
-              click to bring it back and which hides again as soon as you click
-              anything on it. The icon and the <Nav>View</Nav>{" "}
-              entry both do whichever one applies, and each names its own key.
-              Neither answers to <Nav>Esc</Nav>, which belongs to whatever is
-              running in the terminal.
+              On a narrow window, or with a large app font, the toolbar buttons
+              drop their labels and show only their icons. Hovering one still
+              names it in the status bar.
             </li>
           </Bullets>
           <H3>Full-screen prompts, and a stuck one</H3>
           <p>
-            A tab is a real terminal, so the box-drawing prompts an upgrade puts
-            up (a kernel restart notice, a config file question) work normally:
-            arrow keys, <Nav>Tab</Nav> and <Nav>Enter</Nav> all reach them.
-            Broadside claims no keys of its own beyond{" "}
-            <Nav>Ctrl+F</Nav>, <Nav>Ctrl+Shift+C/V</Nav> and{" "}
-            <Nav>Alt+Left/Right</Nav>.
+            Box-drawing prompts, such as the questions an upgrade asks, work as
+            normal: arrow keys, <Nav>Tab</Nav> and <Nav>Enter</Nav> all reach
+            them.
           </p>
           <p>
-            If one of those boxes ignores everything you press, and your
-            keystrokes appear on screen as <code>^[[A</code> or <code>^[</code>{" "}
-            instead of moving the selection, the prompt is not listening: it was
-            drawn by a program whose input is not this terminal, which is what
-            happens when a script runs the upgrade rather than you. The keys are
-            reaching the host and its shell is echoing them, so there is nothing
-            to answer at that end. Press <Nav>Ctrl+C</Nav> to get back to a
-            prompt, then run the command yourself, or run it non-interactively:{" "}
+            If one ignores your keys and they show up as <code>^[[A</code> or{" "}
+            <code>^[</code> instead, the prompt was started by a script rather
+            than from your terminal and cannot hear you. Press{" "}
+            <Nav>Ctrl+C</Nav>, then run the command yourself, or put{" "}
             <code>DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a</code> in
-            front of an <code>apt</code> command stops both the config prompt and
-            the restart prompt appearing at all.
+            front of an <code>apt</code> command so those prompts do not appear
+            at all.
           </p>
           <p>
-            <Nav>Reset display</Nav> in the toolbar redraws the active terminal
-            from scratch, for a pane one of these left garbled. It clears that
-            pane's screen and scrollback, then asks the shell to repaint its
-            prompt (the same <code>Ctrl+L</code> you could press yourself), so
-            you are not left looking at a blank pane wondering whether the
-            session is still there. Nothing is run and nothing is interrupted:
-            it deliberately does not send <code>Ctrl+C</code>, so a long upgrade
-            working away in that tab is safe from it. If a program has genuinely
-            wedged the terminal, <em>you</em> still have to decide whether to
-            interrupt it. A <Nav>Command Prompt</Nav> tab is cleared without the
-            redraw, as <code>cmd</code> has no such key: press <Nav>Enter</Nav>{" "}
-            there for a fresh prompt.
-          </p>
-          <p>
-            While a command is running in that tab there is no prompt to
-            repaint, because the shell is not reading its keyboard until the
-            command finishes. The pane simply clears and stays clear, and the
-            prompt comes back on its own when the command is done, along with
-            whatever the command printed while you were watching a blank pane.
-            Broadside withdraws the redraw it asked for in that case, so it
-            cannot arrive late and clear the screen a second time. If you had
-            typed something ahead at that shell, it is left alone.
+            <Nav>Reset display</Nav>, in the <Nav>View</Nav> menu, clears a
+            garbled pane (including its scrollback) and redraws the prompt. It
+            never interrupts a running command; if one is still going, the pane
+            stays blank until it finishes. In a <Nav>Command Prompt</Nav> tab,
+            press <Nav>Enter</Nav> afterwards for a fresh prompt.
           </p>
           <H3>Shortcut commands</H3>
           <Bullets>
@@ -1969,32 +1262,16 @@ export const SECTIONS: HelpSection[] = [
               whoami), or <Nav>Serial console (COM port)</Nav>.
             </li>
             <li>
-              The dropdown shows only the shortcuts that run in the current tab,
-              so a Linux command is never offered in a Windows shell. The icon
-              next to each one reflects the active tab: the host icon on SSH and
-              WSL tabs, the terminal icon on Command Prompt and PowerShell tabs,
-              a cable on a serial one.
+              The dropdown only offers shortcuts that suit the current tab, so a
+              Linux command is never offered in a Windows shell. WSL tabs use the
+              Linux ones.
             </li>
             <li>
-              <Nav>Serial console</Nav> stands on its own, and <Nav>Both</Nav>{" "}
-              does not reach it. Both means both shell <i>languages</i>, Linux
-              and Windows, and the far end of a console cable speaks neither: a
-              switch has no use for <code>whoami</code> and no more use for{" "}
-              <code>dir</code>. Broadside ships no serial commands for the same
-              reason, since a console port might be a switch, a firewall, a BIOS
-              menu or a bootloader and nothing sensible is common to all of
-              them. So on a serial tab the picker starts out reading{" "}
-              <Nav>No serial shortcuts</Nav> and <Nav>Go</Nav> is greyed, until
-              you have added commands of your own for your own hardware. The
-              picker still opens: it says the same thing again, greyed, above{" "}
-              <Nav>Manage shortcuts…</Nav>, which is where you add the first
-              one.
-            </li>
-            <li>
-              WSL tabs run Linux, so they use the SSH/Linux shortcuts (and show
-              the host icon in the tab strip and the <Nav>plus button</Nav> menu).
-              Add your own, with a scope, in <Nav>Settings</Nav> under Shortcut
-              commands.
+              Serial tabs only get <Nav>Serial console</Nav> shortcuts (
+              <Nav>Both</Nav> does not include them), and none come built in,
+              since every device is different. Add your own with{" "}
+              <Nav>Manage shortcuts…</Nav> in the dropdown, or in{" "}
+              <Nav>Settings</Nav> under Shortcut commands.
             </li>
           </Bullets>
         </Detail>
@@ -2033,25 +1310,9 @@ export const SECTIONS: HelpSection[] = [
               you can hide the per-host headers if you prefer a compact view.
             </li>
             <li>
-              Every row in the host rail ends with a <Nav>terminal</Nav> icon,
-              just past its connection dot. It appears when the pointer is on
-              that row, and the connection dot steps aside to let it in, so a
-              rail at rest is a straight column of dots against the edge rather
-              than a column of buttons. Clicking it{" "}
-              <strong className="font-semibold">always opens a new terminal
-              connection</strong> to that host, even when one is already open,
-              because a broadcast's exec results aren't tied to any session, so
-              there is nothing to jump back to. It is on every row for the same
-              reason, connected or not, and it is not drawn while the rail is
-              collapsed to initials.
-            </li>
-            <li>
-              The other direction works too: hover a result block and the host
-              it came from lights up in the rail. Useful once a run has filled
-              the page and the block you are reading is a long way from the row
-              that produced it. Hovering the output never opens anything, and it
-              does not summon the terminal icon; only the pointer being on the
-              row itself does that.
+              Hover a host in the rail for a <Nav>terminal</Nav> icon that opens
+              a new terminal to that host. Hover a block of output and the host
+              it came from lights up in the rail.
             </li>
           </Bullets>
           <H3>Choosing and filtering hosts</H3>
@@ -2064,29 +1325,17 @@ export const SECTIONS: HelpSection[] = [
               broadcast.
             </li>
             <li>
-              On every collapsed rail in the app, hovering a row names it. The
-              tooltip leads with the label and then gives the address and any
-              tags, because two initials are exactly the thing you are hovering
-              to resolve. An expanded row is already showing its label, so there
-              the tooltip stays out of the way and gives only the address and
-              tags.
-            </li>
-            <li>
               Two filters narrow the rail: a <Nav>Find by label…</Nav> box that
-              matches host labels as you type (like a find bar), and a{" "}
-              <Nav>Filter tags</Nav> dropdown that works exactly like the tag
-              filter on the <SectionLink id="help-sec-hosts">Hosts</SectionLink>{" "}
-              table: uncheck tags (or the untagged bucket) to hide hosts, with{" "}
-              <Nav>All</Nav> / <Nav>None</Nav> shortcuts. The two combine, and each
-              filter lasts for the session and resets on restart.
+              matches host labels as you type, and a <Nav>Filter tags</Nav>{" "}
+              dropdown that works like the tag filter on the{" "}
+              <SectionLink id="help-sec-hosts">Hosts</SectionLink> table. The two
+              combine, and both reset when you restart the app.
             </li>
             <li>
-              Filtering only ever narrows what you can act on:{" "}
-              <strong className="font-semibold">a host the filter hides is
-              unchecked automatically</strong>, and it comes back{" "}
-              <em>unchecked</em> when you clear the filter, so a hidden host can
-              never be swept into a broadcast. <Nav>Select all</Nav> and the
-              counter apply to the visible hosts only. This same rail filter is on{" "}
+              A host the filter hides is also unticked, and stays unticked when
+              you clear the filter, so a hidden host can never be swept into a
+              broadcast. <Nav>Select all</Nav> only picks visible hosts. The same
+              rail filter is on{" "}
               <SectionLink id="help-sec-ptybroadcast">PTY Broadcast</SectionLink>,{" "}
               <SectionLink id="help-sec-multiterminal">MultiTerminal</SectionLink>{" "}
               and <SectionLink id="help-sec-sftp">SFTP Broadcast</SectionLink>.
@@ -2123,15 +1372,10 @@ export const SECTIONS: HelpSection[] = [
               hosts or local shells.
             </li>
             <li>
-              Because it sends into a live <Term term="PTY" />, there is no
-              completion signal and no per-command timer: you are typing into real
-              shells, exactly as if you typed in each tab yourself.
-            </li>
-            <li>
-              Plain <Nav>Broadcast</Nav> runs a command and waits for a result.{" "}
-              <Nav>PTY Broadcast</Nav> just sends the text. Choose{" "}
-              <Nav>Broadcast</Nav> for one-shot commands and{" "}
-              <Nav>PTY Broadcast</Nav> for interactive ones.
+              It types into real shells exactly as if you typed in each tab, so
+              there is no completion signal and no time limit. Use{" "}
+              <Nav>Broadcast</Nav> for one-shot commands that return a result,
+              and <Nav>PTY Broadcast</Nav> for interactive ones.
             </li>
           </Bullets>
           <H3>One tab per shell language</H3>
@@ -2141,63 +1385,35 @@ export const SECTIONS: HelpSection[] = [
               <Nav>PowerShell</Nav>, <Nav>Command Prompt</Nav>, <Nav>WSL</Nav>{" "}
               and <Nav>Serial consoles</Nav>. Each open terminal shows up under
               its own tab, so a single command is always valid for the shells it
-              reaches (PowerShell and Command Prompt stay separate because their
-              syntax differs, and a serial console is talking to a device rather
-              than a shell). A small count on each tab shows how many of that
-              kind are open.
+              reaches. A small count on each tab shows how many of that kind are
+              open.
             </li>
             <li>
-              The <Nav>Serial consoles</Nav> tab is the one to be most careful
-              with, and it is the reason every send outside <Nav>SSH</Nav> asks
-              first. A line typed here goes into several pieces of network
-              hardware at once, and a switch has no undo.
+              Take most care on <Nav>Serial consoles</Nav>: a line typed there
+              goes into several pieces of network hardware at once, with no
+              undo. Every send outside the <Nav>SSH</Nav> tab asks first.
             </li>
             <li>
-              The <Nav>SSH</Nav> tab is the host-oriented view: it has the same{" "}
-              <Nav>Find by label…</Nav> box and <Nav>Filter tags</Nav> dropdown as{" "}
-              <SectionLink id="help-sec-broadcast">Broadcast</SectionLink>{" "}
-              (filtering a session out unchecks it), applied to each session's
-              host, plus the persisted dispatch history.
+              The <Nav>SSH</Nav> tab has the same <Nav>Find by label…</Nav> box
+              and <Nav>Filter tags</Nav> dropdown as{" "}
+              <SectionLink id="help-sec-broadcast">Broadcast</SectionLink>, and
+              keeps a history of past runs.
             </li>
             <li>
-              A session whose connection has dropped keeps its place in the rail
-              with a red dot, but it cannot be checked and <Nav>Select all</Nav>{" "}
-              skips it. Nothing can be typed into a terminal that is not there,
-              and a checked box that quietly does nothing is worse than a box
-              that says it is out of action. The same is true of a local shell
-              that has exited.
+              A session that has disconnected, or a local shell that has exited,
+              stays in the rail with a red dot but cannot be ticked.
             </li>
             <li>
-              Every rail row, on all five tabs, ends with a{" "}
-              <Nav>terminal</Nav> icon that switches to <Nav>Terminals</Nav> and
-              selects that exact tab. By session and not by host: two rows can
-              be the same machine, and each one takes you to its own. It shows
-              while the pointer is on its row, with the connection dot stepping
-              aside for it. It is on the dropped and exited rows too, since
-              their banner is usually where you wanted to go, and it is not
-              drawn while the rail is collapsed to initials.
+              Hover a row in the rail for a <Nav>terminal</Nav> icon that takes
+              you to that exact tab on <Nav>Terminals</Nav>. Hover a row of the
+              run report and its session lights up in the rail.
             </li>
             <li>
-              Hovering a row of the dispatch report lights the rail row it
-              reports on, which is how you find one session among a dozen
-              identically named ones. A report reloaded from a previous run of
-              the app has no live session to point at, so it falls back to the
-              name: if a terminal on the rail is called the same thing, that row
-              lights. Nothing lights when nothing on the rail carries that name
-              any more.
-            </li>
-            <li>
-              There is one recall list for the whole app, shared with{" "}
-              <Nav>Broadcast</Nav>, <Nav>MultiTerminal</Nav> and the broadcast
-              rail on{" "}
-              <SectionLink id="help-sec-terminals">Terminals</SectionLink>: a
-              command sent from any of them is a press of <Nav>Up</Nav> away in
-              the rest. <Nav>Clear command history</Nav> at the foot of the rail
-              empties the recall on this page alone, though. Sharing is for
-              reading; each page forgets on its own account, and nothing is
-              deleted, so the{" "}
-              <SectionLink id="help-sec-logs">Logs</SectionLink> record of what
-              was run stays as it was.
+              <Nav>Up</Nav> and <Nav>Down</Nav> recall commands sent from any of
+              the broadcast pages. <Nav>Clear command history</Nav> clears the
+              recall on this page only; the{" "}
+              <SectionLink id="help-sec-logs">Logs</SectionLink> record is left
+              as it was.
             </li>
           </Bullets>
           <H3>Local shells (PowerShell, Command Prompt, WSL)</H3>
@@ -2212,11 +1428,7 @@ export const SECTIONS: HelpSection[] = [
               command and the shells it will run in. Cancelling sends nothing.
             </li>
             <li>
-              Local runs are session-only: the report clears when you close
-              Broadside (local shells do not survive a restart anyway). Behind the
-              scenes local shells receive a carriage return so PowerShell and
-              Command Prompt actually execute the line rather than waiting at a
-              continuation prompt.
+              The report for local runs is cleared when you close Broadside.
             </li>
           </Bullets>
         </Detail>
@@ -2256,29 +1468,16 @@ export const SECTIONS: HelpSection[] = [
               that ran. You can delete an individual block to keep the view tidy.
             </li>
             <li>
-              <b>Two sessions on one host</b> are allowed, and the rail says so
-              rather than stopping you. They are listed separately and numbered,{" "}
-              <code>web-01</code> and <code>web-01 02</code>, the same numbers
-              their tabs carry, and their blocks in the log are headed the same
-              way. If two of the sessions you have checked are on one machine, a
-              line above the composer says how many, because the count you are
-              sending to is terminals and the number you are usually thinking of
-              is machines. It is a note, not a question: a tail in one pane and
-              the work in another is a normal way to use this, and a dialog on
-              every send would be one you stopped reading.
+              Two sessions on the same host are listed separately and numbered
+              the way their tabs are (<code>web-01</code>,{" "}
+              <code>web-01 02</code>). A note above the composer tells you when
+              two of the sessions you have ticked are on the same machine.
             </li>
             <li>
               Turn on <Nav>Show Manual Activity</Nav> to also capture commands you
-              type by hand inside a <Nav>Terminals</Nav> tab; with it off, only
-              commands sent from <Nav>MultiTerminal</Nav> appear here. It follows
-              the hosts you have checked in the rail, so a host you deliberately
-              left unchecked stays out of the log whether you type into it or not.
-              While it is on, every tab it is capturing from carries a small{" "}
-              <Nav>layers</Nav> icon in the <Nav>Terminals</Nav> strip, the same
-              icon this page has in the sidebar. The toggle lives here and the
-              typing happens there, and a shell that is being recorded should
-              say so where you are typing rather than only on the page keeping
-              the record.
+              type by hand in a <Nav>Terminals</Nav> tab, for the hosts ticked in
+              the rail. While it is on, those tabs show a small{" "}
+              <Nav>layers</Nav> icon so you know they are being recorded.
             </li>
           </Bullets>
           <H3>Block headers</H3>
@@ -2293,33 +1492,18 @@ export const SECTIONS: HelpSection[] = [
               to collapse or copy from.
             </li>
             <li>
-              To go from a block to the shell that produced it, use the{" "}
-              <Nav>terminal</Nav> icon at the end of that session's row in the
-              rail; it appears while the pointer is on the row. It lives there
-              rather than on the block because the rail lists sessions: two rows
-              can be the same machine, and each icon takes you to its own tab
-              rather than to whichever was opened first.
-            </li>
-            <li>
-              To find that row in the first place, hover the block: the session
-              that produced it lights up in the rail. This is the answer to
-              "which of these two <Nav>web-01</Nav> rows was that?", which the
-              block header cannot give you on its own. A block from before the
-              last restart has no live session to point at, so it falls back to
-              the name it is captioned with, and lights the row called the same
-              thing if one is open. Nothing lights when no row carries that name
-              any more.
+              Hover a block and the session that produced it lights up in the
+              rail. Hover that row for a <Nav>terminal</Nav> icon that takes you
+              to its tab.
             </li>
           </Bullets>
           <H3>Rail actions</H3>
           <Bullets>
             <li>
               <Nav>Clear results</Nav> empties the block log (and the saved
-              history). <Nav>Clear command history</Nav> empties the Up/Down
-              recall on this page; the list is read from the one every composer
-              shares, but each page clears its own view of it.{" "}
-              <Nav>Close all terminals</Nav> tears down every open terminal
-              after a confirmation.
+              history). <Nav>Clear command history</Nav> clears the Up/Down
+              recall on this page only. <Nav>Close all terminals</Nav> closes
+              every open terminal after a confirmation.
             </li>
           </Bullets>
         </Detail>
@@ -2363,34 +1547,23 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               <Nav>post to the skill log</Nav> writes a line into that host's run
-              log and carries on. It touches the host in no way at all; it is the
-              skill explaining itself.
+              log and carries on. It does nothing on the host.
             </li>
           </Bullets>
           <H3>A skill that explains itself</H3>
           <p>
-            <Nav>Post to the skill log</Nav> is for a skill that does different
-            things depending on what it finds. The branch it took is obvious to
-            the skill and invisible to whoever reads the run afterwards, so let
-            it say so: <em>already on the current kernel, nothing to do</em>.
-            Pick a <Nav>Log type</Nav> of <Nav>Note</Nav>, <Nav>Warning</Nav> or{" "}
-            <Nav>Error</Nav>, write the message, and say where to go next. Inputs
-            work in the message, so it can name what it found.
+            <Nav>Post to the skill log</Nav> lets a skill record which way it
+            went, for example <em>already on the current kernel, nothing to
+            do</em>. Pick a <Nav>Log type</Nav> (<Nav>Note</Nav>,{" "}
+            <Nav>Warning</Nav> or <Nav>Error</Nav>), write the message (inputs
+            work here), and say where to go next.
           </p>
           <p>
-            One combination does more than log. An <Nav>Error</Nav> whose{" "}
-            <Nav>Then</Nav> is <Nav>stop</Nav> ends that host as a{" "}
-            <span className="font-medium">failure</span> carrying your message,
-            which is how a skill refuses a host in its own words:{" "}
-            <em>cancelled itself, this is not a web server</em> reads as a
-            failure with a reason instead of a green tick for a skill that did
-            nothing. An <Nav>Error</Nav> that goes anywhere else is just a loud
-            log line, so a skill can complain and still clean up after itself.
-          </p>
-          <p>
-            A log step's message is one line in the run log, tinted by its type,
-            and that line is also the step's own entry: it is not announced and
-            then repeated.
+            An <Nav>Error</Nav> whose <Nav>Then</Nav> is <Nav>stop</Nav> ends
+            that host as a <span className="font-medium">failure</span> with your
+            message, which is how a skill turns a host away in its own words. An{" "}
+            <Nav>Error</Nav> that goes anywhere else is only logged, and the
+            skill carries on.
           </p>
           <H3>Patterns</H3>
           <p>
@@ -2436,17 +1609,11 @@ export const SECTIONS: HelpSection[] = [
             expired.
           </p>
           <p>
-            The other two options are to fail (which ends the host for a{" "}
+            You can instead choose to fail (which ends the host for a{" "}
             <Nav>Wait for output</Nav> step, or takes the{" "}
             <Nav>if it fails</Nav> branch for a <Nav>Run a command</Nav> step),
-            or <Nav>go to a step</Nav>, which carries the run on somewhere else
-            of your choosing. Picking it shows the same target list the other
-            branches use, so a step that times out can take a recovery path,
-            retry an earlier step, or finish cleanly instead of stopping the
-            host. It also lets you handle a slow command differently from one
-            that failed, which the <Nav>if it fails</Nav> branch alone could not
-            tell apart. The timeout branch is drawn on the flow map like any
-            other, so a loop it creates shows up in the usual warnings.
+            or <Nav>go to a step</Nav> of your choosing, such as a retry or a
+            recovery path.
           </p>
           <H3>Inputs</H3>
           <p>
@@ -2468,42 +1635,32 @@ export const SECTIONS: HelpSection[] = [
               sit at the top right; clicking the percentage returns to 100%.
             </li>
             <li>
-              The map catches two mistakes a list of steps cannot show you: a step
-              nothing branches to, which will never run, and a loop with no way
-              out, which will run into the repeat cap and fail the host. Both
-              appear as amber warnings above the diagram. Neither blocks you, as a
-              loop with an exit branch is a perfectly good pattern.
-            </li>
-            <li>
-              A loop is drawn as a dashed amber arrow that runs back up the left
-              of the diagram, so it reads as going backwards rather than being
-              mistaken for another branch forward.
+              Amber warnings above the diagram point out a step nothing leads
+              to, which will never run, and a loop with no way out, which will
+              hit the repeat limit and fail the host. Loops are drawn as dashed
+              amber arrows running back up the left. Warnings never stop you
+              saving.
             </li>
           </Bullets>
           <H3>Runaway loops</H3>
           <p>
-            A branch that loops is a legitimate way to poll until something is
-            ready, so Broadside caps it rather than refusing it.{" "}
+            A step that loops back is a fine way to wait until something is
+            ready, so Broadside limits loops rather than forbidding them.{" "}
             <Nav>Stop a host after a step runs N times</Nav> in the editor sets
-            the budget: any single step reaching it stops that host with a
-            message naming the step. It counts per step, not per run, so it is
-            the retry budget for the step that loops rather than a limit on how
-            long a skill may be. The default is 100, which is also the ceiling.
+            how many times any one step may run on a host (100 by default, which
+            is also the maximum).
           </p>
           <p>
-            <Nav>Let steps repeat without limit</Nav> removes the cap
-            altogether, and it is <span className="font-semibold">
-            dangerous: use it only if you truly know what you are doing</span>.
-            With no cap, a skill whose branches loop never finishes on its own.
-            It keeps running steps against every host it is on until you stop
-            it, and a loop that writes files, starts processes or installs
-            things can fill a disk or exhaust memory on the far side while every
-            host it touched holds an open shell. <Nav>Stop host</Nav> and the{" "}
-            <Nav>Emergency stop</Nav> still work and are the only things that
-            will end it. It is off by default, it is a switch of its own rather
-            than a number you can mistype into, the flow map's loop warnings say
-            so, and the run confirmation says so again before you dispatch. The
-            legitimate use is polling something with no bound, watched.
+            <Nav>Let steps repeat without limit</Nav> removes the limit, and it
+            is{" "}
+            <span className="font-semibold">
+              dangerous: use it only if you truly know what you are doing
+            </span>
+            . A skill that loops then runs until you stop it with{" "}
+            <Nav>Stop host</Nav> or <Nav>Emergency stop</Nav>, repeating
+            whatever it does (writing files, installing things) on every pass.
+            It is off by default, and the flow map and the run confirmation both
+            warn you when it is on.
           </p>
           <H3>Running one</H3>
           <Bullets>
@@ -2519,53 +1676,31 @@ export const SECTIONS: HelpSection[] = [
               rail ends all of them at once, which can leave a host mid-upgrade.
             </li>
             <li>
-              <b>Taking a host over.</b> While the skill is driving a pane the
-              keyboard is not yours, and typing into it does nothing; the pane
-              says so rather than leaving you wondering.{" "}
-              <Nav>Take over</Nav> in the pane's header is how you get it. It
-              does not interrupt anything: the skill finishes the step it is on
-              and stops in the gap before the next one, so a command that is
-              still running is left to finish rather than being cut in half. The
-              button says <Nav>After this step…</Nav> while it waits, which on a
-              long step can be a while. The other hosts carry on throughout.
+              <b>Taking a host over.</b> While a skill is running, typing into
+              its pane does nothing. Press <Nav>Take over</Nav> in the pane's
+              header: the skill finishes the step it is on (the button reads{" "}
+              <Nav>After this step…</Nav> meanwhile) and then hands you the
+              shell. The other hosts carry on.
             </li>
             <li>
-              Once it stops, the shell is yours to type in and the pane offers{" "}
-              <Nav>Resume</Nav> to hand it back and carry on with the next step,
-              or <Nav>Stop host</Nav> to end this one for good. A command you
-              actually ran counts as the host talking, so the next step is
-              entitled to match what it printed. A line you left half-typed does
-              not: it is taken back off the shell and forgotten on the way out,
-              so your own keystrokes cannot satisfy a step the skill is about to
-              run.
+              When you are done, <Nav>Resume</Nav> hands the host back to the
+              skill at the next step, or <Nav>Stop host</Nav> ends it. Anything
+              you left half-typed is cleared first.
             </li>
             <li>
-              A host that pauses <em>on its own</em>, because a step waited for
-              something that never arrived, offers the same shell plus{" "}
-              <Nav>Skip step</Nav>, which declares the half-finished step
-              satisfied and takes its success branch. That one is missing from a
-              pause you asked for, because the step it would skip has not run
-              yet.
+              A host that pauses <em>on its own</em>, because a step timed out,
+              offers the same choices plus <Nav>Skip step</Nav>, which treats
+              that step as done and carries on.
             </li>
             <li>
-              Each pane's header names the step it is on and where that sits in
-              the skill, next to the countdown, so a long wait still tells you
-              what is being waited for.
+              Each pane's header names the current step, with its countdown.{" "}
+              <Nav>Log</Nav> in the header shows what the skill decided for that
+              host: each step, what matched, what was sent, what timed out and
+              which branch it took.
             </li>
             <li>
-              <Nav>Log</Nav> in a pane's header shows what the skill decided for
-              that host: each step it started, what matched, what it sent, what
-              timed out and which branch it took, along with anything a{" "}
-              <Nav>post to the skill log</Nav> step had to say. The terminal
-              beside it shows what the host said; this is the half that explains
-              why the run went where it did.
-            </li>
-            <li>
-              When the run is over, <Nav>Rerun</Nav> beside <Nav>Close run</Nav>{" "}
-              starts the same skill again. It closes this run first (shells and
-              all) and takes you back to the confirmation, so the hosts and
-              inputs are checked rather than silently reused. Panes you had the
-              log open on open it again.
+              <Nav>Rerun</Nav>, beside <Nav>Close run</Nav>, closes the finished
+              run and takes you back to the confirmation to start it again.
             </li>
           </Bullets>
           <H3>Keeping the shell afterwards</H3>
@@ -2580,16 +1715,9 @@ export const SECTIONS: HelpSection[] = [
           <H3>Building one</H3>
           <Bullets>
             <li>
-              Steps in the editor are folded down to one line each, showing the
-              id, the kind and what the step does. Click a step's header to open
-              it, or use <Nav>Expand all</Nav> to open the lot. A step you add
-              opens ready to fill in, and the editor scrolls down to it.
-            </li>
-            <li>
-              The step you last clicked is tinted. That is mostly so it stays
-              findable while you work, but it earns its keep with the up and down
-              arrows: the tint travels with the card as it moves, so you can see
-              what you just moved and where it went.
+              Steps in the editor fold down to one line each; click a step to
+              open it, or use <Nav>Expand all</Nav>. The step you last clicked
+              is tinted, so you can follow it as you move it with the arrows.
             </li>
             <li>
               <Nav>Renumber</Nav> renames the ids to s1, s2, s3 in their current
@@ -2601,54 +1729,32 @@ export const SECTIONS: HelpSection[] = [
               you saving or running. Only the red list does that.
             </li>
             <li>
-              <Nav>Save</Nav> writes the skill down and leaves you in the editor,
-              which is what you want while a long sequence is still being built.{" "}
-              <Nav>Save and close</Nav> does both. On a new skill the first{" "}
-              <Nav>Save</Nav> creates it and every one after that updates it, so
-              you cannot end up with three half-finished copies.
-            </li>
-            <li>
-              <Nav>Cancel</Nav> leaves without saving, and asks first if there is
-              anything unsaved to lose. If nothing has changed since you opened
-              it (or since your last save) it just closes.
+              <Nav>Save</Nav> saves and keeps you in the editor;{" "}
+              <Nav>Save and close</Nav> does both. <Nav>Cancel</Nav> leaves
+              without saving, and asks first if there are unsaved changes.
             </li>
           </Bullets>
           <H3>The rail</H3>
           <Bullets>
             <li>
-              Each host carries a status dot, and the key to the colours sits
-              under the list. <strong className="font-semibold">Green</strong> is
-              a terminal already open to that host.{" "}
-              <strong className="font-semibold">Dark green</strong> means the
-              last check found its SSH port answering, and{" "}
-              <strong className="font-semibold">amber</strong> means it did not.{" "}
-              <strong className="font-semibold">Red</strong> is a host nothing is
-              asking about: no terminal open, and checking switched off for it on
-              the Hosts page. Grey is the moment before the first answer arrives.
+              Each host has a status dot, with a key to the colours under the
+              list. <strong className="font-semibold">Green</strong>: a terminal
+              is open to it. <strong className="font-semibold">Dark green</strong>
+              : its SSH port answered the last check.{" "}
+              <strong className="font-semibold">Amber</strong>: it did not.{" "}
+              <strong className="font-semibold">Red</strong>: not being checked
+              (no terminal open, and checking is turned off for it on the Hosts
+              page). <strong className="font-semibold">Grey</strong>: no answer
+              yet. Hosts are checked every 15 seconds while this page is open.
             </li>
             <li>
-              The checking is a TCP connection to the host's SSH port, the same
-              one a reconnecting tab uses, and it runs only while you are looking
-              at this page. It asks no more often than every 15 seconds even when
-              a host is set faster than that on the Hosts page: that setting is
-              for one pane watching one machine come back, and this is every
-              saved host at once.
+              <Nav>Sort: Online first</Nav> puts the hosts you can use right now
+              at the top: those with a terminal open first, then those that
+              answered.
             </li>
             <li>
-              <Nav>Sort: Online first</Nav> puts the hosts you could act on right
-              now at the top, which on a rail of forty machines is the quickest
-              way to answer "what can I actually run this on". The two greens
-              are ranked, not lumped together: hosts with a terminal already
-              open come first, then the ones whose port answered. Amber, red and
-              grey follow, level with each other, and within any group the order
-              is by name. A host still being checked sorts with the offline
-              ones, because it is not yet an answer.
-            </li>
-            <li>
-              The panel icon at the top of the rail collapses the whole thing,
-              hosts and skills together, leaving one button to bring it back.
-              Worth doing while you are building a long skill. It is remembered
-              across restarts.
+              The panel icon at the top of the rail collapses it, to give the
+              editor more room.
             </li>
           </Bullets>
           <H3>Organising them</H3>
@@ -2658,64 +1764,15 @@ export const SECTIONS: HelpSection[] = [
               The order is yours and it is remembered.
             </li>
             <li>
-              The card above the skill list pins one skill to the top of the
-              rail, where it stays while the list below scrolls: the one you run
-              twenty times a day should not be wherever the scroll happens to
-              be. Its title is a dropdown of every skill, so what the card is
-              showing and how you change it are the same control. It starts on
-              whichever skill is top of the list and follows that position, so
-              reordering moves it.
+              The card above the list pins one skill to the top of the rail, so
+              the one you use most is always in reach. Choose it from the
+              dropdown in the card's title, or double-click a skill in the list.
+              Pinning a skill opens its flow map, and the branching icon on the
+              card brings the map back later. A pinned skill is not repeated in
+              the list below.
             </li>
             <li>
-              <strong className="font-semibold">
-                Double-click a skill in the list to pin it
-              </strong>
-              , which saves going up to the dropdown for the one already under
-              your pointer. Anywhere on the row will do except its row of
-              buttons, where a double-click is simply two presses of whatever
-              you hit.
-            </li>
-            <li>
-              Pinning a skill also shows it: change the dropdown, or
-              double-click a row, and that skill's flow map opens on the right.
-              Choosing what is pinned is choosing what you are working on, so
-              the panel goes with the choice rather than waiting for a second
-              click.
-            </li>
-            <li>
-              The faint green tint marks the skill in hand, which is always the
-              one on screen. It sits on the card while the card's skill is what
-              you are looking at, and goes down to a row when you open one from
-              the list, so the rail never shows two skills dressed as the
-              current one. Nothing is left marked behind it: the tint and the
-              highlight around the open skill are the same thing said twice, and
-              they move together.
-            </li>
-            <li>
-              While the tint is down in the list, the card's title takes two
-              clicks: the first brings the card's skill back on screen and the
-              tint with it, and only the second opens the list of skills. It is
-              a wide target sitting right above the skill list and a stray click
-              on it should not drop a menu over the rail. Once the card is the
-              one in hand it opens on a single click, as normal.
-            </li>
-            <li>
-              The pinned skill leaves the list below while it is on the card,
-              rather than appearing twice in a rail this narrow. Nothing else
-              about the list changes: no default moves, nothing is reordered,
-              and the arrows still step past whatever is actually on screen. The
-              one thing you cannot do is reorder the pinned skill itself. Point
-              the dropdown at something else and it rejoins the list, in its own
-              place, with its arrows back.
-            </li>
-            <li>
-              The card's title is a dropdown rather than a name you can click,
-              so the flow map also has a button: the small branching icon on the
-              card, at the left of its row of controls. It is the same thing
-              clicking a skill's name does in the list. Pinning already opens
-              the flow, so this is the way back to it after you have been into
-              the editor or over to a run: the dropdown is already pointing at
-              the skill, and pointing it there again does nothing.
+              A faint green tint marks the skill shown on the right.
             </li>
             <li>
               <Nav>Clone</Nav> starts a new skill from a copy of an existing one,
@@ -2731,51 +1788,29 @@ export const SECTIONS: HelpSection[] = [
               credentials.
             </li>
             <li>
-              A skill file records which version of Broadside it needs, and only
-              when it needs one: a plain skill still imports into an older copy
-              of the app. One that uses something newer (a log step, a timeout
-              that goes to a step, a removed repeat cap) is refused there with{" "}
-              <em>made by a newer Broadside</em>, rather than a parse error that
-              reads as a corrupt file. If you see that, the app doing the
-              importing is the one to update.
+              A skill that uses newer features cannot be imported into an older
+              version of Broadside; the message says it was{" "}
+              <em>made by a newer Broadside</em>. Update the copy you are
+              importing into.
             </li>
           </Bullets>
           <H3>What a skill needs from the host</H3>
           <p>
             Skills need a <Nav>bash</Nav>, <Nav>zsh</Nav> or <Nav>sh</Nav> login
-            shell. A host on anything else is refused, by name, and carries an
-            amber chip both on the{" "}
+            shell. A host with any other shell carries an amber chip on the{" "}
             <SectionLink id="help-sec-hosts">Hosts</SectionLink> tab and in the
-            host list here. Such hosts are never hidden from the list: they stay
-            selectable, and the refusal arrives as that host's own result when
-            the run starts, so a skill aimed at forty machines still runs on the
-            thirty-nine that can take it. Where the shell was already known at
-            connect time the refusal is immediate rather than waiting out a
-            probe.
+            list here. It can still be ticked, but it reports a failure when the
+            run starts, and the skill carries on with the other hosts.
           </p>
           <H3>What you see in the pane</H3>
           <p>
-            The pane shows your commands, not Broadside's bookkeeping. A step's
-            command goes to the shell exactly as you wrote it, and the shell
-            reports back what it exited with over the same invisible channel that
-            drives <SectionLink id="help-sec-multiterminal">
-              MultiTerminal
-            </SectionLink>{" "}
-            command blocks. The questions a run has to ask the shell along the
-            way (which shell is this, are we root, are the hooks in place) never
-            reach the pane at all: Broadside holds them back on the way to your
-            screen rather than typing anything at the host to hide them, so
-            there is nothing to flicker past and nothing left behind however
-            narrow the pane or however long your prompt.
-          </p>
-          <p>
-            On a host that cannot do that, you will see a{" "}
-            <code>printf</code> appended to each command and a line like{" "}
-            <code>__bsdone_0__</code> under it. That is the fallback, it is
-            harmless, and it means one of three things: the shell is not bash or
-            zsh, this host is set to <Nav>never</Nav> under shell integration, or
-            a step opened a nested shell that would not take the hooks back.
-            Commands still run and branch exactly the same either way.
+            The pane shows your commands as you wrote them and what the host
+            printed. On some hosts you may also see a <code>printf</code> added
+            to each command and a line like <code>__bsdone_0__</code> under it.
+            That is harmless: it is how Broadside tells when a command has
+            finished on a shell it cannot follow otherwise (one that is not bash
+            or zsh, a host with shell integration set to <Nav>never</Nav>, or a
+            nested shell).
           </p>
           <H3>What a run leaves behind</H3>
           <p>
@@ -2916,23 +1951,17 @@ export const SECTIONS: HelpSection[] = [
             <li>
               <Nav>Skills</Nav> holds one entry per host per skill run: what ran,
               how it ended, and how long it took. How much detail each entry
-              carries, and whether entries are written at all, is set in{" "}
-              <Nav>Settings</Nav> &rarr; <Nav>Skills</Nav>. Entries are stored as
-              JSON and shown as readable text or as that JSON, whichever you have
-              chosen, so you can change your mind later and everything already
-              recorded reads the new way. <Nav>Export</Nav> always writes the
-              JSON, because an export is for something else to read.
+              carries, whether entries are written at all, and whether they are
+              shown as readable text or raw JSON are set in <Nav>Settings</Nav>{" "}
+              &rarr; <Nav>Skills</Nav>. <Nav>Export</Nav> always writes JSON.
             </li>
             <li>
-              <Nav>Toasts History</Nav> lists every toast, the messages that pop
-              up in the bottom corner, newest first, with the time and whether
-              it was a success, a warning or an error. It keeps the last 500.
-              It is the place to read one that vanished before you could, such
-              as the warning a restore shows as the app reloads. It is kept
-              beside the error log rather than in your data, so a restore does
-              not wipe it, and it is not part of a backup. <Nav>Clear
-              history</Nav> empties it and <Nav>Export</Nav> writes it to a
-              file.
+              <Nav>Toasts History</Nav> lists the last 500 toasts (the messages
+              that pop up in the bottom corner), newest first, with the time and
+              whether each was a success, a warning or an error. It is not
+              affected by a restore and is not part of a backup.{" "}
+              <Nav>Clear history</Nav> empties it and <Nav>Export</Nav> saves it
+              to a file.
             </li>
           </Bullets>
         </Detail>
@@ -2947,24 +1976,17 @@ export const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          <Nav>Settings</Nav> is where you tune how Broadside behaves. It is
-          laid out like this page: a panel down the left lists every section,
-          the search box at its top narrows the list and the page together, the
-          section you are reading is lit as you scroll, and clicking a name goes
-          there. On a narrower window the panel steps aside, and the search box
-          and a <Nav>Jump to</Nav> list sit in the page header instead.
+          <Nav>Settings</Nav> is where you tune how Broadside behaves. The list
+          on the left jumps to each section, and the search box above it
+          narrows the page to what you type.
         </Lead>
         <Detail>
           <H3>What you can change</H3>
           <Bullets>
             <li>
-              <Nav>Startup</Nav>: which tab Broadside opens on.{" "}
-              <Nav>Hosts</Nav> until you choose another, and after a{" "}
-              <Nav>Reset</Nav>. While a template is set to open at startup the
-              choice is greyed, because that template decides: it opens on{" "}
-              <Nav>Terminals</Nav>. The note under it names the template, and
-              setting that template back to <em>Don&apos;t open at startup</em>{" "}
-              frees the choice again.
+              <Nav>Startup</Nav>: which tab Broadside opens on (<Nav>Hosts</Nav>{" "}
+              by default). It is greyed while a template is set to open at
+              startup, because that always opens on <Nav>Terminals</Nav>.
             </li>
             <li>
               <Nav>Performance</Nav>: how many hosts the app talks to at once.
@@ -2978,83 +2000,48 @@ export const SECTIONS: HelpSection[] = [
               confirmation before a risky command is sent.
             </li>
             <li>
-              <Nav>Shortcut commands</Nav>: reusable one-click commands for the
-              dropdown on the Terminals and Broadcast pages. Each one is scoped
-              when you add it: <Nav>SSH / WSL (Linux)</Nav> commands run on SSH
-              hosts and WSL tabs, <Nav>Command Prompt / PowerShell</Nav> commands
-              run on local Windows shells, <Nav>Both</Nav> commands run in either
-              of those, and <Nav>Serial console (COM port)</Nav> commands run
-              only on a console cable, which <Nav>Both</Nav> deliberately does
-              not reach. See the Terminals section for how the dropdown uses the
-              scope.
+              <Nav>Shortcut commands</Nav>: reusable commands for the dropdown on
+              the Terminals and Broadcast pages, each for Linux, Windows, both,
+              or serial consoles. See{" "}
+              <SectionLink id="help-sec-terminals">Terminals</SectionLink>.
             </li>
             <li>
-              <Nav>Sessions</Nav>: whether an SSH terminal that has gone idle is
-              closed after a while (off by default, and a command running in the
-              foreground counts as busy however quiet it is), and whether
-              connections are kept alive so a firewall does not drop them for
-              being idle (on by default). See the Terminals section for what
-              each one does.
+              <Nav>Sessions</Nav>: the idle session timeout (off by default) and
+              keep alive (on by default). See{" "}
+              <SectionLink id="help-sec-terminals">Terminals</SectionLink>.
             </li>
             <li>
               <Nav>Appearance</Nav>: light or dark theme, the terminal font and
-              its size, the size of the application text, which columns of the{" "}
-              <Nav>Hosts</Nav> table and of the <Nav>Profiles</Nav> table to
-              show and in what order (a box for each, each with its own{" "}
-              <Nav>Reset defaults</Nav>), and which detected local shells appear in the
-              Terminals <Nav>plus button</Nav> menu. The{" "}
-              <Nav>Terminal font</Nav> list holds only fonts that are installed
-              on this machine and are fixed-width, each drawn in itself so you
-              can see it before you choose it, so there is no way to land on a
-              font that is not there. <b>Fixed-width is the reason a font you
-              have is missing from the list.</b> A proportional font, Segoe UI
-              or Arial, is left out even when it is installed, because a
-              terminal needs every character to occupy the same cell: without
-              that, columns do not line up, box drawing comes apart and the
-              cursor lands somewhere other than where it belongs. Look for a
-              variant with <i>Mono</i> in its name. A font you install while
-              Broadside is running appears in the list once you restart it.{" "}
-              <b>Picking a font applies it straight away</b>, so you can try one
-              against your own terminals rather than commit to it unseen. The
-              two size boxes are the only part of <Nav>Appearance</Nav> behind a{" "}
-              <Nav>Save font sizes</Nav> button, and they are framed together
-              with it: a half-typed number is not a size, and applying one on
-              every keystroke would take the application text through 2 px on
-              the way from 16 to 20. Everything outside that frame takes effect
-              as you touch it. Holding{" "}
-              <Nav>Ctrl</Nav> and
-              turning the mouse wheel over any terminal changes the terminal
-              font size from where you are reading and saves it here without the
-              button, unless <Nav>Strict</Nav> beside that field is ticked,
-              which leaves the wheel alone.
+              its size, the size of the app's text, which columns the{" "}
+              <Nav>Hosts</Nav> and <Nav>Profiles</Nav> tables show and in what
+              order, and which local shells appear in the{" "}
+              <Nav>plus button</Nav> menu. Changes apply as you make them,
+              except the two font sizes, which need <Nav>Save font sizes</Nav>.
+              <br />
+              <b>A font missing from the list?</b> <Nav>Terminal font</Nav>{" "}
+              only lists installed fixed-width fonts, because a terminal needs
+              every character to be the same width. Look for a version with{" "}
+              <i>Mono</i> in its name. A font installed while Broadside is
+              running appears after a restart.
             </li>
             <li>
-              <Nav>Skills</Nav>: what a skill run writes down, and where. Until
-              now a run's only lasting trace was the commands it left in each
-              host's own shell history, the ones an <Nav>Up</Nav> arrow finds.
-              That works, and it is per host, it holds the commands without
-              their exit codes, and it fills a scratchpad that is yours rather
-              than Broadside's. So the record can live here instead.
+              <Nav>Skills</Nav>: what a skill run records, and where.
               <br />
-              <b>Where to log</b> decides that. <Nav>Skill log only</Nav>, the
-              recommendation, writes the run to <Nav>Logs</Nav> &rarr;{" "}
-              <Nav>Skills</Nav> and asks each shell it opens to stop recording,
-              so your history stays as you left it. <Nav>Remote history only</Nav>{" "}
-              writes nothing here and leaves the commands in your history, which
-              is what earlier versions did. <Nav>Both</Nav> does both. This is
-              the only setting on the page that changes anything sent to a host.
+              <b>Where to log</b>: <Nav>Skill log only</Nav> (recommended)
+              records runs in <Nav>Logs</Nav> &rarr; <Nav>Skills</Nav> and keeps
+              the commands out of each host's shell history.{" "}
+              <Nav>Remote history only</Nav> leaves them in the host's history,
+              where <Nav>Up</Nav> finds them, and records nothing here.{" "}
+              <Nav>Both</Nav> does both.
               <br />
-              <b>Logging type</b> decides how much. <Nav>Skill summary</Nav> is
-              one entry for the whole run on a host. <Nav>Itemized</Nav> adds a
-              line per step with its exit code. <Nav>Run panel log</Nav> keeps
-              the step log exactly as the run panel showed it, so the account
-              you were already reading survives the panel closing.{" "}
-              <Nav>Debug</Nav> adds the line Broadside actually typed, where it
-              differs from your command, and what the host said back.
+              <b>Logging type</b>: <Nav>Skill summary</Nav> (one entry per host
+              per run), <Nav>Itemized</Nav> (adds a line per step with its exit
+              code), <Nav>Run panel log</Nav> (the full step log as the run
+              panel showed it) or <Nav>Debug</Nav> (adds exactly what was sent
+              and what the host replied).
               <br />
-              <b>Output style</b> is only about reading: entries are always
-              stored as JSON, so changing this re-reads everything already
-              recorded rather than affecting only what comes next.
+              <b>Output style</b> only changes how entries are displayed, and
+              applies to entries already recorded too.
             </li>
             <li>
               <Nav>Backup &amp; Restore</Nav>: save a copy of your app data, or
@@ -3067,30 +2054,15 @@ export const SECTIONS: HelpSection[] = [
               spreadsheet of your hosts alongside the backup.
               <br />
               <b>Restore only a backup you made yourself.</b> A restore replaces
-              the whole database, and Broadside reads what comes back with the
-              same trust as its own data, so a file from somebody else is a file
-              that decides what your copy knows. Some things it is never allowed
-              to decide. The custom local shells you added under{" "}
-              <Nav>Local shells</Nav> come back empty, because a launcher entry
-              names a program to run. Your trusted host keys come back empty,
-              because those are the answers you gave to the key questions. Saved
-              shell profiles come back with their startup commands emptied,
-              because a startup command runs the moment the profile is clicked.
-              A profile that opened one of your custom local shells comes back
-              pointing at no shell at all, struck through in the launcher, since
-              the shell it named went with the rest of them and the numbering
-              starts again. What it does keep is the <i>name</i> of the shell it
-              wanted: hover the profile and Broadside tells you which one to
-              re-add, and once you have, <Nav>Edit</Nav> opens with that shell
-              already chosen. A name is not a program, so nothing in the file
-              gets to say what runs; you do, by saving. Sudo auto-fill is
-              switched off by a restore for the same reason. Re-add any custom
-              shells and startup commands afterwards, open <Nav>Edit</Nav> on
-              each struck-through profile and save it, expect each host to ask
-              about its key on the first connect, and turn auto-fill back on if
-              you want it. The list of what a restore changed is shown again
-              once the app has reloaded, and stays until you close it; it is
-              also in <Nav>Logs</Nav> &rarr; <Nav>Toasts History</Nav>.
+              all your data. To keep you safe, a few things are not restored:
+              custom local shells, trusted host keys, profile startup commands,
+              and the sudo auto-fill switch. Afterwards, re-add your custom
+              shells (then open <Nav>Edit</Nav> on each struck-through profile
+              and save it), retype your startup commands, expect each host to
+              ask you to confirm its key on the first connect, and turn
+              auto-fill back on if you use it. A list of what changed is shown
+              once the app reloads, and kept in <Nav>Logs</Nav> &rarr;{" "}
+              <Nav>Toasts History</Nav>.
             </li>
             <li>
               <Nav>Audit log</Nav>: turn audit recording on or off.
@@ -3178,37 +2150,23 @@ export const SECTIONS: HelpSection[] = [
               yourself.
             </li>
             <li>
-              It answers a <Nav>sudo</Nav> prompt and nothing else. A password
-              prompt from <Nav>chsh</Nav>, <Nav>su</Nav>, an inner{" "}
-              <Nav>ssh</Nav> or a database client looks much the same on screen,
-              but it is a different program asking, sometimes on a different
-              machine, and a stored password typed into it would have travelled
-              somewhere you never chose to send it. Those prompts are yours to
-              answer.
+              It only answers <Nav>sudo</Nav>. Password prompts from other
+              programs (<Nav>su</Nav>, <Nav>ssh</Nav>, a database client) are left
+              for you, so a stored password is never sent somewhere you did not
+              intend.
             </li>
             <li>
-              <Nav>Keep the connect line out of the host's shell history</Nav> is
-              the second switch, and it is <b>off</b> until you turn it on.
-              Opening an SSH terminal types one setup line at the host, written
-              with a space in front so that a shell whose{" "}
-              <code>HISTCONTROL</code> ignores space-prefixed commands never
-              records it. That is the Debian and Ubuntu default and not much
-              else, so on a Red Hat family box, an appliance, or anything with
-              its own profile, the line is kept and an <Nav>Up</Nav> arrow finds
-              it instead of your last command. Run{" "}
-              <code>{'echo "$HISTCONTROL"'}</code> on a host to see which kind
-              you are on: an answer with <code>ignorespace</code> or{" "}
-              <code>ignoreboth</code> in it means the space is already keeping
-              the line out and this switch changes nothing you can see there.
-              Switch this on and the line deletes that entry as it goes past. It only ever removes an entry
-              it has first checked is its own, so no command of yours can be
-              taken by it. It starts off because the space is a request and a{" "}
-              <code>history -d</code> is a write, and a terminal should not be
-              making that second decision about your machines on your behalf,
-              least of all on a box where the shell history is meant to be the
-              record of what happened. It does nothing on <code>zsh</code>,
-              which offers no way to delete an entry, and it is read when a
-              terminal opens, so it applies to the next one.
+              <Nav>Keep the connect line out of the host's shell history</Nav>{" "}
+              is <b>off</b> by default. When a terminal opens, Broadside sends
+              the host a short setup line. Debian and Ubuntu keep that line out
+              of the shell history by default, but many other systems do not, so
+              the <Nav>Up</Nav> arrow finds it instead of your last command.
+              Turn this on and Broadside deletes that one entry for you; it never
+              touches your own commands. It has no effect on <code>zsh</code>,
+              and applies to terminals opened after you turn it on. To see
+              whether a host needs it, run <code>{'echo "$HISTCONTROL"'}</code>{" "}
+              there: if the answer includes <code>ignorespace</code> or{" "}
+              <code>ignoreboth</code>, it does not.
             </li>
             <li>
               The admin lock is an optional passcode that protects the credential
@@ -3396,14 +2354,8 @@ export const SECTIONS: HelpSection[] = [
     body: (
       <>
         <Lead>
-          Every key Broadside takes for itself, and what it does. Anything not
-          on this list belongs to whatever has the focus, in a terminal that
-          means the shell, which is why the shortcuts here are nearly all{" "}
-          <Nav>Ctrl+Shift</Nav> chords: a terminal cannot see the Shift, so{" "}
-          <Nav>Ctrl+Shift+G</Nav> costs a program running in a tile nothing at
-          all, while a function key would have taken <Nav>F10</Nav> away from{" "}
-          <code className="font-mono text-xs">mc</code> and{" "}
-          <code className="font-mono text-xs">nano</code>.
+          Every key Broadside takes for itself, and what it does. Any other key
+          goes to whatever has the focus; in a terminal, that is the shell.
         </Lead>
         <ShortcutMatrix />
       </>

@@ -73,7 +73,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>F11</Kbd>,
         where: "Terminals",
-        what: "Maximize the selected terminal to fill the window, hiding every other part of the app. Press it again to restore. It works from inside a maximized terminal wherever you are. Esc does not restore: it belongs to whatever is running in the terminal, and vi is built around it.",
+        what: "Maximize the selected terminal to fill the window. Press it again to restore. Esc does not restore: it goes to the program in the terminal, since editors such as vi depend on it.",
       },
       {
         keys: <Kbd>Ctrl+F</Kbd>,
@@ -98,17 +98,17 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Ctrl+Shift+G</Kbd>,
         where: "Grid",
-        what: "Fill the screen with the grid: the sidebar, status bar, toolbar and tab strip all go, and the tiles take the whole window. Press it again to bring them back, or use the button in the hover strip. Deliberately not a function key: F10 belongs to mc and nano, and deliberately not Esc, which belongs to vi.",
+        what: "Fill the screen with the grid: the sidebar, status bar, toolbar and tab strip slide away. Press it again to bring them back, or use the tab at the top of the screen. Esc does not leave fullscreen, so it still reaches vi.",
       },
       {
         keys: <Kbd>Esc</Kbd>,
         where: "Terminal controls",
-        what: "Hand the keyboard back to the terminal after Ctrl+Shift+T put it in the toolbar. This is the only thing Esc does on this page, and it is safe to claim because the keyboard is not in a terminal at the time. It does not leave fullscreen.",
+        what: "Hand the keyboard back to the terminal after Ctrl+Shift+T put it in the toolbar. It does not leave fullscreen.",
       },
       {
         keys: <Kbd>Ctrl+Shift+T</Kbd>,
         where: "Terminals",
-        what: "Put the keyboard into the controls. In fullscreen the hidden strip slides down and its first button takes focus, with a ring around it so you can see where you are. This is the only way in: Tab inside a tile belongs to the shell.",
+        what: "Put the keyboard into the toolbar, with a ring around the button that has focus. In fullscreen the hidden controls slide down too.",
       },
       {
         keys: (
@@ -117,7 +117,7 @@ const SHORTCUTS: ShortcutGroup[] = [
           </>
         ),
         where: "Terminal controls",
-        what: "Walk forwards and backwards along the toolbar and tab strip once Ctrl+Shift+T has put you there. The strip stays down the whole time, and Tab wraps round at the last control rather than dropping into the grid. Esc is the way out.",
+        what: "Move along the toolbar and tab strip once Ctrl+Shift+T has put you there. Tab wraps round at the last control. Esc goes back to the terminal.",
       },
       {
         keys: (
@@ -135,7 +135,7 @@ const SHORTCUTS: ShortcutGroup[] = [
           </>
         ),
         where: "Tab strip",
-        what: "Walk along the tabs once Tab has put the keyboard on the strip (Home and End jump to the ends), then Enter or Space chooses one. Walking does not choose as it goes: in Grid that would point your typing at each session in turn. This is also the way to pick a session without the mouse moving at all, which is what stops the tile under the pointer taking it straight back.",
+        what: "Move along the tabs once Tab has put the keyboard on the tab strip (Home and End jump to the ends), then Enter or Space chooses one.",
       },
     ],
   },
@@ -155,17 +155,17 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Right-click</Kbd>,
         where: "Terminals, Skills",
-        what: "With text selected, copy it (a short toast confirms) and clear the highlight. With nothing selected, paste, the Windows Terminal way. No context menu appears. A skill pane only copies: it never pastes into a run.",
+        what: "With text selected, copy it (a short toast confirms) and clear the highlight. With nothing selected, paste. A skill pane only copies: it never pastes into a run.",
       },
       {
         keys: <Kbd>Select with the mouse</Kbd>,
         where: "Terminals, Skills",
-        what: "Highlights and nothing else. Nothing is copied until you right-click or press Ctrl+Shift+C, so a drag made to read a line leaves the clipboard alone. Hold Shift to select past tmux or vim with the mouse on.",
+        what: "Selects text without copying it; right-click or press Ctrl+Shift+C to copy. Hold Shift to select in tmux or vim when they have the mouse on.",
       },
       {
         keys: <Kbd>Ctrl+mouse wheel</Kbd>,
         where: "Terminals, Skills",
-        what: "Make the terminal text bigger or smaller, one step a notch, between 8 and 32 px. Every open terminal follows, and the size you stop on is saved in Settings, Appearance. Broadside takes this combination while the zoom is on, so the terminal does not see it: tick Strict beside that field to give it back to tmux, vim, htop and the fast scrollback.",
+        what: "Make the text in every terminal bigger or smaller, between 8 and 32 px. The size is saved in Settings, Appearance. Tick Strict beside that setting if a program in your terminal needs Ctrl and the wheel for itself.",
       },
       {
         keys: <Kbd>Tab</Kbd>,
@@ -209,7 +209,7 @@ const SHORTCUTS: ShortcutGroup[] = [
           </>
         ),
         where: "Composer",
-        what: "Walk back and forth through the commands you have sent. Only from the first / last line, so editing a multi-line command still moves the caret normally. What you had typed is kept as a stop on the cycle, so you can always get back to it.",
+        what: "Step back and forth through the commands you have sent. Works from the first or last line, so editing a multi-line command still moves the cursor normally. What you had typed is kept, so you can always get back to it.",
       },
     ],
   },
@@ -234,7 +234,7 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Type in the filter</Kbd>,
         where: "Help",
-        what: "Searches everything a section says, including these tables, and keeps the ones that match: if you can read it here you can find it here. Matching words are marked in amber and the first is scrolled to, with arrows beside the count for the rest. Punctuation is optional: typing ctrl shift g finds Ctrl+Shift+G, and 16 20 finds 16/20. Each section in the list on the left carries the number of marks inside it. A section can also be found by words it does not use, such as the wrong name for a thing; it is kept with nothing marked in it and the list says keyword instead of a number.",
+        what: "Narrows the help to the sections that mention what you type, including these tables. Matches are marked in amber, with arrows beside the count to move between them. Punctuation is optional: ctrl shift g finds Ctrl+Shift+G. Each section in the list on the left shows how many matches it has, or says keyword when it matched a related word it does not actually use.",
       },
     ],
   },
@@ -302,37 +302,37 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>An amber chip naming a shell (fish, csh, tcsh, …)</Msg>,
         where: "Hosts in full; a triangle alone in the picker rails",
         means:
-          "This host's login shell is not one of the Bourne-family shells Broadside can drive. Terminals, broadcast and file transfer all work as normal, and so does sudo password auto-fill; command block tracking is unavailable and skills cannot run here. The tab still opens looking like a fresh login, because the part of the setup that a shell like fish can read is still sent. The chip names whatever the host reported, and Broadside only reads a name it can recognise as a shell path; a chip naming something from your own startup script was a bug, fixed in 1.3.0. The chip is what the last completed connection read. It appears in the Broadcast, PTY Broadcast, MultiTerminal and Skills lists too, where the host stays selectable: nothing there is broken by it, but a command written for bash may not mean the same thing to that shell. Those lists are narrow, so there it is the amber triangle on its own and hovering it gives the words. Setting Shell integration to Always does not take this chip away: that setting answers a question the connection could not, and this host answered it. The chip then says the setup line is being sent anyway, which such a shell may object to.",
+          "This host's login shell is not one Broadside can fully work with. Terminals, broadcasts, file transfer and sudo auto-fill all work as normal, but MultiTerminal cannot separate its output into command blocks and skills cannot run here. In the Broadcast, PTY Broadcast, MultiTerminal and Skills lists the same warning is an amber triangle; hover it for the words. The host can still be selected, but a command written for bash may not mean the same thing to its shell.",
       },
       {
         message: <Msg>An amber “no shell” chip</Msg>,
         where: "Hosts in full; a triangle alone in the picker rails",
         means:
-          "What this host runs at login is not a shell at all. The usual case is an appliance that answers with a console menu: a pfSense admin account, for instance, whose login shell really is the menu program. Broadside sends such a host nothing whatsoever on connect and leaves the screen exactly as the host drew it. This is what stops the menu being printed twice: anything sent to it, even a harmless screen clear, is read as a menu selection and answered by redrawing. Command block tracking and skills are unavailable; terminals, broadcast and file transfer are not affected.",
+          "What this host runs at login is not a shell but, usually, an appliance's console menu (a pfSense admin account, for example). Broadside sends it nothing on connect, so the menu appears exactly as the device draws it. MultiTerminal command blocks and skills are unavailable; terminals, broadcasts and file transfer are not affected.",
       },
       {
         message: <Msg>An amber “shell unread” chip</Msg>,
         where: "Hosts in full; a triangle alone in the picker rails",
         means:
-          "The connection succeeded but the host would not say what its login shell is: a forced command, or a restricted account. Broadside sends nothing rather than guess, because guessing wrong on an appliance is what makes a console menu print itself twice. The cost is command block tracking and skills. If you know the host runs bash or zsh, open it in Hosts and set Shell integration to Always: both come back, and the chip goes. There is a third cause worth knowing about, because it looks like a broken host and is not one: the question is asked by running a command in your login shell, so your own startup file runs first, and a .bashrc that sets up nvm, conda, pyenv or similar above its “if not running interactively” guard runs that on every such connection. A home directory on a slow network mount does the same. Broadside waits eight seconds for the answer, which is long enough for all of those; if a host still shows this chip and you know what it runs, the override is the answer.",
+          "The connection worked, but the host would not say what its login shell is (a restricted account, for example), so Broadside sends nothing rather than guess. MultiTerminal command blocks and skills are unavailable. If you know the host runs bash or zsh, open it in Hosts and set Shell integration to Always. It can also mean the host was too slow to answer: a slow network home directory, or a .bashrc that loads tools such as nvm or conda before its interactive check. The same fix applies.",
       },
       {
         message: <Msg>An amber “no integration” chip</Msg>,
         where: "Hosts in full; a triangle alone in the picker rails",
         means:
-          "Not a problem with the host: Shell integration is set to Never on it, so Broadside sends it nothing on connect by your own instruction. Command block tracking and skills are unavailable while it is set. Change it in the host's form.",
+          "Shell integration is set to Never on this host, so Broadside sends it nothing on connect. MultiTerminal command blocks and skills are unavailable while it is set. Change it in the host's form.",
       },
       {
         message: <Msg>“N checked hosts report no blocks”</Msg>,
         where: "MultiTerminal",
         means:
-          "Those hosts will take every command you send and show nothing here, because this page reads markers that only bash and zsh install. It is not a hang and nothing is lost: the output is in each host's own terminal tab. Hover the message to see which hosts, and which of the two reasons applies: a shell that cannot take the markers, or one that could not be read and can be overridden in Hosts.",
+          "Those hosts will run every command you send but show nothing here, because this page needs bash or zsh with shell integration. Nothing is lost: the output is in each host's own terminal tab. Hover the message to see which hosts, and why.",
       },
       {
         message: <Msg>A red Test connection icon</Msg>,
         where: "Hosts",
         means:
-          "The last attempt to reach this host failed: a test, a terminal, a broadcast, an SFTP session or a skill run, whichever happened most recently. It is stored with the host rather than remembered for the session, so it is still there after a restart, which is the point: a machine that is down is usually still down tomorrow. It clears itself the first time anything connects to that host successfully, so there is nothing to dismiss. Hover the button for the wording, and see Logs for what actually went wrong.",
+          "The last attempt to reach this host failed (a test, a terminal, a broadcast, an SFTP session or a skill run). It is kept after a restart and clears itself the next time anything connects to the host successfully. Hover the button for the details, and see Logs for what went wrong.",
       },
       {
         message: <Msg>No credentials set</Msg>,
@@ -366,7 +366,7 @@ const WARNINGS: WarningGroup[] = [
         ),
         where: "Terminal pane",
         means:
-          "The server accepted the connection and then hung up during the handshake. Most often that is OpenSSH's MaxStartups: it counts connections that have not finished authenticating, and past ten (the default) it starts dropping them, which is what opening a wall of terminals at once looks like from the server's side. Broadside now keeps at most eight handshakes in flight and retries a dropped one twice, so this should be rare; if it persists, raise MaxStartups on the host or open fewer at a time.",
+          "The server accepted the connection and then hung up during login. Most often the host is refusing too many logins at once (OpenSSH's MaxStartups, 10 by default). Broadside limits and retries these, so it should be rare; if it keeps happening, raise MaxStartups on the host or open fewer terminals at a time.",
       },
       {
         message: <Msg>Unreachable: connection timed out after 10s</Msg>,
@@ -378,7 +378,7 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>Authentication failed: …</Msg>,
         where: "Terminal pane",
         means:
-          "The host answered and refused the credentials. Wrong password, wrong username, or a key the host does not have the matching public half of. Not a passphrase problem: an encrypted key that cannot be opened never gets as far as the host, and says so in its own words (below).",
+          "The host refused the credentials: wrong password, wrong username, or a key the host does not accept. A key passphrase problem looks different (see below).",
       },
       {
         message: (
@@ -388,7 +388,7 @@ const WARNINGS: WarningGroup[] = [
         ),
         where: "Terminal pane, Files, Test connection",
         means:
-          "The key file needs a passphrase to be read at all, and there is none saved with it. Nothing was sent to the host: the file is decrypted on this machine before the connection starts, which is why the host cannot be the one to ask. Edit the host, choose Replace credentials, and enter the passphrase. Saving a key now checks this, so seeing it means the file itself changed after the host was saved.",
+          "The key file needs a passphrase and none is saved with it. Nothing was sent to the host. Edit the host, choose Replace credentials, and enter the passphrase. If you see this on a host that used to work, the key file has changed since you saved the host.",
       },
       {
         message: <Msg>This key is encrypted. Enter its passphrase to save it</Msg>,
@@ -450,7 +450,7 @@ const WARNINGS: WarningGroup[] = [
         message: <Msg>A pill on that banner reading “SSH 12/14 86%”</Msg>,
         where: "Terminal pane, remote sessions only",
         means:
-          "While the pane sits closed, Broadside keeps asking the host whether its SSH port is accepting connections, so a machine you have rebooted tells you when it is back rather than you clicking Reconnect to find out. Green means it is answering now and Reconnect should work; red means it is not; amber means it missed the last check but has been answering. The figures are the last two minutes. It opens a connection to the port rather than pinging, on purpose: a rebooting Linux box answers a ping well before sshd is listening, so a ping would go green while Reconnect still failed. How often it asks is per host, on the host's own form. Nothing is sent to the host and nothing is logged in on; the checking stops the moment you reconnect or close the tab.",
+          "While the pane sits closed, Broadside keeps checking whether the host's SSH port is answering, so you can see when a rebooted machine is back. Green: answering now, so Reconnect should work. Red: not answering. Amber: missed the last check but has been answering. The figures cover the last two minutes. How often it checks is set on the host's form. It never logs in, and it stops when you reconnect or close the tab.",
       },
       {
         message: (
@@ -458,7 +458,7 @@ const WARNINGS: WarningGroup[] = [
         ),
         where: "Terminal pane",
         means:
-          "The same thing the amber chip on the host row says, said once where you are working: this host's login shell is not one Broadside can fully drive, or you have set Shell integration to Never on it. Nothing is broken and the tab is usable. “Got it” dismisses it for that host, and it stays dismissed for as long as the verdict holds. Change the setting, or connect to find the host now answers differently, and it says its piece once more, because the new answer is not the one you dismissed.",
+          "The same warning as the amber chip on the host row, shown once where you are working. Nothing is broken and the tab is usable. Got it hides it for that host until something about the host's shell changes.",
       },
       {
         message: <Msg>Every terminal is hidden from the grid.</Msg>,
