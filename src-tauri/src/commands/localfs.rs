@@ -86,6 +86,83 @@ pub fn local_mkdir(path: String) -> AppResult<()> {
     Ok(())
 }
 
+/// Renames a local file or folder where it stands and returns its new path.
+///
+/// `new_name` is a bare name, not a path, so a rename can only ever change the
+/// name: it cannot move anything to another folder. An existing file or folder
+/// of that name is never replaced (Windows' own rename replaces a file without
+/// asking). A change of case alone is allowed, since on Windows that is the
+/// same entry.
+#[tauri::command]
+pub fn local_rename(path: String, new_name: String) -> AppResult<String> {
+    let from = Path::new(&path);
+    let target = local_rename_target(from, &new_name)?;
+    if target.as_path() == from {
+        return Ok(path);
+    }
+    let old_name = from
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let case_only = old_name.to_lowercase() == new_name.to_lowercase();
+    if !case_only && fs::symlink_metadata(&target).is_ok() {
+        return Err(AppError::LocalFs(format!("{new_name} already exists here")));
+    }
+    fs::rename(from, &target)
+        .map_err(|e| AppError::LocalFs(format!("rename {old_name}: {e}")))?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+/// Where a rename of `from` to `new_name` lands: the same folder, the new name.
+fn local_rename_target(from: &Path, new_name: &str) -> AppResult<PathBuf> {
+    check_local_name(new_name).map_err(AppError::InvalidInput)?;
+    match (from.parent(), from.file_name()) {
+        (Some(parent), Some(_)) => Ok(parent.join(new_name)),
+        // A drive root has no name to change.
+        _ => Err(AppError::InvalidInput(format!(
+            "{} can't be renamed",
+            from.display()
+        ))),
+    }
+}
+
+/// The names Windows will not take, as a message for the operator. The rename
+/// dialog checks the same rules so it can say so before anything is sent.
+fn check_local_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("a name can't be empty".into());
+    }
+    if name == "." || name == ".." {
+        return Err(format!("{name} is not a name a file can have"));
+    }
+    if name
+        .chars()
+        .any(|c| c < ' ' || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
+    {
+        return Err(r#"a name can't contain any of \ / : * ? " < > |"#.into());
+    }
+    if name.ends_with(' ') || name.ends_with('.') {
+        return Err("a name can't end with a space or a dot".into());
+    }
+    if name.chars().count() > 255 {
+        return Err("that name is longer than Windows allows".into());
+    }
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end()
+        .to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ((stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.len() == 4
+            && stem.as_bytes()[3].is_ascii_digit());
+    if reserved {
+        return Err(format!("{stem} is a name Windows keeps for itself"));
+    }
+    Ok(())
+}
+
 /// Pre-flight: counts files + total bytes under a local directory (drives the
 /// large-folder warning before a recursive put). Symlinks are skipped.
 ///
@@ -147,4 +224,70 @@ pub fn local_list_drives() -> AppResult<Vec<String>> {
         }
     }
     Ok(drives)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_names_pass() {
+        for ok in ["report.txt", "My Folder", ".bashrc", "a.b.c", "COM10", "console.log"] {
+            assert!(check_local_name(ok).is_ok(), "{ok} should pass");
+        }
+    }
+
+    #[test]
+    fn names_windows_refuses_are_refused() {
+        for bad in [
+            "", ".", "..", "a/b", r"a\b", "C:x", "what?", "star*", "pipe|", "q\"", "<x>",
+            "trailing.", "trailing ", "tab\there", "CON", "con.txt", "Nul", "COM1", "lpt9.log",
+        ] {
+            assert!(check_local_name(bad).is_err(), "{bad:?} should be refused");
+        }
+    }
+
+    #[test]
+    fn a_rename_stays_in_its_folder() {
+        let from = Path::new(r"C:\Users\me\old.txt");
+        let to = local_rename_target(from, "new.txt").unwrap();
+        assert_eq!(to, Path::new(r"C:\Users\me\new.txt"));
+        // A name that tries to climb or wander never becomes a path.
+        assert!(local_rename_target(from, r"..\evil.txt").is_err());
+        assert!(local_rename_target(from, "sub/evil.txt").is_err());
+        assert!(local_rename_target(from, "..").is_err());
+    }
+
+    #[test]
+    fn a_drive_root_cannot_be_renamed() {
+        assert!(local_rename_target(Path::new(r"C:\"), "D").is_err());
+    }
+
+    #[test]
+    fn rename_refuses_to_replace_and_allows_a_case_change() {
+        let dir = std::env::temp_dir().join(format!(
+            "broadside-rename-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("a.txt");
+        let b = dir.join("b.txt");
+        fs::write(&a, b"a").unwrap();
+        fs::write(&b, b"b").unwrap();
+
+        let refused = local_rename(a.to_string_lossy().into(), "b.txt".into());
+        assert!(refused.is_err(), "must not replace b.txt");
+        assert_eq!(fs::read(&b).unwrap(), b"b");
+
+        let upper = local_rename(a.to_string_lossy().into(), "A.txt".into()).unwrap();
+        assert!(upper.ends_with("A.txt"));
+
+        let moved = local_rename(upper, "c.txt".into()).unwrap();
+        assert_eq!(fs::read(&moved).unwrap(), b"a");
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }
