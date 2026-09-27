@@ -297,7 +297,9 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
       } else {
         const size = await localFileSize(cfg.localPath);
         patch(host.id, { status: "running", filesTotal: 1, bytesTotal: size });
-        const bytes = await sftpUpload({
+        // A broadcast run has no cancel of its own, so `cancelled` is never set
+        // here; only the bytes matter.
+        const { bytes } = await sftpUpload({
           hostId: host.id,
           sessionId,
           localPath: cfg.localPath,
@@ -371,7 +373,7 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
             });
             bytesDone += stats.bytes;
           } else {
-            const bytes = await sftpDownload({
+            const { bytes } = await sftpDownload({
               hostId: host.id,
               sessionId,
               remotePath: remoteItem,
@@ -430,7 +432,7 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
         });
       } else {
         patch(host.id, { status: "running", filesTotal: 1, bytesTotal: entry.size ?? 0 });
-        const bytes = await sftpDownload({
+        const { bytes } = await sftpDownload({
           hostId: host.id,
           sessionId,
           remotePath: src,

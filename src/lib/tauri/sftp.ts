@@ -63,17 +63,22 @@ export function sftpDelete(
   return invoke<void>("sftp_delete", { sessionId, path, isDir });
 }
 
-/** Uploads a local file to a remote path; resolves with bytes transferred.
- *  When `transferId` is given, emits `sftp:transfer_progress` (keyed by it) as
- *  the file streams, for a live byte progress bar. */
+/** What a single-file transfer did. `cancelled` means it was stopped part-way
+ *  and the part-written destination has already been removed, so the bytes it
+ *  reports crossed the wire but none of them were kept. */
+export type FileTransfer = { bytes: number; cancelled: boolean };
+
+/** Uploads a local file to a remote path. When `transferId` is given, emits
+ *  `sftp:transfer_progress` (keyed by it) as the file streams, for a live byte
+ *  progress bar. */
 export function sftpUpload(args: {
   hostId: number;
   sessionId: string;
   localPath: string;
   remotePath: string;
   transferId?: string;
-}): Promise<number> {
-  return invoke<number>("sftp_upload", {
+}): Promise<FileTransfer> {
+  return invoke<FileTransfer>("sftp_upload", {
     hostId: args.hostId,
     sessionId: args.sessionId,
     localPath: args.localPath,
@@ -82,17 +87,17 @@ export function sftpUpload(args: {
   });
 }
 
-/** Downloads a remote file to a local path; resolves with bytes transferred.
- *  When `transferId` is given, emits `sftp:transfer_progress` (keyed by it) as
- *  the file streams, for a live byte progress bar. */
+/** Downloads a remote file to a local path. When `transferId` is given, emits
+ *  `sftp:transfer_progress` (keyed by it) as the file streams, for a live byte
+ *  progress bar. */
 export function sftpDownload(args: {
   hostId: number;
   sessionId: string;
   remotePath: string;
   localPath: string;
   transferId?: string;
-}): Promise<number> {
-  return invoke<number>("sftp_download", {
+}): Promise<FileTransfer> {
+  return invoke<FileTransfer>("sftp_download", {
     hostId: args.hostId,
     sessionId: args.sessionId,
     remotePath: args.remotePath,
@@ -105,9 +110,16 @@ export function sftpDisconnect(sessionId: string): Promise<void> {
   return invoke<void>("sftp_disconnect", { sessionId });
 }
 
-/** Signals the session's in-flight recursive transfer to stop at the next file. */
-export function sftpCancelTransfer(sessionId: string): Promise<void> {
-  return invoke<void>("sftp_cancel_transfer", { sessionId });
+/** Signals an in-flight transfer to stop at its next chunk. With a `transferId`,
+ *  just that one; without, everything the session has in flight. */
+export function sftpCancelTransfer(
+  sessionId: string,
+  transferId?: string,
+): Promise<void> {
+  return invoke<void>("sftp_cancel_transfer", {
+    sessionId,
+    transferId: transferId ?? null,
+  });
 }
 
 /** File count + total bytes for a directory (scan result / transfer result).
@@ -123,12 +135,19 @@ export type TransferStats = {
 /** What a folder transfer does when a file already exists at the destination. */
 export type TransferMode = "overwrite_all" | "newer_only" | "skip_existing";
 
-/** Recursively counts files + bytes under a remote directory (pre-flight). */
+/** Recursively counts files + bytes under a remote directory (pre-flight).
+ *  With a `scanId`, `sftpCancelTransfer` stops it like a transfer, and it comes
+ *  back with `cancelled` set. */
 export function sftpScanDir(
   sessionId: string,
   path: string,
+  scanId?: string,
 ): Promise<TransferStats> {
-  return invoke<TransferStats>("sftp_scan_dir", { sessionId, path });
+  return invoke<TransferStats>("sftp_scan_dir", {
+    sessionId,
+    path,
+    scanId: scanId ?? null,
+  });
 }
 
 /** Recursively uploads a local directory; resolves with the transfer stats.

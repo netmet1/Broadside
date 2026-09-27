@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Loader2Icon } from "lucide-react";
 
+import { useActivityContext } from "@/lib/activity";
 import {
   SESSION_PREFS_EVENT,
   describeIdle,
@@ -26,9 +28,15 @@ import { useWindowSize } from "@/lib/useWindowSize";
  * it is here. The timeout ships off and closes shells without asking once it
  * is on, so being on is worth a standing reminder, and it goes the moment the
  * timeout is switched off. Named in full rather than "Timeout", because the
- * broadcast timeout is also a timeout, and its default really is 30 seconds. */
+ * broadcast timeout is also a timeout, and its default really is 30 seconds.
+ *
+ * Between those two and the page status sits the activity line: what the app is
+ * still doing on a tab you have left. It has its own space rather than joining
+ * the metrics, because a hint must not be able to hide the one thing on this
+ * bar that is not there to be glanced at. */
 export function StatusBar() {
   const { pageStatus, hint, hintsEnabled } = useStatus();
+  const { activities } = useActivityContext();
   const { prefs } = useUiPrefs();
   const windowSize = useWindowSize();
   // Same subscription the Sessions settings use, so a change made there shows
@@ -59,6 +67,15 @@ export function StatusBar() {
           </span>
         )}
       </span>
+      {activities.length > 0 && (
+        <span
+          className="flex shrink-0 items-center gap-1.5 text-foreground/80"
+          aria-live="polite"
+        >
+          <Loader2Icon className="h-3 w-3 animate-spin" />
+          {activities.join(" · ")}
+        </span>
+      )}
       <span className="ml-auto shrink-0">{pageStatus}</span>
     </footer>
   );

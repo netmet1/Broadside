@@ -75,6 +75,7 @@ import { SettingsLoading } from "@/components/SettingsLoading";
 import { Toaster } from "@/components/ui/sonner";
 import { ToastRecorder } from "@/components/ToastRecorder";
 import { StatusProvider } from "@/components/StatusProvider";
+import { ActivityProvider } from "@/components/ActivityProvider";
 import { UiPrefsProvider } from "@/components/UiPrefsProvider";
 import {
   type Host,
@@ -822,6 +823,7 @@ function App() {
 
   return (
     <StatusProvider>
+      <ActivityProvider>
       <UiPrefsProvider>
       <AppShell
         active={page}
@@ -1078,6 +1080,7 @@ function App() {
         <ToastRecorder />
       </AppShell>
       </UiPrefsProvider>
+      </ActivityProvider>
     </StatusProvider>
   );
 }

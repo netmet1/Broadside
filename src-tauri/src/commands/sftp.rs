@@ -15,7 +15,7 @@ use crate::db::DbState;
 use crate::errlog::ErrLogState;
 use crate::error::AppResult;
 use crate::ssh::sftp::{
-    self, SftpConnectResult, SftpEntry, SftpState, TransferMode, TransferStats,
+    self, FileTransfer, SftpConnectResult, SftpEntry, SftpState, TransferMode, TransferStats,
 };
 
 use super::ssh::{auth_for_host, note_connect, with_db};
@@ -172,6 +172,10 @@ pub async fn sftp_delete(
 /// Uploads a local file to the remote path and audits the transfer. When a
 /// `transfer_id` is given, emits `sftp:transfer_progress` (keyed by it) as the
 /// file streams, so the broadcast tab can show a live byte progress bar.
+///
+/// A cancelled upload is not an error: it comes back with `cancelled` set and
+/// the part-written remote file already removed. Only a completed one is
+/// audited, because a transfer that left nothing behind did not happen.
 #[tauri::command]
 pub async fn sftp_upload(
     host_id: i64,
@@ -184,7 +188,7 @@ pub async fn sftp_upload(
     db: State<'_, DbState>,
     audit: State<'_, AuditState>,
     errlog: State<'_, ErrLogState>,
-) -> AppResult<u64> {
+) -> AppResult<FileTransfer> {
     let on_progress = |bytes_done: u64| {
         if let Some(tid) = &transfer_id {
             let _ = app.emit(
@@ -197,33 +201,39 @@ pub async fn sftp_upload(
             );
         }
     };
-    let cancel = sftp_state.begin_transfer(&session_id);
+    let (key, cancel) = sftp_state.begin_transfer(&session_id, transfer_id.as_deref());
     let result = sftp::upload(&sftp_state, &session_id, &local_path, &remote_path, &cancel, on_progress).await;
-    sftp_state.end_transfer(&session_id);
-    let bytes = match result {
-        Ok(b) => b,
+    sftp_state.end_transfer(&key);
+    let transfer = match result {
+        Ok(t) => t,
         Err(e) => {
             errlog.log("sftp_upload", Some(host_id), None, &e.to_string());
             return Err(e);
         }
     };
-    if let Ok(host) = with_db(&db, |c| host_repo::get(c, host_id)) {
-        let _ = audit.append(&AuditEvent::SftpTransfer {
-            host_label: host.label,
-            hostname: host.hostname,
-            port: host.port,
-            direction: "put".into(),
-            local_path,
-            remote_path,
-            bytes,
-        });
+    if !transfer.cancelled {
+        if let Ok(host) = with_db(&db, |c| host_repo::get(c, host_id)) {
+            let _ = audit.append(&AuditEvent::SftpTransfer {
+                host_label: host.label,
+                hostname: host.hostname,
+                port: host.port,
+                direction: "put".into(),
+                local_path,
+                remote_path,
+                bytes: transfer.bytes,
+            });
+        }
     }
-    Ok(bytes)
+    Ok(transfer)
 }
 
 /// Downloads a remote file to the local path and audits the transfer. When a
 /// `transfer_id` is given, emits `sftp:transfer_progress` (keyed by it) as the
 /// file streams, so the broadcast tab can show a live byte progress bar.
+///
+/// A cancelled download is not an error: it comes back with `cancelled` set and
+/// the part-written local file already removed. Only a completed one is audited,
+/// because a transfer that left nothing behind did not happen.
 #[tauri::command]
 pub async fn sftp_download(
     host_id: i64,
@@ -236,7 +246,7 @@ pub async fn sftp_download(
     db: State<'_, DbState>,
     audit: State<'_, AuditState>,
     errlog: State<'_, ErrLogState>,
-) -> AppResult<u64> {
+) -> AppResult<FileTransfer> {
     let on_progress = |bytes_done: u64| {
         if let Some(tid) = &transfer_id {
             let _ = app.emit(
@@ -249,39 +259,46 @@ pub async fn sftp_download(
             );
         }
     };
-    let cancel = sftp_state.begin_transfer(&session_id);
+    let (key, cancel) = sftp_state.begin_transfer(&session_id, transfer_id.as_deref());
     let result = sftp::download(&sftp_state, &session_id, &remote_path, &local_path, &cancel, on_progress).await;
-    sftp_state.end_transfer(&session_id);
-    let bytes = match result {
-        Ok(b) => b,
+    sftp_state.end_transfer(&key);
+    let transfer = match result {
+        Ok(t) => t,
         Err(e) => {
             errlog.log("sftp_download", Some(host_id), None, &e.to_string());
             return Err(e);
         }
     };
-    if let Ok(host) = with_db(&db, |c| host_repo::get(c, host_id)) {
-        let _ = audit.append(&AuditEvent::SftpTransfer {
-            host_label: host.label,
-            hostname: host.hostname,
-            port: host.port,
-            direction: "get".into(),
-            local_path,
-            remote_path,
-            bytes,
-        });
+    if !transfer.cancelled {
+        if let Ok(host) = with_db(&db, |c| host_repo::get(c, host_id)) {
+            let _ = audit.append(&AuditEvent::SftpTransfer {
+                host_label: host.label,
+                hostname: host.hostname,
+                port: host.port,
+                direction: "get".into(),
+                local_path,
+                remote_path,
+                bytes: transfer.bytes,
+            });
+        }
     }
-    Ok(bytes)
+    Ok(transfer)
 }
 
 /// Pre-flight: counts files + total bytes under a remote directory (drives the
-/// large-folder warning before a recursive get).
+/// large-folder warning before a recursive get). `scan_id` makes it cancellable
+/// through `sftp_cancel_transfer` like a transfer, and a disconnect stops it.
 #[tauri::command]
 pub async fn sftp_scan_dir(
     session_id: String,
     path: String,
+    scan_id: Option<String>,
     sftp_state: State<'_, SftpState>,
 ) -> AppResult<TransferStats> {
-    sftp::scan_remote_dir(&sftp_state, &session_id, &path).await
+    let (key, cancel) = sftp_state.begin_transfer(&session_id, scan_id.as_deref());
+    let result = sftp::scan_remote_dir(&sftp_state, &session_id, &path, &cancel).await;
+    sftp_state.end_transfer(&key);
+    result
 }
 
 /// Recursively uploads a local directory and audits the transfer. Emits
@@ -310,7 +327,7 @@ pub async fn sftp_upload_dir(
             },
         );
     };
-    let cancel = sftp_state.begin_transfer(&session_id);
+    let (key, cancel) = sftp_state.begin_transfer(&session_id, Some(&transfer_id));
     let result = sftp::upload_dir(
         &sftp_state,
         &session_id,
@@ -321,7 +338,7 @@ pub async fn sftp_upload_dir(
         on_progress,
     )
     .await;
-    sftp_state.end_transfer(&session_id);
+    sftp_state.end_transfer(&key);
     let stats = match result {
         Ok(s) => s,
         Err(e) => {
@@ -369,7 +386,7 @@ pub async fn sftp_download_dir(
             },
         );
     };
-    let cancel = sftp_state.begin_transfer(&session_id);
+    let (key, cancel) = sftp_state.begin_transfer(&session_id, Some(&transfer_id));
     let result = sftp::download_dir(
         &sftp_state,
         &session_id,
@@ -380,7 +397,7 @@ pub async fn sftp_download_dir(
         on_progress,
     )
     .await;
-    sftp_state.end_transfer(&session_id);
+    sftp_state.end_transfer(&key);
     let stats = match result {
         Ok(s) => s,
         Err(e) => {
@@ -402,13 +419,19 @@ pub async fn sftp_download_dir(
     Ok(stats)
 }
 
-/// Signals the session's in-flight recursive transfer to stop at the next file.
+/// Signals an in-flight transfer to stop at its next chunk. With a
+/// `transfer_id`, just that one; without, every transfer the session has in
+/// flight (what Disconnect and "cancel all" want).
 #[tauri::command]
 pub fn sftp_cancel_transfer(
     session_id: String,
+    transfer_id: Option<String>,
     sftp_state: State<'_, SftpState>,
 ) -> AppResult<()> {
-    sftp_state.signal_cancel(&session_id);
+    match transfer_id {
+        Some(tid) => sftp_state.cancel_transfer(&session_id, &tid),
+        None => sftp_state.cancel_session(&session_id),
+    }
     Ok(())
 }
 

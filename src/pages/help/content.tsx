@@ -316,7 +316,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-overview",
     title: "Overview and getting started",
     keywords:
-      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout seven seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key session timeout 30m reminder fourth item bottom bar timeout is on open on a different tab start page startup tab dialog closed when i clicked outside lost my work clicked off the dialog modal disappeared click outside does not close toast history help sub headers subheadings contents list indented",
+      "intro introduction start home rail sidebar navigation theme dark light maximize fullscreen status bar hint version window size dimensions resolution pixels how big width height 1024x700 minimum smallest font size terminal app application point px live readout bottom left corner what are those numbers three numbers keep disappearing hint replaces them hint stuck on screen stays forever wont go away numbers gone idle timeout seven seconds mouse resting on button walked away esc escape key does not exit fullscreen why not restore f11 only vi vim insert mode editor keeps the key session timeout 30m reminder fourth item bottom bar timeout is on open on a different tab start page startup tab dialog closed when i clicked outside lost my work clicked off the dialog modal disappeared click outside does not close toast history help sub headers subheadings contents list indented spinner in the status bar what is it doing something still running background work other tab activity in progress sftp transfer keeps spinning",
     body: (
       <>
         <Lead>
@@ -359,6 +359,11 @@ export const SECTIONS: HelpSection[] = [
               Every message that pops up in the bottom corner (a toast) is also
               kept in <Nav>Logs</Nav> &rarr; <Nav>Toasts History</Nav>, so one
               that went by too fast can be read again.
+            </li>
+            <li>
+              A spinner in the status bar with a short line such as{" "}
+              <Nav>SFTP transfer in progress</Nav> means work is still running on
+              another tab. It stays until that work finishes.
             </li>
             <li>
               The app version is shown next to the Broadside name at the top of
@@ -1796,7 +1801,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files",
     body: (
       <>
         <Lead>
@@ -1822,6 +1827,30 @@ export const SECTIONS: HelpSection[] = [
               Select several items as in Windows Explorer (<Nav>Ctrl+click</Nav>{" "}
               for individual files, <Nav>Shift+click</Nav> for a range), then drag
               any of them to transfer the whole selection.
+            </li>
+            <li>
+              Up to four transfer at a time and the rest wait. Each running
+              transfer, and each folder still being scanned, gets a row in the bar
+              along the bottom with its own <Nav>Cancel</Nav>;{" "}
+              <Nav>Cancel all</Nav> also clears whatever is waiting.
+            </li>
+            <li>
+              A folder over 100 files or 100 MB asks before it starts. Dragging
+              several large folders asks about each one in turn.
+            </li>
+            <li>
+              When everything in one drag has finished, a single message sums it
+              up. Anything that failed or was cancelled gets its own message.
+            </li>
+            <li>
+              Cancelling keeps the files that had already finished and deletes the
+              one that was part-way through, along with any folder it left empty. A
+              failed transfer does the same. A file that was being overwritten is
+              not restored: cancelling leaves neither the old copy nor the new one.
+            </li>
+            <li>
+              Several at once helps most on a distant host; on your own network it
+              is barely faster.
             </li>
             <li>
               You can make a new folder on either side and delete items. Local

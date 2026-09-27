@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { BatchTofuDialog } from "@/components/BatchTofuDialog";
+import { useActivity } from "@/lib/activity";
 import type { Host } from "@/lib/tauri/hosts";
 import type { TransferMode } from "@/lib/tauri/sftp";
 import { RAIL_SORT_OPTIONS, sortForRail } from "@/lib/railSort";
@@ -56,6 +57,10 @@ export function BroadcastTab({
 }) {
   const b = useSftpBroadcast(visible, mode);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Say so on the status bar while a run is going, so leaving the tab does not
+  // leave the operator wondering whether it is still under way.
+  useActivity("sftp-broadcast", b.running ? "SFTP broadcast in progress" : null);
 
   const railHosts = useMemo(
     () => sortForRail(b.hosts, (h) => h, b.railSort),
