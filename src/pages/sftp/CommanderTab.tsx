@@ -70,11 +70,10 @@ const SPLIT_KEY = "sftp-split-pct";
 
 /**
  * SFTP Commander: a dual-pane file manager. Local filesystem on the left, the
- * connected remote host on the right. Navigate each side by clicking folders;
- * transfer a file by **dragging it to the other pane** (local→remote = put,
- * remote→local = get) or by **double-clicking** it. Both panes support New
- * folder and (double-click) Delete: local deletes go to the Recycle Bin, remote
- * deletes are permanent. Files only for transfers this pass.
+ * connected remote host on the right. A click selects; a double-click or Enter
+ * opens a folder. Transfer by **dragging to the other pane** (local→remote =
+ * put, remote→local = get). Both panes support New folder and (double-click)
+ * Delete: local deletes go to the Recycle Bin, remote deletes are permanent.
  */
 export function CommanderTab({
   visible,
@@ -109,7 +108,7 @@ export function CommanderTab({
     setPendingFor(liveSessionId);
     setPendingDirs([]);
   }
-  // Which pane Backspace acts on, set to whichever pane was last clicked.
+  // Which pane the keys (Backspace, Enter, arrows) act on: the one last clicked.
   const [activePane, setActivePane] = useState<PaneSide>("local");
 
   // Resizable split (percent width of the left pane), persisted.
@@ -141,32 +140,6 @@ export function CommanderTab({
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
   }, []);
-
-  // Backspace goes up a directory in the active pane (the one last clicked),
-  // unless the user is typing in a field or a dialog is open.
-  useEffect(() => {
-    if (!visible) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Backspace") return;
-      const el = document.activeElement;
-      const tag = el?.tagName;
-      if (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        (el as HTMLElement | null)?.isContentEditable
-      ) {
-        return;
-      }
-      // Don't hijack Backspace while any dialog is open.
-      if (document.querySelector("[role='dialog'],[role='alertdialog']")) return;
-      e.preventDefault();
-      if (activePane === "local") local.goUp();
-      else remote.goUp();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [visible, activePane, local, remote]);
 
   const onConnect = () => {
     const host = remote.hosts.find((h) => h.id === Number(pickedHostId));
@@ -369,6 +342,7 @@ export function CommanderTab({
             onNavigate={local.navigate}
             onDropInto={(p) => onDropInto("local", p)}
             onActivate={() => setActivePane("local")}
+            active={visible && activePane === "local"}
             // No mkdir/delete at the drive list (cwd === null).
             onNewFolder={
               local.cwd !== null ? () => setNewFolderSide("local") : undefined
@@ -420,6 +394,7 @@ export function CommanderTab({
               onNavigate={remote.navigate}
               onDropInto={(p) => onDropInto("remote", p)}
               onActivate={() => setActivePane("remote")}
+              active={visible && activePane === "remote"}
               onNewFolder={() => setNewFolderSide("remote")}
               onDeleteEntry={(entry) => setDeleting({ side: "remote", entry })}
               emptyText="Empty directory."

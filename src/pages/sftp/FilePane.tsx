@@ -1,4 +1,4 @@
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowUpIcon,
   FileIcon,
@@ -43,6 +43,29 @@ export type DragPayload = { side: PaneSide; items: DragItem[] };
 
 const DND_MIME = "application/x-broadside-file";
 
+/** A drive root in the local pane's drive list (`C:\`). */
+function isDrivePath(side: PaneSide, path: string): boolean {
+  return side === "local" && /^[A-Za-z]:\\?$/.test(path);
+}
+
+/** True when a key press is someone else's to handle: text is being typed,
+ *  Enter is aimed at a focused button, or a dialog or menu is up. */
+function keyBelongsElsewhere(key: string): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  const tag = el?.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) {
+    return true;
+  }
+  if (key === "Enter" && (tag === "BUTTON" || el?.getAttribute("role") === "button")) {
+    return true;
+  }
+  return (
+    document.querySelector(
+      "[role='dialog'],[role='alertdialog'],[role='menu'][data-state='open'],[role='listbox']",
+    ) !== null
+  );
+}
+
 /** One pane: header + path bar + a drag/drop-aware listing. Rounded + subtly
  *  shaded so each side reads as its own panel against the tab background. */
 export function FilePane({
@@ -58,6 +81,7 @@ export function FilePane({
   onNavigate,
   onDropInto,
   onActivate,
+  active,
   onNewFolder,
   onDeleteEntry,
   emptyText,
@@ -75,6 +99,9 @@ export function FilePane({
   onNavigate: (path: string) => void;
   onDropInto: (payload: DragPayload) => void;
   onActivate: () => void;
+  /** This pane takes the Commander's keys: it was the last one clicked, and
+   *  the tab is on screen. */
+  active: boolean;
   onNewFolder?: () => void;
   onDeleteEntry?: (entry: PaneEntry) => void;
   emptyText: string;
@@ -105,27 +132,29 @@ export function FilePane({
   }, [entries]);
 
   // Click on a row, honoring Ctrl (toggle), Shift (range), or plain (single).
-  // Folders still open on a plain click; drives always just open.
+  // A plain click only ever selects, folders and drives included; opening one
+  // is a double-click or Enter, as in Explorer. That keeps a folder selectable
+  // on its own, which is what Rename (and a single-folder drag) needs.
   const onRowClick = (
     e: React.MouseEvent,
     index: number,
     entry: PaneEntry,
     isDrive: boolean,
   ) => {
+    // The drive list has nothing to multi-select: a drive can't be dragged,
+    // renamed or deleted, so a modifier just selects it like a plain click.
     if (isDrive) {
-      onNavigate(entry.path);
+      anchorRef.current = index;
+      setSelected(new Set([entry.path]));
       return;
     }
-    // Shift-click never opens a folder: it extends a range from the anchor, or
-    // (with no anchor yet) begins the selection right here so a folder can be
-    // the start of a range instead of being navigated into.
     if (e.shiftKey) {
       if (anchorRef.current >= 0) {
         const lo = Math.min(anchorRef.current, index);
         const hi = Math.max(anchorRef.current, index);
         const range = entries
           .slice(lo, hi + 1)
-          .filter((en) => !(side === "local" && /^[A-Za-z]:\\?$/.test(en.path)))
+          .filter((en) => !isDrivePath(side, en.path))
           .map((en) => en.path);
         setSelected(new Set(range));
       } else {
@@ -145,13 +174,66 @@ export function FilePane({
       return;
     }
     anchorRef.current = index;
-    if (entry.kind === "dir") {
-      setSelected(new Set());
-      onNavigate(entry.path);
-    } else {
-      setSelected(new Set([entry.path]));
-    }
+    setSelected(new Set([entry.path]));
   };
+
+  // What a double-click or Enter does to a row: open it if it is a folder or a
+  // drive. A file has nothing to open into, so it is left alone.
+  const openEntry = (entry: PaneEntry) => {
+    if (entry.kind === "dir") onNavigate(entry.path);
+  };
+
+  // The row a key press acts on: the only selected one. With several selected
+  // there is no single thing Enter should open, so it does nothing.
+  const soleSelected = (): PaneEntry | null => {
+    if (selected.size !== 1) return null;
+    const [path] = selected;
+    return entries.find((en) => en.path === path) ?? null;
+  };
+
+  // Moves the selection one row up or down, the way the arrow keys do in
+  // Explorer: a single selection that scrolls into view. With nothing selected
+  // yet, the first press lands on the first (or last) row.
+  const listRef = useRef<HTMLUListElement>(null);
+  const moveSelection = (step: 1 | -1) => {
+    if (entries.length === 0) return;
+    const from = anchorRef.current;
+    const to =
+      from < 0
+        ? step === 1
+          ? 0
+          : entries.length - 1
+        : Math.min(entries.length - 1, Math.max(0, from + step));
+    anchorRef.current = to;
+    setSelected(new Set([entries[to].path]));
+    listRef.current
+      ?.querySelector(`[data-row-index="${to}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  };
+
+  // Keys act on the pane last clicked, while the Commander is on screen:
+  // Backspace goes up, Enter opens the selected folder, the arrows move the
+  // selection. Not while typing in a field, with a button focused (Enter
+  // belongs to the button), or while a dialog or menu is open.
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      if (!["Backspace", "Enter", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+      if (keyBelongsElsewhere(e.key)) return;
+      e.preventDefault();
+      if (e.key === "Backspace") {
+        onUp();
+      } else if (e.key === "Enter") {
+        const entry = soleSelected();
+        if (entry) openEntry(entry);
+      } else {
+        moveSelection(e.key === "ArrowDown" ? 1 : -1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const readPayload = (e: React.DragEvent): DragPayload | null => {
     const raw = e.dataTransfer.getData(DND_MIME);
@@ -248,18 +330,24 @@ export function FilePane({
           </p>
         )}
         {/* select-none so Shift-click selects rows, not native text. */}
-        <ul className="divide-y divide-border/30 select-none">
+        <ul ref={listRef} className="divide-y divide-border/30 select-none">
           {entries.map((entry, index) => {
             const isDir = entry.kind === "dir";
             const isLink = entry.kind === "symlink";
-            const isDrive = side === "local" && /^[A-Za-z]:\\?$/.test(entry.path);
+            const isDrive = isDrivePath(side, entry.path);
             const isSelected = selected.has(entry.path);
             return (
               <li
                 key={entry.path}
                 // Files and folders both drag to the other pane; drives don't.
                 draggable={!isDrive}
+                data-row-index={index}
                 onClick={(e) => onRowClick(e, index, entry, isDrive)}
+                onDoubleClick={(e) => {
+                  // A modified double-click is two selection clicks, not "open".
+                  if (e.shiftKey || e.ctrlKey || e.metaKey) return;
+                  openEntry(entry);
+                }}
                 onDragStart={(e) => {
                   if (isDrive) {
                     e.preventDefault();
@@ -297,20 +385,20 @@ export function FilePane({
                 className={cn(
                   "flex items-center gap-3 px-3 py-1.5 text-sm",
                   isSelected ? "bg-primary/15" : "hover:bg-accent/40",
-                  !isDrive && "cursor-grab active:cursor-grabbing",
+                  isDrive ? "cursor-default" : "cursor-grab active:cursor-grabbing",
                 )}
                 title={
                   isDrive
-                    ? entry.name
+                    ? `${entry.name}: double-click to open`
                     : isDir
-                      ? `${entry.name}: open it, or drag to the other pane to transfer the folder`
+                      ? `${entry.name}: double-click to open, or drag to the other pane to transfer the folder`
                       : `${entry.name}: click to select, Ctrl/Shift-click for many, drag to transfer`
                 }
               >
                 <div
                   className={cn(
                     "flex min-w-0 flex-1 items-center gap-2 text-left",
-                    isDir ? "cursor-pointer" : "cursor-grab",
+                    isDrive ? "cursor-default" : "cursor-grab",
                   )}
                 >
                   {isDrive ? (
