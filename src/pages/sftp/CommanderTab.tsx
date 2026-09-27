@@ -41,6 +41,7 @@ import {
   FilePane,
 } from "@/pages/sftp/FilePane";
 import { RemoteConnectPane } from "@/pages/sftp/RemoteConnectPane";
+import { type RenameTarget, RenameDialog } from "@/pages/sftp/RenameDialog";
 import { TransferStack } from "@/pages/sftp/TransferRail";
 import { useLocalBrowser } from "@/pages/sftp/useLocalBrowser";
 import { type TransferBatch, useSftpBrowser } from "@/pages/sftp/useSftpBrowser";
@@ -72,8 +73,9 @@ const SPLIT_KEY = "sftp-split-pct";
  * SFTP Commander: a dual-pane file manager. Local filesystem on the left, the
  * connected remote host on the right. A click selects; a double-click or Enter
  * opens a folder. Transfer by **dragging to the other pane** (local→remote =
- * put, remote→local = get). Both panes support New folder and (double-click)
- * Delete: local deletes go to the Recycle Bin, remote deletes are permanent.
+ * put, remote→local = get). Both panes support New folder, Rename (F2 or the
+ * pencil) and (double-click) Delete: local deletes go to the Recycle Bin,
+ * remote deletes are permanent.
  */
 export function CommanderTab({
   visible,
@@ -92,6 +94,13 @@ export function CommanderTab({
     side: PaneSide;
     entry: PaneEntry;
   } | null>(null);
+  const [renaming, setRenaming] = useState<RenameTarget | null>(null);
+  // The row each pane should select once its re-list lands: the one just
+  // renamed, which has a new path and so would otherwise lose its highlight.
+  const [reselect, setReselect] = useState<{
+    local: { path: string } | null;
+    remote: { path: string } | null;
+  }>({ local: null, remote: null });
   // Large folders awaiting confirmation, asked about one at a time. A queue
   // rather than a single slot because one drag can carry several of them, and a
   // single slot means the second folder's dialog replaces the first's and the
@@ -316,6 +325,14 @@ export function CommanderTab({
     setDeleting(null);
   };
 
+  const renameEntry = async (target: RenameTarget, newName: string) => {
+    const path =
+      target.side === "local"
+        ? await local.rename(target.entry, newName)
+        : await remote.rename(target.entry, newName);
+    setReselect((prev) => ({ ...prev, [target.side]: { path } }));
+  };
+
   const newFolderCwd =
     newFolderSide === "local" ? local.cwd : remote.session?.cwd ?? null;
 
@@ -352,6 +369,12 @@ export function CommanderTab({
                 ? (entry) => setDeleting({ side: "local", entry })
                 : undefined
             }
+            onRenameEntry={
+              local.cwd !== null
+                ? (entry) => setRenaming({ side: "local", entry })
+                : undefined
+            }
+            reselect={reselect.local}
             emptyText="Empty folder."
           />
         </div>
@@ -397,6 +420,8 @@ export function CommanderTab({
               active={visible && activePane === "remote"}
               onNewFolder={() => setNewFolderSide("remote")}
               onDeleteEntry={(entry) => setDeleting({ side: "remote", entry })}
+              onRenameEntry={(entry) => setRenaming({ side: "remote", entry })}
+              reselect={reselect.remote}
               emptyText="Empty directory."
               headerRight={
                 <Button
@@ -472,6 +497,18 @@ export function CommanderTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Rename (both sides) */}
+      <RenameDialog
+        target={renaming}
+        whereLabel={
+          renaming?.side === "remote"
+            ? `on ${remote.session?.host.label ?? "the host"}`
+            : "on this PC"
+        }
+        onClose={() => setRenaming(null)}
+        onRename={renameEntry}
+      />
 
       {/* Delete confirmation (both sides) */}
       <AlertDialog

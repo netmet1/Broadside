@@ -8,6 +8,7 @@ import {
   HardDriveIcon,
   Loader2Icon,
   RefreshCwIcon,
+  PencilIcon,
   Trash2Icon,
 } from "lucide-react";
 
@@ -84,6 +85,8 @@ export function FilePane({
   active,
   onNewFolder,
   onDeleteEntry,
+  onRenameEntry,
+  reselect,
   emptyText,
   headerRight,
 }: {
@@ -104,6 +107,10 @@ export function FilePane({
   active: boolean;
   onNewFolder?: () => void;
   onDeleteEntry?: (entry: PaneEntry) => void;
+  onRenameEntry?: (entry: PaneEntry) => void;
+  /** A row to select once it is in the listing: the one just renamed. A new
+   *  object each time, so renaming the same path twice still selects it. */
+  reselect?: { path: string } | null;
   emptyText: string;
   headerRight?: ReactNode;
 }) {
@@ -127,9 +134,21 @@ export function FilePane({
     setPrevEntries(entries);
     setSelected(new Set());
   }
+  // The one exception: the row just renamed. It has a new path, so it arrives
+  // after the re-list that cleared the selection, and is selected again so it
+  // stays where the operator's eye (and the arrow keys) left it.
+  const [prevReselect, setPrevReselect] = useState(reselect);
+  if (prevReselect !== reselect) {
+    setPrevReselect(reselect);
+    if (reselect && entries.some((en) => en.path === reselect.path)) {
+      setSelected(new Set([reselect.path]));
+    }
+  }
   useLayoutEffect(() => {
-    anchorRef.current = -1;
-  }, [entries]);
+    anchorRef.current = reselect
+      ? entries.findIndex((en) => en.path === reselect.path)
+      : -1;
+  }, [entries, reselect]);
 
   // Click on a row, honoring Ctrl (toggle), Shift (range), or plain (single).
   // A plain click only ever selects, folders and drives included; opening one
@@ -212,14 +231,15 @@ export function FilePane({
   };
 
   // Keys act on the pane last clicked, while the Commander is on screen:
-  // Backspace goes up, Enter opens the selected folder, the arrows move the
-  // selection. Not while typing in a field, with a button focused (Enter
-  // belongs to the button), or while a dialog or menu is open.
+  // Backspace goes up, Enter opens the selected folder, F2 renames the selected
+  // entry, the arrows move the selection. Not while typing in a field, with a
+  // button focused (Enter belongs to the button), or while a dialog or menu is
+  // open.
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (!["Backspace", "Enter", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+      if (!["Backspace", "Enter", "F2", "ArrowUp", "ArrowDown"].includes(e.key)) return;
       if (keyBelongsElsewhere(e.key)) return;
       e.preventDefault();
       if (e.key === "Backspace") {
@@ -227,6 +247,11 @@ export function FilePane({
       } else if (e.key === "Enter") {
         const entry = soleSelected();
         if (entry) openEntry(entry);
+      } else if (e.key === "F2") {
+        const entry = soleSelected();
+        if (entry && onRenameEntry && !busy && !isDrivePath(side, entry.path)) {
+          onRenameEntry(entry);
+        }
       } else {
         moveSelection(e.key === "ArrowDown" ? 1 : -1);
       }
@@ -418,7 +443,25 @@ export function FilePane({
                 <span className="hidden w-32 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground lg:inline">
                   {formatMtime(entry.mtime)}
                 </span>
-                <span className="flex w-8 shrink-0 items-center justify-end">
+                <span className="flex w-16 shrink-0 items-center justify-end">
+                  {onRenameEntry && !isDrive && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      // Keep the click off the row, and a quick second click
+                      // from reading as a double-click that opens a folder.
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRenameEntry(entry);
+                      }}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      disabled={busy}
+                      aria-label={`Rename ${entry.name}`}
+                      title="Rename (F2)"
+                    >
+                      <PencilIcon />
+                    </Button>
+                  )}
                   {onDeleteEntry && !isDrive && (
                     <Button
                       variant="ghost"
