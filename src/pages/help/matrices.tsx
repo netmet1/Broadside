@@ -226,6 +226,35 @@ const SHORTCUTS: ShortcutGroup[] = [
         where: "File list",
         what: "Select everything between the last click and this one.",
       },
+      {
+        keys: <Kbd>Double-click</Kbd>,
+        where: "File list",
+        what: "Open a folder or drive. A single click only selects it.",
+      },
+      {
+        keys: <Kbd>Enter</Kbd>,
+        where: "File list",
+        what: "Open the selected folder.",
+      },
+      {
+        keys: <Kbd>Backspace</Kbd>,
+        where: "File list",
+        what: "Go up one folder.",
+      },
+      {
+        keys: (
+          <>
+            <Kbd>Up</Kbd> / <Kbd>Down</Kbd>
+          </>
+        ),
+        where: "File list",
+        what: "Move the selection one row.",
+      },
+      {
+        keys: <Kbd>F2</Kbd>,
+        where: "File list",
+        what: "Rename the selected file or folder.",
+      },
     ],
   },
   {
