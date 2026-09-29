@@ -145,9 +145,17 @@ export type TransferOutcome = {
 /** Why the clash mode left files alone, for a summary where that is all that
  *  happened. The mode's own name goes in brackets, so the fix is findable. */
 function skipReason(mode: TransferMode, many: boolean): string {
-  return mode === "newer_only"
-    ? `${many ? "none is" : "not"} newer than the copy there (Newer only)`
-    : `${many ? "all" : "it is"} already there (Skip existing)`;
+  if (mode === "newer_only") {
+    return many
+      ? "none newer than the copies there (Newer only)"
+      : "not newer than the copy there (Newer only)";
+  }
+  return many ? "all already there (Skip existing)" : "it is already there (Skip existing)";
+}
+
+/** "1 file", "3 files". Skips made a drop of one transferred file possible. */
+function fileCount(n: number): string {
+  return n === 1 ? "1 file" : `${n} files`;
 }
 
 /**
@@ -171,21 +179,21 @@ export function transferSummary(
   const files = done.reduce((n, o) => n + o.files, 0);
   const bytes = done.reduce((n, o) => n + o.bytes, 0);
   if (files === 0 && skipped > 0) {
-    return skipped === 1 && done.length === 1 && !done[0].isDir
-      ? `Skipped ${done[0].name}: ${skipReason(mode, false)}`
+    return skipped === 1
+      ? `Skipped ${done.length === 1 && !done[0].isDir ? done[0].name : "1 file"}: ${skipReason(mode, false)}`
       : `Skipped ${skipped} files: ${skipReason(mode, true)}`;
   }
   const skip = skipped > 0 ? `, ${skipped} skipped` : "";
   if (done.length === 1) {
     const o = done[0];
     return o.isDir
-      ? `${verb} folder ${o.name} (${o.files} files, ${formatSize(o.bytes)}${skip})`
+      ? `${verb} folder ${o.name} (${fileCount(o.files)}, ${formatSize(o.bytes)}${skip})`
       : `${verb} ${o.name} (${formatSize(o.bytes)})`;
   }
   if (done.every((o) => !o.isDir)) {
-    return `${verb} ${files} files (${formatSize(bytes)}${skip})`;
+    return `${verb} ${fileCount(files)} (${formatSize(bytes)}${skip})`;
   }
-  return `${verb} ${done.length} items (${files} files, ${formatSize(bytes)}${skip})`;
+  return `${verb} ${done.length} items (${fileCount(files)}, ${formatSize(bytes)}${skip})`;
 }
 
 /** The toast for a folder transfer stopped part-way. It says what was kept,
