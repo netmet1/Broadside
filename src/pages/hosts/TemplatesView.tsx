@@ -1,4 +1,4 @@
-import { PencilIcon, Trash2Icon } from "lucide-react";
+import { CopyIcon, PencilIcon, Trash2Icon } from "lucide-react";
 
 import {
   Table,
@@ -42,6 +42,7 @@ export function TemplatesView({
   selectedId,
   onSelect,
   onEdit,
+  onDuplicate,
   onDelete,
 }: {
   templates: Template[];
@@ -49,6 +50,7 @@ export function TemplatesView({
   selectedId: number | null;
   onSelect: (id: number) => void;
   onEdit: (t: Template) => void;
+  onDuplicate: (t: Template) => void;
   onDelete: (t: Template) => void;
 }) {
   const hint = useHint();
@@ -62,7 +64,7 @@ export function TemplatesView({
             <TableHead>Name</TableHead>
             <TableHead className="w-24 text-right">Sessions</TableHead>
             <TableHead className="w-48">Startup</TableHead>
-            <TableHead className="w-28 text-right">Actions</TableHead>
+            <TableHead className="w-32 text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -129,6 +131,20 @@ export function TemplatesView({
                         {...hint("Open this template on the Templates tab")}
                       >
                         <PencilIcon className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDuplicate(t);
+                        }}
+                        aria-label={`Duplicate ${t.name}`}
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        {...hint(
+                          "Save a copy of this template under the next free number, then change the copy with the pencil. The copy does not open at startup.",
+                        )}
+                      >
+                        <CopyIcon className="h-4 w-4" />
                       </button>
                       <button
                         type="button"

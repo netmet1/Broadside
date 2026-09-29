@@ -558,7 +558,7 @@ export const SECTIONS: HelpSection[] = [
     id: HELP_TEMPLATES,
     title: "Templates",
     keywords:
-      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup radio button pick one open button add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list hosts tab toggle switch between hosts and templates nothing launches from the templates tab why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group grid settings popover change columns without leaving the page drag a session here strip band at the bottom duplicate name same name twice numbered 02 03 renamed automatically two templates called the same thing show all templates recent five import from the splash screen closed editor deleted somewhere else deleted while open create it again discard greyed button no tooltip why is the button grey status bar hint on a disabled button",
+      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup radio button pick one open button add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list hosts tab toggle switch between hosts and templates nothing launches from the templates tab why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group grid settings popover change columns without leaving the page drag a session here strip band at the bottom duplicate name same name twice numbered 02 03 renamed automatically duplicate a template copy a template clone save as rename instead of copy make a variant swap sessions two templates called the same thing show all templates recent five import from the splash screen closed editor deleted somewhere else deleted while open create it again discard greyed button no tooltip why is the button grey status bar hint on a disabled button",
     body: (
       <>
         <Lead>
@@ -616,6 +616,13 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Two templates cannot share a name. Save a second &ldquo;Morning
               check&rdquo; and it is stored as <Nav>Morning check 02</Nav>.
+            </li>
+            <li>
+              Changing the name of a saved template and pressing{" "}
+              <Nav>Save</Nav> renames it; it does not make a copy. To copy one,
+              use the <Nav>Duplicate</Nav> button on its row in the Hosts tab's
+              Templates list. The copy is numbered like a clashing name, is
+              selected in the list, and never opens at startup.
             </li>
             <li>
               Closing the editor with the <Nav>x</Nav> shows{" "}
