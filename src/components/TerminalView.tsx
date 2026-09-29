@@ -37,35 +37,38 @@ import {
   shellWarningDismissed,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
-import { copyTerminalSelection } from "@/lib/terminalClipboard";
+import { copyTerminalSelection, pasteBytes } from "@/lib/terminalClipboard";
 import { useReachability } from "@/lib/useReachability";
 import { useHint } from "@/lib/status";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
 
-/** Read the clipboard and send it to `sessionId` as if it had been typed, then
- * flash a short confirmation. Both paste routes (a right-click with nothing
- * selected, and Ctrl+Shift+V) go through here so they say the same thing. A
- * paste into a live shell is consequential (a trailing newline runs what went
- * in) and right-click is easy to press by accident, so the toast reports the
- * line count when there is more than one line: that is the case where the
- * clipboard held more than you thought and several commands just ran.
+/** Read the clipboard and paste it into `sessionId` (see `pasteBytes` for what
+ * goes over the wire), then flash a short confirmation. Both paste routes (a
+ * right-click with nothing selected, and Ctrl+Shift+V) go through here so they
+ * say the same thing. A paste into a live shell is consequential (a trailing
+ * newline runs what went in) and right-click is easy to press by accident, so
+ * the toast reports the line count when there is more than one line: that is
+ * the case where the clipboard held more than you thought.
  * Nothing is said when the clipboard is empty or unreadable, or when the
- * session is gone and the text went nowhere. */
-function pasteToSession(sessionId: string) {
+ * session is gone and the text went nowhere. That is why this writes to the PTY
+ * itself rather than calling `term.paste()`, which reports nothing back. */
+function pasteToSession(term: Terminal, sessionId: string) {
   navigator.clipboard
     ?.readText()
     .then((text) => {
       if (!text) return;
-      const lines = text.replace(/\r?\n$/, "").split("\n").length;
-      ptyWrite(sessionId, text)
-        .then(() =>
+      const lines = text.replace(/\r?\n$/, "").split(/\r?\n/).length;
+      ptyWrite(sessionId, pasteBytes(text, term.modes.bracketedPasteMode))
+        .then(() => {
+          // As typing does: a paste made while scrolled back lands in view.
+          term.scrollToBottom();
           toast.success(
             lines > 1 ? `Pasted ${lines} lines from clipboard` : "Pasted from clipboard",
             { duration: 1200 },
-          ),
-        )
+          );
+        })
         .catch(() => {});
     })
     .catch(() => {
@@ -602,7 +605,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       }
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) {
         e.preventDefault();
-        pasteToSession(sessionId);
+        pasteToSession(term, sessionId);
         return false;
       }
       // Alt+Left/Right switch terminal tabs even while the terminal is focused.
@@ -767,7 +770,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const onContextMenu = (e: MouseEvent) => {
       e.preventDefault();
       if (copyTerminalSelection(term)) return;
-      pasteToSession(sessionId);
+      pasteToSession(term, sessionId);
     };
     const contextMenuEl = containerRef.current;
     contextMenuEl?.addEventListener("contextmenu", onContextMenu);
