@@ -63,6 +63,16 @@ export function sftpDelete(
   return invoke<void>("sftp_delete", { sessionId, path, isDir });
 }
 
+/** Renames a remote file/folder in its own folder; resolves with the new path.
+ *  Never replaces an existing entry. */
+export function sftpRename(
+  sessionId: string,
+  path: string,
+  newName: string,
+): Promise<string> {
+  return invoke<string>("sftp_rename", { sessionId, path, newName });
+}
+
 /** What a single-file transfer did. `cancelled` means it was stopped part-way
  *  and the part-written destination has already been removed, so the bytes it
  *  reports crossed the wire but none of them were kept. */

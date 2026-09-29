@@ -9,6 +9,7 @@ import {
   type TransferMode,
   sftpConnect,
   sftpDelete,
+  sftpRename,
   sftpDisconnect,
   sftpDownload,
   sftpDownloadDir,
@@ -762,6 +763,27 @@ export function useSftpBrowser(visible: boolean) {
     [session, runOp, list],
   );
 
+  /**
+   * Renames a remote entry in the folder on show and re-lists it. Resolves with
+   * the new path; a failure is thrown back to the caller (the rename dialog),
+   * which keeps itself open to show why, rather than toasted here.
+   */
+  const rename = useCallback(
+    async (entry: { path: string; name: string }, newName: string) => {
+      if (!session) throw new Error("Not connected");
+      setOpBusy(true);
+      try {
+        const path = await sftpRename(session.sessionId, entry.path, newName);
+        toast.success(`Renamed ${entry.name} to ${newName}`);
+        await list(session.sessionId, session.cwd);
+        return path;
+      } finally {
+        setOpBusy(false);
+      }
+    },
+    [session, list],
+  );
+
   return {
     hosts,
     session,
@@ -788,6 +810,7 @@ export function useSftpBrowser(visible: boolean) {
     downloadDir,
     cancelTransfer,
     remove,
+    rename,
     // Trust dialogs
     tofu,
     setTofu,

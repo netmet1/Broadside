@@ -169,6 +169,17 @@ pub async fn sftp_delete(
     sftp::remove(&sftp_state, &session_id, &path, is_dir).await
 }
 
+/// Renames a remote file or folder in its own folder; resolves with the new path.
+#[tauri::command]
+pub async fn sftp_rename(
+    session_id: String,
+    path: String,
+    new_name: String,
+    sftp_state: State<'_, SftpState>,
+) -> AppResult<String> {
+    sftp::rename(&sftp_state, &session_id, &path, &new_name).await
+}
+
 /// Uploads a local file to the remote path and audits the transfer. When a
 /// `transfer_id` is given, emits `sftp:transfer_progress` (keyed by it) as the
 /// file streams, so the broadcast tab can show a live byte progress bar.

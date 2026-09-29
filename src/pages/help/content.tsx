@@ -1801,7 +1801,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files rename f2 pencil double click open enter backspace up arrow keys single click select",
     body: (
       <>
         <Lead>
@@ -1816,12 +1816,13 @@ export const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               A two-pane view: your PC on the left, the remote host on the right.
-              Open folders to navigate, or type a path in the path bar.
+              Click an item to select it; double-click a folder, or press{" "}
+              <Nav>Enter</Nav>, to open it. <Nav>Backspace</Nav> goes up a folder
+              and the arrow keys move the selection.
             </li>
             <li>
-              Transfer by dragging an item from one side to the other, or with the
-              transfer buttons. Folders copy recursively, with a progress bar and a
-              running byte count.
+              Transfer by dragging an item from one side to the other. Folders copy
+              recursively, with a progress bar and a running byte count.
             </li>
             <li>
               Select several items as in Windows Explorer (<Nav>Ctrl+click</Nav>{" "}
@@ -1853,10 +1854,16 @@ export const SECTIONS: HelpSection[] = [
               is barely faster.
             </li>
             <li>
-              You can make a new folder on either side and delete items. Local
-              deletes go to the Windows <Nav>Recycle Bin</Nav> so they are
-              recoverable. A remote folder must be empty before it can be
+              You can make a new folder on either side, and rename or delete
+              items. Local deletes go to the Windows <Nav>Recycle Bin</Nav> so
+              they are recoverable. A remote folder must be empty before it can be
               deleted.
+            </li>
+            <li>
+              Rename with the pencil on a row, or select it and press{" "}
+              <Nav>F2</Nav>. A rename never replaces an item that already has the
+              new name. On the host side, rename and delete are unavailable while
+              a transfer is running.
             </li>
           </Bullets>
           <H3>Broadcast (many hosts)</H3>

@@ -339,6 +339,62 @@ pub async fn remove(
     }
 }
 
+/// Renames a remote file or folder where it stands and returns its new path.
+///
+/// As with the local rename, `new_name` is a bare name, so a rename can only
+/// change the name and never moves anything to another folder. An existing
+/// entry of that name is refused rather than replaced: servers differ on
+/// whether an SFTP rename overwrites, and a rename should never be the thing
+/// that throws a file away.
+pub async fn rename(
+    state: &SftpState,
+    session_id: &str,
+    path: &str,
+    new_name: &str,
+) -> AppResult<String> {
+    let target = remote_rename_target(path, new_name)?;
+    if target == path {
+        return Ok(target);
+    }
+    let conn = state.get(session_id)?;
+    if conn.sftp.symlink_metadata(target.clone()).await.is_ok() {
+        return Err(AppError::Ssh(format!("{new_name} already exists here")));
+    }
+    conn.sftp
+        .rename(path.to_string(), target.clone())
+        .await
+        .map_err(|e| AppError::Ssh(format!("sftp rename {path}: {e}")))?;
+    Ok(target)
+}
+
+/// Where a remote rename of `path` to `new_name` lands: the same folder, the
+/// new name. Refuses a name that is a path (a `/`), a `.` or `..`, or one with
+/// a NUL in it, and refuses to rename the root.
+fn remote_rename_target(path: &str, new_name: &str) -> AppResult<String> {
+    let bad_name = new_name.is_empty()
+        || new_name == "."
+        || new_name == ".."
+        || new_name.contains('/')
+        || new_name.contains('\0');
+    if bad_name {
+        return Err(AppError::InvalidInput(format!(
+            "{new_name:?} can't be used as a name"
+        )));
+    }
+    let trimmed = path.trim_end_matches('/');
+    match trimmed.rsplit_once('/') {
+        Some((parent, old)) if !old.is_empty() => {
+            let parent = if parent.is_empty() { "/" } else { parent };
+            Ok(if parent.ends_with('/') {
+                format!("{parent}{new_name}")
+            } else {
+                format!("{parent}/{new_name}")
+            })
+        }
+        _ => Err(AppError::InvalidInput(format!("{path} can't be renamed"))),
+    }
+}
+
 /// Chunk size for streamed transfers. Streaming (rather than buffering the whole
 /// file in RAM) keeps memory flat however many transfers are in flight, and lets
 /// us report byte progress as we go.
@@ -1079,6 +1135,35 @@ mod tests {
         assert!(root.exists(), "root still holds a folder with a file in it");
         assert!(base.exists(), "the drop folder was never ours to remove");
         fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_remote_rename_stays_in_its_folder() {
+        assert_eq!(
+            remote_rename_target("/home/me/old.txt", "new.txt").unwrap(),
+            "/home/me/new.txt"
+        );
+        assert_eq!(remote_rename_target("/top", "renamed").unwrap(), "/renamed");
+        assert_eq!(
+            remote_rename_target("/home/me/dir/", "d2").unwrap(),
+            "/home/me/d2"
+        );
+        // Backslashes are ordinary characters in a POSIX name.
+        assert_eq!(
+            remote_rename_target("/srv/a", r"back\slash").unwrap(),
+            r"/srv/back\slash"
+        );
+    }
+
+    #[test]
+    fn a_remote_rename_refuses_paths_and_the_root() {
+        for bad in ["", ".", "..", "../evil", "sub/evil", "/etc/passwd", "nul\0"] {
+            assert!(
+                remote_rename_target("/home/me/old.txt", bad).is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+        assert!(remote_rename_target("/", "x").is_err());
     }
 
     #[test]

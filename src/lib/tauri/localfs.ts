@@ -33,6 +33,12 @@ export function localDelete(path: string): Promise<void> {
   return invoke<void>("local_delete", { path });
 }
 
+/** Renames a local file/folder in its own folder; resolves with the new path.
+ *  Refuses a name Windows won't take, and never replaces an existing entry. */
+export function localRename(path: string, newName: string): Promise<string> {
+  return invoke<string>("local_rename", { path, newName });
+}
+
 /** Recursively counts files + bytes under a local directory (pre-flight). */
 export function localScanDir(path: string): Promise<TransferStats> {
   return invoke<TransferStats>("local_scan_dir", { path });

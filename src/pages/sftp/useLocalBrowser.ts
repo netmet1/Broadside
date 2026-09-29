@@ -9,6 +9,7 @@ import {
   localListDir,
   localListDrives,
   localMkdir,
+  localRename,
 } from "@/lib/tauri/localfs";
 import { winDirname, winJoin } from "@/pages/sftp/model";
 
@@ -21,7 +22,7 @@ export function useLocalBrowser(visible: boolean) {
   const [cwd, setCwd] = useState<string | null>(null);
   const [entries, setEntries] = useState<LocalEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState(false); // mkdir / delete in flight
+  const [busy, setBusy] = useState(false); // mkdir / delete / rename in flight
   const started = useRef(false);
 
   const listDir = useCallback(async (path: string) => {
@@ -111,5 +112,37 @@ export function useLocalBrowser(visible: boolean) {
     [cwd, listDir],
   );
 
-  return { cwd, entries, loading, busy, navigate, goUp, refresh, mkdir, remove };
+  /**
+   * Renames an entry in the folder on show and re-lists it. Resolves with the
+   * new path; a failure is thrown back to the caller (the rename dialog), which
+   * keeps itself open to show why, rather than toasted here.
+   */
+  const rename = useCallback(
+    async (entry: { path: string; name: string }, newName: string) => {
+      if (cwd === null) throw new Error("Open a folder first");
+      setBusy(true);
+      try {
+        const path = await localRename(entry.path, newName);
+        toast.success(`Renamed ${entry.name} to ${newName}`);
+        await listDir(cwd);
+        return path;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [cwd, listDir],
+  );
+
+  return {
+    cwd,
+    entries,
+    loading,
+    busy,
+    navigate,
+    goUp,
+    refresh,
+    mkdir,
+    remove,
+    rename,
+  };
 }

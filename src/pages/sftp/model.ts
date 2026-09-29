@@ -184,3 +184,30 @@ export function folderCancelText(
   const n = stats.files === 1 ? "1 finished file" : `${stats.files} finished files`;
   return `${what} cancelled: ${name}. Kept ${n} (${formatSize(stats.bytes)}).`;
 }
+
+/**
+ * Why a name can't be used, or null when it can. The local side follows
+ * Windows' rules, the remote side only POSIX's (a `/` or a NUL). The backend
+ * checks the same things; this is here so the rename dialog can say so while
+ * the name is being typed instead of after it was sent.
+ */
+export function nameProblem(side: "local" | "remote", name: string): string | null {
+  if (name === "") return "A name can't be empty.";
+  if (name === "." || name === "..") return `${name} is not a name a file can have.`;
+  if (side === "remote") {
+    if (name.includes("/")) return "A name can't contain /.";
+    if (name.includes("\0")) return "A name can't contain a NUL character.";
+    return null;
+  }
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what Windows refuses
+  if (/[<>:"/\\|?*\x00-\x1f]/.test(name)) {
+    return 'A name can\'t contain any of \\ / : * ? " < > |';
+  }
+  if (/[ .]$/.test(name)) return "A name can't end with a space or a dot.";
+  if ([...name].length > 255) return "That name is longer than Windows allows.";
+  const stem = name.split(".")[0].trimEnd().toUpperCase();
+  if (/^(CON|PRN|AUX|NUL|COM\d|LPT\d)$/.test(stem)) {
+    return `${stem} is a name Windows keeps for itself.`;
+  }
+  return null;
+}
