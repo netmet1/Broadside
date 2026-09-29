@@ -6,6 +6,7 @@ import type { UnknownKeyEntry } from "@/components/BatchTofuDialog";
 import { type Host, errorMessage, listHosts } from "@/lib/tauri/hosts";
 import { localListDir, localMkdir, localScanDir } from "@/lib/tauri/localfs";
 import {
+  type FileTransfer,
   type TransferMode,
   onSftpTransferProgress,
   sftpConnect,
@@ -88,6 +89,26 @@ function newXfer(hostId: number): HostXfer {
     bytesDone: 0,
     bytesTotal: 0,
     message: null,
+  };
+}
+
+/** A host's row once its single file is done: the size written, or that the
+ *  clash mode left the destination alone and why. A skip zeroes the byte total
+ *  so the bar reads full: the host is finished, there was simply nothing to
+ *  send. */
+function singleFileDone(r: FileTransfer, mode: TransferMode): Partial<HostXfer> {
+  if (!r.skipped) {
+    return { status: "ok", filesDone: 1, bytesDone: r.bytes, message: `${r.bytes} bytes` };
+  }
+  return {
+    status: "ok",
+    filesDone: 1,
+    bytesDone: 0,
+    bytesTotal: 0,
+    message:
+      mode === "newer_only"
+        ? "skipped: not newer than the copy there"
+        : "skipped: already there",
   };
 }
 
@@ -298,15 +319,16 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
         const size = await localFileSize(cfg.localPath);
         patch(host.id, { status: "running", filesTotal: 1, bytesTotal: size });
         // A broadcast run has no cancel of its own, so `cancelled` is never set
-        // here; only the bytes matter.
-        const { bytes } = await sftpUpload({
+        // here; only the bytes, and whether the clash mode skipped it, matter.
+        const r = await sftpUpload({
           hostId: host.id,
           sessionId,
           localPath: cfg.localPath,
           remotePath: remoteTarget,
           transferId,
+          mode: cfg.mode,
         });
-        patch(host.id, { status: "ok", filesDone: 1, bytesDone: bytes, message: `${bytes} bytes` });
+        patch(host.id, singleFileDone(r, cfg.mode));
       }
     },
     [patch, localFileSize],
@@ -352,8 +374,12 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
           0,
         );
         patch(host.id, { status: "running", filesTotal: matches.length, bytesTotal });
+        // `filesDone` drives the bar (matches dealt with); the message counts
+        // files actually written and the ones the clash mode left alone.
         let filesDone = 0;
         let bytesDone = 0;
+        let written = 0;
+        let skipped = 0;
         for (const e of matches) {
           const remoteItem = posixJoin(dir, e.name);
           const localTarget = winJoin(destFolder, e.name);
@@ -372,15 +398,20 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
               mode: cfg.mode,
             });
             bytesDone += stats.bytes;
+            written += stats.files;
+            skipped += stats.skipped;
           } else {
-            const { bytes } = await sftpDownload({
+            const r = await sftpDownload({
               hostId: host.id,
               sessionId,
               remotePath: remoteItem,
               localPath: localTarget,
               transferId,
+              mode: cfg.mode,
             });
-            bytesDone += bytes;
+            bytesDone += r.bytes;
+            if (r.skipped) skipped += 1;
+            else written += 1;
           }
           filesDone += 1;
           patch(host.id, { filesDone, bytesDone });
@@ -389,7 +420,9 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
           status: "ok",
           filesDone,
           bytesDone,
-          message: `${filesDone} file${filesDone === 1 ? "" : "s"}, ${bytesDone} bytes`,
+          message:
+            `${written} file${written === 1 ? "" : "s"}, ${bytesDone} bytes` +
+            (skipped ? `, ${skipped} skipped` : ""),
         });
         return;
       }
@@ -432,14 +465,15 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
         });
       } else {
         patch(host.id, { status: "running", filesTotal: 1, bytesTotal: entry.size ?? 0 });
-        const { bytes } = await sftpDownload({
+        const r = await sftpDownload({
           hostId: host.id,
           sessionId,
           remotePath: src,
           localPath: localTarget,
           transferId,
+          mode: cfg.mode,
         });
-        patch(host.id, { status: "ok", filesDone: 1, bytesDone: bytes, message: `${bytes} bytes` });
+        patch(host.id, singleFileDone(r, cfg.mode));
       }
     },
     [patch],

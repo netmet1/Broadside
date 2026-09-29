@@ -162,18 +162,18 @@ export function CommanderTab({
   const queueDirTransfer = useCallback(
     (req: DirRequest, totals: { files: number; bytes: number }) => {
       if (req.direction === "put") {
-        remote.uploadDir(req.path, mode, totals, req.batch);
+        remote.uploadDir(req.path, req.batch.mode, totals, req.batch);
       } else {
         remote.downloadDir(
           { path: req.path, name: req.name },
           req.localDest,
-          mode,
+          req.batch.mode,
           totals,
           req.batch,
         );
       }
     },
-    [remote, mode],
+    [remote],
   );
 
   // Folder transfer: scan first (a row in the rail, with its own Cancel), then
@@ -237,7 +237,7 @@ export function CommanderTab({
         return;
       }
       // One drop, one success toast once everything in it has settled.
-      const batch = remote.beginBatch(direction, payload.items.length);
+      const batch = remote.beginBatch(direction, payload.items.length, mode);
       for (const item of payload.items) {
         if (item.kind === "dir") continue;
         if (direction === "put") {
@@ -263,7 +263,7 @@ export function CommanderTab({
         });
       }
     },
-    [handleDirDrop, remote, local],
+    [handleDirDrop, remote, local, mode],
   );
 
   // The local listing is re-read a moment after a download lands in it (the
@@ -587,7 +587,7 @@ export function CommanderTab({
                   on this PC
                 </>
               )}
-              . {clashText(mode)} Continue?
+              . {clashText(pendingDir?.batch.mode ?? mode)} Continue?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

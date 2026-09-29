@@ -63,9 +63,14 @@ export type ActiveTransfer = {
  * cancelled, was dropped from the queue, or never got past its scan or its
  * Large-transfer dialog. `closed` means the summary has gone out (or the
  * session went away), after which late settles are ignored.
+ *
+ * `mode` is the clash mode as it stood when the drop was made. Every file in
+ * the drop goes by it, even one that waits in the queue while the selector is
+ * changed, since what was chosen at the drop is what the operator meant.
  */
 export type TransferBatch = {
   direction: "put" | "get";
+  mode: TransferMode;
   pending: number;
   done: TransferOutcome[];
   closed: boolean;
@@ -162,15 +167,16 @@ export function useSftpBrowser(visible: boolean) {
     if (batch.closed) return;
     batch.closed = true;
     batchesRef.current.delete(batch);
-    const text = transferSummary(batch.direction, batch.done);
+    const text = transferSummary(batch.direction, batch.done, batch.mode);
     if (text) toast.success(text);
   }, []);
 
   /** Starts a drop of `count` items. */
   const beginBatch = useCallback(
-    (direction: "put" | "get", count: number): TransferBatch => {
+    (direction: "put" | "get", count: number, mode: TransferMode): TransferBatch => {
       const batch: TransferBatch = {
         direction,
+        mode,
         pending: count,
         done: [],
         closed: false,
@@ -544,6 +550,7 @@ export function useSftpBrowser(visible: boolean) {
             localPath,
             remotePath,
             transferId,
+            mode: batch.mode,
           });
           // No byte count on a cancel: the part-written file has been removed,
           // so those bytes crossed the wire and then went nowhere, and a number
@@ -552,7 +559,9 @@ export function useSftpBrowser(visible: boolean) {
             toast.warning(`Upload cancelled: ${name} (partial file removed)`);
             return null;
           }
-          return { name, isDir: false, files: 1, bytes: r.bytes, skipped: 0 };
+          return r.skipped
+            ? { name, isDir: false, files: 0, bytes: 0, skipped: 1 }
+            : { name, isDir: false, files: 1, bytes: r.bytes, skipped: 0 };
         },
       );
     },
@@ -588,6 +597,7 @@ export function useSftpBrowser(visible: boolean) {
             remotePath: entry.path,
             localPath,
             transferId,
+            mode: batch.mode,
           });
           if (r.cancelled) {
             toast.warning(
@@ -598,9 +608,9 @@ export function useSftpBrowser(visible: boolean) {
           return {
             name: entry.name,
             isDir: false,
-            files: 1,
+            files: r.skipped ? 0 : 1,
             bytes: r.bytes,
-            skipped: 0,
+            skipped: r.skipped ? 1 : 0,
           };
         },
       );

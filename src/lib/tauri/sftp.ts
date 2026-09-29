@@ -75,8 +75,13 @@ export function sftpRename(
 
 /** What a single-file transfer did. `cancelled` means it was stopped part-way
  *  and the part-written destination has already been removed, so the bytes it
- *  reports crossed the wire but none of them were kept. */
-export type FileTransfer = { bytes: number; cancelled: boolean };
+ *  reports crossed the wire but none of them were kept. `skipped` means the
+ *  clash mode left the destination as it was: nothing was sent. */
+export type FileTransfer = {
+  bytes: number;
+  cancelled: boolean;
+  skipped: boolean;
+};
 
 /** Uploads a local file to a remote path. When `transferId` is given, emits
  *  `sftp:transfer_progress` (keyed by it) as the file streams, for a live byte
@@ -87,6 +92,7 @@ export function sftpUpload(args: {
   localPath: string;
   remotePath: string;
   transferId?: string;
+  mode: TransferMode;
 }): Promise<FileTransfer> {
   return invoke<FileTransfer>("sftp_upload", {
     hostId: args.hostId,
@@ -94,6 +100,7 @@ export function sftpUpload(args: {
     localPath: args.localPath,
     remotePath: args.remotePath,
     transferId: args.transferId ?? null,
+    mode: args.mode,
   });
 }
 
@@ -106,6 +113,7 @@ export function sftpDownload(args: {
   remotePath: string;
   localPath: string;
   transferId?: string;
+  mode: TransferMode;
 }): Promise<FileTransfer> {
   return invoke<FileTransfer>("sftp_download", {
     hostId: args.hostId,
@@ -113,6 +121,7 @@ export function sftpDownload(args: {
     remotePath: args.remotePath,
     localPath: args.localPath,
     transferId: args.transferId ?? null,
+    mode: args.mode,
   });
 }
 
@@ -142,7 +151,8 @@ export type TransferStats = {
   cancelled: boolean;
 };
 
-/** What a folder transfer does when a file already exists at the destination. */
+/** What a transfer does when a file already exists at the destination: a
+ *  single file, and every file in a folder, by the same rule. */
 export type TransferMode = "overwrite_all" | "newer_only" | "skip_existing";
 
 /** Recursively counts files + bytes under a remote directory (pre-flight).

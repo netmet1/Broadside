@@ -1801,7 +1801,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files rename f2 pencil double click open enter backspace up arrow keys single click select",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files rename f2 pencil double click open enter backspace up arrow keys single click select skipped single file still uploaded overwrote anyway skip existing ignored slow even though it exists already there not newer",
     body: (
       <>
         <Lead>
@@ -1848,6 +1848,9 @@ export const SECTIONS: HelpSection[] = [
               one that was part-way through, along with any folder it left empty. A
               failed transfer does the same. A file that was being overwritten is
               not restored: cancelling leaves neither the old copy nor the new one.
+              To keep files that are already there, set{" "}
+              <Nav>When a file already exists</Nav> to <Nav>Skip existing</Nav>{" "}
+              before you drag.
             </li>
             <li>
               Several at once helps most on a distant host; on your own network it
@@ -1908,9 +1911,10 @@ export const SECTIONS: HelpSection[] = [
             The selector on the tab row applies to <em>both</em> tabs:{" "}
             <Nav>Overwrite all</Nav> always replaces, <Nav>Newer only</Nav>{" "}
             replaces only when the source is newer, and <Nav>Skip existing</Nav>{" "}
-            leaves same-named files untouched. It applies to folder transfers
-            (a single file always overwrites) and is remembered across
-            restarts.
+            leaves same-named files untouched. It applies to every transfer, a
+            single file as well as each file in a folder, and is remembered
+            across restarts. A file it leaves alone is not sent at all, and the
+            summary message says it was skipped.
           </p>
         </Detail>
       </>

@@ -57,8 +57,15 @@ pub struct TransferStats {
     pub cancelled: bool,
 }
 
-/// What a recursive transfer does when a file already exists at the destination.
-#[derive(Debug, Clone, Copy, Deserialize)]
+/// What a transfer does when a file already exists at the destination: a single
+/// file, and every file inside a folder, by the same rule.
+///
+/// It used to reach folder transfers only, and a single file always
+/// overwrote. That made "Skip existing" a promise the selector could not keep
+/// for the one case most likely to matter: dropping one file, already there, to
+/// check it would be left alone. Overwriting truncates the destination the
+/// moment it is opened, so a cancel part-way through then leaves neither copy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferMode {
     /// Always overwrite (truncate + rewrite). The default.
@@ -67,6 +74,62 @@ pub enum TransferMode {
     NewerOnly,
     /// Never overwrite; only copy files missing at the destination.
     SkipExisting,
+}
+
+/// Whether an upload may write `remote_path`, given the source file's mtime.
+///
+/// A destination that can't be read is written to, in every mode: "is it
+/// there?" failing is taken as "no", and the write that follows either works
+/// or fails with the real reason.
+async fn upload_may_write(
+    conn: &SftpConn,
+    remote_path: &str,
+    src_mtime: Option<i64>,
+    mode: TransferMode,
+) -> bool {
+    match mode {
+        TransferMode::OverwriteAll => true,
+        TransferMode::SkipExisting => !conn
+            .sftp
+            .try_exists(remote_path.to_string())
+            .await
+            .unwrap_or(false),
+        TransferMode::NewerOnly => match conn.sftp.metadata(remote_path.to_string()).await {
+            Ok(attrs) => source_is_newer(src_mtime, attrs.mtime.map(i64::from)),
+            Err(_) => true,
+        },
+    }
+}
+
+/// Whether a download may write `local`, given the source file's mtime. The
+/// local half of [`upload_may_write`], by the same rules.
+fn download_may_write(local: &Path, src_mtime: Option<i64>, mode: TransferMode) -> bool {
+    match mode {
+        TransferMode::OverwriteAll => true,
+        TransferMode::SkipExisting => !local.exists(),
+        TransferMode::NewerOnly => match fs::metadata(local) {
+            Ok(m) => source_is_newer(src_mtime, mtime_secs(&m)),
+            Err(_) => true,
+        },
+    }
+}
+
+/// Newer only's test: strictly newer, and an unknown time on either side
+/// overwrites, since a rule that can't be checked is not a reason to keep a
+/// file the operator asked to be replaced.
+fn source_is_newer(src: Option<i64>, dst: Option<i64>) -> bool {
+    match (src, dst) {
+        (Some(src), Some(dst)) => src > dst,
+        _ => true,
+    }
+}
+
+/// A local file's mtime as epoch seconds, the unit SFTP reports.
+fn mtime_secs(m: &fs::Metadata) -> Option<i64> {
+    m.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
 }
 
 /// Outcome of opening an SFTP session. `Ok` carries the initial (home) path;
@@ -475,26 +538,52 @@ async fn discard_remote(conn: &SftpConn, mut file: russh_sftp::client::fs::File,
 /// has been removed: the bytes it reports crossed the wire but none of them were
 /// kept. Callers show that rather than a byte count, because a count of bytes
 /// that no longer exist anywhere reads like a partial success.
+///
+/// `skipped` means the clash mode left the destination as it was, so nothing
+/// was sent or written and `bytes` is 0.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct FileTransfer {
     pub bytes: u64,
     pub cancelled: bool,
+    pub skipped: bool,
+}
+
+impl FileTransfer {
+    const SKIPPED: FileTransfer = FileTransfer {
+        bytes: 0,
+        cancelled: false,
+        skipped: true,
+    };
 }
 
 /// Uploads a local file to `remote_path`, streaming in chunks. `on_progress` is
 /// called periodically + at the end; `cancel` is polled between chunks so the
 /// transfer stops cooperatively, and a stopped or failed upload removes the
-/// part-written remote file.
+/// part-written remote file. A file `mode` says to leave alone is not opened
+/// for writing at all.
 pub async fn upload(
     state: &SftpState,
     session_id: &str,
     local_path: &str,
     remote_path: &str,
+    mode: TransferMode,
     cancel: &AtomicBool,
     on_progress: impl Fn(u64),
 ) -> AppResult<FileTransfer> {
     let conn = state.get(session_id)?;
+    // Opened before the clash check, so a source that has gone is an error
+    // rather than a quiet "skipped".
     let mut src = tokio::fs::File::open(local_path).await?;
+    if mode != TransferMode::OverwriteAll {
+        let src_mtime = src
+            .metadata()
+            .await
+            .ok()
+            .and_then(|m| mtime_secs(&m));
+        if !upload_may_write(&conn, remote_path, src_mtime, mode).await {
+            return Ok(FileTransfer::SKIPPED);
+        }
+    }
     let mut dst = conn
         .sftp
         .create(remote_path.to_string())
@@ -512,6 +601,7 @@ pub async fn upload(
             Ok(FileTransfer {
                 bytes,
                 cancelled: false,
+                skipped: false,
             })
         }
         Ok((bytes, true)) => {
@@ -519,6 +609,7 @@ pub async fn upload(
             Ok(FileTransfer {
                 bytes,
                 cancelled: true,
+                skipped: false,
             })
         }
         Err(e) => {
@@ -531,12 +622,14 @@ pub async fn upload(
 /// Downloads `remote_path` to a local file, streaming in chunks. `on_progress`
 /// is called periodically + at the end; `cancel` is polled between chunks so the
 /// transfer stops cooperatively, and a stopped or failed download removes the
-/// part-written local file.
+/// part-written local file. A file `mode` says to leave alone is not opened for
+/// writing at all.
 pub async fn download(
     state: &SftpState,
     session_id: &str,
     remote_path: &str,
     local_path: &str,
+    mode: TransferMode,
     cancel: &AtomicBool,
     on_progress: impl Fn(u64),
 ) -> AppResult<FileTransfer> {
@@ -544,11 +637,25 @@ pub async fn download(
     // is not worth opening the remote file for.
     let dest = safe_local_destination(local_path)?;
     let conn = state.get(session_id)?;
+    // Opened before the clash check, so a source that has gone is an error
+    // rather than a quiet "skipped".
     let mut src = conn
         .sftp
         .open(remote_path.to_string())
         .await
         .map_err(|e| AppError::Ssh(format!("sftp open {remote_path}: {e}")))?;
+    if mode != TransferMode::OverwriteAll {
+        // Only Newer only needs the time, and it costs a round trip.
+        let src_mtime = if mode == TransferMode::NewerOnly {
+            src.metadata().await.ok().and_then(|a| a.mtime).map(i64::from)
+        } else {
+            None
+        };
+        if !download_may_write(dest, src_mtime, mode) {
+            let _ = src.shutdown().await;
+            return Ok(FileTransfer::SKIPPED);
+        }
+    }
     let mut dst = tokio::fs::File::create(dest).await?;
 
     match copy_stream(&mut src, &mut dst, cancel, &on_progress).await {
@@ -558,6 +665,7 @@ pub async fn download(
             Ok(FileTransfer {
                 bytes,
                 cancelled: false,
+                skipped: false,
             })
         }
         Ok((bytes, true)) => {
@@ -565,6 +673,7 @@ pub async fn download(
             Ok(FileTransfer {
                 bytes,
                 cancelled: true,
+                skipped: false,
             })
         }
         Err(e) => {
@@ -658,11 +767,7 @@ fn walk_local_inner(dir: &Path, rel: &str, out: &mut Vec<LocalWalkEntry>) -> std
         } else {
             let meta = e.metadata().ok();
             let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-            let mtime = meta
-                .as_ref()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64);
+            let mtime = meta.as_ref().and_then(mtime_secs);
             out.push(LocalWalkEntry {
                 rel: child_rel,
                 is_dir: false,
@@ -749,23 +854,7 @@ async fn upload_dir_walk(
             continue;
         }
 
-        // Decide whether to write this file given the clash mode.
-        let write = match mode {
-            TransferMode::OverwriteAll => true,
-            TransferMode::SkipExisting => !conn
-                .sftp
-                .try_exists(remote_path.clone())
-                .await
-                .unwrap_or(false),
-            TransferMode::NewerOnly => match conn.sftp.metadata(remote_path.clone()).await {
-                // Destination exists, overwrite only if the source is strictly newer.
-                Ok(attrs) => match (item.mtime, attrs.mtime) {
-                    (Some(src), Some(dst)) => src > dst as i64,
-                    _ => true, // unknown timestamps → overwrite to be safe
-                },
-                Err(_) => true, // doesn't exist (or stat failed) → write
-            },
-        };
+        let write = upload_may_write(conn, &remote_path, item.mtime, mode).await;
 
         done_files += 1;
         if write {
@@ -988,25 +1077,7 @@ async fn download_dir_walk(
                 continue;
             }
 
-            // Decide whether to write this file given the clash mode.
-            let write = match mode {
-                TransferMode::OverwriteAll => true,
-                TransferMode::SkipExisting => !child_local.exists(),
-                TransferMode::NewerOnly => match fs::metadata(&child_local) {
-                    Ok(m) => {
-                        let dst = m
-                            .modified()
-                            .ok()
-                            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                            .map(|d| d.as_secs() as i64);
-                        match (md.mtime, dst) {
-                            (Some(src), Some(dst)) => (src as i64) > dst,
-                            _ => true,
-                        }
-                    }
-                    Err(_) => true, // doesn't exist → write
-                },
-            };
+            let write = download_may_write(&child_local, md.mtime.map(i64::from), mode);
 
             done_files += 1;
             if write {
@@ -1135,6 +1206,38 @@ mod tests {
         assert!(root.exists(), "root still holds a folder with a file in it");
         assert!(base.exists(), "the drop folder was never ours to remove");
         fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// The clash rule a download applies, to a single file and to each file
+    /// in a folder alike. A file that is there is left alone by Skip existing,
+    /// and by Newer only unless the source is strictly newer.
+    #[test]
+    fn download_clash_rule_follows_the_mode() {
+        let dir = std::env::temp_dir().join(format!(
+            "broadside-clash-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let there = dir.join("there.bin");
+        let missing = dir.join("missing.bin");
+        fs::write(&there, b"old").unwrap();
+        let dst = mtime_secs(&fs::metadata(&there).unwrap()).unwrap();
+
+        use TransferMode::*;
+        for mode in [OverwriteAll, NewerOnly, SkipExisting] {
+            assert!(download_may_write(&missing, Some(dst), mode), "{mode:?} writes a missing file");
+        }
+        assert!(download_may_write(&there, Some(dst), OverwriteAll));
+        assert!(!download_may_write(&there, Some(dst + 3600), SkipExisting));
+        assert!(!download_may_write(&there, Some(dst), NewerOnly), "same age is not newer");
+        assert!(!download_may_write(&there, Some(dst - 3600), NewerOnly));
+        assert!(download_may_write(&there, Some(dst + 1), NewerOnly));
+        assert!(download_may_write(&there, None, NewerOnly), "an unknown time overwrites");
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
