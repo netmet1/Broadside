@@ -939,7 +939,7 @@ function App() {
       </div>
       {/* SFTP stays mounted so an open browser session survives navigation. */}
       <div className={page === "sftp" ? "block h-full" : "hidden"}>
-        <SftpPage visible={page === "sftp"} />
+        <SftpPage visible={page === "sftp"} onOpenTerminal={openTerminal} />
       </div>
       {/* Logs stay mounted so a loaded session survives navigation. */}
       <div className={page === "logs" ? "block h-full" : "hidden"}>

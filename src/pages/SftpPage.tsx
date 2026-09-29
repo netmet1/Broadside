@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import type { Host } from "@/lib/tauri/hosts";
 import type { TransferMode } from "@/lib/tauri/sftp";
 import { CommanderTab } from "@/pages/sftp/CommanderTab";
 import { BroadcastTab } from "@/pages/sftp/BroadcastTab";
@@ -30,7 +31,15 @@ const TAB_KEY = "sftp-tab";
  * so it applies to, and is visible in, both tabs. Bodies stay mounted (App
  * renders the page CSS-hidden) so an open session survives tab switches.
  */
-export function SftpPage({ visible }: { visible: boolean }) {
+export function SftpPage({
+  visible,
+  onOpenTerminal,
+}: {
+  visible: boolean;
+  /** Opens a new terminal connection to a host and switches to the Terminals
+   *  tab. SFTP sessions are not terminals, so there is never one to jump to. */
+  onOpenTerminal: (host: Host) => void;
+}) {
   const [tab, setTab] = useState<SftpTab>(() =>
     localStorage.getItem(TAB_KEY) === "broadcast" ? "broadcast" : "commander",
   );
@@ -80,10 +89,18 @@ export function SftpPage({ visible }: { visible: boolean }) {
       {/* Bodies stay mounted so the session survives tab switches. */}
       <div className="min-h-0 flex-1">
         <div className={tab === "commander" ? "h-full" : "hidden"}>
-          <CommanderTab visible={visible && tab === "commander"} mode={mode} />
+          <CommanderTab
+            visible={visible && tab === "commander"}
+            mode={mode}
+            onOpenTerminal={onOpenTerminal}
+          />
         </div>
         <div className={tab === "broadcast" ? "h-full" : "hidden"}>
-          <BroadcastTab visible={visible && tab === "broadcast"} mode={mode} />
+          <BroadcastTab
+            visible={visible && tab === "broadcast"}
+            mode={mode}
+            onOpenTerminal={onOpenTerminal}
+          />
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { MonitorIcon, PlugZapIcon, TriangleAlertIcon } from "lucide-react";
+import { MonitorIcon, PlugZapIcon, TerminalIcon, TriangleAlertIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,8 @@ import {
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { useActivity } from "@/lib/activity";
+import { useHint } from "@/lib/status";
+import type { Host } from "@/lib/tauri/hosts";
 import { type TransferMode } from "@/lib/tauri/sftp";
 import { setToastLift } from "@/lib/toastLift";
 import {
@@ -80,10 +82,13 @@ const SPLIT_KEY = "sftp-split-pct";
 export function CommanderTab({
   visible,
   mode,
+  onOpenTerminal,
 }: {
   visible: boolean;
   mode: TransferMode;
+  onOpenTerminal: (host: Host) => void;
 }) {
+  const hint = useHint();
   const local = useLocalBrowser(visible);
   const remote = useSftpBrowser(visible);
 
@@ -424,14 +429,29 @@ export function CommanderTab({
               reselect={reselect.remote}
               emptyText="Empty directory."
               headerRight={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={remote.disconnect}
-                >
-                  <PlugZapIcon />
-                  Disconnect
-                </Button>
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => {
+                      if (remote.session) onOpenTerminal(remote.session.host);
+                    }}
+                    aria-label={`Open a terminal to ${remote.session.host.label}`}
+                    {...hint(
+                      "Open a new terminal connection to this host and go to the Terminals tab. This SFTP session stays open.",
+                    )}
+                  >
+                    <TerminalIcon />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={remote.disconnect}
+                  >
+                    <PlugZapIcon />
+                    Disconnect
+                  </Button>
+                </>
               }
             />
           ) : (

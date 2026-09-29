@@ -1801,7 +1801,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files rename f2 pencil double click open enter backspace up arrow keys single click select skipped single file still uploaded overwrote anyway skip existing ignored slow even though it exists already there not newer",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files rename f2 pencil double click open enter backspace up arrow keys single click select skipped single file still uploaded overwrote anyway skip existing ignored slow even though it exists already there not newer open terminal from sftp go to terminal ssh into this host shell button",
     body: (
       <>
         <Lead>
@@ -1868,6 +1868,11 @@ export const SECTIONS: HelpSection[] = [
               new name. On the host side, rename and delete are unavailable while
               a transfer is running.
             </li>
+            <li>
+              The terminal button beside <Nav>Disconnect</Nav> opens a new
+              terminal to the connected host and takes you to the Terminals tab.
+              The SFTP session stays open.
+            </li>
           </Bullets>
           <H3>Broadcast (many hosts)</H3>
           <Bullets>
@@ -1893,6 +1898,11 @@ export const SECTIONS: HelpSection[] = [
               type <Nav>CONFIRM</Nav> before <em>every</em> run. By default no
               hosts are selected, and the rail has the same tag + label filter as{" "}
               <SectionLink id="help-sec-broadcast">Broadcast</SectionLink>.
+            </li>
+            <li>
+              Point at a host in the rail and a terminal button appears at the
+              end of its row: it opens a new terminal to that host and takes you
+              to the Terminals tab.
             </li>
             <li>
               <Nav>Create path if it doesn't exist</Nav> (PUT only) makes the
