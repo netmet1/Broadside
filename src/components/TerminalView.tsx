@@ -29,6 +29,7 @@ import {
   SESSION_PREFS_EVENT,
   describeIdle,
   loadSessionPrefs,
+  rightClickToProgram,
 } from "@/lib/sessionPrefs";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
@@ -765,10 +766,16 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // which is how the last thing a dropped session printed gets out of it.
     //
     // Mouse-reporting programs (tmux or vim with the mouse on) take the drag
-    // for themselves, as before; Shift-drag selects past them, and the
-    // right-click then copies.
+    // for themselves, as before; Shift-drag selects past them. They get the
+    // right-click too (xterm has already sent it to them), unless that is
+    // switched off in Settings: copying or pasting as well made one click do
+    // two things. Shift+right-click is never sent to the program, so it stays
+    // ours either way, and copies what a Shift-drag selected.
     const onContextMenu = (e: MouseEvent) => {
       e.preventDefault();
+      if (term.modes.mouseTrackingMode !== "none" && !e.shiftKey && rightClickToProgram()) {
+        return;
+      }
       if (copyTerminalSelection(term)) return;
       pasteToSession(term, sessionId);
     };
