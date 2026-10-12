@@ -164,7 +164,19 @@ export function TemplateTopBar({
         aria-label="Template name"
         spellCheck={false}
         className="h-8 w-48 min-w-28 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring"
-        {...hint("What this arrangement is called in the Hosts tab's list")}
+        // A plain tooltip as well as the hint rail, for anyone not looking at
+        // the bottom of the window. Once saved, the name is the one thing here
+        // that reads as "save as": say that it is not.
+        title={
+          saved
+            ? "Template name, as the Hosts tab lists it. Saving a new name renames this template. To keep this one and make a copy, use Duplicate on the Hosts tab."
+            : "Template name, as the Hosts tab will list it"
+        }
+        {...hint(
+          saved
+            ? "What this arrangement is called in the Hosts tab's list. A new name renames it; Duplicate on the Hosts tab makes a copy."
+            : "What this arrangement is called in the Hosts tab's list",
+        )}
       />
 
       {/* Colour. A menu rather than a row of swatches, because this bar also

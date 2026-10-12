@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { MonitorIcon, PlugZapIcon, TriangleAlertIcon } from "lucide-react";
+import { MonitorIcon, PlugZapIcon, TerminalIcon, TriangleAlertIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,8 @@ import {
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { useActivity } from "@/lib/activity";
+import { useHint } from "@/lib/status";
+import type { Host } from "@/lib/tauri/hosts";
 import { type TransferMode } from "@/lib/tauri/sftp";
 import { setToastLift } from "@/lib/toastLift";
 import {
@@ -80,10 +82,13 @@ const SPLIT_KEY = "sftp-split-pct";
 export function CommanderTab({
   visible,
   mode,
+  onOpenTerminal,
 }: {
   visible: boolean;
   mode: TransferMode;
+  onOpenTerminal: (host: Host) => void;
 }) {
+  const hint = useHint();
   const local = useLocalBrowser(visible);
   const remote = useSftpBrowser(visible);
 
@@ -162,18 +167,18 @@ export function CommanderTab({
   const queueDirTransfer = useCallback(
     (req: DirRequest, totals: { files: number; bytes: number }) => {
       if (req.direction === "put") {
-        remote.uploadDir(req.path, mode, totals, req.batch);
+        remote.uploadDir(req.path, req.batch.mode, totals, req.batch);
       } else {
         remote.downloadDir(
           { path: req.path, name: req.name },
           req.localDest,
-          mode,
+          req.batch.mode,
           totals,
           req.batch,
         );
       }
     },
-    [remote, mode],
+    [remote],
   );
 
   // Folder transfer: scan first (a row in the rail, with its own Cancel), then
@@ -237,7 +242,7 @@ export function CommanderTab({
         return;
       }
       // One drop, one success toast once everything in it has settled.
-      const batch = remote.beginBatch(direction, payload.items.length);
+      const batch = remote.beginBatch(direction, payload.items.length, mode);
       for (const item of payload.items) {
         if (item.kind === "dir") continue;
         if (direction === "put") {
@@ -263,7 +268,7 @@ export function CommanderTab({
         });
       }
     },
-    [handleDirDrop, remote, local],
+    [handleDirDrop, remote, local, mode],
   );
 
   // The local listing is re-read a moment after a download lands in it (the
@@ -424,14 +429,29 @@ export function CommanderTab({
               reselect={reselect.remote}
               emptyText="Empty directory."
               headerRight={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={remote.disconnect}
-                >
-                  <PlugZapIcon />
-                  Disconnect
-                </Button>
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => {
+                      if (remote.session) onOpenTerminal(remote.session.host);
+                    }}
+                    aria-label={`Open a terminal to ${remote.session.host.label}`}
+                    {...hint(
+                      "Open a new terminal connection to this host and go to the Terminals tab. This SFTP session stays open.",
+                    )}
+                  >
+                    <TerminalIcon />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={remote.disconnect}
+                  >
+                    <PlugZapIcon />
+                    Disconnect
+                  </Button>
+                </>
               }
             />
           ) : (
@@ -587,7 +607,7 @@ export function CommanderTab({
                   on this PC
                 </>
               )}
-              . {clashText(mode)} Continue?
+              . {clashText(pendingDir?.batch.mode ?? mode)} Continue?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

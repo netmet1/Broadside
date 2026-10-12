@@ -96,6 +96,7 @@ import { useHostSort } from "@/pages/hosts/useHostSort";
 import { useColumnResize } from "@/pages/hosts/useColumnResize";
 import { useHostTagFilter } from "@/pages/hosts/useHostTagFilter";
 import { TemplatesView } from "@/pages/hosts/TemplatesView";
+import { useTemplateList } from "@/pages/hosts/useTemplateList";
 import { ProfilesView } from "@/pages/hosts/ProfilesView";
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
@@ -103,11 +104,7 @@ import { type ShellProfile } from "@/lib/localShellProfiles";
 import { listLocalShells, type LocalShell } from "@/lib/tauri/local";
 import { loadDisabledShells } from "@/lib/localShellPrefs";
 import { useProfileActions } from "@/lib/useProfileActions";
-import {
-  deleteTemplate,
-  listTemplates,
-  type Template,
-} from "@/lib/tauri/templates";
+import { type Template } from "@/lib/tauri/templates";
 import {
   HELP_HOSTS,
   HELP_TEMPLATES,
@@ -170,16 +167,17 @@ export function HostsPage({
     setSide(next);
     rememberHostsSide(next);
   }, []);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [templatesLoading, setTemplatesLoading] = useState(true);
-  // Which one Open would open. A radio rather than a checkbox: see
-  // hosts/TemplatesView.
-  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(
-    null,
-  );
-  const [deletingTemplate, setDeletingTemplate] = useState<Template | null>(
-    null,
-  );
+  const {
+    templates,
+    loading: templatesLoading,
+    selectedId: selectedTemplateId,
+    setSelectedId: setSelectedTemplateId,
+    selected: selectedTemplate,
+    deleting: deletingTemplate,
+    setDeleting: setDeletingTemplate,
+    runDelete: runDeleteTemplate,
+    duplicate: duplicateTemplate,
+  } = useTemplateList();
   // Saved launch profiles, the third side. The Hosts page is built fresh on
   // every visit (App renders it behind `page === "hosts"`), so the hook is
   // always "visible" while this component exists and re-reads on each arrival.
@@ -863,48 +861,6 @@ export function HostsPage({
     };
   }, []);
 
-  // The templates list. Its own load rather than a field on the hosts one: the
-  // two are independent, and a template read that fails must not cost the page
-  // its machines.
-  const reloadTemplates = useCallback(() => {
-    listTemplates()
-      .then(setTemplates)
-      .catch((e) => toast.error(errorMessage(e)))
-      .finally(() => setTemplatesLoading(false));
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    listTemplates()
-      .then((list) => {
-        if (alive) setTemplates(list);
-      })
-      .catch((e) => toast.error(errorMessage(e)))
-      .finally(() => {
-        if (alive) setTemplatesLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const runDeleteTemplate = useCallback(async () => {
-    const target = deletingTemplate;
-    setDeletingTemplate(null);
-    if (!target) return;
-    try {
-      await deleteTemplate(target.id);
-      setSelectedTemplateId((id) => (id === target.id ? null : id));
-      reloadTemplates();
-      toast.success(`Deleted "${target.name}"`);
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
-  }, [deletingTemplate, reloadTemplates]);
-
-  const selectedTemplate =
-    templates.find((t) => t.id === selectedTemplateId) ?? null;
-
   const openAdd = () => {
     setEditing(null);
     setFormOpen(true);
@@ -1391,6 +1347,7 @@ export function HostsPage({
             selectedId={selectedTemplateId}
             onSelect={setSelectedTemplateId}
             onEdit={onEditTemplate}
+            onDuplicate={(t) => void duplicateTemplate(t)}
             onDelete={setDeletingTemplate}
           />
         ) : (

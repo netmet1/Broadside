@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { BatchTofuDialog } from "@/components/BatchTofuDialog";
+import { GoToTerminalButton } from "@/components/GoToTerminalButton";
 import { useActivity } from "@/lib/activity";
 import type { Host } from "@/lib/tauri/hosts";
 import type { TransferMode } from "@/lib/tauri/sftp";
@@ -51,9 +52,11 @@ const SPLIT_KEY = "sftp-broadcast-split";
 export function BroadcastTab({
   visible,
   mode,
+  onOpenTerminal,
 }: {
   visible: boolean;
   mode: TransferMode;
+  onOpenTerminal: (host: Host) => void;
 }) {
   const b = useSftpBroadcast(visible, mode);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -273,7 +276,7 @@ export function BroadcastTab({
               ) : (
                 <label
                   key={h.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+                  className="group relative flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
                 >
                   <input
                     type="checkbox"
@@ -290,6 +293,14 @@ export function BroadcastTab({
                     {h.label}
                   </span>
                   {dot && <span className={cn("ml-auto h-2 w-2 shrink-0 rounded-full", dot)} />}
+                  {/* Always a new connection, as on the Broadcast page: a
+                      transfer's SFTP session is not a terminal to jump to.
+                      Pushed right when there is no result dot to follow. */}
+                  <GoToTerminalButton
+                    mode="new"
+                    pushRight={!dot}
+                    onClick={() => onOpenTerminal(h)}
+                  />
                 </label>
               );
             })}

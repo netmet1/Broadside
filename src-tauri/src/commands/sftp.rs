@@ -186,7 +186,9 @@ pub async fn sftp_rename(
 ///
 /// A cancelled upload is not an error: it comes back with `cancelled` set and
 /// the part-written remote file already removed. Only a completed one is
-/// audited, because a transfer that left nothing behind did not happen.
+/// audited, because a transfer that left nothing behind did not happen. `mode`
+/// is the clash mode, and a file it skips comes back with `skipped` set and is
+/// not audited either: nothing was sent.
 #[tauri::command]
 pub async fn sftp_upload(
     host_id: i64,
@@ -194,6 +196,7 @@ pub async fn sftp_upload(
     local_path: String,
     remote_path: String,
     transfer_id: Option<String>,
+    mode: TransferMode,
     app: AppHandle,
     sftp_state: State<'_, SftpState>,
     db: State<'_, DbState>,
@@ -213,7 +216,7 @@ pub async fn sftp_upload(
         }
     };
     let (key, cancel) = sftp_state.begin_transfer(&session_id, transfer_id.as_deref());
-    let result = sftp::upload(&sftp_state, &session_id, &local_path, &remote_path, &cancel, on_progress).await;
+    let result = sftp::upload(&sftp_state, &session_id, &local_path, &remote_path, mode, &cancel, on_progress).await;
     sftp_state.end_transfer(&key);
     let transfer = match result {
         Ok(t) => t,
@@ -222,7 +225,7 @@ pub async fn sftp_upload(
             return Err(e);
         }
     };
-    if !transfer.cancelled {
+    if !transfer.cancelled && !transfer.skipped {
         if let Ok(host) = with_db(&db, |c| host_repo::get(c, host_id)) {
             let _ = audit.append(&AuditEvent::SftpTransfer {
                 host_label: host.label,
@@ -244,7 +247,8 @@ pub async fn sftp_upload(
 ///
 /// A cancelled download is not an error: it comes back with `cancelled` set and
 /// the part-written local file already removed. Only a completed one is audited,
-/// because a transfer that left nothing behind did not happen.
+/// because a transfer that left nothing behind did not happen. `mode` is the
+/// clash mode, as for [`sftp_upload`].
 #[tauri::command]
 pub async fn sftp_download(
     host_id: i64,
@@ -252,6 +256,7 @@ pub async fn sftp_download(
     remote_path: String,
     local_path: String,
     transfer_id: Option<String>,
+    mode: TransferMode,
     app: AppHandle,
     sftp_state: State<'_, SftpState>,
     db: State<'_, DbState>,
@@ -271,7 +276,7 @@ pub async fn sftp_download(
         }
     };
     let (key, cancel) = sftp_state.begin_transfer(&session_id, transfer_id.as_deref());
-    let result = sftp::download(&sftp_state, &session_id, &remote_path, &local_path, &cancel, on_progress).await;
+    let result = sftp::download(&sftp_state, &session_id, &remote_path, &local_path, mode, &cancel, on_progress).await;
     sftp_state.end_transfer(&key);
     let transfer = match result {
         Ok(t) => t,
@@ -280,7 +285,7 @@ pub async fn sftp_download(
             return Err(e);
         }
     };
-    if !transfer.cancelled {
+    if !transfer.cancelled && !transfer.skipped {
         if let Ok(host) = with_db(&db, |c| host_repo::get(c, host_id)) {
             let _ = audit.append(&AuditEvent::SftpTransfer {
                 host_label: host.label,

@@ -132,7 +132,8 @@ export function isLargeTransfer(files: number, bytes: number): boolean {
 }
 
 /** What one finished transfer delivered, for the summary toast at the end of a
- *  drop. A single file is `files: 1`. */
+ *  drop. A single file is `files: 1`, or `skipped: 1` when the clash mode left
+ *  the destination alone. */
 export type TransferOutcome = {
   name: string;
   isDir: boolean;
@@ -141,34 +142,58 @@ export type TransferOutcome = {
   skipped: number;
 };
 
+/** Why the clash mode left files alone, for a summary where that is all that
+ *  happened. The mode's own name goes in brackets, so the fix is findable. */
+function skipReason(mode: TransferMode, many: boolean): string {
+  if (mode === "newer_only") {
+    return many
+      ? "none newer than the copies there (Newer only)"
+      : "not newer than the copy there (Newer only)";
+  }
+  return many ? "all already there (Skip existing)" : "it is already there (Skip existing)";
+}
+
+/** "1 file", "3 files". Skips made a drop of one transferred file possible. */
+function fileCount(n: number): string {
+  return n === 1 ? "1 file" : `${n} files`;
+}
+
 /**
  * The one success toast a drop gets once everything in it has settled.
  *
  * One item keeps the message it always had, naming the file or folder. Several
  * are added up into one line, because a toast per file stacked over the
  * transfer rail and hid the Cancel buttons while the rest were still going.
- * Null when nothing succeeded: failures and cancels have already said so.
+ * A drop the clash mode skipped entirely says so, and why, rather than
+ * reporting an upload of nothing. Null when nothing succeeded: failures and
+ * cancels have already said so.
  */
 export function transferSummary(
   direction: "put" | "get",
   done: TransferOutcome[],
+  mode: TransferMode,
 ): string | null {
   const verb = direction === "put" ? "Uploaded" : "Downloaded";
   if (done.length === 0) return null;
   const skipped = done.reduce((n, o) => n + o.skipped, 0);
+  const files = done.reduce((n, o) => n + o.files, 0);
+  const bytes = done.reduce((n, o) => n + o.bytes, 0);
+  if (files === 0 && skipped > 0) {
+    return skipped === 1
+      ? `Skipped ${done.length === 1 && !done[0].isDir ? done[0].name : "1 file"}: ${skipReason(mode, false)}`
+      : `Skipped ${skipped} files: ${skipReason(mode, true)}`;
+  }
   const skip = skipped > 0 ? `, ${skipped} skipped` : "";
   if (done.length === 1) {
     const o = done[0];
     return o.isDir
-      ? `${verb} folder ${o.name} (${o.files} files, ${formatSize(o.bytes)}${skip})`
+      ? `${verb} folder ${o.name} (${fileCount(o.files)}, ${formatSize(o.bytes)}${skip})`
       : `${verb} ${o.name} (${formatSize(o.bytes)})`;
   }
-  const files = done.reduce((n, o) => n + o.files, 0);
-  const bytes = done.reduce((n, o) => n + o.bytes, 0);
   if (done.every((o) => !o.isDir)) {
-    return `${verb} ${files} files (${formatSize(bytes)})`;
+    return `${verb} ${fileCount(files)} (${formatSize(bytes)}${skip})`;
   }
-  return `${verb} ${done.length} items (${files} files, ${formatSize(bytes)}${skip})`;
+  return `${verb} ${done.length} items (${fileCount(files)}, ${formatSize(bytes)}${skip})`;
 }
 
 /** The toast for a folder transfer stopped part-way. It says what was kept,
