@@ -40,6 +40,7 @@ import {
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
 import { copyTerminalSelection, pasteBytes } from "@/lib/terminalClipboard";
+import { relayHeldMouse } from "@/lib/terminalMouseRelay";
 import { useReachability } from "@/lib/useReachability";
 import { useHint } from "@/lib/status";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
@@ -645,6 +646,14 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       lastActivityRef.current = Date.now();
       ptyWriteBytes(sessionId, data).catch(() => {});
     });
+    // A held button's drag and release, when the program re-sets its mouse
+    // modes mid-press (tmux opening its right-click menu). See terminalMouseRelay.
+    const mouseRelay = term.element
+      ? relayHeldMouse(term, term.element, (data, binary) => {
+          lastActivityRef.current = Date.now();
+          (binary ? ptyWriteBytes : ptyWrite)(sessionId, data).catch(() => {});
+        })
+      : null;
     const resizeSub = term.onResize(({ cols, rows }) => {
       ptyResize(sessionId, cols, rows).catch(() => {});
     });
@@ -879,6 +888,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     return () => {
       dataSub.dispose();
       binarySub.dispose();
+      mouseRelay?.dispose();
       resultsSub.dispose();
       resizeSub.dispose();
       modeOnSub.dispose();
