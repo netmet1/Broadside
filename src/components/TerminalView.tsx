@@ -22,6 +22,7 @@ import {
   ptyOpen,
   ptyResize,
   ptyWrite,
+  ptyWriteBytes,
   type PtyOpenResult,
 } from "@/lib/tauri/pty";
 import { ptyOpenLocal } from "@/lib/tauri/local";
@@ -637,6 +638,13 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         // Session already gone; the closed event handles UI state.
       });
     });
+    // The other half of what xterm sends. A program that asks for mouse reports
+    // in the original encoding (mode 1000 without 1006) gets its clicks here,
+    // not through onData; without this they went nowhere.
+    const binarySub = term.onBinary((data) => {
+      lastActivityRef.current = Date.now();
+      ptyWriteBytes(sessionId, data).catch(() => {});
+    });
     const resizeSub = term.onResize(({ cols, rows }) => {
       ptyResize(sessionId, cols, rows).catch(() => {});
     });
@@ -870,6 +878,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
 
     return () => {
       dataSub.dispose();
+      binarySub.dispose();
       resultsSub.dispose();
       resizeSub.dispose();
       modeOnSub.dispose();

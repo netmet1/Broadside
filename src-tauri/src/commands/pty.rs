@@ -175,6 +175,20 @@ pub fn pty_write(
     pty_state.write(&session_id, data.as_bytes())
 }
 
+/// Raw bytes for the session, for what xterm sends as bytes rather than text.
+/// That is a mouse report in the original encoding (mode 1000 without 1006),
+/// whose position bytes go past 127 on a wide or tall pane; sent through
+/// [`pty_write`] as a string they would be re-encoded as UTF-8 and the program
+/// would read the wrong cell.
+#[tauri::command]
+pub fn pty_write_bytes(
+    session_id: String,
+    data: Vec<u8>,
+    pty_state: State<'_, PtyState>,
+) -> AppResult<()> {
+    pty_state.write(&session_id, &data)
+}
+
 #[tauri::command]
 pub fn pty_resize(
     session_id: String,

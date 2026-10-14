@@ -210,6 +210,7 @@ pub fn run() {
             commands::shell_profiles::read_shell_profile_file,
             commands::shell_profiles::import_shell_profiles,
             commands::pty::pty_write,
+            commands::pty::pty_write_bytes,
             commands::pty::pty_resize,
             commands::pty::pty_close,
             commands::pty::pty_history_add,
