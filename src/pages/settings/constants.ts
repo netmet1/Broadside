@@ -58,7 +58,7 @@ export const SECTION_KEYWORDS: Record<string, string> = {
   "Custom terminals":
     "git bash msys msys2 cygwin add my own program exe application launcher path arguments browse posix bash-like command language family terminal application third party colour color tab colours tint highlight powershell command prompt wsl serial which tab am i in tell tabs apart profile colour",
   Sessions:
-    "session timeout idle close automatically after minutes seconds inactivity abandoned forgotten tab left open overnight keep alive keepalive nat firewall state table drop connection dies silently hangs after a while frozen unresponsive terminal packet every minute why did my terminal close by itself disable turn off never close",
+    "session timeout idle close automatically after minutes seconds inactivity abandoned forgotten tab left open overnight keep alive keepalive nat firewall state table drop connection dies silently hangs after a while frozen unresponsive terminal packet every minute why did my terminal close by itself disable turn off never close right click right-click mouse paste twice double paste pasted twice tmux vim claude code menu shift copy",
   Grid: "tiles layout columns rows tile size width height strict drag resize short last row stretch tall gaps split screen side by side template preview arrangement",
   Skills:
     "skill log logging record run history remote shell history bash_history up arrow recall summary itemized debug run panel step log exit codes json text output style where to log keep commands out of history audit what did the skill do",

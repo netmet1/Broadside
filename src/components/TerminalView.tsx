@@ -22,6 +22,7 @@ import {
   ptyOpen,
   ptyResize,
   ptyWrite,
+  ptyWriteBytes,
   type PtyOpenResult,
 } from "@/lib/tauri/pty";
 import { ptyOpenLocal } from "@/lib/tauri/local";
@@ -29,6 +30,7 @@ import {
   SESSION_PREFS_EVENT,
   describeIdle,
   loadSessionPrefs,
+  rightClickToProgram,
 } from "@/lib/sessionPrefs";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
@@ -38,6 +40,7 @@ import {
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
 import { copyTerminalSelection, pasteBytes } from "@/lib/terminalClipboard";
+import { relayHeldMouse } from "@/lib/terminalMouseRelay";
 import { useReachability } from "@/lib/useReachability";
 import { useHint } from "@/lib/status";
 import { useTerminalFontZoom } from "@/lib/terminalZoom";
@@ -636,6 +639,21 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         // Session already gone; the closed event handles UI state.
       });
     });
+    // The other half of what xterm sends. A program that asks for mouse reports
+    // in the original encoding (mode 1000 without 1006) gets its clicks here,
+    // not through onData; without this they went nowhere.
+    const binarySub = term.onBinary((data) => {
+      lastActivityRef.current = Date.now();
+      ptyWriteBytes(sessionId, data).catch(() => {});
+    });
+    // A held button's drag and release, when the program re-sets its mouse
+    // modes mid-press (tmux opening its right-click menu). See terminalMouseRelay.
+    const mouseRelay = term.element
+      ? relayHeldMouse(term, term.element, (data, binary) => {
+          lastActivityRef.current = Date.now();
+          (binary ? ptyWriteBytes : ptyWrite)(sessionId, data).catch(() => {});
+        })
+      : null;
     const resizeSub = term.onResize(({ cols, rows }) => {
       ptyResize(sessionId, cols, rows).catch(() => {});
     });
@@ -765,10 +783,16 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // which is how the last thing a dropped session printed gets out of it.
     //
     // Mouse-reporting programs (tmux or vim with the mouse on) take the drag
-    // for themselves, as before; Shift-drag selects past them, and the
-    // right-click then copies.
+    // for themselves, as before; Shift-drag selects past them. They get the
+    // right-click too (xterm has already sent it to them), unless that is
+    // switched off in Settings: copying or pasting as well made one click do
+    // two things. Shift+right-click is never sent to the program, so it stays
+    // ours either way, and copies what a Shift-drag selected.
     const onContextMenu = (e: MouseEvent) => {
       e.preventDefault();
+      if (term.modes.mouseTrackingMode !== "none" && !e.shiftKey && rightClickToProgram()) {
+        return;
+      }
       if (copyTerminalSelection(term)) return;
       pasteToSession(term, sessionId);
     };
@@ -863,6 +887,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
 
     return () => {
       dataSub.dispose();
+      binarySub.dispose();
+      mouseRelay?.dispose();
       resultsSub.dispose();
       resizeSub.dispose();
       modeOnSub.dispose();

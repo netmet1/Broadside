@@ -8,6 +8,7 @@
 const IDLE_SECS_KEY = "session-idle-timeout-secs";
 const IDLE_ON_KEY = "session-idle-timeout-on";
 const KEEPALIVE_KEY = "session-keepalive";
+const RIGHT_CLICK_KEY = "terminal-right-click-to-program";
 
 /** Fired on this window whenever a session pref is written.
  *
@@ -55,6 +56,9 @@ export type SessionPrefs = {
    * you had set. */
   idleDraft: number;
   keepalive: boolean;
+  /** Whether a right-click goes to a program that has taken the mouse (tmux,
+   * vim, Claude Code) instead of being our copy/paste. */
+  rightClickToProgram: boolean;
 };
 
 function readInt(key: string, fallback: number): number {
@@ -80,7 +84,22 @@ export function loadSessionPrefs(): SessionPrefs {
     // keystroke goes nowhere and the tab hangs until it times out) is otherwise
     // very hard to tell apart from a broken network.
     keepalive: localStorage.getItem(KEEPALIVE_KEY) !== "0",
+    rightClickToProgram: rightClickToProgram(),
   };
+}
+
+/**
+ * Whether a right-click belongs to a program that has turned mouse reporting
+ * on. On by default.
+ *
+ * Such a program already receives the right button from xterm, and many act on
+ * it (tmux opens its menu, Claude Code pastes). Our copy/paste on top of that
+ * made the click do two things, which is the double paste. Shift+right-click
+ * still copies and pastes: xterm keeps a Shift click for itself, so nothing
+ * reaches the program. Read at click time, so a change applies to open panes.
+ */
+export function rightClickToProgram(): boolean {
+  return localStorage.getItem(RIGHT_CLICK_KEY) !== "0";
 }
 
 export function saveIdleSecs(secs: number): void {
@@ -98,11 +117,18 @@ export function saveKeepalive(on: boolean): void {
   announce();
 }
 
-/** Puts both back to what they ship as: no timeout, keepalive on. */
+export function saveRightClickToProgram(on: boolean): void {
+  localStorage.setItem(RIGHT_CLICK_KEY, on ? "1" : "0");
+  announce();
+}
+
+/** Puts them all back to what they ship as: no timeout, keepalive on, the
+ * right-click to mouse programs. */
 export function resetSessionPrefs(): void {
   localStorage.removeItem(IDLE_SECS_KEY);
   localStorage.removeItem(IDLE_ON_KEY);
   localStorage.removeItem(KEEPALIVE_KEY);
+  localStorage.removeItem(RIGHT_CLICK_KEY);
   announce();
 }
 

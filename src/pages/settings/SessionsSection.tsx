@@ -14,14 +14,15 @@ import {
   saveIdleEnabled,
   saveIdleSecs,
   saveKeepalive,
+  saveRightClickToProgram,
 } from "@/lib/sessionPrefs";
 import { SectionHeading } from "@/pages/settings/shared";
 
-/** Settings -> Sessions: how long an idle terminal is kept, and whether the
- * connection is kept warm. Both are localStorage prefs (per machine), written
- * the moment they change, and both take effect without a restart: the timeout
- * reaches panes that are already open, the keepalive reaches the next
- * connection. */
+/** Settings -> Sessions: how long an idle terminal is kept, whether the
+ * connection is kept warm, and who gets a right-click. All are localStorage
+ * prefs (per machine), written the moment they change, and all take effect
+ * without a restart: the timeout and the right-click reach panes that are
+ * already open, the keepalive reaches the next connection. */
 export function SessionsSection({ id }: { id: string }) {
   const hint = useHint();
   const [prefs, setPrefs] = useState<SessionPrefs>(loadSessionPrefs);
@@ -42,7 +43,7 @@ export function SessionsSection({ id }: { id: string }) {
     <section id={id} className="space-y-4">
       <SectionHeading
         title="Sessions"
-        hint="How long an idle terminal is kept open, and whether the connection is kept warm."
+        hint="How long an idle terminal is kept open, whether the connection is kept warm, and what a right-click does."
       />
       <div className="grid max-w-md gap-4">
         <div className="grid gap-1.5">
@@ -107,6 +108,31 @@ export function SessionsSection({ id }: { id: string }) {
             sitting can be cut in the middle, and the way you find out is that a
             keystroke goes nowhere. On by default. It applies to connections
             opened from now on, not to terminals already open.
+          </p>
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label>Right-click</Label>
+          <label
+            className="flex cursor-pointer items-center gap-2 text-sm"
+            {...hint(
+              "Off means a right-click always copies or pastes, even in a program that uses the mouse",
+            )}
+          >
+            <input
+              type="checkbox"
+              className="accent-primary"
+              checked={prefs.rightClickToProgram}
+              onChange={(e) => saveRightClickToProgram(e.target.checked)}
+            />
+            Send right-clicks to programs that use the mouse
+          </label>
+          <p className="text-xs text-muted-foreground">
+            In a program that has turned the mouse on, such as tmux, vim or
+            Claude Code, a right-click goes to that program instead of copying
+            or pasting. Use <strong>Shift</strong>+right-click to copy or paste
+            there, or Ctrl+Shift+C and Ctrl+Shift+V. On by default. Turn it off
+            if a right-click in one of those programs should paste.
           </p>
         </div>
       </div>

@@ -47,6 +47,14 @@ export function ptyWrite(sessionId: string, data: string): Promise<void> {
   return invoke<void>("pty_write", { sessionId, data });
 }
 
+/** Raw bytes for the session: xterm's `onBinary`, a binary string with one byte
+ *  per character. Kept apart from {@link ptyWrite}, whose text is sent as
+ *  UTF-8, which would turn a byte over 127 into two. */
+export function ptyWriteBytes(sessionId: string, binary: string): Promise<void> {
+  const data = Array.from(binary, (ch) => ch.charCodeAt(0) & 0xff);
+  return invoke<void>("pty_write_bytes", { sessionId, data });
+}
+
 export function ptyResize(
   sessionId: string,
   cols: number,
