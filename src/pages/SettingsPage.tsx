@@ -1472,9 +1472,9 @@ export function SettingsPage({
         <p className="text-xs text-muted-foreground">
           Restoring replaces all current hosts, settings and command history with
           the chosen backup. Saved passwords aren't in a backup, so a restored
-          host may need its password re-entered. Custom local shells and trusted
-          host keys are not carried over at all, so restore only a backup you
-          made yourself.
+          host may need its password re-entered. Custom local shells, trusted
+          host keys and security settings are never taken from the file, but
+          restore only a backup you made yourself.
         </p>
       </section>
       )}

@@ -2084,15 +2084,16 @@ export const SECTIONS: HelpSection[] = [
               spreadsheet of your hosts alongside the backup.
               <br />
               <b>Restore only a backup you made yourself.</b> A restore replaces
-              all your data. To keep you safe, a few things are not restored:
-              custom local shells, trusted host keys, profile startup commands,
-              and the sudo auto-fill switch. Afterwards, re-add your custom
-              shells (then open <Nav>Edit</Nav> on each struck-through profile
-              and save it), retype your startup commands, expect each host to
-              ask you to confirm its key on the first connect, and turn
-              auto-fill back on if you use it. A list of what changed is shown
-              once the app reloads, and kept in <Nav>Logs</Nav> &rarr;{" "}
-              <Nav>Toasts History</Nav>.
+              your hosts, history, profiles, templates, skills and preferences.
+              Some things are never taken from the file and stay as they are on
+              this machine: custom local shells, trusted host keys, shortcut
+              commands, the admin lock, and the sudo auto-fill, history
+              clean-up, audit log and skill log location switches. Profile
+              startup commands come back empty, and a profile that used a
+              custom local shell comes back struck through: add the shell, then
+              open <Nav>Edit</Nav> on the profile and save it. A list of what
+              changed is shown once the app reloads, and kept in{" "}
+              <Nav>Logs</Nav> &rarr; <Nav>Toasts History</Nav>.
             </li>
             <li>
               <Nav>Audit log</Nav>: turn audit recording on or off.

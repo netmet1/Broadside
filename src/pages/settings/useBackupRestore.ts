@@ -71,26 +71,21 @@ export function useBackupRestore() {
       toast.success(`${restored}, reloading…`);
       // The reload is 700 ms away, far too soon to read anything, so what the
       // restore has to say is said again on the page that comes back.
-      queueToastAfterReload("success", `${restored} from ${restoreFileName}`);
+      // The policy is said every time and does not depend on the file, so a
+      // crafted backup cannot make it say anything else.
+      queueToastAfterReload(
+        "success",
+        `${restored} from ${restoreFileName}. Custom local shells, trusted host keys and security settings were kept as they were on this machine.`,
+      );
       // Said separately, and as a warning rather than folded into the success
       // line, because both are things the operator now has to do something
-      // about: an entry to re-add, or a host that will ask about its key on the
-      // next connect. Silence here would read as "everything came back".
+      // about: a command to retype, or a shell to pick again. Silence here
+      // would read as "everything came back".
       if (
-        report.dropped_terminals > 0 ||
-        report.cleared_host_keys > 0 ||
         report.cleared_startup_commands > 0 ||
-        report.orphaned_custom_profiles > 0 ||
-        report.sudo_autofill_disabled
+        report.orphaned_custom_profiles > 0
       ) {
         const parts: string[] = [];
-        if (report.dropped_terminals > 0) {
-          parts.push(
-            `${report.dropped_terminals} custom local shell${
-              report.dropped_terminals === 1 ? "" : "s"
-            } not restored (re-add under Settings)`,
-          );
-        }
         if (report.cleared_startup_commands > 0) {
           parts.push(
             `${report.cleared_startup_commands} shell profile startup command${
@@ -102,18 +97,8 @@ export function useBackupRestore() {
           parts.push(
             `${report.orphaned_custom_profiles} profile${
               report.orphaned_custom_profiles === 1 ? "" : "s"
-            } used a custom local shell and now point at none (re-add the shell, then pick it again in Edit)`,
+            } used a custom local shell and now point at none (add the shell, then pick it again in Edit)`,
           );
-        }
-        if (report.cleared_host_keys > 0) {
-          parts.push(
-            `${report.cleared_host_keys} trusted host key${
-              report.cleared_host_keys === 1 ? "" : "s"
-            } cleared (each host will ask again)`,
-          );
-        }
-        if (report.sudo_autofill_disabled) {
-          parts.push("sudo auto-fill turned off (Settings > Security)");
         }
         // Only after the reload: shown now, it would be torn down mid-read.
         // It stays until closed, since each part is something to go and do.

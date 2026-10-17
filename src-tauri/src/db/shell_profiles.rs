@@ -15,11 +15,11 @@
 //! it, because a harmful command is shaped exactly like a useful one. What
 //! keeps it honest is that every writer puts the operator in front of it: the
 //! form, an import preview that shows it in full, and a restore that clears it
-//! (see `commands::backup::harden_restored_db`). Control characters are refused
+//! (see `db/restore.rs`). Control characters are refused
 //! in every field so that nothing can hide text from that preview.
 //!
-//! **`wanted_shell` is a note, not a pointer.** A restore deletes every custom
-//! terminal, so the profiles that named one are re-pointed at nothing
+//! **`wanted_shell` is a note, not a pointer.** A restore never carries a custom
+//! terminal over, so the profiles that named one are re-pointed at nothing
 //! ([`orphan_custom_shells`]); the name of the terminal they wanted is kept
 //! there so the launcher and the edit form can say which shell to add back.
 //! Nothing launches from it: a re-pointed profile opens a program only once the
@@ -329,15 +329,15 @@ pub fn delete(conn: &Connection, id: &str) -> AppResult<usize> {
     Ok(conn.execute("DELETE FROM shell_profiles WHERE id = ?1", params![id])?)
 }
 
-/// Points every profile that names a custom terminal at [`UNMATCHED_CUSTOM`],
-/// noting the name of the terminal it was pointing at, and says how many were
-/// changed.
+/// Points every profile in `conn` that names a custom terminal at
+/// [`UNMATCHED_CUSTOM`], noting the name `names_from` gives the terminal it was
+/// pointing at, and says how many were changed.
 ///
-/// For the restore, which deletes every custom terminal: see the call site in
-/// `commands/backup.rs` for why a dangling `custom:<id>` cannot be left behind.
-/// **Call this before the terminals are deleted**, or there is no name left to
-/// read; the count is the same either way, so a wrong order loses only the
-/// note.
+/// For the restore (`db/restore.rs`), which never carries custom terminals
+/// over: `conn` is the live database mid-import and `names_from` the staged
+/// copy of the file, the only place the names still exist. A dangling
+/// `custom:<id>` cannot be left behind, because it would open whichever of this
+/// machine's own entries has that number.
 ///
 /// The note exists because "pick this profile's shell again" is a poor
 /// instruction when the profile is the only record of which shell that was.
@@ -347,32 +347,32 @@ pub fn delete(conn: &Connection, id: &str) -> AppResult<usize> {
 /// odd the database was on the way in: a name here means the shell is missing.
 /// Every note goes first, including any the file arrived with, because the only
 /// name this build trusts is one it read off the terminal a profile actually
-/// named. Then the names it could read, then the re-pointing.
-pub fn orphan_custom_shells(conn: &Connection) -> AppResult<usize> {
-    let named = wanted_names(conn);
-    let tx = conn.unchecked_transaction()?;
-    tx.execute(
+/// named. Then the names it could read, then the re-pointing. Opens no
+/// transaction of its own: the restore runs it inside the import's.
+pub fn orphan_custom_shells(conn: &Connection, names_from: &Connection) -> AppResult<usize> {
+    let named = wanted_names(names_from);
+    conn.execute(
         "UPDATE shell_profiles SET wanted_shell = '' WHERE wanted_shell <> ''",
         [],
     )?;
     for (id, label) in &named {
-        tx.execute(
+        conn.execute(
             "UPDATE shell_profiles SET wanted_shell = ?1 WHERE id = ?2",
             params![label, id],
         )?;
     }
-    let changed = tx.execute(
+    let changed = conn.execute(
         "UPDATE shell_profiles SET shell_id = ?1          WHERE shell_id LIKE 'custom:%' AND shell_id <> ?1",
         params![UNMATCHED_CUSTOM],
     )?;
-    tx.commit()?;
     Ok(changed)
 }
 
 /// Each profile that names a custom terminal, paired with that terminal's name.
 ///
-/// Best effort on purpose. The names are read out of a database a restore just
-/// copied in from a file, so each one is held to what the form would accept and
+/// Best effort on purpose. The names are read out of a staged copy of a file
+/// somebody else may have made, so each one is held to what the form would
+/// accept and
 /// dropped if it is not (a name is shown in a menu, and an escape sequence in
 /// one could hide the rest of the row). A profile whose terminal cannot be
 /// found, or a `custom_terminals` table not shaped the way this build writes
@@ -959,7 +959,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(orphan_custom_shells(&c).unwrap(), 2);
+        assert_eq!(orphan_custom_shells(&c, &c).unwrap(), 2);
         let p1 = get(&c, "p-1").unwrap();
         assert_eq!(p1.shell_id, UNMATCHED_CUSTOM);
         assert_eq!(p1.wanted_shell, "Git Bash", "which shell to add back");
@@ -984,7 +984,7 @@ mod tests {
              CREATE TABLE custom_terminals (id INTEGER PRIMARY KEY, nope TEXT);",
         )
         .unwrap();
-        assert_eq!(orphan_custom_shells(&c).unwrap(), 1);
+        assert_eq!(orphan_custom_shells(&c, &c).unwrap(), 1);
         let p = get(&c, "p-1").unwrap();
         assert_eq!(p.shell_id, UNMATCHED_CUSTOM);
         assert_eq!(p.wanted_shell, "");
@@ -1004,7 +1004,7 @@ mod tests {
         let mut custom = input("Struck");
         custom.shell_id = "custom:1".into();
         create(&c, "p-1", &custom, None).unwrap();
-        assert_eq!(orphan_custom_shells(&c).unwrap(), 1);
+        assert_eq!(orphan_custom_shells(&c, &c).unwrap(), 1);
         let p = get(&c, "p-1").unwrap();
         assert_eq!(p.shell_id, UNMATCHED_CUSTOM);
         assert_eq!(p.wanted_shell, "");
