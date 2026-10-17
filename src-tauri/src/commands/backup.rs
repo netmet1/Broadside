@@ -111,11 +111,14 @@ pub fn restore_app_data(path: String, state: State<'_, DbState>) -> AppResult<Re
         )));
     }
 
+    // Staged before the lock is taken: copying and migrating the file needs
+    // nothing from the live database, and every other command waits on it.
+    let staged = crate::db::restore::stage(&src_path)?;
     let guard = state
         .0
         .lock()
         .map_err(|_| AppError::State("db mutex poisoned".into()))?;
-    let restored = crate::db::restore::restore_from_file(&guard, &src_path)?;
+    let restored = crate::db::restore::import(&guard, &staged)?;
     Ok(RestoreReport {
         host_count: restored.host_count,
         cleared_startup_commands: restored.cleared_startup_commands,

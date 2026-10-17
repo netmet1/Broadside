@@ -133,14 +133,16 @@ pub struct Restored {
 /// Replaces the restorable parts of `live` with the backup at `src_path`.
 ///
 /// All or nothing: on any error the live database is unchanged.
+#[cfg(test)]
 pub fn restore_from_file(live: &Connection, src_path: &Path) -> AppResult<Restored> {
     let stage = stage(src_path)?;
     import(live, &stage)
 }
 
 /// Copies the file into a private in-memory database and migrates it there.
-/// Nothing the file contains ever runs against the live connection.
-fn stage(src_path: &Path) -> AppResult<Connection> {
+/// Nothing the file contains ever runs against the live connection, which is
+/// also why this needs no lock on it: call it before taking one.
+pub fn stage(src_path: &Path) -> AppResult<Connection> {
     let src = Connection::open_with_flags(src_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|e| AppError::InvalidInput(format!("can't open backup file: {e}")))?;
     distrust(&src)?;
@@ -212,15 +214,9 @@ fn live_columns(conn: &Connection, table: &str) -> AppResult<Vec<String>> {
 }
 
 /// Copies the rows of `table` that match `filter` (a WHERE clause over the
-/// stage, with `params`) from the stage into the live table, column by
+/// stage) from the stage into the live table, column by
 /// column.
-fn copy_rows(
-    live: &Connection,
-    stage: &Connection,
-    table: &str,
-    filter: &str,
-    params: &[&dyn rusqlite::ToSql],
-) -> AppResult<usize> {
+fn copy_rows(live: &Connection, stage: &Connection, table: &str, filter: &str) -> AppResult<usize> {
     let cols = live_columns(live, table)?;
     let list = cols.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
     let marks = vec!["?"; cols.len()].join(", ");
@@ -232,7 +228,7 @@ fn copy_rows(
         "INSERT INTO main.{} ({list}) VALUES ({marks})",
         quote(table)
     ))?;
-    let mut rows = read.query(params)?;
+    let mut rows = read.query([])?;
     let mut n = 0;
     while let Some(row) = rows.next()? {
         let values = (0..cols.len())
@@ -244,7 +240,9 @@ fn copy_rows(
     Ok(n)
 }
 
-fn import(live: &Connection, stage: &Connection) -> AppResult<Restored> {
+/// Replaces the restorable parts of `live` with the rows of a [`stage`]d
+/// backup. All or nothing: on any error the live database is unchanged.
+pub fn import(live: &Connection, stage: &Connection) -> AppResult<Restored> {
     // Every table read below must be a real table in the stage. Migrating the
     // stage created any that an older file lacked, so a missing one here, or a
     // view or virtual table under the name, is a file built to be odd.
@@ -261,7 +259,7 @@ fn import(live: &Connection, stage: &Connection) -> AppResult<Restored> {
 
     for table in TABLES_RESTORED {
         tx.execute(&format!("DELETE FROM main.{}", quote(table)), [])?;
-        copy_rows(&tx, stage, table, "", &[])?;
+        copy_rows(&tx, stage, table, "")?;
     }
 
     let keys = SETTINGS_RESTORED
@@ -273,13 +271,7 @@ fn import(live: &Connection, stage: &Connection) -> AppResult<Restored> {
         &format!("DELETE FROM main.settings WHERE key IN ({keys})"),
         [],
     )?;
-    copy_rows(
-        &tx,
-        stage,
-        "settings",
-        &format!("WHERE key IN ({keys})"),
-        &[],
-    )?;
+    copy_rows(&tx, stage, "settings", &format!("WHERE key IN ({keys})"))?;
 
     let cleared_startup_commands = tx.execute(
         "UPDATE main.shell_profiles SET startup_command = '' WHERE startup_command <> ''",
@@ -298,6 +290,9 @@ fn import(live: &Connection, stage: &Connection) -> AppResult<Restored> {
     crate::db::shell_profiles::list(&tx)?;
     crate::db::templates::list(&tx)?;
     crate::db::skills::list(&tx)?;
+    // Broadcast and skill runs refuse to start when the user guard rules do
+    // not parse, so a file carrying unreadable ones is refused here instead.
+    crate::commands::settings::load_user_rules(&tx)?;
 
     tx.commit()?;
     Ok(Restored {
