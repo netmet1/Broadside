@@ -1,4 +1,5 @@
-//! Bulk host import (D-025/D-047): CSV + xlsx, header-row-driven mapping.
+//! Bulk host import (D-025/D-047): CSV + xlsx (read by `xlsx`, not a spreadsheet
+//! crate), header-row-driven mapping.
 //! Required columns: label, hostname, username. Optional: port, color,
 //! linux_flavor, notes. Credentials are NOT importable. Duplicate labels
 //! (in the DB or earlier in the file) are skipped with a per-row report.
@@ -9,6 +10,8 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::error::{AppError, AppResult};
+
+mod xlsx;
 
 /// Linux flavor values the host form offers (label/icon only, D-005).
 const FLAVORS: &[&str] = &[
@@ -124,7 +127,10 @@ pub fn parse_file(path: &Path) -> AppResult<Vec<RawRow>> {
         .unwrap_or_default();
     match ext.as_str() {
         "csv" => parse_csv(path),
-        "xlsx" | "xls" => parse_xlsx(path),
+        "xlsx" => parse_xlsx(path),
+        "xls" => Err(AppError::InvalidInput(
+            "old .xls workbooks are not supported; save it as .xlsx or .csv".into(),
+        )),
         other => Err(AppError::InvalidInput(format!(
             "unsupported file type \".{other}\"; use .csv or .xlsx"
         ))),
@@ -159,41 +165,19 @@ fn parse_csv(path: &Path) -> AppResult<Vec<RawRow>> {
 }
 
 fn parse_xlsx(path: &Path) -> AppResult<Vec<RawRow>> {
-    use calamine::{Data, Reader};
-
-    let mut workbook = calamine::open_workbook_auto(path)
-        .map_err(|e| AppError::InvalidInput(format!("could not open workbook: {e}")))?;
-    let range = workbook
-        .worksheet_range_at(0)
-        .ok_or_else(|| AppError::InvalidInput("workbook has no worksheets".into()))?
-        .map_err(|e| AppError::InvalidInput(format!("could not read worksheet: {e}")))?;
-
-    let cell_to_string = |d: &Data| -> String {
-        match d {
-            Data::Empty => String::new(),
-            Data::String(s) => s.clone(),
-            // Ports come back as floats from Excel; render 22.0 as "22".
-            Data::Float(f) if f.fract() == 0.0 => format!("{}", *f as i64),
-            other => other.to_string(),
-        }
-    };
-
-    let mut iter = range.rows();
-    let headers: Vec<String> = iter
+    let mut sheet = xlsx::read_first_sheet(path)?.into_iter();
+    let (_, headers) = sheet
         .next()
-        .ok_or_else(|| AppError::InvalidInput("worksheet is empty".into()))?
-        .iter()
-        .map(cell_to_string)
-        .collect();
+        .ok_or_else(|| AppError::InvalidInput("worksheet is empty".into()))?;
     let map = ColumnMap::from_headers(&headers)?;
 
     let mut rows = Vec::new();
-    for (i, row) in iter.enumerate() {
-        let cells: Vec<String> = row.iter().map(cell_to_string).collect();
+    for (row_number, cells) in sheet {
         if cells.iter().all(|c| c.trim().is_empty()) {
             continue;
         }
-        rows.push(map.extract(i + 2, &cells));
+        // The row number Excel shows, so a reported error points at the row.
+        rows.push(map.extract(row_number, &cells));
     }
     Ok(rows)
 }

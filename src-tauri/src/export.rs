@@ -155,7 +155,7 @@ mod tests {
         write_hosts_xlsx(&all, &path).unwrap();
 
         // The .xlsx parses and validates cleanly through the bulk-import path
-        // (calamine reader + same header mapping + validation as CSV).
+        // (import::xlsx reader + same header mapping + validation as CSV).
         let raw = crate::import::parse_file(&path).unwrap();
         let previews =
             crate::import::validate_rows(&std::collections::HashSet::new(), raw);
