@@ -391,7 +391,7 @@ export const SECTIONS: HelpSection[] = [
     id: HELP_HOSTS,
     title: "Hosts",
     keywords:
-      "server add edit import csv credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first drag column header move reorder rearrange columns order of columns put hostname first swap columns remembered across restarts reset defaults columns box scoped chips in settings drag the chips header label truncated cut off ellipsis la userna long line flashes on connect blink flicker flash before the banner what was that line where did it come from omni_precmd bash_version prompt_command typed by itself not mine setup line visible on slow connection vpn wireless remote high latency laggy link appears then disappears wiped cleared line in my shell history up arrow recalls it bash_history histcontrol ignorespace ignoreboth hist_ignore_space histtimeformat delete the entry remove from history broadside typed it not the user zsh cannot delete hosts templates profiles switch three sides third position profiles side of the hosts tab where is the profiles list manage shell profiles from the hosts tab export a single profile launch a profile from the hosts tab open a profile from the profiles list multi-profile multi profile button open several profiles at once tick profiles and open them terminal button on a profile row profile row launch",
+      "server add edit import csv xlsx excel workbook spreadsheet first sheet xls old format not supported credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first drag column header move reorder rearrange columns order of columns put hostname first swap columns remembered across restarts reset defaults columns box scoped chips in settings drag the chips header label truncated cut off ellipsis la userna long line flashes on connect blink flicker flash before the banner what was that line where did it come from omni_precmd bash_version prompt_command typed by itself not mine setup line visible on slow connection vpn wireless remote high latency laggy link appears then disappears wiped cleared line in my shell history up arrow recalls it bash_history histcontrol ignorespace ignoreboth hist_ignore_space histtimeformat delete the entry remove from history broadside typed it not the user zsh cannot delete hosts templates profiles switch three sides third position profiles side of the hosts tab where is the profiles list manage shell profiles from the hosts tab export a single profile launch a profile from the hosts tab open a profile from the profiles list multi-profile multi profile button open several profiles at once tick profiles and open them terminal button on a profile row profile row launch",
     body: (
       <>
         <Lead>
@@ -479,7 +479,9 @@ export const SECTIONS: HelpSection[] = [
             <Nav>Import hosts…</Nav> and <Nav>Export hosts…</Nav> are both in
             the <Nav>Import / Export</Nav> menu at the top of the page.{" "}
             <Nav>Import</Nav> loads a list of hosts from a{" "}
-            <Term term="csv" /> file. The importer only reads connection details,
+            <Term term="csv" /> file or an Excel .xlsx workbook (only its first
+            sheet is read). Older .xls workbooks are not supported: save them as
+            .xlsx or .csv first. The importer only reads connection details,
             never passwords. If a label is already in use for a different machine,
             the import keeps both by adding a numbered suffix (for example web
             becomes web-2).
@@ -2084,15 +2086,16 @@ export const SECTIONS: HelpSection[] = [
               spreadsheet of your hosts alongside the backup.
               <br />
               <b>Restore only a backup you made yourself.</b> A restore replaces
-              all your data. To keep you safe, a few things are not restored:
-              custom local shells, trusted host keys, profile startup commands,
-              and the sudo auto-fill switch. Afterwards, re-add your custom
-              shells (then open <Nav>Edit</Nav> on each struck-through profile
-              and save it), retype your startup commands, expect each host to
-              ask you to confirm its key on the first connect, and turn
-              auto-fill back on if you use it. A list of what changed is shown
-              once the app reloads, and kept in <Nav>Logs</Nav> &rarr;{" "}
-              <Nav>Toasts History</Nav>.
+              your hosts, history, profiles, templates, skills and preferences.
+              Some things are never taken from the file and stay as they are on
+              this machine: custom local shells, trusted host keys, shortcut
+              commands, the admin lock, and the sudo auto-fill, history
+              clean-up, audit log and skill log location switches. Profile
+              startup commands come back empty, and a profile that used a
+              custom local shell comes back struck through: add the shell, then
+              open <Nav>Edit</Nav> on the profile and save it. A list of what
+              changed is shown once the app reloads, and kept in{" "}
+              <Nav>Logs</Nav> &rarr; <Nav>Toasts History</Nav>.
             </li>
             <li>
               <Nav>Audit log</Nav>: turn audit recording on or off.

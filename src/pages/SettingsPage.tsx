@@ -1472,9 +1472,9 @@ export function SettingsPage({
         <p className="text-xs text-muted-foreground">
           Restoring replaces all current hosts, settings and command history with
           the chosen backup. Saved passwords aren't in a backup, so a restored
-          host may need its password re-entered. Custom local shells and trusted
-          host keys are not carried over at all, so restore only a backup you
-          made yourself.
+          host may need its password re-entered. Custom local shells, trusted
+          host keys and security settings are never taken from the file, but
+          restore only a backup you made yourself.
         </p>
       </section>
       )}
@@ -1500,9 +1500,10 @@ export function SettingsPage({
               <strong>Only restore a backup you made yourself.</strong> A backup
               file is read with the same trust as the app's own database, so one
               from somebody else can decide what your copy of Broadside knows.
-              Custom local shells and trusted host keys are never carried over,
-              and sudo auto-fill is switched off, so a file cannot decide what
-              runs, what is trusted, or where a password gets typed.
+              Custom local shells, trusted host keys and security settings are
+              never taken from the file, and profile startup commands come back
+              empty, so a file cannot decide what runs, what is trusted, or
+              where a password gets typed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

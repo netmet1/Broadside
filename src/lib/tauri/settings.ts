@@ -276,36 +276,24 @@ export function backupAppData(
 
 export type RestoreReport = {
   host_count: number;
-  /** Custom local-shell entries the restore refused to carry over: a launcher
-   * entry names a program to run, and a backup file is not where that decision
-   * gets made. Re-add them under Settings. */
-  dropped_terminals: number;
-  /** Trusted host keys the restore cleared, so the first connect to each host
-   * asks again instead of trusting whatever the file said. */
-  cleared_host_keys: number;
   /** Saved shell profiles whose startup command the restore emptied. The
    * profile comes back; the command it would type into a shell on the next
    * click does not, because a file is not where that gets decided. */
   cleared_startup_commands: number;
-  /** Saved shell profiles that named a custom local shell. Every custom entry
-   * is dropped above, so each of these profiles was pointed at nothing rather
-   * than left holding an id the next entry added would take. Pick the shell
-   * again in Edit once the entry is back. */
+  /** Saved shell profiles that named a custom local shell. Custom entries are
+   * never restored, so each of these profiles was pointed at nothing rather
+   * than left holding an id that names one of this machine's own entries. Pick
+   * the shell again in Edit once the entry is added. */
   orphaned_custom_profiles: number;
-  /** True when the restored file had sudo auto-fill on and the restore turned
-   * it back off. A backup carries no credentials, so a file arriving with that
-   * switch on would be turning password injection on for passwords already on
-   * this machine. */
-  sudo_autofill_disabled: boolean;
 };
 
-/** Restores a backup `.db` over the live database (hosts, settings, command
- * history, shell profiles). This OVERWRITES all current data. Credentials are
- * never in a backup, so restored hosts may need their password re-entered.
- * Three things deliberately do NOT come back: custom local-shell entries,
- * trusted host keys, and the startup commands on shell profiles, each of which
- * would otherwise let a file somebody else made decide what runs or what is
- * trusted (see the backend command for the reasoning).
+/** Restores a backup `.db` into the live database (hosts, history, skills,
+ * templates, shell profiles, preferences). This OVERWRITES that data.
+ * Credentials are never in a backup, so restored hosts may need their password
+ * re-entered. Custom local-shell entries, trusted host keys and the security
+ * settings are never read from the file and stay as they are, and profile
+ * startup commands come back empty, so a file somebody else made cannot decide
+ * what runs or what is trusted (see `db/restore.rs` for the reasoning).
  * Reload the app afterwards so every page re-reads the restored database. */
 export function restoreAppData(path: string): Promise<RestoreReport> {
   return invoke<RestoreReport>("restore_app_data", { path });

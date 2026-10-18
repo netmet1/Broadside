@@ -235,7 +235,7 @@ export function ShellProfileDialog({
               </SelectContent>
             </Select>
             {/* Which shell this profile used to open, for a profile that has
-                none. A restore deletes every custom local shell, and the
+                none. A restore never brings custom local shells over, and the
                 profile's own name is a poor record of which one it was. */}
             {initial?.shellId === UNMATCHED_CUSTOM && initial.wantedShell && (
               <p className="text-xs text-muted-foreground">

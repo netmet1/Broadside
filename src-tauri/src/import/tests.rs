@@ -171,6 +171,14 @@ fn unsupported_extension_errors() {
     assert!(err.to_string().contains("unsupported"), "got: {err}");
 }
 
+#[test]
+fn old_xls_is_refused_with_what_to_do() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_csv(dir.path(), "hosts.xls", "not really a workbook");
+    let err = parse_file(&path).unwrap_err();
+    assert!(err.to_string().contains("save it as .xlsx"), "got: {err}");
+}
+
 // ---- xlsx parsing ----
 
 #[test]

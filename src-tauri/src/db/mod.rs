@@ -12,6 +12,7 @@ pub mod host_keys;
 pub mod hosts;
 pub mod omni_history;
 pub mod pty_history;
+pub mod restore;
 pub mod settings;
 pub mod shell_profiles;
 pub mod skills;
@@ -40,7 +41,7 @@ pub fn open_in_memory() -> AppResult<Connection> {
 /// Sequential migrations driven by PRAGMA user_version. Each entry runs at
 /// most once per database; user_version records how many have been applied.
 /// Append only, never reorder or edit a shipped entry.
-const MIGRATIONS: &[&str] = &[
+pub(crate) const MIGRATIONS: &[&str] = &[
     // 1: initial hosts table
     "CREATE TABLE IF NOT EXISTS hosts (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -292,7 +293,7 @@ const MIGRATIONS: &[&str] = &[
     // `id` is text because templates already reference a profile by its uuid.
     // `label` is not UNIQUE: an import collision is renamed, not failed.
     // `startup_command` is typed into a shell on launch, which is why a restore
-    // clears it (commands::backup::harden_restored_db).
+    // clears it (db::restore).
     "CREATE TABLE IF NOT EXISTS shell_profiles (
         id              TEXT PRIMARY KEY,
         label           TEXT NOT NULL,
@@ -305,9 +306,9 @@ const MIGRATIONS: &[&str] = &[
         updated_at      TEXT NOT NULL
     );",
     // 24: the name of the custom local shell a profile asked for, kept only
-    // while the profile points at no shell at all. A restore deletes every
-    // custom terminal and re-points the profiles that named one
-    // (commands::backup::harden_restored_db), and before this column the
+    // while the profile points at no shell at all. A restore never carries a
+    // custom terminal over and re-points the profiles that named one
+    // (db::restore), and before this column the
     // operator was left working out from a profile's own name which of their
     // shells it had opened. A note for a person to read, never a pointer:
     // nothing is ever launched from it. See db/shell_profiles.rs.
