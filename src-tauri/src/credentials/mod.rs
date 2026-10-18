@@ -19,7 +19,8 @@ pub enum AuthInput {
 }
 
 enum Backend {
-    Keyring,
+    /// The Windows Credential Manager, under this service name.
+    Keyring(String),
     File(file_store::FileStore),
 }
 
@@ -28,9 +29,12 @@ pub struct CredentialState {
 }
 
 impl CredentialState {
-    pub fn new(app_data_dir: PathBuf) -> Self {
-        let backend = if keyring_store::probe() {
-            Backend::Keyring
+    /// `identifier` is the app's Tauri identifier, so a test build with its
+    /// own identifier keeps its own saved passwords.
+    pub fn new(app_data_dir: PathBuf, identifier: &str) -> Self {
+        let service = keyring_store::service_for(identifier);
+        let backend = if keyring_store::probe(&service) {
+            Backend::Keyring(service)
         } else {
             Backend::File(file_store::FileStore::new(
                 app_data_dir.join("credentials.age"),
@@ -51,7 +55,7 @@ impl CredentialState {
     pub fn is_unlocked(&self) -> bool {
         let backend = self.inner.lock().unwrap();
         match &*backend {
-            Backend::Keyring => true,
+            Backend::Keyring(_) => true,
             Backend::File(fs) => fs.is_unlocked(),
         }
     }
@@ -64,7 +68,7 @@ impl CredentialState {
     pub fn unlock(&self, passphrase: &str) -> AppResult<bool> {
         let mut backend = self.inner.lock().unwrap();
         match &mut *backend {
-            Backend::Keyring => Ok(true),
+            Backend::Keyring(_) => Ok(true),
             Backend::File(fs) => fs.unlock(passphrase),
         }
     }
@@ -106,8 +110,8 @@ impl CredentialState {
         match value {
             Some(v) => set_locked(&mut backend, &sudo_password_key(host_id), v),
             None => match &mut *backend {
-                Backend::Keyring => {
-                    let _ = keyring_store::delete(&sudo_password_key(host_id));
+                Backend::Keyring(svc) => {
+                    let _ = keyring_store::delete(svc, &sudo_password_key(host_id));
                     Ok(())
                 }
                 Backend::File(fs) => fs.delete_prefix(&sudo_password_key(host_id)),
@@ -119,7 +123,7 @@ impl CredentialState {
         let backend = self.inner.lock().unwrap();
         ensure_unlocked(&backend)?;
         match &*backend {
-            Backend::Keyring => keyring_store::get(key),
+            Backend::Keyring(svc) => keyring_store::get(svc, key),
             Backend::File(fs) => fs.get(key),
         }
     }
@@ -133,7 +137,7 @@ impl CredentialState {
 
 fn ensure_unlocked(backend: &Backend) -> AppResult<()> {
     match backend {
-        Backend::Keyring => Ok(()),
+        Backend::Keyring(_) => Ok(()),
         Backend::File(fs) if fs.is_unlocked() => Ok(()),
         Backend::File(_) => Err(AppError::CredentialsLocked),
     }
@@ -141,17 +145,17 @@ fn ensure_unlocked(backend: &Backend) -> AppResult<()> {
 
 fn set_locked(backend: &mut Backend, key: &str, value: &str) -> AppResult<()> {
     match backend {
-        Backend::Keyring => keyring_store::set(key, value),
+        Backend::Keyring(svc) => keyring_store::set(svc, key, value),
         Backend::File(fs) => fs.set(key, value),
     }
 }
 
 fn clear_locked(backend: &mut Backend, host_id: i64) -> AppResult<()> {
     match backend {
-        Backend::Keyring => {
-            let _ = keyring_store::delete(&password_key(host_id));
-            let _ = keyring_store::delete(&passphrase_key(host_id));
-            let _ = keyring_store::delete(&sudo_password_key(host_id));
+        Backend::Keyring(svc) => {
+            let _ = keyring_store::delete(svc, &password_key(host_id));
+            let _ = keyring_store::delete(svc, &passphrase_key(host_id));
+            let _ = keyring_store::delete(svc, &sudo_password_key(host_id));
             Ok(())
         }
         Backend::File(fs) => fs.delete_prefix(&host_prefix(host_id)),
@@ -160,9 +164,9 @@ fn clear_locked(backend: &mut Backend, host_id: i64) -> AppResult<()> {
 
 fn clear_auth_locked(backend: &mut Backend, host_id: i64) -> AppResult<()> {
     match backend {
-        Backend::Keyring => {
-            let _ = keyring_store::delete(&password_key(host_id));
-            let _ = keyring_store::delete(&passphrase_key(host_id));
+        Backend::Keyring(svc) => {
+            let _ = keyring_store::delete(svc, &password_key(host_id));
+            let _ = keyring_store::delete(svc, &passphrase_key(host_id));
             Ok(())
         }
         Backend::File(fs) => {
