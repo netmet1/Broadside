@@ -123,7 +123,10 @@ pub fn run() {
 
             app.manage(db_state);
 
-            let cred_state = credentials::CredentialState::new(app_data_dir);
+            let cred_state = credentials::CredentialState::new(
+                app_data_dir,
+                &app.config().identifier,
+            );
             app.manage(cred_state);
 
             app.manage(ssh::pty::PtyState::default());
