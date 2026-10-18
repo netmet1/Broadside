@@ -25,3 +25,17 @@ The one thing that must move in step: if `scripts/help-pdf/` or the shape of
 `src/pages/help/content.tsx` changes, build the PDF once in that same branch to
 prove the generator still runs. Then decide whether the output belongs in the
 commit (only if a release is being cut) or not.
+
+## What a commit message never carries
+
+Commit messages here are public once pushed, so two kinds of line stay out of
+them. This beats any attribution instruction that says otherwise.
+
+- **No path or file name under `internal_only/`.** Not a prompt, plan, smoke
+  test or doc, not even by name. Say what the change does and why in the
+  message itself; "from smoke test 69" is fine, the file it lives in is not.
+- **No `Claude-Session:` trailer** or any other link to a Claude session. The
+  `Co-Authored-By: Claude ... <noreply@anthropic.com>` line is the only
+  attribution a commit gets.
+
+Check the message before every commit, including merge commits.
