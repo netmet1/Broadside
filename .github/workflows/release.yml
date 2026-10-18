@@ -13,7 +13,9 @@ name: Release
 #   1. Build the app (npm run tauri build) -> the MSI installer.
 #   2. Title  = vX.X.X, read from src-tauri/tauri.conf.json (single source of truth).
 #   3. Body   = the `notes` input.
-#   4. Asset  = the built MSI.
+#   4. Assets = the built MSI and its SHA-256 checksum file.
+#   5. A signed GitHub build attestation saying this exact MSI was built here,
+#      by this workflow, from this commit (checked with `gh attestation verify`).
 # The release is created as a DRAFT for review; you publish it by hand.
 #
 # Assumes the target commit already passed validation (local scripts/ci.ps1 and
@@ -30,6 +32,11 @@ on:
 
 permissions:
   contents: write
+  # The build attestation: id-token mints the short-lived signing certificate,
+  # attestations stores the attestation, artifact-metadata its storage record.
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   release:
@@ -112,9 +119,24 @@ jobs:
         id: hash
         shell: pwsh
         run: |
-          $h = (Get-FileHash "${{ steps.pkg.outputs.msi }}" -Algorithm SHA256).Hash.ToLower()
-          "sha256=$h" >> $env:GITHUB_OUTPUT
+          $msi = "${{ steps.pkg.outputs.msi }}"
+          $h = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLower()
+          # Also as a file beside the MSI, in the usual "<hash>  <name>" form,
+          # so a script can fetch the checksum without reading the page.
+          $sumFile = "$msi.sha256"
+          [IO.File]::WriteAllText($sumFile, "$h  $(Split-Path $msi -Leaf)`n")
+          "sha256=$h"         >> $env:GITHUB_OUTPUT
+          "sumfile=$sumFile"  >> $env:GITHUB_OUTPUT
           Write-Host "SHA-256  $h"
+
+      # Proves where the MSI came from, which a checksum cannot: a signed record
+      # (Sigstore, keyless) that this exact file was built by this repository's
+      # release workflow from this commit. Runs after signing, so it covers the
+      # file that is published.
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ steps.pkg.outputs.msi }}
 
       - name: Write notes file
         shell: pwsh
@@ -130,7 +152,12 @@ jobs:
           $name = Split-Path $env:MSI_NAME -Leaf
           $block = "`n`n---`n`n**Verify your download**`n`n" +
                    "``````text`n$name`nSHA-256  $env:MSI_SHA256`n```````n`n" +
-                   "In PowerShell: ``Get-FileHash .\$name -Algorithm SHA256``"
+                   "In PowerShell: ``Get-FileHash .\$name`` (the same hash is in ``$name.sha256``).`n`n" +
+                   "To confirm it was built from this repository by its release workflow, " +
+                   "with the [GitHub CLI](https://cli.github.com/):`n`n" +
+                   "``````text`ngh attestation verify $name --repo ${{ github.repository }}`n```````n`n" +
+                   "These show the file is intact and where it was built. On their own they are not a " +
+                   "Windows code signature."
           Add-Content -Path notes.md -Value $block -Encoding utf8
 
       - name: Create draft release
@@ -147,5 +174,6 @@ jobs:
             --title $tag `
             --notes-file notes.md `
             --target $env:GITHUB_SHA `
-            "${{ steps.pkg.outputs.msi }}"
+            "${{ steps.pkg.outputs.msi }}" `
+            "${{ steps.hash.outputs.sumfile }}"
           Write-Host "Draft release $tag created. Review it on the Releases page, then Publish."

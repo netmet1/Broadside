@@ -75,6 +75,18 @@ file you downloaded is the one that was built:
 Get-FileHash .\Broadside_x.y.z_x64_en-US.msi -Algorithm SHA256
 ```
 
+The same hash is also attached to the release as a `.sha256` file. From v1.3.0,
+each installer also carries a GitHub build attestation, a signed record that this
+exact file was built from this repository by its release workflow. Check it with
+the [GitHub CLI](https://cli.github.com/):
+
+```powershell
+gh attestation verify .\Broadside_x.y.z_x64_en-US.msi --repo netmet1/Broadside
+```
+
+Neither is a Windows code signature, so the `Publisher: Unknown` prompt still
+appears.
+
 ### If Windows Defender flags it
 
 An unsigned application that is only days old, has few users, and opens terminal
