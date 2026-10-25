@@ -93,6 +93,8 @@ import {
 import { SortHeader } from "@/pages/hosts/SortHeader";
 import { useHostConnTest } from "@/pages/hosts/useHostConnTest";
 import { useHostSort } from "@/pages/hosts/useHostSort";
+import { useHostOrder } from "@/pages/hosts/useHostOrder";
+import { RowGrip } from "@/components/RowGrip";
 import { useColumnResize } from "@/pages/hosts/useColumnResize";
 import { useHostTagFilter } from "@/pages/hosts/useHostTagFilter";
 import { TemplatesView } from "@/pages/hosts/TemplatesView";
@@ -698,7 +700,7 @@ export function HostsPage({
   };
 
   // Column sorting (persisted for the session) + the sorted view.
-  const { sort, toggleSort, sortedHosts } = useHostSort(
+  const { sort, toggleSort, clearSort, sortedHosts } = useHostSort(
     hosts,
     connectedHostIds,
   );
@@ -840,6 +842,16 @@ export function HostsPage({
       setLoading(false);
     }
   }, []);
+
+  // The grip beside each tick: the operator's own order. See useHostOrder.
+  const { drag: hostDrag, gripHint: hostGripHint } = useHostOrder({
+    hosts,
+    sortedHosts,
+    sorted: sort !== null,
+    clearSort,
+    setHosts,
+    refresh,
+  });
 
   // The first load. Called here rather than through `refresh` so the state
   // write is visibly in a continuation instead of behind a function the effect
@@ -1455,18 +1467,35 @@ export function HostsPage({
                 </TableCell>
               </TableRow>
             ) : (
-              visibleHosts.map((h) => (
+              visibleHosts.map((h) => {
+                const dropSide = hostDrag.dropSide(h.id);
+                return (
                 <TableRow
                   key={h.id}
+                  {...hostDrag.rowProps(h.id)}
                   data-state={selectedIds.has(h.id) ? "selected" : undefined}
+                  className={cn(
+                    "group",
+                    hostDrag.isDragging(h.id) && "opacity-40",
+                    // The drop line, drawn on the cells because a table row
+                    // does not reliably paint a shadow of its own.
+                    dropSide === "before" &&
+                      "[&>td]:shadow-[inset_0_2px_0_0_var(--primary)]",
+                    dropSide === "after" &&
+                      "[&>td]:shadow-[inset_0_-2px_0_0_var(--primary)]",
+                  )}
                 >
-                  <TableCell className="text-center">
+                  <TableCell className="whitespace-nowrap text-center">
                     <input
                       type="checkbox"
                       className="accent-primary align-middle"
                       checked={selectedIds.has(h.id)}
                       onChange={() => toggleSelected(h.id)}
                       aria-label={`Select ${h.label}`}
+                    />
+                    <RowGrip
+                      gripProps={hostDrag.gripProps(h.id)}
+                      hintProps={hint(hostGripHint)}
                     />
                   </TableCell>
                   <TableCell>
@@ -1570,7 +1599,8 @@ export function HostsPage({
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>
