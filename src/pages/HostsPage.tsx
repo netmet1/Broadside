@@ -129,7 +129,7 @@ export function HostsPage({
   connectedHostIds,
   openHostIds,
   onEditTemplate,
-  onOpenTemplate,
+  onOpenTemplates,
   onOpenProfiles,
   onOpenHelp,
   startWithNewHost = false,
@@ -146,9 +146,11 @@ export function HostsPage({
   openHostIds: Set<number>;
   /** Switch to the Templates tab with this template loaded, or a new one. */
   onEditTemplate: (template: Template | null) => void;
-  /** Open every session in this template. The App layer owns what happens when
-   * terminals are already open, because it is the one that knows. */
-  onOpenTemplate: (template: Template) => void;
+  /** Open every session in these templates, one template after another in the
+   * order given: one from its row, or every one ticked. The App layer owns what
+   * happens when terminals are already open, because it is the one that
+   * knows. */
+  onOpenTemplates: (templates: Template[]) => void;
   /** Open these saved profiles as terminal tabs: one from its row, or every one
    * ticked. Resolved and opened by the App layer, through the same path a
    * template launch and the "+" launcher take. */
@@ -172,13 +174,15 @@ export function HostsPage({
   const {
     templates,
     loading: templatesLoading,
-    selectedId: selectedTemplateId,
-    setSelectedId: setSelectedTemplateId,
-    selected: selectedTemplate,
+    checkedIds: checkedTemplateIds,
+    checked: checkedTemplates,
+    toggle: toggleTemplate,
+    toggleAll: toggleAllTemplates,
     deleting: deletingTemplate,
     setDeleting: setDeletingTemplate,
     runDelete: runDeleteTemplate,
     duplicate: duplicateTemplate,
+    drag: templateDrag,
   } = useTemplateList();
   // Saved launch profiles, the third side. The Hosts page is built fresh on
   // every visit (App renders it behind `page === "hosts"`), so the hook is
@@ -1200,19 +1204,30 @@ export function HostsPage({
           </div>
         ) : side === "templates" ? (
           <div className="flex shrink-0 gap-2">
+            {/* The Templates side's Multi-terminal: every ticked template,
+                one after another in the list's order. One ticked opens just
+                that one, as its row's play button would; two or more always
+                ask first, saying the order. */}
             <Button
               variant="outline"
-              onClick={() => selectedTemplate && onOpenTemplate(selectedTemplate)}
-              disabled={!selectedTemplate}
-              aria-label="Open template"
+              onClick={() => onOpenTemplates(checkedTemplates)}
+              disabled={checkedTemplates.length === 0}
+              aria-label="Multi-template"
               {...hint(
-                selectedTemplate
-                  ? `Open every session in "${selectedTemplate.name}", in order, on the Terminals tab`
-                  : "Pick a template first. Open launches the whole arrangement at once."
+                checkedTemplates.length === 0
+                  ? "Tick templates to open several at once, in the list's order. To open just one, use its play button or double-click its row"
+                  : checkedTemplates.length === 1
+                    ? `Open every session in "${checkedTemplates[0].name}", in order, on the Terminals tab`
+                    : `Open the ${checkedTemplates.length} ticked templates one after another, top of the list first`,
               )}
             >
               <PlayIcon />
-              {compact ? "" : "Open"}
+              {compact ? "" : "Multi-template"}
+              {checkedTemplates.length > 0
+                ? compact
+                  ? checkedTemplates.length
+                  : ` (${checkedTemplates.length})`
+                : ""}
             </Button>
             <Button
               onClick={() => onEditTemplate(null)}
@@ -1356,8 +1371,11 @@ export function HostsPage({
           <TemplatesView
             templates={templates}
             loading={templatesLoading}
-            selectedId={selectedTemplateId}
-            onSelect={setSelectedTemplateId}
+            checkedIds={checkedTemplateIds}
+            onToggle={toggleTemplate}
+            onToggleAll={toggleAllTemplates}
+            drag={templateDrag}
+            onOpen={(t) => onOpenTemplates([t])}
             onEdit={onEditTemplate}
             onDuplicate={(t) => void duplicateTemplate(t)}
             onDelete={setDeletingTemplate}
