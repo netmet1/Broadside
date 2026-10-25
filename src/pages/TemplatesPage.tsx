@@ -284,8 +284,8 @@ export function TemplatesPage({
   const dirty = draft !== null && fingerprint(draft) !== baseline;
 
   // Most recently touched first, which is the order that makes a short list
-  // useful. The Hosts tab sorts them alphabetically, because that is the one
-  // you read down looking for a name.
+  // useful. The Hosts tab shows them in the operator's own order, because that
+  // is the one they open in.
   const recent = useMemo(
     () =>
       [...templates]
