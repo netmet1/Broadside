@@ -854,7 +854,7 @@ export function TemplatesPage({
               {replacing?.why}, and{" "}
               {draft.name.trim()
                 ? `“${draft.name.trim()}”`
-                : "the template on it"}{" "}
+                : "the untitled template there"}{" "}
               has changes that have not been saved. Replacing it loses them.
             </AlertDialogDescription>
           </AlertDialogHeader>
