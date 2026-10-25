@@ -5,6 +5,7 @@ import {
   LayoutTemplateIcon,
   PlusIcon,
   SaveIcon,
+  ServerIcon,
   Trash2Icon,
   UploadIcon,
   XIcon,
@@ -72,6 +73,7 @@ export function TemplateTopBar({
   templates,
   currentId,
   onPick,
+  onBrowseTemplates,
   name,
   onNameChange,
   color,
@@ -91,6 +93,8 @@ export function TemplateTopBar({
   currentId: number | null;
   /** Load another saved template, or start a new one (`null`). */
   onPick: (id: number | null) => void;
+  /** Go to the Hosts tab's Templates list, where they are opened. */
+  onBrowseTemplates: () => void;
   name: string;
   onNameChange: (v: string) => void;
   color: string;
@@ -155,6 +159,21 @@ export function TemplateTopBar({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* The way to the list the templates are opened from. An icon only, the
+          Hosts tab's own, because the bar has to fit one row at 1024px. */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onBrowseTemplates}
+        aria-label="All templates, on the Hosts tab"
+        title="All templates, on the Hosts tab"
+        {...hint(
+          "Go to Hosts > Templates, the list where templates are opened, reordered and duplicated. What is on the canvas stays here.",
+        )}
+      >
+        <ServerIcon className="h-3.5 w-3.5" />
+      </Button>
 
       <input
         type="text"

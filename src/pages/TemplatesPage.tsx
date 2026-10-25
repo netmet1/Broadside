@@ -245,7 +245,31 @@ export function TemplatesPage({
     }
   }, [currentId]);
 
-  // A request from the Hosts tab: Add, or Edit on a particular row.
+  const dirty = draft !== null && fingerprint(draft) !== baseline;
+
+  // Something else to put on the canvas while the one there has unsaved
+  // changes: held here until the operator says it may replace them, the same
+  // question an import asks. A saved template is not asked about, since it is
+  // still in the list.
+  const [replacing, setReplacing] = useState<{
+    draft: Draft;
+    baseline: string;
+    why: string;
+  } | null>(null);
+  const replaceDraft = useCallback(
+    (next: Draft, nextBaseline: string, why: string) => {
+      if (dirty) {
+        setReplacing({ draft: next, baseline: nextBaseline, why });
+        return;
+      }
+      setDraft(next);
+      setBaseline(nextBaseline);
+    },
+    [dirty],
+  );
+
+  // A request from elsewhere: Add, or Edit on a particular row of the Hosts
+  // tab, or Save as template on the Terminals tab.
   //
   // Acted on during render rather than in an effect. An effect would paint one
   // frame of whatever was on screen before, which for Edit means the previous
@@ -255,16 +279,28 @@ export function TemplatesPage({
   if (focus && focus.n !== consumedFocus) {
     setConsumedFocus(focus.n);
     if (focus.template) {
-      openDraft(draftOf(focus.template));
+      const next = draftOf(focus.template);
+      replaceDraft(
+        next,
+        fingerprint(next),
+        `Opening “${focus.template.name}” puts it in the editor`,
+      );
     } else if (focus.items && focus.items.length > 0) {
       // The grid from the Terminals tab. Measured against an empty draft
       // rather than against itself, because nothing has been saved yet: the
       // arrangement is unsaved work from the first frame, and leaving it
       // behind should say so.
-      setDraft({ ...EMPTY_DRAFT, items: focus.items });
-      setBaseline(fingerprint(EMPTY_DRAFT));
+      replaceDraft(
+        { ...EMPTY_DRAFT, items: focus.items },
+        fingerprint(EMPTY_DRAFT),
+        "Save as template puts the Terminals tab's grid in the editor",
+      );
     } else {
-      openDraft(EMPTY_DRAFT);
+      replaceDraft(
+        EMPTY_DRAFT,
+        fingerprint(EMPTY_DRAFT),
+        "A new template clears the editor",
+      );
     }
   }
 
@@ -280,8 +316,6 @@ export function TemplatesPage({
       [...templates].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
     if (found) openDraft(draftOf(found));
   }
-
-  const dirty = draft !== null && fingerprint(draft) !== baseline;
 
   // Most recently touched first, which is the order that makes a short list
   // useful. The Hosts tab shows them in the operator's own order, because that
@@ -505,13 +539,23 @@ export function TemplatesPage({
   const pickTemplate = useCallback(
     (id: number | null) => {
       if (id == null) {
-        openDraft(EMPTY_DRAFT);
+        replaceDraft(
+          EMPTY_DRAFT,
+          fingerprint(EMPTY_DRAFT),
+          "A new template clears the editor",
+        );
         return;
       }
       const found = templates.find((t) => t.id === id);
-      if (found) openDraft(draftOf(found));
+      if (!found) return;
+      const next = draftOf(found);
+      replaceDraft(
+        next,
+        fingerprint(next),
+        `Opening “${found.name}” puts it in the editor`,
+      );
     },
-    [templates, openDraft],
+    [templates, replaceDraft],
   );
 
   const busy = (draft?.items.length ?? 0) > BUSY_TEMPLATE_ITEMS;
@@ -578,18 +622,20 @@ export function TemplatesPage({
                 </button>
               ))}
             </div>
-            {templates.length > recent.length && (
-              <button
-                type="button"
-                onClick={onBrowseTemplates}
-                className="mt-2 w-full text-center text-xs font-medium text-primary hover:underline"
-                {...hint(
-                  "Open the Hosts tab at the Templates list, where every one of them is",
-                )}
-              >
-                Show all {templates.length} templates
-              </button>
-            )}
+            {/* Always, not only when the short list is cut: the Hosts tab is
+                where templates are opened, so it is the way there either way. */}
+            <button
+              type="button"
+              onClick={onBrowseTemplates}
+              className="mt-2 w-full text-center text-xs font-medium text-primary hover:underline"
+              {...hint(
+                "Open the Hosts tab at the Templates list, where every one of them is",
+              )}
+            >
+              {templates.length > recent.length
+                ? `Show all ${templates.length} templates`
+                : "Show them on the Hosts tab"}
+            </button>
           </div>
         )}
       </div>
@@ -611,6 +657,7 @@ export function TemplatesPage({
           templates={templates}
           currentId={draft.id}
           onPick={pickTemplate}
+          onBrowseTemplates={onBrowseTemplates}
           name={draft.name}
           onNameChange={(name) => setDraft((d) => (d ? { ...d, name } : d))}
           color={draft.color}
@@ -789,6 +836,41 @@ export function TemplatesPage({
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={closeEditor}>
               Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={replacing !== null}
+        onOpenChange={(o) => {
+          if (!o) setReplacing(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Replace what's on the canvas?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {replacing?.why}, and{" "}
+              {draft.name.trim()
+                ? `“${draft.name.trim()}”`
+                : "the template on it"}{" "}
+              has changes that have not been saved. Replacing it loses them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                const r = replacing;
+                setReplacing(null);
+                if (!r) return;
+                setDraft(r.draft);
+                setBaseline(r.baseline);
+              }}
+            >
+              Replace
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

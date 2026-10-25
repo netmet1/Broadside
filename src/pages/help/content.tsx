@@ -571,7 +571,7 @@ export const SECTIONS: HelpSection[] = [
     id: HELP_TEMPLATES,
     title: "Templates",
     keywords:
-      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup checkbox tick several multi-template multi template open several templates at once in order which opens first top of the list play button double-click a row double click to open reorder templates drag a template grip save as template save the grid as a template from the terminals tab keep this layout button appears disappears matches a template add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list hosts tab toggle switch between hosts and templates nothing launches from the templates tab why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group grid settings popover change columns without leaving the page drag a session here strip band at the bottom duplicate name same name twice numbered 02 03 renamed automatically duplicate a template copy a template clone save as rename instead of copy make a variant swap sessions two templates called the same thing show all templates recent five import from the splash screen closed editor deleted somewhere else deleted while open create it again discard greyed button no tooltip why is the button grey status bar hint on a disabled button",
+      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup checkbox tick several multi-template multi template open several templates at once in order which opens first top of the list play button double-click a row double click to open reorder templates drag a template grip save as template save the grid as a template from the terminals tab keep this layout button appears disappears matches a template add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list hosts tab toggle switch between hosts and templates nothing launches from the templates tab why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group grid settings popover change columns without leaving the page drag a session here strip band at the bottom duplicate name same name twice numbered 02 03 renamed automatically duplicate a template copy a template clone save as rename instead of copy make a variant swap sessions two templates called the same thing show all templates recent five import from the splash screen closed editor deleted somewhere else deleted while open create it again discard greyed button no tooltip why is the button grey status bar hint on a disabled button back to the hosts tab templates list shortcut server button get to the list from the editor replace what is on the canvas unsaved changes lost overwritten keep editing replaced my template asks before replacing",
     body: (
       <>
         <Lead>
@@ -648,8 +648,19 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Closing the editor with the <Nav>x</Nav> shows{" "}
               <Nav>New template</Nav>, <Nav>Import</Nav> and the five templates
-              you edited most recently. <Nav>Show all</Nav> goes to the full list
-              on the Hosts tab.
+              you edited most recently, with a link to the full list on the
+              Hosts tab.
+            </li>
+            <li>
+              The server button beside the template menu, at the left of the
+              editor's bar, goes straight to <Nav>Hosts → Templates</Nav>.
+              Whatever is on the canvas is still there when you come back.
+            </li>
+            <li>
+              Putting something else on the canvas while it has unsaved changes
+              asks first: another template from the menu, <Nav>Edit</Nav> on the
+              Hosts tab, <Nav>Save as template</Nav> on the Terminals tab, or an
+              import. <Nav>Keep editing</Nav> leaves your work as it was.
             </li>
             <li>
               If you delete a template on the Hosts tab while it is open in the
