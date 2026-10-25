@@ -82,6 +82,7 @@ import {
   Columns2Icon,
   EyeIcon,
   EyeOffIcon,
+  LayoutTemplateIcon,
   Grid2x2Icon,
   LayoutGridIcon,
   ListFilterIcon,
@@ -149,6 +150,7 @@ export function TerminalRail({
   maximizeActive,
   hideGridHeaders,
   toggleGridHeaders,
+  saveAsTemplate,
   tabBarHidden,
   toggleTabBar,
   customGrid,
@@ -199,6 +201,10 @@ export function TerminalRail({
   maximizeActive: () => void;
   hideGridHeaders: boolean;
   toggleGridHeaders: () => void;
+  /** Save the grid on screen as a template, or null when that is not on offer:
+   * outside Grid, with fewer than two tiles, or when a saved template already
+   * opens exactly these sessions. `count` is how many sessions it would hold. */
+  saveAsTemplate: { count: number; onSave: () => void } | null;
   /** Whether the tab strip is rolled up. Grid-only, and remembered. */
   tabBarHidden: boolean;
   toggleTabBar: () => void;
@@ -477,6 +483,26 @@ export function TerminalRail({
           ) : (
             <EyeIcon className="h-3.5 w-3.5" />
           )}
+        </Button>
+      )}
+
+      {/* Save as template. Here rather than in the View menu because it comes
+          and goes, and an item that appears in a menu is one nobody sees
+          arrive: it shows up beside the grid controls when the grid has two or
+          more tiles that no saved template already opens, which is exactly
+          when there is something new to keep. Icon-only, like its neighbours,
+          with the Templates tab's own icon. */}
+      {saveAsTemplate && (
+        <Button
+          size="icon-sm"
+          variant="outline"
+          onClick={saveAsTemplate.onSave}
+          aria-label="Save as template"
+          {...hint(
+            `Save this grid as a template: the Templates tab opens with these ${saveAsTemplate.count} sessions in this order, ready to name and save`,
+          )}
+        >
+          <LayoutTemplateIcon className="h-3.5 w-3.5" />
         </Button>
       )}
 

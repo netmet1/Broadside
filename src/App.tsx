@@ -41,6 +41,7 @@ import {
   BUSY_TEMPLATE_ITEMS,
   startupTemplate,
   type Template,
+  type TemplateItem,
 } from "@/lib/tauri/templates";
 import type { HelpSectionId } from "@/pages/help/sections";
 import { BroadcastPage } from "@/pages/BroadcastPage";
@@ -277,6 +278,7 @@ function App() {
               cwd: from.cwd,
               startupCommand: from.startupCommand,
               profileLabel: from.profileLabel,
+              profileId: from.profileId,
               profileColor: from.profileColor,
             };
       setSessions((prev) => {
@@ -302,6 +304,7 @@ function App() {
         cwd: opts?.cwd,
         startupCommand: opts?.startupCommand,
         profileLabel: opts?.profileLabel,
+        profileId: opts?.profileId,
         profileColor: opts?.profileColor,
       };
       setSessions((prev) => [...prev, session]);
@@ -450,6 +453,7 @@ function App() {
               cwd: s.opts.cwd,
               startupCommand: s.opts.startupCommand,
               profileLabel: s.opts.profileLabel,
+              profileId: s.opts.profileId,
               profileColor: s.opts.profileColor,
               startClosed: !connect,
             },
@@ -503,6 +507,7 @@ function App() {
                 cwd: p.cwd || undefined,
                 startupCommand: p.startupCommand || undefined,
                 profileLabel: p.label,
+                profileId: p.id,
                 profileColor: p.color || undefined,
               },
             });
@@ -621,6 +626,13 @@ function App() {
     },
     [openTemplate, sessions.length],
   );
+
+  /** The Terminals tab's Save as template: a new template holding the grid on
+   * screen, opened in the editor to be named and saved. */
+  const saveGridAsTemplate = useCallback((items: TemplateItem[]) => {
+    setTemplateFocus((f) => ({ template: null, items, n: (f?.n ?? 0) + 1 }));
+    setPage("templates");
+  }, []);
 
   const editTemplate = useCallback((template: Template | null) => {
     setTemplateFocus((f) => ({ template, n: (f?.n ?? 0) + 1 }));
@@ -963,6 +975,7 @@ function App() {
           onOpenLocalShell={openLocalShell}
           onOpenHosts={openTerminals}
           onNewHost={openNewHost}
+          onSaveAsTemplate={saveGridAsTemplate}
           onManageShortcuts={openShortcutSettings}
           onOpenSessionSettings={openSessionSettings}
         />

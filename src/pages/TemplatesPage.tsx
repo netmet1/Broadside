@@ -74,7 +74,9 @@ type Draft = {
 };
 
 /** A request from the Hosts tab: edit this template, or start a new one
- * (`template: null`).
+ * (`template: null`). A new one can arrive with its sessions already in it
+ * (`items`): the Terminals tab's Save as template, which hands over the grid
+ * on screen to be named and saved here.
  *
  * It carries the whole row rather than an id, and a serial number rather than
  * being cleared once acted on. The row, because the Hosts tab has already read
@@ -83,7 +85,11 @@ type Draft = {
  * also has to write state back into the one that made it, and asking twice for
  * the same template would then do nothing the second time.
  */
-export type TemplateFocus = { template: Template | null; n: number };
+export type TemplateFocus = {
+  template: Template | null;
+  items?: TemplateItem[];
+  n: number;
+};
 
 const EMPTY_DRAFT: Draft = {
   id: null,
@@ -248,7 +254,18 @@ export function TemplatesPage({
   const [consumedFocus, setConsumedFocus] = useState(0);
   if (focus && focus.n !== consumedFocus) {
     setConsumedFocus(focus.n);
-    openDraft(focus.template ? draftOf(focus.template) : EMPTY_DRAFT);
+    if (focus.template) {
+      openDraft(draftOf(focus.template));
+    } else if (focus.items && focus.items.length > 0) {
+      // The grid from the Terminals tab. Measured against an empty draft
+      // rather than against itself, because nothing has been saved yet: the
+      // arrangement is unsaved work from the first frame, and leaving it
+      // behind should say so.
+      setDraft({ ...EMPTY_DRAFT, items: focus.items });
+      setBaseline(fingerprint(EMPTY_DRAFT));
+    } else {
+      openDraft(EMPTY_DRAFT);
+    }
   }
 
   // Opened on its own: pick up where the operator left off. Once per run, so
