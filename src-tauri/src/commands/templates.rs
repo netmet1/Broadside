@@ -48,12 +48,21 @@ pub fn startup_template(state: State<'_, DbState>) -> AppResult<Option<repo::Tem
     with_db(&state, repo::startup_template)
 }
 
+/// `after` places the new one directly below that template (Duplicate);
+/// without it, it goes to the end.
 #[tauri::command]
 pub fn create_template(
     input: repo::TemplateInput,
+    after: Option<i64>,
     state: State<'_, DbState>,
 ) -> AppResult<repo::Template> {
-    with_db_mut(&state, |conn| repo::create(conn, &input))
+    with_db_mut(&state, |conn| repo::create_after(conn, &input, after))
+}
+
+/// Saves the list's order after a drag.
+#[tauri::command]
+pub fn reorder_templates(ids: Vec<i64>, state: State<'_, DbState>) -> AppResult<()> {
+    with_db(&state, |conn| repo::reorder(conn, &ids))
 }
 
 #[tauri::command]

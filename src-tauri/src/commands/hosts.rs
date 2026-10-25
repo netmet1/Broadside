@@ -34,6 +34,13 @@ pub fn create_host(input: HostInput, state: State<'_, DbState>) -> AppResult<Hos
     host_repo::create(&conn, input)
 }
 
+/// Saves the Hosts table's order after a drag.
+#[tauri::command]
+pub fn reorder_hosts(ids: Vec<i64>, state: State<'_, DbState>) -> AppResult<()> {
+    let conn = lock(&state)?;
+    host_repo::reorder(&conn, &ids)
+}
+
 #[tauri::command]
 pub fn update_host(id: i64, input: HostInput, state: State<'_, DbState>) -> AppResult<Host> {
     let conn = lock(&state)?;
