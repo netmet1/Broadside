@@ -53,6 +53,25 @@ async fn trust(fx: &Fixture) -> String {
     }
 }
 
+/// The end-of-prompt mark our shell integration puts in PS1 (OSC 133;B), as the
+/// bytes a real prompt sends. The setup line spells the same thing as `\033`
+/// in its text, so its echo can never be mistaken for one.
+const PROMPT_END: &str = "\x1b]133;B";
+
+/// Waits until the session is ready to be typed at: the connect curtain has
+/// lifted and the first real prompt is on screen.
+///
+/// `open()` returns as soon as the shell is open, but the setup line goes out
+/// from the session's own task once the login banner has arrived, and the
+/// curtain shows nothing until that line's `clear` has landed
+/// (ssh/connect_curtain). A command typed before then runs ahead of the setup
+/// line, and its output is part of the screen the `clear` wipes, so the curtain
+/// rightly never shows it. A person cannot type at a prompt that is not there
+/// yet; a test that does is testing the curtain, not the shell.
+async fn wait_for_prompt(rx: &mut mpsc::UnboundedReceiver<Event>, timeout: Duration) {
+    read_until(rx, PROMPT_END, timeout).await;
+}
+
 /// Collects decoded output until `needle` appears or the timeout elapses.
 async fn read_until(
     rx: &mut mpsc::UnboundedReceiver<Event>,
@@ -134,6 +153,7 @@ async fn pty_shell_round_trip_and_close() {
 
     // Shell prompt arrives, then our command echoes back through the PTY.
     // $((6*7)) proves the shell evaluated it (output not just our keystrokes).
+    wait_for_prompt(&mut rx, Duration::from_secs(20)).await;
     state
         .write("test-session", b"echo result-$((6*7))\n")
         .unwrap();
@@ -200,6 +220,21 @@ async fn pty_reopen_same_id_replaces_session() {
             "expected Opened, got {result:?}"
         );
     }
+
+    // The replaced session's task ends when its entry is replaced, and on the
+    // way out it hands over whatever its curtain was still holding. That is
+    // the first session's screen, not the survivor's, so it is drained here
+    // before waiting for the survivor's own prompt. Its setup line only goes
+    // out after the banner (or a 1.5s wait), so nothing of the survivor's can
+    // be in what is drained. A Closed event among it is the ghost close this
+    // test exists to catch.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    while let Ok(ev) = rx.try_recv() {
+        if let Event::Closed(c) = ev {
+            panic!("the replaced session reported a close: {c:?}");
+        }
+    }
+    wait_for_prompt(&mut rx, Duration::from_secs(20)).await;
 
     // The survivor must still be registered and answering. read_until panics
     // on any Closed event, which doubles as the no-ghost-close assertion.
