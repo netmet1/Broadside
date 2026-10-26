@@ -41,6 +41,7 @@ import {
   BUSY_TEMPLATE_ITEMS,
   startupTemplate,
   type Template,
+  type TemplateItem,
 } from "@/lib/tauri/templates";
 import type { HelpSectionId } from "@/pages/help/sections";
 import { BroadcastPage } from "@/pages/BroadcastPage";
@@ -277,6 +278,7 @@ function App() {
               cwd: from.cwd,
               startupCommand: from.startupCommand,
               profileLabel: from.profileLabel,
+              profileId: from.profileId,
               profileColor: from.profileColor,
             };
       setSessions((prev) => {
@@ -302,6 +304,7 @@ function App() {
         cwd: opts?.cwd,
         startupCommand: opts?.startupCommand,
         profileLabel: opts?.profileLabel,
+        profileId: opts?.profileId,
         profileColor: opts?.profileColor,
       };
       setSessions((prev) => [...prev, session]);
@@ -450,6 +453,7 @@ function App() {
               cwd: s.opts.cwd,
               startupCommand: s.opts.startupCommand,
               profileLabel: s.opts.profileLabel,
+              profileId: s.opts.profileId,
               profileColor: s.opts.profileColor,
               startClosed: !connect,
             },
@@ -503,6 +507,7 @@ function App() {
                 cwd: p.cwd || undefined,
                 startupCommand: p.startupCommand || undefined,
                 profileLabel: p.label,
+                profileId: p.id,
                 profileColor: p.color || undefined,
               },
             });
@@ -529,7 +534,10 @@ function App() {
    * open and the arrangement will not match, or because there is something
    * about this one worth reading before it happens. */
   const [pendingLaunch, setPendingLaunch] = useState<{
-    template: Template;
+    /** What is opening, in order, with how many sessions each can open here.
+     * One for a single template; several from Multi-template. */
+    templates: { template: Template; count: number }[];
+    /** Every template's sessions, one template after another. */
     plan: LaunchPlan;
     /** Something is already open, so the three-way placement question applies. */
     placement: boolean;
@@ -560,7 +568,11 @@ function App() {
             launchTemplate(plan.sessions, "end", true);
             return;
           }
-          setPendingLaunch({ template, plan, placement });
+          setPendingLaunch({
+            templates: [{ template, count: plan.sessions.length }],
+            plan,
+            placement,
+          });
         } catch (e) {
           toast.error(errorMessage(e));
         }
@@ -568,6 +580,59 @@ function App() {
     },
     [sessions.length, launchTemplate],
   );
+
+  /** Several templates at once (Multi-template on the Hosts tab), one after
+   * another in the order given, which is the list's. One goes straight to
+   * {@link openTemplate}. Two or more always ask first: the dialog lists the
+   * order they will open in, which is the thing worth checking before a wall
+   * of sessions arrives. A session that cannot open is named with the template
+   * it came from. */
+  const openTemplates = useCallback(
+    (picked: Template[]) => {
+      if (picked.length === 0) return;
+      if (picked.length === 1) {
+        openTemplate(picked[0]);
+        return;
+      }
+      void (async () => {
+        try {
+          const plans = await Promise.all(
+            picked.map((t) => planTemplateLaunch(t.items)),
+          );
+          const all = plans.flatMap((p) => p.sessions);
+          if (all.length === 0) {
+            toast.error(
+              `Nothing in these ${picked.length} templates can open on this machine.`,
+            );
+            return;
+          }
+          setPendingLaunch({
+            templates: picked.map((t, i) => ({
+              template: t,
+              count: plans[i].sessions.length,
+            })),
+            plan: {
+              sessions: all,
+              skipped: plans.flatMap((p, i) =>
+                p.skipped.map((line) => `${picked[i].name}: ${line}`),
+              ),
+            },
+            placement: sessions.length > 0,
+          });
+        } catch (e) {
+          toast.error(errorMessage(e));
+        }
+      })();
+    },
+    [openTemplate, sessions.length],
+  );
+
+  /** The Terminals tab's Save as template: a new template holding the grid on
+   * screen, opened in the editor to be named and saved. */
+  const saveGridAsTemplate = useCallback((items: TemplateItem[]) => {
+    setTemplateFocus((f) => ({ template: null, items, n: (f?.n ?? 0) + 1 }));
+    setPage("templates");
+  }, []);
 
   const editTemplate = useCallback((template: Template | null) => {
     setTemplateFocus((f) => ({ template, n: (f?.n ?? 0) + 1 }));
@@ -850,7 +915,7 @@ function App() {
           connectedHostIds={connectedHostIds}
           openHostIds={openHostIds}
           onEditTemplate={editTemplate}
-          onOpenTemplate={openTemplate}
+          onOpenTemplates={openTemplates}
           onOpenProfiles={openProfiles}
           onOpenHelp={openHelpAt}
           startWithNewHost={newHostRequested}
@@ -910,6 +975,7 @@ function App() {
           onOpenLocalShell={openLocalShell}
           onOpenHosts={openTerminals}
           onNewHost={openNewHost}
+          onSaveAsTemplate={saveGridAsTemplate}
           onManageShortcuts={openShortcutSettings}
           onOpenSessionSettings={openSessionSettings}
         />
@@ -987,10 +1053,38 @@ function App() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                Open &ldquo;{pendingLaunch?.template.name}&rdquo;?
+                {(pendingLaunch?.templates.length ?? 0) > 1 ? (
+                  <>Open {pendingLaunch?.templates.length} templates?</>
+                ) : (
+                  <>
+                    Open &ldquo;{pendingLaunch?.templates[0]?.template.name}
+                    &rdquo;?
+                  </>
+                )}
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-2">
+                  {(pendingLaunch?.templates.length ?? 0) > 1 && (
+                    <>
+                      <p>
+                        They open one after another, in the order the Hosts
+                        tab lists them:
+                      </p>
+                      <ol className="list-decimal space-y-0.5 pl-5">
+                        {pendingLaunch?.templates.map(({ template, count }) => (
+                          <li key={template.id}>
+                            <span className="font-medium text-foreground">
+                              {template.name}
+                            </span>
+                            {": "}
+                            {count === 0
+                              ? "nothing that can open here"
+                              : `${count} ${count === 1 ? "session" : "sessions"}`}
+                          </li>
+                        ))}
+                      </ol>
+                    </>
+                  )}
                   <p>
                     This opens{" "}
                     <span className="font-semibold text-foreground">

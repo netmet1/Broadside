@@ -313,6 +313,25 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     // shells it had opened. A note for a person to read, never a pointer:
     // nothing is ever launched from it. See db/shell_profiles.rs.
     "ALTER TABLE shell_profiles ADD COLUMN wanted_shell TEXT NOT NULL DEFAULT '';",
+    // 25: hand-arranged host order (prompts121), dragged by a grip on the Hosts
+    // table the way profiles already are. Every list that takes its hosts from
+    // `hosts::list_all` follows it. Existing rows are backfilled with their
+    // current alphabetical position, so an upgrade changes nothing until the
+    // operator moves something.
+    "ALTER TABLE hosts ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+     UPDATE hosts SET sort_order = (
+        SELECT COUNT(*) FROM hosts AS other
+         WHERE other.label < hosts.label COLLATE NOCASE
+            OR (other.label = hosts.label COLLATE NOCASE AND other.id < hosts.id)
+     );",
+    // 26: hand-arranged template order, for the same reason and the same
+    // way. It is also the order several ticked templates open in.
+    "ALTER TABLE templates ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+     UPDATE templates SET sort_order = (
+        SELECT COUNT(*) FROM templates AS other
+         WHERE other.name < templates.name COLLATE NOCASE
+            OR (other.name = templates.name COLLATE NOCASE AND other.id < templates.id)
+     );",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -801,6 +820,51 @@ mod tests {
         assert_eq!(p.label, "Resume Git");
         assert_eq!(p.shell_id, "custom:1");
         assert_eq!(p.wanted_shell, "", "nothing to say until a restore says it");
+    }
+
+    #[test]
+    fn hosts_and_templates_keep_their_alphabetical_order_through_the_upgrade() {
+        // Migrations 25 and 26 add a hand-arranged order. Until somebody drags
+        // a row, the lists must come out exactly as they did before: by name,
+        // ignoring case, whatever order the rows were inserted in.
+        let conn = database_at_version(24);
+        for (label, host) in [
+            ("delta", "d.test"),
+            ("Alpha", "a.test"),
+            ("charlie", "c.test"),
+            ("bravo", "b.test"),
+        ] {
+            conn.execute(
+                "INSERT INTO hosts (label, hostname, port, username, color, created_at, updated_at)
+                 VALUES (?1, ?2, 22, 'joe', '#aabbcc', 'then', 'then')",
+                [label, host],
+            )
+            .unwrap();
+        }
+        for name in ["Zulu", "echo", "Mike"] {
+            conn.execute(
+                "INSERT INTO templates (name, color, items_json, startup, created_at, updated_at)
+                 VALUES (?1, '', '[]', 'off', 'then', 'then')",
+                [name],
+            )
+            .unwrap();
+        }
+
+        bootstrap(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i64);
+        let labels: Vec<String> = hosts::list_all(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|h| h.label)
+            .collect();
+        assert_eq!(labels, ["Alpha", "bravo", "charlie", "delta"]);
+        let names: Vec<String> = templates::list(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert_eq!(names, ["echo", "Mike", "Zulu"]);
     }
 
     #[test]

@@ -10,7 +10,8 @@ export type SortKey =
 /** Column layout for the hosts table. Resizable columns get a drag handle and
  * their width persists in localStorage (across tab switches and restarts). */
 export const COLS: { id: string; w: number; resizable: boolean }[] = [
-  { id: "select", w: 40, resizable: false },
+  // The tick and, to its right, the grip a row is dragged by.
+  { id: "select", w: 60, resizable: false },
   { id: "swatch", w: 40, resizable: false },
   { id: "label", w: 180, resizable: true },
   { id: "status", w: 64, resizable: false },

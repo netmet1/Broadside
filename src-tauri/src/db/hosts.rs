@@ -163,9 +163,12 @@ fn is_hex_color(s: &str) -> bool {
     matches!(rest.len(), 3 | 6) && rest.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+/// In the operator's own order (migration 25), dragged on the Hosts table.
+/// The label breaks a tie, which only rows written before that order existed
+/// (or by a test) can have.
 pub fn list_all(conn: &Connection) -> AppResult<Vec<Host>> {
     let sql = format!(
-        "SELECT {SELECT_COLS} FROM hosts ORDER BY label COLLATE NOCASE ASC"
+        "SELECT {SELECT_COLS} FROM hosts ORDER BY sort_order ASC, label COLLATE NOCASE ASC, id ASC"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], from_row)?;
@@ -318,13 +321,16 @@ pub fn set_probe_interval(conn: &Connection, id: i64, secs: Option<u16>) -> AppR
 }
 
 
+/// A new host goes to the end of the list. An import calls this once per row,
+/// so a file's hosts arrive in the file's order.
 pub fn create(conn: &Connection, input: HostInput) -> AppResult<Host> {
     validate(&input)?;
     let now = Utc::now().to_rfc3339();
     let label = input.label.trim();
     conn.execute(
-        "INSERT INTO hosts (label, hostname, port, username, color, linux_flavor, notes, tag, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+        "INSERT INTO hosts (label, hostname, port, username, color, linux_flavor, notes, tag, created_at, updated_at, sort_order)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9,
+                 (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM hosts))",
         params![
             label,
             input.hostname.trim(),
@@ -377,6 +383,34 @@ pub fn delete(conn: &Connection, id: i64) -> AppResult<()> {
     if affected == 0 {
         return Err(AppError::HostNotFound(id));
     }
+    Ok(())
+}
+
+/// Rewrites the order after a drag: `ids` first, in the order given, then any
+/// host the list did not mention, in its existing order. Tolerant of a stale
+/// list (a host added or deleted elsewhere in the meantime) rather than refusing
+/// the drag the operator just made. Dense integers from 0.
+pub fn reorder(conn: &Connection, ids: &[i64]) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
+    let current: Vec<i64> = list_all(&tx)?.into_iter().map(|h| h.id).collect();
+    let mut order: Vec<i64> = Vec::with_capacity(current.len());
+    for id in ids {
+        if current.contains(id) && !order.contains(id) {
+            order.push(*id);
+        }
+    }
+    for id in &current {
+        if !order.contains(id) {
+            order.push(*id);
+        }
+    }
+    for (i, id) in order.iter().enumerate() {
+        tx.execute(
+            "UPDATE hosts SET sort_order = ?1 WHERE id = ?2",
+            params![i as i64, id],
+        )?;
+    }
+    tx.commit()?;
     Ok(())
 }
 
@@ -584,19 +618,27 @@ mod tests {
     }
 
     #[test]
-    fn list_sorts_by_label_case_insensitive() {
+    fn a_new_host_goes_to_the_end_and_a_drag_rearranges_the_list() {
         let conn = open_in_memory().unwrap();
-        let mut a = sample();
-        a.label = "Zeta".into();
-        let mut b = sample();
-        b.label = "alpha".into();
-        let mut c = sample();
-        c.label = "Mu".into();
-        create(&conn, a).unwrap();
-        create(&conn, b).unwrap();
-        create(&conn, c).unwrap();
-        let all = list_all(&conn).unwrap();
-        let labels: Vec<_> = all.iter().map(|h| h.label.clone()).collect();
-        assert_eq!(labels, vec!["alpha", "Mu", "Zeta"]);
+        let mut ids = Vec::new();
+        for label in ["Zeta", "alpha", "Mu"] {
+            let mut h = sample();
+            h.label = label.into();
+            ids.push(create(&conn, h).unwrap().id);
+        }
+        let labels = |conn: &Connection| -> Vec<String> {
+            list_all(conn).unwrap().into_iter().map(|h| h.label).collect()
+        };
+        assert_eq!(labels(&conn), ["Zeta", "alpha", "Mu"]);
+
+        // Mu to the top. A stale list that forgets a host and names one that
+        // is gone still lands: the missing one keeps its place after the rest.
+        reorder(&conn, &[ids[2], 9999, ids[0]]).unwrap();
+        assert_eq!(labels(&conn), ["Mu", "Zeta", "alpha"]);
+
+        let mut d = sample();
+        d.label = "new".into();
+        create(&conn, d).unwrap();
+        assert_eq!(labels(&conn), ["Mu", "Zeta", "alpha", "new"]);
     }
 }

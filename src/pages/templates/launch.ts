@@ -82,6 +82,7 @@ export async function planTemplateLaunch(
               cwd: r.profile.cwd || undefined,
               startupCommand: r.profile.startupCommand || undefined,
               profileLabel: r.profile.label,
+              profileId: r.profile.id,
               profileColor: r.profile.color || undefined,
             }
           : {},

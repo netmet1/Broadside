@@ -2,9 +2,11 @@ import {
   CheckIcon,
   ChevronDownIcon,
   DownloadIcon,
+  EllipsisIcon,
   LayoutTemplateIcon,
   PlusIcon,
   SaveIcon,
+  ServerIcon,
   Trash2Icon,
   UploadIcon,
   XIcon,
@@ -61,6 +63,12 @@ const STARTUP_OPTIONS: {
  * rather than guessed: roughly 818px of controls, and a 1024px window with the
  * sidebar in its icon strip leaves the bar 744.
  *
+ * Under 40rem, Import, Export and Delete fold into one More menu. The app font
+ * sets the root size, so at 20px everything is a quarter wider while the window
+ * is not: a 1024px window then leaves the bar about 34rem, against 38.5rem of
+ * icon-only controls (measured on the release build). Folding the three buys
+ * 5.5rem, and the name field keeps its width.
+ *
  * Startup is a setting on the template rather than a switch in the Hosts list
  * on purpose. It is a property of the arrangement, it belongs with the name and
  * the colour, and putting it here is what lets the confirmation happen at the
@@ -72,6 +80,7 @@ export function TemplateTopBar({
   templates,
   currentId,
   onPick,
+  onBrowseTemplates,
   name,
   onNameChange,
   color,
@@ -91,6 +100,8 @@ export function TemplateTopBar({
   currentId: number | null;
   /** Load another saved template, or start a new one (`null`). */
   onPick: (id: number | null) => void;
+  /** Go to the Hosts tab's Templates list, where they are opened. */
+  onBrowseTemplates: () => void;
   name: string;
   onNameChange: (v: string) => void;
   color: string;
@@ -155,6 +166,21 @@ export function TemplateTopBar({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* The way to the list the templates are opened from. An icon only, the
+          Hosts tab's own, because the bar has to fit one row at 1024px. */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onBrowseTemplates}
+        aria-label="All templates, on the Hosts tab"
+        title="All templates, on the Hosts tab"
+        {...hint(
+          "Go to Hosts > Templates, the list where templates are opened, reordered and duplicated. What is on the canvas stays here.",
+        )}
+      >
+        <ServerIcon className="h-3.5 w-3.5" />
+      </Button>
 
       <input
         type="text"
@@ -274,6 +300,7 @@ export function TemplateTopBar({
         <Button
           variant="outline"
           size="sm"
+          className="@max-[40rem]:hidden"
           onClick={onImport}
           aria-label="Import a template"
           {...hint(
@@ -286,6 +313,7 @@ export function TemplateTopBar({
         <Button
           variant="outline"
           size="sm"
+          className="@max-[40rem]:hidden"
           disabled={!saved || dirty}
           onClick={onExport}
           aria-label="Export template"
@@ -304,6 +332,7 @@ export function TemplateTopBar({
           <Button
             variant="outline"
             size="sm"
+            className="@max-[40rem]:hidden"
             onClick={onDelete}
             aria-label="Delete template"
             {...hint("Delete this template. The hosts and shells it names are untouched.")}
@@ -311,6 +340,57 @@ export function TemplateTopBar({
             <Trash2Icon className="h-3.5 w-3.5" />
           </Button>
         )}
+        {/* The same three, folded, for a bar too narrow to hold them. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden @max-[40rem]:inline-flex"
+              aria-label="More: import, export, delete"
+              {...hint("Import, Export and Delete, folded to fit a narrow bar")}
+            >
+              <EllipsisIcon className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={onImport}
+              {...hint(
+                "Read a template file. Hosts it names are matched against this machine's; the ones that don't match arrive as boxes to point at a host.",
+              )}
+            >
+              <UploadIcon />
+              Import
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!saved || dirty}
+              onSelect={onExport}
+              {...hint(
+                !saved
+                  ? "Save this template before exporting it: an export is written from what is stored."
+                  : dirty
+                    ? "There are unsaved changes. Save first, so the file matches what you see."
+                    : "Write this template to a file, to import on another machine.",
+              )}
+            >
+              <DownloadIcon />
+              Export
+            </DropdownMenuItem>
+            {saved && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={onDelete}
+                  {...hint("Delete this template. The hosts and shells it names are untouched.")}
+                >
+                  <Trash2Icon />
+                  Delete
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           variant="outline"
           size="sm"

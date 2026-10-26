@@ -16,7 +16,7 @@ import {
 import type { LocalShell } from "@/lib/tauri/local";
 import { useHint } from "@/lib/status";
 import { isTintable } from "@/lib/terminalColors";
-import { useProfileRowDrag } from "@/lib/useProfileRowDrag";
+import { useRowDrag } from "@/lib/useRowDrag";
 import { useShellColors } from "@/lib/useShellColors";
 import { cn } from "@/lib/utils";
 import { LauncherSectionHeader } from "@/pages/terminals/LauncherSection";
@@ -53,7 +53,7 @@ type Props = {
  * Import and Export, then one row per saved profile.
  *
  * Dragging is by the grip only, shared with the Profiles table on the Hosts
- * tab (lib/useProfileRowDrag, which says why).
+ * tab (lib/useRowDrag, which says why).
  */
 export function ProfileLauncherList({
   profiles,
@@ -73,7 +73,7 @@ export function ProfileLauncherList({
 }: Props) {
   const hint = useHint();
   const shellColors = useShellColors();
-  const drag = useProfileRowDrag(
+  const drag = useRowDrag(
     profiles.map((p) => p.id),
     onReorder,
   );

@@ -3,12 +3,7 @@ import { useState, type DragEvent } from "react";
 export type DropSide = "before" | "after";
 
 /** `ids` with `from` moved to just before or just after `to`. Pure. */
-export function moveProfileId(
-  ids: string[],
-  from: string,
-  to: string,
-  side: DropSide,
-): string[] {
+export function moveId<T>(ids: T[], from: T, to: T, side: DropSide): T[] {
   if (from === to) return ids;
   const rest = ids.filter((id) => id !== from);
   const at = rest.indexOf(to);
@@ -18,26 +13,28 @@ export function moveProfileId(
 }
 
 /**
- * Dragging profiles into a new order by a grip, in the Terminals "+" launcher
- * and in the Profiles table on the Hosts tab. One list, one order, so one way
- * of moving it.
+ * Dragging rows into a new order by a grip: profiles in the Terminals "+"
+ * launcher and on the Hosts tab, and the Hosts tab's hosts and templates. One
+ * way of moving a list, wherever the list is.
  *
  * **Dragging is by the grip only.** A launcher row is a launch button and a
  * table row toggles its tick, so a whole-row drag would turn a slightly moving
  * click into a drag and a slightly short drag into a click. Pressing the grip
  * arms that one row as draggable, and letting go disarms it. Native drag
  * events, no library (the tab strip's pattern), with the drop line drawn above
- * or below the row under the pointer, so a profile can go to the very end.
+ * or below the row under the pointer, so a row can go to the very end.
  *
- * `onReorder` gets the whole order after a drop, as ids.
+ * `onReorder` gets the whole order after a drop, as ids. `ids` is the order the
+ * move is made in, which need not be the rows on screen: a filtered table
+ * passes the whole list, and the dragged row lands beside its target in that.
  */
-export function useProfileRowDrag(
-  ids: string[],
-  onReorder: (ids: string[]) => void,
+export function useRowDrag<T extends string | number>(
+  ids: T[],
+  onReorder: (ids: T[]) => void,
 ) {
-  const [armedId, setArmedId] = useState<string | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [over, setOver] = useState<{ id: string; side: DropSide } | null>(null);
+  const [armedId, setArmedId] = useState<T | null>(null);
+  const [dragId, setDragId] = useState<T | null>(null);
+  const [over, setOver] = useState<{ id: T; side: DropSide } | null>(null);
 
   const endDrag = () => {
     setArmedId(null);
@@ -46,16 +43,16 @@ export function useProfileRowDrag(
   };
 
   /** Spread onto the row. */
-  const rowProps = (id: string) => ({
+  const rowProps = (id: T) => ({
     draggable: armedId === id,
     onDragStart: (e: DragEvent) => {
       setDragId(id);
       e.dataTransfer.effectAllowed = "move";
       // Some webviews need drag data set or the drag is rejected.
-      e.dataTransfer.setData("text/plain", id);
+      e.dataTransfer.setData("text/plain", String(id));
     },
     onDragOver: (e: DragEvent) => {
-      if (!dragId || dragId === id) return;
+      if (dragId === null || dragId === id) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       const box = e.currentTarget.getBoundingClientRect();
@@ -66,10 +63,10 @@ export function useProfileRowDrag(
     onDrop: (e: DragEvent) => {
       // Only a drop this hook started: a column header dragged over a row is
       // someone else's gesture.
-      if (!dragId) return;
+      if (dragId === null) return;
       e.preventDefault();
       if (over && dragId !== over.id) {
-        onReorder(moveProfileId(ids, dragId, over.id, over.side));
+        onReorder(moveId(ids, dragId, over.id, over.side));
       }
       endDrag();
     },
@@ -77,20 +74,20 @@ export function useProfileRowDrag(
   });
 
   /** Spread onto the grip. */
-  const gripProps = (id: string) => ({
+  const gripProps = (id: T) => ({
     onPointerDown: () => setArmedId(id),
     onPointerUp: () => setArmedId(null),
     onPointerCancel: () => setArmedId(null),
   });
 
   /** Where the drop line goes on this row, or null for none. */
-  const dropSide = (id: string): DropSide | null =>
+  const dropSide = (id: T): DropSide | null =>
     over?.id === id ? over.side : null;
 
   return {
     rowProps,
     gripProps,
     dropSide,
-    isDragging: (id: string) => dragId === id,
+    isDragging: (id: T) => dragId === id,
   };
 }

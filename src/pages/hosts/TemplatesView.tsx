@@ -1,4 +1,6 @@
-import { CopyIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { CopyIcon, PencilIcon, PlayIcon, Trash2Icon } from "lucide-react";
+
+import { RowGrip } from "@/components/RowGrip";
 
 import {
   Table,
@@ -10,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { useHint } from "@/lib/status";
 import type { Template } from "@/lib/tauri/templates";
+import type { useRowDrag } from "@/lib/useRowDrag";
 import { cn } from "@/lib/utils";
 
 /** What a startup setting is called where it is only being reported. Set in the
@@ -28,43 +31,68 @@ const STARTUP_CHIP: Record<string, { label: string; hint: string } | null> = {
 };
 
 /**
- * The Templates side of the Hosts tab: the list, and the one action that opens
- * one.
+ * The Templates side of the Hosts tab: the list, and the actions that open
+ * them.
  *
- * The radio is not decoration. A template opens a whole arrangement, and
- * opening two of them at once is not a thing anybody means to do: checkboxes
- * would say it was, and would then need a rule about what happens when you tick
- * three. One at a time, said by the control itself.
+ * One opens from its row: the play button, or a double-click anywhere on it.
+ * Several open from their ticks, through Multi-template above the list, one
+ * after another in the order this list shows; the grip beside each tick is how
+ * that order is set. (It used to be a radio, on the grounds that nobody means
+ * to open two arrangements at once. prompts121 said otherwise.)
  */
 export function TemplatesView({
   templates,
   loading,
-  selectedId,
-  onSelect,
+  checkedIds,
+  onToggle,
+  onToggleAll,
+  drag,
+  onOpen,
   onEdit,
   onDuplicate,
   onDelete,
 }: {
   templates: Template[];
   loading: boolean;
-  selectedId: number | null;
-  onSelect: (id: number) => void;
+  checkedIds: Set<number>;
+  onToggle: (id: number) => void;
+  onToggleAll: (on: boolean) => void;
+  drag: ReturnType<typeof useRowDrag<number>>;
+  onOpen: (t: Template) => void;
   onEdit: (t: Template) => void;
   onDuplicate: (t: Template) => void;
   onDelete: (t: Template) => void;
 }) {
   const hint = useHint();
+  const allChecked =
+    templates.length > 0 && templates.every((t) => checkedIds.has(t.id));
+  const someChecked = !allChecked && templates.some((t) => checkedIds.has(t.id));
   return (
     <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible">
       <Table>
         <TableHeader className="sticky top-0 z-10 bg-background">
           <TableRow>
-            <TableHead className="w-10 text-center" {...hint("Pick the one to open")} />
+            <TableHead className="w-16 text-center">
+              <input
+                type="checkbox"
+                className="accent-primary align-middle"
+                checked={allChecked}
+                ref={(el) => {
+                  if (el) el.indeterminate = someChecked;
+                }}
+                onChange={(e) => onToggleAll(e.target.checked)}
+                disabled={loading || templates.length === 0}
+                aria-label="Select every template"
+                {...hint(
+                  "Tick every template, for Multi-template. They open in this list's order; drag a row by its grip to change it",
+                )}
+              />
+            </TableHead>
             <TableHead className="w-10" />
             <TableHead>Name</TableHead>
             <TableHead className="w-24 text-right">Sessions</TableHead>
             <TableHead className="w-48">Startup</TableHead>
-            <TableHead className="w-32 text-right">Actions</TableHead>
+            <TableHead className="w-40 text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -77,21 +105,42 @@ export function TemplatesView({
           ) : (
             templates.map((t) => {
               const chip = STARTUP_CHIP[t.startup] ?? null;
+              const dropSide = drag.dropSide(t.id);
               return (
                 <TableRow
                   key={t.id}
-                  data-state={selectedId === t.id ? "selected" : undefined}
-                  onClick={() => onSelect(t.id)}
-                  className="cursor-pointer"
+                  {...drag.rowProps(t.id)}
+                  data-state={checkedIds.has(t.id) ? "selected" : undefined}
+                  onClick={() => onToggle(t.id)}
+                  // A double-click is two clicks first, so the tick goes on and
+                  // off again and is left as it was.
+                  onDoubleClick={() => onOpen(t)}
+                  className={cn(
+                    "group cursor-pointer",
+                    drag.isDragging(t.id) && "opacity-40",
+                    // The drop line, drawn on the cells because a table row
+                    // does not reliably paint a shadow of its own.
+                    dropSide === "before" &&
+                      "[&>td]:shadow-[inset_0_2px_0_0_var(--primary)]",
+                    dropSide === "after" &&
+                      "[&>td]:shadow-[inset_0_-2px_0_0_var(--primary)]",
+                  )}
                 >
-                  <TableCell className="text-center">
+                  <TableCell className="whitespace-nowrap text-center">
                     <input
-                      type="radio"
-                      name="template-to-open"
+                      type="checkbox"
                       className="accent-primary align-middle"
-                      checked={selectedId === t.id}
-                      onChange={() => onSelect(t.id)}
+                      checked={checkedIds.has(t.id)}
+                      onChange={() => onToggle(t.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
                       aria-label={`Select ${t.name}`}
+                    />
+                    <RowGrip
+                      gripProps={drag.gripProps(t.id)}
+                      hintProps={hint(
+                        "Drag to change this template's place in the list. Several ticked templates open in this order",
+                      )}
                     />
                   </TableCell>
                   <TableCell>
@@ -119,7 +168,26 @@ export function TemplatesView({
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
+                    <div
+                      className="flex justify-end gap-1"
+                      // The buttons are not the row: double-clicking one must
+                      // not also open the template.
+                      onDoubleClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpen(t);
+                        }}
+                        aria-label={`Open ${t.name}`}
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        {...hint(
+                          `Open every session in "${t.name}", in order, on the Terminals tab. Double-clicking the row does the same`,
+                        )}
+                      >
+                        <PlayIcon className="h-4 w-4" />
+                      </button>
                       <button
                         type="button"
                         onClick={(e) => {

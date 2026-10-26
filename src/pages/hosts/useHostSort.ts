@@ -4,9 +4,11 @@ import { type Host } from "@/lib/tauri/hosts";
 import { firstTag } from "@/lib/hostTags";
 import { SORT_STORAGE_KEY, type SortKey } from "@/pages/hosts/constants";
 
-/** Column sorting for the hosts table. `null` = the backend's insertion order.
- * The choice persists across tab switches (sessionStorage) but resets on app
- * restart. Status sort needs `connectedHostIds`. */
+/** Column sorting for the hosts table. `null` = the operator's own order, the
+ * one the grips drag (and the one every other list of hosts follows). A header
+ * goes ascending, descending, then back to that. The choice persists across
+ * tab switches (sessionStorage) but resets on app restart. Status sort needs
+ * `connectedHostIds`. */
 export function useHostSort(hosts: Host[], connectedHostIds: Set<number>) {
   // Restored from sessionStorage so it survives tab switches, not restart.
   const [sort, setSort] = useState<{
@@ -25,13 +27,18 @@ export function useHostSort(hosts: Host[], connectedHostIds: Set<number>) {
     else sessionStorage.removeItem(SORT_STORAGE_KEY);
   }, [sort]);
 
+  // A third click gives the list back its own order. Before the hosts had one
+  // there was nothing to go back to, so a header only ever flipped direction.
   const toggleSort = useCallback((key: SortKey) => {
     setSort((prev) =>
-      prev?.key === key
-        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
-        : { key, dir: "asc" },
+      prev?.key !== key
+        ? { key, dir: "asc" }
+        : prev.dir === "asc"
+          ? { key, dir: "desc" }
+          : null,
     );
   }, []);
+  const clearSort = useCallback(() => setSort(null), []);
 
   const sortedHosts = useMemo(() => {
     if (!sort) return hosts;
@@ -81,5 +88,5 @@ export function useHostSort(hosts: Host[], connectedHostIds: Set<number>) {
     });
   }, [hosts, sort, connectedHostIds]);
 
-  return { sort, toggleSort, sortedHosts };
+  return { sort, toggleSort, clearSort, sortedHosts };
 }

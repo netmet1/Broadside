@@ -49,6 +49,10 @@ export type LocalTermSession = {
   cwd?: string;
   startupCommand?: string;
   profileLabel?: string;
+  /** The saved profile this tab was opened from, so the grid can be saved
+   * back as a template that names the profile rather than its bare shell.
+   * Absent for a plain "+" shell open. */
+  profileId?: string;
   /** The launching profile's own colour, `#rrggbb`, when it set one. Overrides
    * the colour the shell's kind would give this tab; empty or absent means the
    * kind's colour applies. See {@link sessionColor}. */
@@ -68,6 +72,7 @@ export type LocalShellOpenOpts = {
   cwd?: string;
   startupCommand?: string;
   profileLabel?: string;
+  profileId?: string;
   profileColor?: string;
 };
 

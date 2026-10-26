@@ -76,8 +76,19 @@ export function startupTemplate(): Promise<Template | null> {
   return invoke<Template | null>("startup_template");
 }
 
-export function createTemplate(input: TemplateInput): Promise<Template> {
-  return invoke<Template>("create_template", { input });
+/** With `after`, the new template goes directly below that one (Duplicate);
+ * otherwise at the end of the list. */
+export function createTemplate(
+  input: TemplateInput,
+  after?: number,
+): Promise<Template> {
+  return invoke<Template>("create_template", { input, after: after ?? null });
+}
+
+/** Saves the list's order after a drag. It is also the order several ticked
+ * templates open in. */
+export function reorderTemplates(ids: number[]): Promise<void> {
+  return invoke<void>("reorder_templates", { ids });
 }
 
 export function updateTemplate(

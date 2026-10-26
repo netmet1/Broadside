@@ -40,6 +40,7 @@ import {
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
 import { copyTerminalSelection, pasteBytes } from "@/lib/terminalClipboard";
+import { watchStatusFooter } from "@/lib/terminalFooter";
 import { relayHeldMouse } from "@/lib/terminalMouseRelay";
 import { useReachability } from "@/lib/useReachability";
 import { useHint } from "@/lib/status";
@@ -419,6 +420,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
   const paneRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  // A status line pinned under the program's scroll region (apt's progress
+  // bar), blanked before a refit so a resize cannot strand a copy of it. See
+  // lib/terminalFooter.
+  const footerRef = useRef<ReturnType<typeof watchStatusFooter> | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   // Resolves once the pty:data listener is actually registered. The connect
   // effect awaits this before opening so a shell that emits immediately (e.g.
@@ -545,6 +550,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     if (containerRef.current) term.open(containerRef.current);
     termRef.current = term;
     fitRef.current = fit;
+    const footer = watchStatusFooter(term);
+    footerRef.current = footer;
     searchRef.current = search;
 
     const resultsSub = search.onDidChangeResults(({ resultIndex, resultCount }) => {
@@ -701,10 +708,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
         // A pane with no pixels on screen waits: the IntersectionObserver
         // below refits it the moment it has some. Fitting it now is the bug.
         if (!intersectingRef.current) return;
-        const buf = term.buffer.active;
-        const pinned = buf.viewportY >= buf.baseY;
-        fit.fit();
-        if (pinned) term.scrollToBottom();
+        footer.fit(fit, () => {
+          const buf = term.buffer.active;
+          const pinned = buf.viewportY >= buf.baseY;
+          fit.fit();
+          if (pinned) term.scrollToBottom();
+        });
       });
     });
     if (containerRef.current) observer.observe(containerRef.current);
@@ -761,10 +770,12 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       const entry = entries[entries.length - 1];
       intersectingRef.current = entry.isIntersecting;
       if (!entry.isIntersecting) return;
-      const buf = term.buffer.active;
-      const pinned = buf.viewportY >= buf.baseY;
-      fit.fit();
-      if (pinned) term.scrollToBottom();
+      footer.fit(fit, () => {
+        const buf = term.buffer.active;
+        const pinned = buf.viewportY >= buf.baseY;
+        fit.fit();
+        if (pinned) term.scrollToBottom();
+      });
     });
     if (containerRef.current) io.observe(containerRef.current);
 
@@ -893,6 +904,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       resizeSub.dispose();
       modeOnSub.dispose();
       modeOffSub.dispose();
+      footer.dispose();
+      footerRef.current = null;
       scrollSub.dispose();
       writeSub.dispose();
       cancelAnimationFrame(refitRaf);
@@ -919,6 +932,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     if (resetNonce === 0) return;
     const clear = () => {
       termRef.current?.reset();
+      footerRef.current?.forget();
       if (containerRef.current?.offsetParent) fitRef.current?.fit();
       // Nothing left to be above: reset throws the scrollback away, so the
       // jump-to-bottom button would otherwise sit there over an empty pane
@@ -1340,8 +1354,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // over- or under-sized until it returns, when the IntersectionObserver
       // in the setup effect refits it, against the char size xterm re-measures
       // on waking (a hidden pane measures the new font as nothing).
-      if (intersectingRef.current && containerRef.current?.offsetParent) {
-        fitRef.current?.fit();
+      const fit = fitRef.current;
+      if (fit && intersectingRef.current && containerRef.current?.offsetParent) {
+        const doFit = () => fit.fit();
+        if (footerRef.current) footerRef.current.fit(fit, doFit);
+        else doFit();
       }
     }
   }, [prefs.terminalFontFamily, prefs.terminalFontSize]);

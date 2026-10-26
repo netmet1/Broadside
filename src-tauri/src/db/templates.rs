@@ -206,10 +206,13 @@ pub fn is_hex_color(s: &str) -> bool {
         && s[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Alphabetical, because there is no hand-arranged order to respect: a template
-/// is picked from a table that sorts itself, not from a rail you arrange.
+/// In the operator's own order (migration 26), dragged on the Hosts tab's
+/// Templates side. It is also the order several ticked templates open in, so it
+/// is the order the list has to show. The name breaks a tie.
 pub fn list(conn: &Connection) -> AppResult<Vec<Template>> {
-    let sql = format!("SELECT {SELECT_COLS} FROM templates ORDER BY name COLLATE NOCASE ASC, id ASC");
+    let sql = format!(
+        "SELECT {SELECT_COLS} FROM templates ORDER BY sort_order ASC, name COLLATE NOCASE ASC, id ASC"
+    );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], from_row)?;
     let mut out = Vec::new();
@@ -239,16 +242,51 @@ pub fn startup_template(conn: &Connection) -> AppResult<Option<Template>> {
 }
 
 pub fn create(conn: &mut Connection, input: &TemplateInput) -> AppResult<Template> {
+    create_after(conn, input, None)
+}
+
+/// Creates a template. With `after`, it goes directly below that one (a
+/// duplicate turns up where the operator was looking); otherwise, or when that
+/// one has gone, at the end.
+pub fn create_after(
+    conn: &mut Connection,
+    input: &TemplateInput,
+    after: Option<i64>,
+) -> AppResult<Template> {
     validate(input)?;
     let now = Utc::now().to_rfc3339();
     let items_json = serde_json::to_string(&input.items)?;
     let tx = conn.transaction()?;
     let name = unique_name(&tx, input.name.trim(), None)?;
     clear_other_startups(&tx, input, None)?;
+    let anchor: Option<i64> = match after {
+        Some(a) => tx
+            .query_row(
+                "SELECT sort_order FROM templates WHERE id = ?1",
+                params![a],
+                |r| r.get(0),
+            )
+            .optional()?,
+        None => None,
+    };
+    let position: i64 = match anchor {
+        Some(order) => {
+            tx.execute(
+                "UPDATE templates SET sort_order = sort_order + 1 WHERE sort_order > ?1",
+                params![order],
+            )?;
+            order + 1
+        }
+        None => tx.query_row(
+            "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM templates",
+            [],
+            |r| r.get(0),
+        )?,
+    };
     tx.execute(
-        "INSERT INTO templates (name, color, items_json, startup, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![name, input.color, items_json, input.startup, now, now],
+        "INSERT INTO templates (name, color, items_json, startup, created_at, updated_at, sort_order)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![name, input.color, items_json, input.startup, now, now, position],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;
@@ -368,6 +406,33 @@ pub fn delete(conn: &Connection, id: i64) -> AppResult<usize> {
     Ok(conn.execute("DELETE FROM templates WHERE id = ?1", params![id])?)
 }
 
+/// Rewrites the order after a drag: `ids` first, in the order given, then any
+/// template the list did not mention, in its existing order. Tolerant of a
+/// stale list, like the host and profile versions. Dense integers from 0.
+pub fn reorder(conn: &Connection, ids: &[i64]) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
+    let current: Vec<i64> = list(&tx)?.into_iter().map(|t| t.id).collect();
+    let mut order: Vec<i64> = Vec::with_capacity(current.len());
+    for id in ids {
+        if current.contains(id) && !order.contains(id) {
+            order.push(*id);
+        }
+    }
+    for id in &current {
+        if !order.contains(id) {
+            order.push(*id);
+        }
+    }
+    for (i, id) in order.iter().enumerate() {
+        tx.execute(
+            "UPDATE templates SET sort_order = ?1 WHERE id = ?2",
+            params![i as i64, id],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 /// Turns every host reference in `items` into a live one where this database
 /// has a match, and leaves the rest as placeholders.
 ///
@@ -457,6 +522,27 @@ mod tests {
             ],
             startup: STARTUP_OFF.into(),
         }
+    }
+
+    #[test]
+    fn templates_keep_the_order_they_are_given() {
+        let mut conn = open_in_memory().unwrap();
+        let z = create(&mut conn, &input("Zulu")).unwrap();
+        let a = create(&mut conn, &input("alpha")).unwrap();
+        let names = |conn: &Connection| -> Vec<String> {
+            list(conn).unwrap().into_iter().map(|t| t.name).collect()
+        };
+        assert_eq!(names(&conn), ["Zulu", "alpha"]);
+
+        // A duplicate lands directly under its source, not at the end.
+        create_after(&mut conn, &input("Zulu"), Some(z.id)).unwrap();
+        assert_eq!(names(&conn), ["Zulu", "Zulu 02", "alpha"]);
+        // Under one that has gone, it falls back to the end.
+        create_after(&mut conn, &input("orphan"), Some(9999)).unwrap();
+        assert_eq!(names(&conn), ["Zulu", "Zulu 02", "alpha", "orphan"]);
+
+        reorder(&conn, &[a.id]).unwrap();
+        assert_eq!(names(&conn), ["alpha", "Zulu", "Zulu 02", "orphan"]);
     }
 
     #[test]

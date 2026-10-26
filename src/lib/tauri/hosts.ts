@@ -100,6 +100,12 @@ export function updateHost(id: number, input: HostInput): Promise<Host> {
   return invoke<Host>("update_host", { id, input });
 }
 
+/** Saves the order after a drag on the Hosts table. Every list of hosts in
+ * the application reads them in this order. */
+export function reorderHosts(ids: number[]): Promise<void> {
+  return invoke<void>("reorder_hosts", { ids });
+}
+
 export function deleteHost(id: number): Promise<void> {
   return invoke<void>("delete_host", { id });
 }

@@ -91,6 +91,8 @@ import { ProfileLauncherList } from "@/pages/terminals/ProfileLauncherList";
 import { useProfileActions } from "@/lib/useProfileActions";
 import { useGridLayout } from "@/pages/terminals/useGridLayout";
 import { useGridResize } from "@/pages/terminals/useGridResize";
+import { useGridTemplate } from "@/pages/terminals/useGridTemplate";
+import type { TemplateItem } from "@/lib/tauri/templates";
 import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { TerminalRail } from "@/pages/terminals/TerminalRail";
@@ -243,6 +245,9 @@ type Props = {
   /** Go to the Hosts tab with the new-host form open (the launcher's Hosts
    * section's New). */
   onNewHost: () => void;
+  /** Hand the grid on screen to the Templates tab as a new template, to be
+   * named and saved there. */
+  onSaveAsTemplate: (items: TemplateItem[]) => void;
 };
 
 /** Whether this session's shell treats a form feed (Ctrl-L) as "redraw the
@@ -281,6 +286,7 @@ export function TerminalsPage({
   onOpenLocalShell,
   onOpenHosts,
   onNewHost,
+  onSaveAsTemplate,
 }: Props) {
   const shortcuts = useShortcuts(visible);
   // Local shells available on this machine, for the "+" launcher menu.
@@ -699,6 +705,7 @@ export function TerminalsPage({
         cwd: profile.cwd || undefined,
         startupCommand: profile.startupCommand || undefined,
         profileLabel: profile.label,
+        profileId: profile.id,
         profileColor: profile.color || undefined,
       });
     },
@@ -770,6 +777,19 @@ export function TerminalsPage({
     visible,
     maximized,
     paneRef: gridScrollRef,
+  });
+
+  // Save as template: the tiles on screen, offered as a new template unless a
+  // saved one already opens exactly these. See ./terminals/useGridTemplate.
+  const isLaidOut = useCallback(
+    (s: TermSession) => !excludedFromGrid.has(s.id) && !kindFilter.isHidden(s),
+    [excludedFromGrid, kindFilter],
+  );
+  const gridTemplate = useGridTemplate({
+    visible,
+    gridMode,
+    sessions,
+    isLaidOut,
   });
 
   // Drag a tile's edge to set the tile size for the whole grid, for as long as
@@ -1921,6 +1941,14 @@ export function TerminalsPage({
         }}
         hideGridHeaders={hideGridHeaders}
         toggleGridHeaders={toggleGridHeaders}
+        saveAsTemplate={
+          gridTemplate.offered
+            ? {
+                count: gridTemplate.items.length,
+                onSave: () => onSaveAsTemplate(gridTemplate.items),
+              }
+            : null
+        }
         tabBarHidden={tabBarHidden}
         toggleTabBar={toggleTabBar}
         customGrid={customGrid}

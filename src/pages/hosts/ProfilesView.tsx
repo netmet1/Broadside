@@ -2,7 +2,6 @@ import { Fragment, useMemo, type ReactNode } from "react";
 import {
   CopyIcon,
   DownloadIcon,
-  GripVerticalIcon,
   PencilIcon,
   TerminalIcon,
   Trash2Icon,
@@ -32,7 +31,8 @@ import {
 import { useHint } from "@/lib/status";
 import type { LocalShell } from "@/lib/tauri/local";
 import { useColumnPrefs } from "@/lib/useColumnPrefs";
-import { useProfileRowDrag } from "@/lib/useProfileRowDrag";
+import { useRowDrag } from "@/lib/useRowDrag";
+import { RowGrip } from "@/components/RowGrip";
 import { cn } from "@/lib/utils";
 import { useColumnResize } from "@/pages/hosts/useColumnResize";
 
@@ -104,7 +104,7 @@ export function ProfilesView({
   /** Every column in render order, fixed ones included. The colgroup, the
    * header and each row all walk this, so they cannot disagree. */
   const orderedIds = useMemo(
-    () => ["grip", "select", "swatch", ...colOrder, "actions"],
+    () => ["select", "grip", "swatch", ...colOrder, "actions"],
     [colOrder],
   );
   const { colWidths, tableWidth, tableScrollRef, resizeHandle } =
@@ -113,7 +113,7 @@ export function ProfilesView({
       widthsKey: PROFILE_COL_WIDTHS_KEY,
       hiddenCols,
     });
-  const rowDrag = useProfileRowDrag(
+  const rowDrag = useRowDrag(
     profiles.map((p) => p.id),
     onReorder,
   );
@@ -162,11 +162,6 @@ export function ProfilesView({
         </colgroup>
         <TableHeader className="sticky top-0 z-10 bg-background">
           <TableRow>
-            <TableHead
-              {...hint(
-                "Drag a row by its grip to change the order. The Terminals + menu uses the same order",
-              )}
-            />
             <TableHead className="text-center">
               <input
                 type="checkbox"
@@ -179,6 +174,11 @@ export function ProfilesView({
                 )}
               />
             </TableHead>
+            <TableHead
+              {...hint(
+                "Drag a row by its grip to change the order. The Terminals + menu uses the same order",
+              )}
+            />
             <TableHead />
             {colOrder.map((id) => (
               <Fragment key={id}>{headCell(id)}</Fragment>
@@ -291,21 +291,6 @@ export function ProfilesView({
                       "[&>td]:shadow-[inset_0_-2px_0_0_var(--primary)]",
                   )}
                 >
-                  <TableCell
-                    className="px-0 text-center"
-                    // A press on the grip is the start of a drag, never a
-                    // click on the row's tick.
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <span
-                      aria-hidden="true"
-                      {...rowDrag.gripProps(p.id)}
-                      className="inline-flex cursor-grab rounded p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 active:cursor-grabbing"
-                      {...hint("Drag to change this profile's place in the list")}
-                    >
-                      <GripVerticalIcon className="h-3.5 w-3.5" />
-                    </span>
-                  </TableCell>
                   <TableCell className="text-center">
                     <input
                       type="checkbox"
@@ -314,6 +299,17 @@ export function ProfilesView({
                       onChange={() => onToggle(p.id)}
                       onClick={(e) => e.stopPropagation()}
                       aria-label={`Select ${p.label}`}
+                    />
+                  </TableCell>
+                  <TableCell
+                    className="px-0 text-center"
+                    // A press beside the grip is still not a click on the
+                    // row's tick.
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <RowGrip
+                      gripProps={rowDrag.gripProps(p.id)}
+                      hintProps={hint("Drag to change this profile's place in the list")}
                     />
                   </TableCell>
                   <TableCell>
