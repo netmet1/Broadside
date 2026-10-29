@@ -103,7 +103,10 @@ import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
 import { copyName } from "@/pages/templates/copyName";
 import { useProfileActions } from "@/lib/useProfileActions";
 import { useGridLayout } from "@/pages/terminals/useGridLayout";
-import { useGridResize } from "@/pages/terminals/useGridResize";
+import {
+  useGridResize,
+  type ResizeTarget,
+} from "@/pages/terminals/useGridResize";
 import { useGridTemplate } from "@/pages/terminals/useGridTemplate";
 import type { Template, TemplateItem } from "@/lib/tauri/templates";
 import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
@@ -871,6 +874,13 @@ export function TerminalsPage({
     setDragCols,
     setDragRows,
     resetTileSize,
+    lockedTiles,
+    toggleLockedTiles,
+    setTileCols,
+    setTileRows,
+    freeTiles,
+    hasTileSizes,
+    freeTileStyle,
     cell,
     headerH,
     tileMinH,
@@ -899,20 +909,36 @@ export function TerminalsPage({
     isLaidOut,
   });
 
-  // Drag a tile's edge to set the tile size for the whole grid, for as long as
-  // the program is running. Whether it also writes the Settings -> Grid numbers
-  // is the strict setting's business, not this page's (see gridPrefs.ts).
+  // Drag a tile's edge to set the tile size, for as long as the program is
+  // running. Locked (the default), for the whole grid, and whether that also
+  // writes the Settings -> Grid numbers is the strict setting's business, not
+  // this page's (see gridPrefs.ts). Unlocked, for the dragged tile alone,
+  // never written anywhere.
+  const onResizeCols = useCallback(
+    (cols: number, t: ResizeTarget) => {
+      if (lockedTiles) setDragCols(cols);
+      else setTileCols(t.id, cols, t.start);
+    },
+    [lockedTiles, setDragCols, setTileCols],
+  );
+  const onResizeRows = useCallback(
+    (rows: number, t: ResizeTarget) => {
+      if (lockedTiles) setDragRows(rows);
+      else setTileRows(t.id, rows, t.start);
+    },
+    [lockedTiles, setDragRows, setTileRows],
+  );
   const { resizing, begin: beginResize } = useGridResize({
     cell,
     headerH,
-    onCols: setDragCols,
-    onRows: setDragRows,
+    onCols: onResizeCols,
+    onRows: onResizeRows,
   });
   // Handles are pointless where a pinned tile size has no effect: in Tabs, and
   // at one or two tiles (which always take the full window by design).
   const canResizeTiles = gridMode && gridCount > 2;
   const sizeIsPinned =
-    gridPrefs.itemCols !== null || gridPrefs.itemRows !== null;
+    gridPrefs.itemCols !== null || gridPrefs.itemRows !== null || hasTileSizes;
 
   // Broadcast rail: pick targets and type a command without leaving the page,
   // so the panes you are watching are the ones that answer. Off by default;
@@ -2094,6 +2120,8 @@ export function TerminalsPage({
         gridMode={gridMode}
         sizeIsPinned={sizeIsPinned}
         resetTileSize={resetTileSize}
+        lockedTiles={lockedTiles}
+        toggleLockedTiles={toggleLockedTiles}
         gridFullscreen={gridFullscreen}
         onGridFullscreen={onGridFullscreen}
         maximizeActive={() => {
@@ -3234,7 +3262,13 @@ export function TerminalsPage({
                 // drifted apart and the tiles overlapped. A custom grid's
                 // rows are already sized by Settings, and one or two tiles
                 // always fill the pane, so neither takes a floor.
-                ...(!customGrid && gridCount > 2 ? { minHeight: tileMinH } : {}),
+                ...(!customGrid && gridCount > 2 && !freeTiles
+                  ? { minHeight: tileMinH }
+                  : {}),
+                // Unlocked and resized: this tile's own width and height.
+                ...(freeTiles && !excluded && !filtered
+                  ? freeTileStyle(s.id)
+                  : {}),
                 // Filling a short last row (Settings -> Grid). Nothing for most
                 // tiles; a span for the ones that take up the slack.
                 ...(excluded || filtered
@@ -3428,33 +3462,57 @@ export function TerminalsPage({
                 <>
                   <div
                     onMouseDown={(e) =>
-                      beginResize(e, "x", paneElRefs.current.get(s.id) ?? null)
+                      beginResize(e, "x", paneElRefs.current.get(s.id) ?? null, s.id)
                     }
                     role="separator"
                     aria-orientation="vertical"
-                    aria-label="Drag to set the width of every grid tile"
-                    title="Drag to set the width of every tile"
+                    aria-label={
+                      lockedTiles
+                        ? "Drag to set the width of every grid tile"
+                        : "Drag to set the width of this tile"
+                    }
+                    title={
+                      lockedTiles
+                        ? "Drag to set the width of every tile"
+                        : "Drag to set the width of this tile"
+                    }
                     data-resize-handle=""
                     className="absolute inset-y-0 right-0 w-1.5 cursor-col-resize hover:bg-primary/40"
                   />
                   <div
                     onMouseDown={(e) =>
-                      beginResize(e, "y", paneElRefs.current.get(s.id) ?? null)
+                      beginResize(e, "y", paneElRefs.current.get(s.id) ?? null, s.id)
                     }
                     role="separator"
                     aria-orientation="horizontal"
-                    aria-label="Drag to set the height of every grid tile"
-                    title="Drag to set the height of every tile"
+                    aria-label={
+                      lockedTiles
+                        ? "Drag to set the height of every grid tile"
+                        : "Drag to set the height of this tile"
+                    }
+                    title={
+                      lockedTiles
+                        ? "Drag to set the height of every tile"
+                        : "Drag to set the height of this tile"
+                    }
                     data-resize-handle=""
                     className="absolute inset-x-0 bottom-0 h-1.5 cursor-row-resize hover:bg-primary/40"
                   />
                   <div
                     onMouseDown={(e) =>
-                      beginResize(e, "both", paneElRefs.current.get(s.id) ?? null)
+                      beginResize(e, "both", paneElRefs.current.get(s.id) ?? null, s.id)
                     }
                     role="separator"
-                    aria-label="Drag to set the size of every grid tile"
-                    title="Drag to set the size of every tile"
+                    aria-label={
+                      lockedTiles
+                        ? "Drag to set the size of every grid tile"
+                        : "Drag to set the size of this tile"
+                    }
+                    title={
+                      lockedTiles
+                        ? "Drag to set the size of every tile"
+                        : "Drag to set the size of this tile"
+                    }
                     data-resize-handle=""
                     className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize hover:bg-primary/50"
                   />
