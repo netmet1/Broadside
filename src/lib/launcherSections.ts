@@ -13,11 +13,11 @@
  * "Serial console" is deliberately not in here. It is the one section that is
  * short on every machine (a COM port or two, usually none), and it carries the
  * explanation of what to do when there are none. */
-export type LauncherSection = "shells" | "hosts" | "profiles";
+export type LauncherSection = "shells" | "hosts" | "profiles" | "templates";
 
 const COLLAPSED_KEY = "launcher-collapsed";
 
-const KNOWN: LauncherSection[] = ["shells", "hosts", "profiles"];
+const KNOWN: LauncherSection[] = ["shells", "hosts", "profiles", "templates"];
 
 /** The sections rolled up last time. Anything unrecognised in the stored value
  * is dropped rather than kept, so a name this build has never heard of cannot

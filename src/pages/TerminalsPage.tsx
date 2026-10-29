@@ -88,11 +88,13 @@ import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog"
 import { HostLauncherList } from "@/pages/terminals/HostLauncherList";
 import { LauncherTwisty } from "@/pages/terminals/LauncherSection";
 import { ProfileLauncherList } from "@/pages/terminals/ProfileLauncherList";
+import { TemplateLauncherList } from "@/pages/terminals/TemplateLauncherList";
+import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
 import { useProfileActions } from "@/lib/useProfileActions";
 import { useGridLayout } from "@/pages/terminals/useGridLayout";
 import { useGridResize } from "@/pages/terminals/useGridResize";
 import { useGridTemplate } from "@/pages/terminals/useGridTemplate";
-import type { TemplateItem } from "@/lib/tauri/templates";
+import type { Template, TemplateItem } from "@/lib/tauri/templates";
 import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { TerminalRail } from "@/pages/terminals/TerminalRail";
@@ -248,6 +250,13 @@ type Props = {
   /** Hand the grid on screen to the Templates tab as a new template, to be
    * named and saved there. */
   onSaveAsTemplate: (items: TemplateItem[]) => void;
+  /** Open a saved template from the launcher's Templates section. App asks
+   * where the tabs go when some are open already. */
+  onOpenTemplate: (template: Template) => void;
+  /** Put a template in the Templates tab's editor: the saved one for Edit, an
+   * unsaved copy for Duplicate, an empty one for New (null). */
+  onEditTemplate: (template: Template | null) => void;
+  onDuplicateTemplate: (template: Template) => void;
 };
 
 /** Whether this session's shell treats a form feed (Ctrl-L) as "redraw the
@@ -287,6 +296,9 @@ export function TerminalsPage({
   onOpenHosts,
   onNewHost,
   onSaveAsTemplate,
+  onOpenTemplate,
+  onEditTemplate,
+  onDuplicateTemplate,
 }: Props) {
   const shortcuts = useShortcuts(visible);
   // Local shells available on this machine, for the "+" launcher menu.
@@ -644,6 +656,9 @@ export function TerminalsPage({
    * after the list underneath has changed.
    */
   const [profileDelete, setProfileDelete] = useState<ShellProfile | null>(null);
+  /** The same guard for a template in the launcher's Templates section. */
+  const [templateDelete, setTemplateDelete] = useState<Template | null>(null);
+  const launcherTemplates = useLauncherTemplates(shellMenuOpen);
   /**
    * The pending "double-click to delete" hint, and the toast it becomes.
    *
@@ -685,7 +700,7 @@ export function TerminalsPage({
    */
   useDismissOnOutside(
     launcherRef,
-    shellMenuOpen && !profileDelete,
+    shellMenuOpen && !profileDelete && !templateDelete,
     closeShellMenu,
   );
 
@@ -2209,6 +2224,42 @@ export function TerminalsPage({
                   onReorder={reorderProfiles}
                 />
 
+                {/* Saved templates: a set of hosts, shells and profiles opened
+                    together. Opening one asks where the tabs go when some are
+                    open already. Edit and Duplicate go to the Templates tab,
+                    so they close the menu. */}
+                <TemplateLauncherList
+                  open={!collapsed.has("templates")}
+                  onToggle={() => toggleSection("templates")}
+                  templates={launcherTemplates.templates}
+                  loading={launcherTemplates.loading}
+                  onNew={() => {
+                    setShellMenuOpen(false);
+                    onEditTemplate(null);
+                  }}
+                  onOpen={(t) => {
+                    cancelDeleteHint();
+                    setShellMenuOpen(false);
+                    onOpenTemplate(t);
+                  }}
+                  onEdit={(t) => {
+                    cancelDeleteHint();
+                    setShellMenuOpen(false);
+                    onEditTemplate(t);
+                  }}
+                  onDuplicate={(t) => {
+                    cancelDeleteHint();
+                    setShellMenuOpen(false);
+                    onDuplicateTemplate(t);
+                  }}
+                  onDeleteClick={hintDeleteGesture}
+                  onDeleteRequest={(t) => {
+                    cancelDeleteHint();
+                    setTemplateDelete(t);
+                  }}
+                  onReorder={launcherTemplates.reorder}
+                />
+
                 {/* Serial consoles. A COM port is not a shell and does not
                     belong in the list above: nothing is spawned, there is no
                     working directory, and the port is exclusive, so "how
@@ -3200,6 +3251,38 @@ export function TerminalsPage({
               variant="destructive"
               onClick={() => {
                 if (profileDelete) deleteProfile(profileDelete.id);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!templateDelete}
+        onOpenChange={(open) => {
+          if (!open) setTemplateDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this template?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold text-foreground">
+                {templateDelete?.name}
+              </span>{" "}
+              will be removed. Templates have no undo, so this cannot be taken
+              back. The hosts and shells it names are untouched, and terminals
+              already open from it keep running.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (templateDelete) void launcherTemplates.remove(templateDelete);
               }}
             >
               Delete

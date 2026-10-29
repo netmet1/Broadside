@@ -88,6 +88,9 @@ type Draft = {
 export type TemplateFocus = {
   template: Template | null;
   items?: TemplateItem[];
+  /** Duplicate from the Terminals launcher: this template's contents as a new,
+   * unsaved one. */
+  copyOf?: Template;
   n: number;
 };
 
@@ -120,7 +123,8 @@ function fingerprint(d: Draft): string {
  *
  * Nothing is launched from here, which is worth stating because the page looks
  * like it could. A template is opened from the Hosts tab, where the list of
- * them lives beside the list of machines; this is the workshop. Keeping the two
+ * them lives beside the list of machines, or from the Terminals "+" launcher;
+ * this is the workshop. Keeping the two
  * apart means the screen you build on has no button that opens twelve
  * connections, and the screen you launch from has no way to change what it is
  * about to open.
@@ -269,7 +273,8 @@ export function TemplatesPage({
   );
 
   // A request from elsewhere: Add, or Edit on a particular row of the Hosts
-  // tab, or Save as template on the Terminals tab.
+  // tab or the Terminals launcher, Duplicate in that launcher, or Save as
+  // template on the Terminals tab.
   //
   // Acted on during render rather than in an effect. An effect would paint one
   // frame of whatever was on screen before, which for Edit means the previous
@@ -284,6 +289,18 @@ export function TemplatesPage({
         next,
         fingerprint(next),
         `Opening “${focus.template.name}” puts it in the editor`,
+      );
+    } else if (focus.copyOf) {
+      // A copy, not yet saved: no id, so the button says Create, and measured
+      // against an empty draft so leaving it behind asks first. The name is
+      // kept as it is; saving numbers it ("Morning check 02") and the editor
+      // shows the name it got. Startup is off, since only one template can
+      // open at startup and a copy must not take that from the original.
+      const { name, color, items } = focus.copyOf;
+      replaceDraft(
+        { id: null, name, color, items, startup: "off" },
+        fingerprint(EMPTY_DRAFT),
+        `Duplicate puts a copy of “${name}” in the editor`,
       );
     } else if (focus.items && focus.items.length > 0) {
       // The grid from the Terminals tab. Measured against an empty draft
