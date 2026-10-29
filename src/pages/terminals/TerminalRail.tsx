@@ -84,6 +84,7 @@ import {
   EyeOffIcon,
   LayoutTemplateIcon,
   Grid2x2Icon,
+  LayersIcon,
   LayoutGridIcon,
   ListFilterIcon,
   ListIcon,
@@ -170,6 +171,7 @@ export function TerminalRail({
   onEndSession,
   onDisconnectAll,
   onCloseAll,
+  onNewWorkspace,
   retryableCount,
   onReconnectAll,
   onCloseFailed,
@@ -230,6 +232,9 @@ export function TerminalRail({
    * bulk form of the per-row unplug button above. */
   onDisconnectAll: () => void;
   onCloseAll: () => void;
+  /** Start an empty workspace and show it. Once there are two, the workspace
+   * strip appears above the tabs. */
+  onNewWorkspace: () => void;
   /** How many panes are sitting on a Try again / Reconnect button. One number
    * for both repairs: whatever Reconnect all would bring back is exactly what
    * Close failed would clear away, which is what makes the pair readable. */
@@ -1067,6 +1072,15 @@ export function TerminalRail({
                 </DropdownMenuItem>
               ))}
 
+              <DropdownMenuItem
+                onSelect={onNewWorkspace}
+                {...hint(
+                  "Start an empty workspace and show it. These tabs keep running in this one, and a row of workspaces appears above the tabs to switch between them",
+                )}
+              >
+                <LayersIcon />
+                New workspace
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={onCloseAll}
                 {...hint(
