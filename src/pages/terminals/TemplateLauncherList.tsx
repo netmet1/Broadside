@@ -10,7 +10,11 @@ import type { Template } from "@/lib/tauri/templates";
 import { useHint } from "@/lib/status";
 import { useRowDrag } from "@/lib/useRowDrag";
 import { cn } from "@/lib/utils";
-import { LauncherSectionHeader } from "@/pages/terminals/LauncherSection";
+import {
+  LauncherSectionHeader,
+  SectionDropLine,
+  type SectionDrag,
+} from "@/pages/terminals/LauncherSection";
 
 type Props = {
   templates: Template[];
@@ -29,6 +33,8 @@ type Props = {
   onReorder: (ids: number[]) => void;
   open: boolean;
   onToggle: () => void;
+  /** Dragging the whole section to another place in the menu. */
+  sectionDrag?: SectionDrag;
 };
 
 /**
@@ -53,6 +59,7 @@ export function TemplateLauncherList({
   onReorder,
   open,
   onToggle,
+  sectionDrag,
 }: Props) {
   const hint = useHint();
   const drag = useRowDrag(
@@ -70,12 +77,16 @@ export function TemplateLauncherList({
     // A flex item of the menu's column, like the Profiles section: it gives up
     // height down to its header and one row, and the list below scrolls.
     <div
+      {...sectionDrag?.rowProps}
       className={cn(
-        "mt-1 flex flex-col border-t border-border/60 pt-1",
+        "relative mt-1 flex flex-col border-t border-border/60 pt-1",
+        sectionDrag?.dragging && "opacity-40",
         showsRows && "min-h-[4.75rem]",
       )}
     >
+      <SectionDropLine side={sectionDrag?.dropSide ?? null} />
       <LauncherSectionHeader
+        gripProps={sectionDrag?.gripProps}
         title="Templates"
         count={loading ? null : templates.length}
         open={open}
