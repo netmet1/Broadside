@@ -12,6 +12,7 @@ import {
   CopyPlusIcon,
   Grid2x2Icon,
   Grid2x2XIcon,
+  ArrowRightLeftIcon,
   LayersIcon,
   ListFilterIcon,
   Maximize2Icon,
@@ -95,6 +96,9 @@ import {
 import { useRowDrag } from "@/lib/useRowDrag";
 import { ProfileLauncherList } from "@/pages/terminals/ProfileLauncherList";
 import { TemplateLauncherList } from "@/pages/terminals/TemplateLauncherList";
+import { WorkspaceStrip } from "@/pages/terminals/WorkspaceStrip";
+import { useControlsAutoHide } from "@/pages/terminals/useControlsAutoHide";
+import type { Workspace } from "@/pages/terminals/useWorkspaces";
 import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
 import { copyName } from "@/pages/templates/copyName";
 import { useProfileActions } from "@/lib/useProfileActions";
@@ -217,7 +221,21 @@ export type {
 export { LocalShellIcon };
 
 type Props = {
+  /** Every open session, in every workspace. Only the ones in the workspace
+   * on screen are shown; the rest stay mounted and hidden, so their shells
+   * keep running. See pages/terminals/useWorkspaces. */
   sessions: TermSession[];
+  workspaces: Workspace[];
+  activeWorkspaceId: string;
+  onSwitchWorkspace: (id: string) => void;
+  onNewWorkspace: () => void;
+  onRenameWorkspace: (id: string, name: string) => void;
+  onRecolorWorkspace: (id: string, color: string) => void;
+  /** Close every tab in a workspace, and the workspace. Asked about here
+   * first when it has tabs. */
+  onCloseWorkspace: (id: string) => void;
+  /** Move a tab to another workspace, or a new one (null). */
+  onMoveToWorkspace: (sessionId: string, workspaceId: string | null) => void;
   activeId: string | null;
   visible: boolean;
   /** Session ids with a live connection, a disconnected SSH tab shows a red label. */
@@ -285,7 +303,15 @@ function redrawsOnFormFeed(session: TermSession | undefined): boolean {
 }
 
 export function TerminalsPage({
-  sessions,
+  sessions: allSessions,
+  workspaces,
+  activeWorkspaceId,
+  onSwitchWorkspace,
+  onNewWorkspace,
+  onRenameWorkspace,
+  onRecolorWorkspace,
+  onCloseWorkspace,
+  onMoveToWorkspace,
   activeId,
   visible,
   connectedSessions,
@@ -309,6 +335,31 @@ export function TerminalsPage({
   onEditTemplate,
   onDuplicateTemplate,
 }: Props) {
+  // The workspace on screen. Everything on this page that is about "the tabs"
+  // (the strip, the grid, the filter, Close others, the broadcast rail, Save
+  // as template) works on these. The few things that must see every session
+  // (keeping panes mounted, connection phases, which COM ports are held, tab
+  // numbering) use `allSessions`.
+  const sessions = useMemo(
+    () => allSessions.filter((s) => s.workspaceId === activeWorkspaceId),
+    [allSessions, activeWorkspaceId],
+  );
+  const workspaceCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of allSessions) {
+      m.set(s.workspaceId, (m.get(s.workspaceId) ?? 0) + 1);
+    }
+    return m;
+  }, [allSessions]);
+  const [workspaceClosing, setWorkspaceClosing] = useState<Workspace | null>(
+    null,
+  );
+  const requestCloseWorkspace = (id: string) => {
+    const w = workspaces.find((x) => x.id === id);
+    if (!w) return;
+    if ((workspaceCounts.get(id) ?? 0) === 0) onCloseWorkspace(id);
+    else setWorkspaceClosing(w);
+  };
   const shortcuts = useShortcuts(visible);
   // Local shells available on this machine, for the "+" launcher menu.
   const [localShells, setLocalShells] = useState<LocalShell[]>([]);
@@ -501,9 +552,9 @@ export function TerminalsPage({
   // without a question.
   const openHostIds = useMemo(() => {
     const ids = new Set<number>();
-    for (const sn of sessions) if (sn.type === "ssh") ids.add(sn.host.id);
+    for (const sn of allSessions) if (sn.type === "ssh") ids.add(sn.host.id);
     return ids;
-  }, [sessions]);
+  }, [allSessions]);
 
   // Open one serial console. Deliberately not routed through requestOpenShells:
   // that exists to open N copies of a shell, and a COM port is exclusive, so the
@@ -761,13 +812,28 @@ export function TerminalsPage({
   // … so the tabs are distinguishable (T3). Shared with the broadcast lists, so
   // a tab and the row that broadcasts to it carry the same name; see
   // ./terminals/session for why the numbering works the way it does.
-  const tabSuffix = useMemo(() => duplicateSuffixes(sessions), [sessions]);
+  // Numbered across every workspace, so "PowerShell 02" is the same tab
+  // whichever workspace it is in.
+  const tabSuffix = useMemo(
+    () => duplicateSuffixes(allSessions),
+    [allSessions],
+  );
 
   // The View menu's Filter: which kinds of session are on screen. Up here
   // because the grid layout below counts its tiles without the kinds it hides.
   // Hidden panes stay mounted; see ./terminals/useKindFilter.
   const kindFilter = useKindFilter({ sessions, activeId, onActivate });
   const { visibleSessions } = kindFilter;
+  // What the grid leaves out: the kinds the Filter hides, and every session in
+  // another workspace. The grid is handed every session so that each pane
+  // stays mounted, and this is what keeps the hidden ones from claiming tiles.
+  const gridFilteredOut = useMemo(() => {
+    const out = new Set(kindFilter.hiddenIds);
+    for (const s of allSessions) {
+      if (s.workspaceId !== activeWorkspaceId) out.add(s.id);
+    }
+    return out;
+  }, [kindFilter.hiddenIds, allSessions, activeWorkspaceId]);
   // The kinds open, in launcher order. All of them for the Filter's list, which
   // has to offer a hidden kind back; only the visible ones for Close others,
   // which never reaches behind the filter.
@@ -813,8 +879,8 @@ export function TerminalsPage({
     customGrid,
     gridStyle,
   } = useGridLayout({
-    sessions,
-    filteredOut: kindFilter.hiddenIds,
+    sessions: allSessions,
+    filteredOut: gridFilteredOut,
     visible,
     maximized,
     paneRef: gridScrollRef,
@@ -944,12 +1010,26 @@ export function TerminalsPage({
   const [stripHover, setStripHover] = useState(false);
   const stripHoverRef = useRef(false);
   const stripTabRef = useRef<HTMLDivElement | null>(null);
+  // Outside fullscreen the same machinery can tuck away the controls row alone
+  // (Settings -> Sessions, on by default), leaving the tab strip where it is.
+  // Never while the workspace on screen has no terminal: the row holds the "+"
+  // that opens one, and an empty page with its only way forward hidden gives
+  // no sign of what to do next. Fullscreen gives the chrome back in that case
+  // for the same reason.
+  const controlsAutoHide = useControlsAutoHide();
+  const railTucked = controlsAutoHide && !gridFullscreen && sessions.length > 0;
+  const railRef = useRef<HTMLDivElement | null>(null);
+  // Whichever is sliding: the whole chrome in fullscreen, the controls row
+  // when tucked. Everything below that says "in fullscreen" about the strip
+  // holds for the tucked row too.
+  const stripSlides = gridFullscreen || railTucked;
   useEffect(() => {
-    if (!gridFullscreen) return;
+    if (!gridFullscreen && !railTucked) return;
     const onMove = (e: MouseEvent) => {
+      const strip = gridFullscreen ? chromeRef.current : railRef.current;
       const inside =
         e.clientY <= STRIP_REACH_PX &&
-        (pointInBox(chromeRef.current, e.clientX, e.clientY) ||
+        (pointInBox(strip, e.clientX, e.clientY) ||
           pointInBox(stripTabRef.current, e.clientX, e.clientY));
       if (inside === stripHoverRef.current) return;
       stripHoverRef.current = inside;
@@ -967,7 +1047,7 @@ export function TerminalsPage({
       stripHoverRef.current = false;
       setStripHover(false);
     };
-  }, [gridFullscreen]);
+  }, [gridFullscreen, railTucked]);
   const chromeHasFocus = useCallback(
     () =>
       document.activeElement !== null &&
@@ -1093,11 +1173,16 @@ export function TerminalsPage({
         // off, then press Tab, and without this focus would walk along a strip
         // that had already slid away. Outside fullscreen the chrome is always
         // visible and ordinary Tab should stay ordinary, so nothing changes.
-        if (!gridFullscreen) return;
+        if (!stripSlides) return;
         setChromeKeyboard(true);
         setStripDismissed(false);
       }
-      const items = focusablesIn(chromeRef.current);
+      // The tucked row alone when it is the thing that slid down: the tabs
+      // below it are under the row while it is out, so walking on into them
+      // put the focus ring on controls nobody could see (smoke 77-1).
+      const items = focusablesIn(
+        railTucked ? railRef.current : chromeRef.current,
+      );
       if (items.length === 0) return;
       const here = items.indexOf(document.activeElement as HTMLElement);
       if (here === -1) return;
@@ -1107,8 +1192,9 @@ export function TerminalsPage({
       e.preventDefault();
       items[e.shiftKey ? items.length - 1 : 0]?.focus();
     },
-    [chromeKeyboard, gridFullscreen],
+    [chromeKeyboard, stripSlides, railTucked],
   );
+
 
   // Leaving Grid (or maximizing a pane) has to give the chrome back, or it
   // would be missing with nothing on screen able to restore it. So does closing
@@ -1128,7 +1214,8 @@ export function TerminalsPage({
   // clicked before it was. Outside fullscreen the flag does nothing, so it can
   // sit set for as long as it likes; this is only so it cannot be found still
   // set on the way back in.
-  if (!gridFullscreen && stripDismissed) setStripDismissed(false);
+  if (!stripSlides && stripDismissed) setStripDismissed(false);
+
 
   // Drag-to-reorder tab state: the session being dragged and the tab it's
   // currently hovering over (drives the drop-indicator border).
@@ -1357,7 +1444,7 @@ export function TerminalsPage({
   // render-phase update cannot loop.
   const livePhases = (() => {
     if (phases.size === 0) return phases;
-    const live = new Set(sessions.map((s) => s.id));
+    const live = new Set(allSessions.map((s) => s.id));
     const next = new Map([...phases].filter(([id]) => live.has(id)));
     return next.size === phases.size ? phases : next;
   })();
@@ -1426,7 +1513,7 @@ export function TerminalsPage({
   // reason: the phase is what says whether a session exists as more than a tab.
   const openSerialPorts = useMemo(() => {
     const held = new Set<string>();
-    for (const s of sessions) {
+    for (const s of allSessions) {
       if (s.type !== "local") continue;
       const phase = phases.get(s.id);
       if (phase === "failed" || phase === "closed") continue;
@@ -1434,7 +1521,7 @@ export function TerminalsPage({
       if (port) held.add(port);
     }
     return held;
-  }, [sessions, phases]);
+  }, [allSessions, phases]);
 
   /** Per-session counter for the Reset display control. Bumping one re-inits
    * that terminal's xterm view without touching the session behind it. */
@@ -1739,6 +1826,16 @@ export function TerminalsPage({
     }
     setCloseAllOpen(false);
   };
+  // And the same across every workspace, offered once there are two. Always
+  // asks: it reaches tabs that are not on screen.
+  const [closeEverywhereOpen, setCloseEverywhereOpen] = useState(false);
+  const closeEverywhere = () => {
+    for (const s of allSessions) {
+      ptyClose(s.id).catch(() => {});
+      onCloseSession(s.id);
+    }
+    setCloseEverywhereOpen(false);
+  };
 
   // Alt+Left/Right cycle through the open tabs (wrapping around the ends),
   // following the displayed tab order. The tabs on screen only: stepping onto a
@@ -1888,6 +1985,9 @@ export function TerminalsPage({
             // so where it landed has to be obvious; the default ring is a grey
             // at half opacity on a grey strip, and it was not.
             "terminal-chrome",
+            // Room at the top for the tucked controls row's tab, so it hangs
+            // in a gap of its own rather than over the first tab.
+            railTucked && "pt-2.5",
             // There used to be a `!gridFullscreen && "relative"` here, to give
             // the floating "+" something to hang its `top-full` on when the tab
             // strip was rolled up. The "+" is in the rail now and the rolled-up
@@ -1965,6 +2065,25 @@ export function TerminalsPage({
             gridFullscreen && !stripDismissed && "hover:translate-y-0",
           )}
         >
+      {/* The controls row, tucked away when Settings asks for it: the
+          fullscreen strip's slide, its three holders (the measured pointer,
+          an open menu, the keyboard sent here by Ctrl+Shift+T) and its click
+          latch, applied to this row alone, so the tabs below stay put. See
+          the chrome above for why each holder is what it is. Out of the flow
+          while tucked, so the terminals get its height; it comes down over
+          the top of them. The page's scroll container clips it on the way up. */}
+      <div
+        ref={railRef}
+        data-chrome-keyboard={railTucked && chromeKeyboard ? "1" : undefined}
+        data-strip-hover={
+          railTucked && stripHover && !stripDismissed ? "1" : undefined
+        }
+        className={cn(
+          railTucked &&
+            "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%+1px)] bg-background shadow-lg transition-transform duration-150 data-chrome-keyboard:translate-y-0 has-[[data-state=open]]:translate-y-0 data-strip-hover:translate-y-0",
+          railTucked && !stripDismissed && "hover:translate-y-0",
+        )}
+      >
       <TerminalRail
         tabsCompact={tabsCompact}
         toggleTabsCompact={toggleTabsCompact}
@@ -2011,6 +2130,10 @@ export function TerminalsPage({
         onEndSession={endSession}
         onDisconnectAll={requestDisconnectAll}
         onCloseAll={() => setCloseAllOpen(true)}
+        onNewWorkspace={onNewWorkspace}
+        workspaceCount={workspaces.length}
+        allSessionCount={allSessions.length}
+        onCloseAllWorkspaces={() => setCloseEverywhereOpen(true)}
         retryableCount={retryableIds.length}
         onReconnectAll={requestReconnectAll}
         onCloseFailed={requestCloseFailed}
@@ -2425,8 +2548,28 @@ export function TerminalsPage({
           </div>
         }
       />
+      {/* The tucked row's tab: the fullscreen one below, a little shorter,
+          because here it sits in a gap above the tabs rather than over a
+          terminal. Same click rule, for the same reason. */}
+      {railTucked && (
+        <div
+          ref={stripTabRef}
+          data-strip-tab=""
+          onClick={() => {
+            stripHoverRef.current = true;
+            setStripHover(true);
+            setStripDismissed(false);
+          }}
+          className="absolute left-1/2 top-full flex h-3 w-48 -translate-x-1/2 cursor-pointer items-center justify-center rounded-b-md border border-t-0 border-border bg-background/50 shadow-md transition-colors hover:bg-accent"
+          title="Hover or click here to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
+        >
+          <div className="h-1 w-24 rounded-full bg-muted-foreground/70" />
+        </div>
+      )}
+      </div>
 
       {/* Tab strip on its own line below the controls. The row itself does NOT
+
           scroll/clip, only the inner tab list does, so nothing opening
           downward out of a tab is clipped by an overflow container.
           (overflow-x:auto forces overflow-y to compute to auto too, which
@@ -2438,6 +2581,25 @@ export function TerminalsPage({
           an opaque plate. That button is in the controls row above now, so
           there is nothing left down here that has to survive, and the row can
           simply stop existing. */}
+      {/* Workspaces, only once there are two. Kept when the tab row is rolled
+          up, because it is then the only way to reach the others. */}
+      {workspaces.length > 1 && (
+        <WorkspaceStrip
+          workspaces={workspaces}
+          activeId={activeWorkspaceId}
+          counts={workspaceCounts}
+          onSwitch={onSwitchWorkspace}
+          onNew={onNewWorkspace}
+          onRename={onRenameWorkspace}
+          onRecolor={onRecolorWorkspace}
+          onClose={requestCloseWorkspace}
+          draggingTabId={dragId}
+          onDropTab={(tabId, wsId) => {
+            onMoveToWorkspace(tabId, wsId);
+            setDragId(null);
+          }}
+        />
+      )}
       {!tabsRolledUp && (
         <div className="flex items-center gap-1 border-b border-border/50 px-2 pt-2">
         <div
@@ -2787,6 +2949,22 @@ export function TerminalsPage({
               <ContextMenuShortcut>F11</ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuSeparator />
+            {workspaces
+              .filter((w) => w.id !== s.workspaceId)
+              .map((w) => (
+                <ContextMenuItem
+                  key={w.id}
+                  onSelect={() => onMoveToWorkspace(s.id, w.id)}
+                >
+                  <ArrowRightLeftIcon />
+                  <span className="max-w-48 truncate">Move to {w.name}</span>
+                </ContextMenuItem>
+              ))}
+            <ContextMenuItem onSelect={() => onMoveToWorkspace(s.id, null)}>
+              <LayersIcon />
+              Move to a new workspace
+            </ContextMenuItem>
+            <ContextMenuSeparator />
             <ContextMenuItem
               onSelect={() => closeSession(s.id)}
               className="text-destructive focus:text-destructive"
@@ -3024,7 +3202,9 @@ export function TerminalsPage({
           const excluded = gridMode && excludedFromGrid.has(s.id);
           // Hidden by the Filter, in either layout. Laid out as display:none
           // and never unmounted: unmounting a TerminalView closes its shell.
-          const filtered = kindFilter.isHidden(s);
+          // Or in another workspace, which hides it the same way.
+          const filtered =
+            kindFilter.isHidden(s) || s.workspaceId !== activeWorkspaceId;
           const disconnected = isDown(s);
           // The active tile's header mirrors the tab tint: a ~20% fill in the
           // tab's colour and a top bar in it, falling back to the theme accent
@@ -3323,6 +3503,42 @@ export function TerminalsPage({
       </AlertDialog>
 
       <AlertDialog
+        open={!!workspaceClosing}
+        onOpenChange={(open) => {
+          if (!open) setWorkspaceClosing(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close this workspace?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold text-foreground">
+                {workspaceClosing?.name}
+              </span>{" "}
+              and its{" "}
+              {workspaceCounts.get(workspaceClosing?.id ?? "") ?? 0}{" "}
+              {(workspaceCounts.get(workspaceClosing?.id ?? "") ?? 0) === 1
+                ? "terminal close"
+                : "terminals close"}
+              . Anything still running in them stops. Other workspaces are not
+              touched.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (workspaceClosing) onCloseWorkspace(workspaceClosing.id);
+              }}
+            >
+              Close workspace
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
         open={!!templateDelete}
         onOpenChange={(open) => {
           if (!open) setTemplateDelete(null);
@@ -3363,8 +3579,10 @@ export function TerminalsPage({
               <span className="font-semibold text-foreground">
                 all {sessions.length}
               </span>{" "}
-              open terminal {sessions.length === 1 ? "session" : "sessions"} and
+              open terminal {sessions.length === 1 ? "session" : "sessions"}
+              {workspaces.length > 1 ? " in this workspace" : ""} and
               disconnects them. Any unsaved work in those shells is lost.
+              {workspaces.length > 1 ? " Other workspaces are not touched." : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -3376,7 +3594,35 @@ export function TerminalsPage({
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={closeEverywhereOpen}
+        onOpenChange={setCloseEverywhereOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close all workspaces?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This closes{" "}
+              <span className="font-semibold text-foreground">
+                all {allSessions.length}
+              </span>{" "}
+              open terminal {allSessions.length === 1 ? "session" : "sessions"}{" "}
+              in all {workspaces.length} workspaces, including the ones not on
+              screen, and disconnects them. Any unsaved work in those shells is
+              lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={closeEverywhere}>
+              Close all workspaces
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <CloseOthersDialog closeOthers={closeOthers} shells={localShells} />
+
 
       {/* Not destructive, unlike the two dialogs either side of it: nothing is
           lost by saying yes, the cost is the size of the burst. So it is worded

@@ -84,6 +84,7 @@ import {
   EyeOffIcon,
   LayoutTemplateIcon,
   Grid2x2Icon,
+  LayersIcon,
   LayoutGridIcon,
   ListFilterIcon,
   ListIcon,
@@ -170,6 +171,10 @@ export function TerminalRail({
   onEndSession,
   onDisconnectAll,
   onCloseAll,
+  onNewWorkspace,
+  workspaceCount,
+  allSessionCount,
+  onCloseAllWorkspaces,
   retryableCount,
   onReconnectAll,
   onCloseFailed,
@@ -230,6 +235,15 @@ export function TerminalRail({
    * bulk form of the per-row unplug button above. */
   onDisconnectAll: () => void;
   onCloseAll: () => void;
+  /** Start an empty workspace and show it. Once there are two, the workspace
+   * strip appears above the tabs. */
+  onNewWorkspace: () => void;
+  /** How many workspaces there are, and how many tabs they hold between
+   * them. At two or more workspaces the menu offers to close them all. */
+  workspaceCount: number;
+  allSessionCount: number;
+  /** Close every tab in every workspace (asks first). */
+  onCloseAllWorkspaces: () => void;
   /** How many panes are sitting on a Try again / Reconnect button. One number
    * for both repairs: whatever Reconnect all would bring back is exactly what
    * Close failed would clear away, which is what makes the pair readable. */
@@ -914,6 +928,19 @@ export function TerminalRail({
               })}
               <DropdownMenuSeparator />
 
+              {/* First after the list: starting another group of tabs is about
+                  the set as a whole, like the list itself, and nothing below
+                  it here is. */}
+              <DropdownMenuItem
+                onSelect={onNewWorkspace}
+                {...hint(
+                  "Start an empty workspace and show it. These tabs keep running in this one, and a row of workspaces appears above the tabs to switch between them",
+                )}
+              >
+                <LayersIcon />
+                New workspace
+              </DropdownMenuItem>
+
               {/* The bulk repairs, above the bulk destruction. Each is the way
                   out of a state you can otherwise only leave one tab at a time,
                   which is the whole reason they are here: twenty panes that lost
@@ -1070,12 +1097,31 @@ export function TerminalRail({
               <DropdownMenuItem
                 onSelect={onCloseAll}
                 {...hint(
-                  "Close every open terminal session at once (asks first)",
+                  workspaceCount > 1
+                    ? "Close every terminal in this workspace at once (asks first). Other workspaces are not touched"
+                    : "Close every open terminal session at once (asks first)",
                 )}
               >
                 <XIcon />
                 Close all
               </DropdownMenuItem>
+              {/* The widest close there is, last and only when there is more
+                  than one workspace to mean it: with one, it is Close all. */}
+              {workspaceCount > 1 && (
+                <DropdownMenuItem
+                  onSelect={onCloseAllWorkspaces}
+                  {...hint(
+                    `Close all ${allSessionCount} terminals in all ${workspaceCount} workspaces at once (asks first)`,
+                  )}
+                >
+                  <LayersIcon />
+                  Close all workspaces
+                  <span className="ml-auto pl-4 text-xs tracking-wide text-muted-foreground">
+                    {allSessionCount}
+                  </span>
+                </DropdownMenuItem>
+              )}
+
             </DropdownMenuContent>
           </DropdownMenu>
         )}
