@@ -1191,7 +1191,15 @@ function App() {
             if (!o) setPendingLaunch(null);
           }}
         >
-          <AlertDialogContent>
+          {/* Wider when it asks where the tabs go: four buttons do not fit
+              the default width, and the row ran out past the text above it
+              (smoke 77-1). Same variant as the default, so it replaces it. */}
+          <AlertDialogContent
+            className={cn(
+              pendingLaunch?.placement && "data-[size=default]:sm:max-w-lg",
+            )}
+          >
+
             <AlertDialogHeader>
               <AlertDialogTitle>
                 {(pendingLaunch?.templates.length ?? 0) > 1 ? (

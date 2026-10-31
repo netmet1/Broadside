@@ -1177,7 +1177,12 @@ export function TerminalsPage({
         setChromeKeyboard(true);
         setStripDismissed(false);
       }
-      const items = focusablesIn(chromeRef.current);
+      // The tucked row alone when it is the thing that slid down: the tabs
+      // below it are under the row while it is out, so walking on into them
+      // put the focus ring on controls nobody could see (smoke 77-1).
+      const items = focusablesIn(
+        railTucked ? railRef.current : chromeRef.current,
+      );
       if (items.length === 0) return;
       const here = items.indexOf(document.activeElement as HTMLElement);
       if (here === -1) return;
@@ -1187,8 +1192,9 @@ export function TerminalsPage({
       e.preventDefault();
       items[e.shiftKey ? items.length - 1 : 0]?.focus();
     },
-    [chromeKeyboard, stripSlides],
+    [chromeKeyboard, stripSlides, railTucked],
   );
+
 
   // Leaving Grid (or maximizing a pane) has to give the chrome back, or it
   // would be missing with nothing on screen able to restore it. So does closing
