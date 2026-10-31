@@ -37,9 +37,12 @@ fn kind_rank(kind: &str) -> u8 {
 /// The user's home directory (browser starting point).
 #[tauri::command]
 pub fn local_home_dir() -> AppResult<String> {
+    #[cfg(windows)]
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_else(|_| "C:\\".to_string());
+    #[cfg(not(windows))]
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
     Ok(home)
 }
 
@@ -90,9 +93,9 @@ pub fn local_mkdir(path: String) -> AppResult<()> {
 ///
 /// `new_name` is a bare name, not a path, so a rename can only ever change the
 /// name: it cannot move anything to another folder. An existing file or folder
-/// of that name is never replaced (Windows' own rename replaces a file without
-/// asking). A change of case alone is allowed, since on Windows that is the
-/// same entry.
+/// of that name is never replaced (the OS's own rename replaces a file without
+/// asking). A change of case alone is allowed, since on Windows, and on a Mac's
+/// usual case-insensitive volume, that is the same entry.
 #[tauri::command]
 pub fn local_rename(path: String, new_name: String) -> AppResult<String> {
     let from = Path::new(&path);
@@ -105,12 +108,37 @@ pub fn local_rename(path: String, new_name: String) -> AppResult<String> {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
     let case_only = old_name.to_lowercase() == new_name.to_lowercase();
-    if !case_only && fs::symlink_metadata(&target).is_ok() {
+    let same_entry = case_only && is_same_entry(from, &target);
+    if !same_entry && fs::symlink_metadata(&target).is_ok() {
         return Err(AppError::LocalFs(format!("{new_name} already exists here")));
     }
     fs::rename(from, &target)
         .map_err(|e| AppError::LocalFs(format!("rename {old_name}: {e}")))?;
     Ok(target.to_string_lossy().to_string())
+}
+
+/// Whether a case-only rename's target is the entry being renamed, rather than
+/// a second one that differs only in case.
+///
+/// Windows folders are case-insensitive, so it always is. A Mac volume usually
+/// is too, but it can be formatted case-sensitive, and there `notes.txt` and
+/// `Notes.txt` are two files: renaming one onto the other would replace it
+/// without a word. The same device and inode is the same entry whatever the
+/// volume's rules.
+#[cfg(windows)]
+fn is_same_entry(_from: &Path, _target: &Path) -> bool {
+    true
+}
+
+#[cfg(not(windows))]
+fn is_same_entry(from: &Path, target: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (fs::symlink_metadata(from), fs::symlink_metadata(target)) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+        // The target does not exist, so there is nothing for it to clash with.
+        (Ok(_), Err(_)) => true,
+        _ => false,
+    }
 }
 
 /// Where a rename of `from` to `new_name` lands: the same folder, the new name.
@@ -128,6 +156,7 @@ fn local_rename_target(from: &Path, new_name: &str) -> AppResult<PathBuf> {
 
 /// The names Windows will not take, as a message for the operator. The rename
 /// dialog checks the same rules so it can say so before anything is sent.
+#[cfg(windows)]
 fn check_local_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("a name can't be empty".into());
@@ -159,6 +188,29 @@ fn check_local_name(name: &str) -> Result<(), String> {
             && stem.as_bytes()[3].is_ascii_digit());
     if reserved {
         return Err(format!("{stem} is a name Windows keeps for itself"));
+    }
+    Ok(())
+}
+
+/// The names macOS will not take, as a message for the operator; the rename
+/// dialog checks the same rules. Far fewer than Windows: `/` is the separator,
+/// and `:` is refused too, because Finder shows a `:` as `/` and the old
+/// Carbon layer still reads it as one, so a name containing it is a name that
+/// looks different in every app that shows it. The 255 limit is in bytes of
+/// UTF-8, which is how APFS counts, not characters.
+#[cfg(not(windows))]
+fn check_local_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("a name can't be empty".into());
+    }
+    if name == "." || name == ".." {
+        return Err(format!("{name} is not a name a file can have"));
+    }
+    if name.chars().any(|c| c < ' ' || matches!(c, '/' | ':')) {
+        return Err("a name can't contain / or :".into());
+    }
+    if name.len() > 255 {
+        return Err("that name is longer than macOS allows".into());
     }
     Ok(())
 }
@@ -203,17 +255,34 @@ fn scan_local(path: &str) -> TransferStats {
     stats
 }
 
-/// Moves a local file or folder to the Recycle Bin (recoverable), rather than
-/// deleting it permanently.
+/// Moves a local file or folder to the Recycle Bin / Trash (recoverable),
+/// rather than deleting it permanently.
 #[tauri::command]
 pub fn local_delete(path: String) -> AppResult<()> {
-    trash::delete(&path)
-        .map_err(|e| AppError::LocalFs(format!("recycle {path}: {e}")))?;
+    move_to_trash(&path).map_err(|e| AppError::LocalFs(format!("recycle {path}: {e}")))?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn move_to_trash(path: &str) -> Result<(), trash::Error> {
+    trash::delete(path)
+}
+
+/// On macOS through NSFileManager rather than the crate's default, which asks
+/// Finder to do it over AppleScript: that puts an "allow Broadside to control
+/// Finder" prompt in front of the first delete, and under the hardened runtime
+/// fails outright. The file still lands in the Trash and can be dragged back.
+#[cfg(target_os = "macos")]
+fn move_to_trash(path: &str) -> Result<(), trash::Error> {
+    use trash::macos::{DeleteMethod, TrashContextExtMacos};
+    let mut ctx = trash::TrashContext::default();
+    ctx.set_delete_method(DeleteMethod::NsFileManager);
+    ctx.delete(path)
 }
 
 /// Existing drive roots (`C:\`, `D:\`, …), shown when navigating up past a
 /// drive root on Windows.
+#[cfg(windows)]
 #[tauri::command]
 pub fn local_list_drives() -> AppResult<Vec<String>> {
     let mut drives = Vec::new();
@@ -224,6 +293,27 @@ pub fn local_list_drives() -> AppResult<Vec<String>> {
         }
     }
     Ok(drives)
+}
+
+/// The Mac's equivalent of the drive list, shown when navigating up past `/`:
+/// the startup disk as `/`, then every other mounted volume under `/Volumes`
+/// (USB sticks, disk images, network shares). The startup disk also appears in
+/// `/Volumes`, as a symlink back to `/`, and is skipped there so it is not
+/// listed twice.
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn local_list_drives() -> AppResult<Vec<String>> {
+    let mut volumes: Vec<String> = fs::read_dir("/Volumes")
+        .map(|dir| {
+            dir.filter_map(Result::ok)
+                .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+                .map(|e| e.path().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    volumes.sort_by_key(|v| v.to_lowercase());
+    volumes.insert(0, "/".to_string());
+    Ok(volumes)
 }
 
 #[cfg(test)]
@@ -237,6 +327,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     #[test]
     fn names_windows_refuses_are_refused() {
         for bad in [
@@ -247,6 +338,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     #[test]
     fn a_rename_stays_in_its_folder() {
         let from = Path::new(r"C:\Users\me\old.txt");
@@ -258,9 +350,51 @@ mod tests {
         assert!(local_rename_target(from, "..").is_err());
     }
 
+    #[cfg(windows)]
     #[test]
     fn a_drive_root_cannot_be_renamed() {
         assert!(local_rename_target(Path::new(r"C:\"), "D").is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn names_macos_refuses_are_refused() {
+        let long = "x".repeat(256);
+        for bad in ["", ".", "..", "a/b", "a:b", "tab\there", long.as_str()] {
+            assert!(check_local_name(bad).is_err(), "{bad:?} should be refused");
+        }
+        // Legal on a Mac, though Windows would refuse every one of them.
+        for ok in ["what?", "star*", r"back\slash", "trailing.", "CON", "<x>"] {
+            assert!(check_local_name(ok).is_ok(), "{ok} should pass");
+        }
+        // 255 is a byte count: 128 two-byte characters is one too many.
+        assert!(check_local_name(&"é".repeat(127)).is_ok());
+        assert!(check_local_name(&"é".repeat(128)).is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn a_rename_stays_in_its_folder_on_macos() {
+        let from = Path::new("/Users/me/old.txt");
+        let to = local_rename_target(from, "new.txt").unwrap();
+        assert_eq!(to, Path::new("/Users/me/new.txt"));
+        assert!(local_rename_target(from, "../evil.txt").is_err());
+        assert!(local_rename_target(from, "sub/evil.txt").is_err());
+        assert!(local_rename_target(from, "..").is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_root_cannot_be_renamed() {
+        assert!(local_rename_target(Path::new("/"), "D").is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_volume_list_starts_at_the_startup_disk() {
+        let volumes = local_list_drives().unwrap();
+        assert_eq!(volumes[0], "/");
+        assert!(volumes[1..].iter().all(|v| v.starts_with("/Volumes/")), "{volumes:?}");
     }
 
     #[test]

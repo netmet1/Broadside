@@ -65,7 +65,8 @@ pub const DEFAULT_BULK_CONFIRM_OVER: u16 = 5;
 pub const MIN_BULK_CONFIRM_OVER: u16 = 1;
 pub const MAX_BULK_CONFIRM_OVER: u16 = 11;
 
-pub const DEFAULT_TERMINAL_FONT_FAMILY: &str = "Consolas, 'Cascadia Mono', monospace";
+/// Menlo is the Mac's; a Windows box has Consolas and never reaches it.
+pub const DEFAULT_TERMINAL_FONT_FAMILY: &str = "Consolas, 'Cascadia Mono', Menlo, monospace";
 pub const DEFAULT_TERMINAL_FONT_SIZE: u16 = 13;
 pub const DEFAULT_APP_FONT_SIZE: u16 = 16;
 
@@ -85,10 +86,11 @@ pub const DEFAULT_TERMINAL_SCROLLBACK: u32 = 5_000;
 pub const MAX_TERMINAL_SCROLLBACK: u32 = 50_000;
 
 /// Where a shortcut command can run. `Ssh` covers remote SSH hosts and local
-/// WSL tabs (both run Linux); `Local` covers local Command Prompt and PowerShell
-/// tabs (Windows); `Both` runs in either (e.g. `whoami`). Defaults to `Ssh` so
-/// shortcuts saved before scopes existed (any JSON missing the field) keep their
-/// original SSH behavior.
+/// WSL tabs (both run Linux), and on macOS the local zsh/bash tabs, which speak
+/// the same Unix language; `Local` covers local Command Prompt and PowerShell
+/// tabs (on macOS, only a PowerShell custom terminal); `Both` runs in either
+/// (e.g. `whoami`). Defaults to `Ssh` so shortcuts saved before scopes existed
+/// (any JSON missing the field) keep their original SSH behavior.
 ///
 /// `Serial` is a console cable, and it stands on its own: `Both` deliberately
 /// does NOT reach it. "Both" has always meant both *shell languages*, Linux and
@@ -125,7 +127,15 @@ pub const CORE_SHORTCUTS_BOTH: [&str; 2] = ["whoami", "hostname"];
 
 /// Built-in Command Prompt / PowerShell shortcut commands. Every entry is valid
 /// in BOTH cmd.exe and PowerShell so it runs whichever Windows shell the tab is.
+#[cfg(not(target_os = "macos"))]
 pub const CORE_SHORTCUTS_LOCAL: [&str; 4] = ["dir", "ipconfig", "tasklist", "cls"];
+
+/// The same four jobs for PowerShell on macOS, the only shell the `Local` scope
+/// reaches there. `ipconfig` and `tasklist` are Windows programs; `ifconfig`
+/// and `ps` are the Mac's, and PowerShell on Unix runs them rather than aliasing
+/// them. `dir` and `cls` are PowerShell's own on every platform.
+#[cfg(target_os = "macos")]
+pub const CORE_SHORTCUTS_LOCAL: [&str; 4] = ["dir", "ifconfig", "ps", "cls"];
 
 /// A built-in shortcut with its scope, sent to the Settings page.
 #[derive(Debug, Clone, Serialize)]

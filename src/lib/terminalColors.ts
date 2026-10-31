@@ -25,6 +25,8 @@
  * nothing and can never be dangerous, so it does not need the trip.
  */
 
+import { IS_MAC } from "@/lib/platform";
+
 /** The shell kinds a colour can be set for. These are `LocalShell.kind` values,
  * so a custom terminal takes the colour of the language it declares: Git Bash
  * and MSYS2 are both `posix` and both wear the POSIX colour, which is the point
@@ -39,12 +41,18 @@ export const SHELL_KINDS = [
 
 export type ShellKind = (typeof SHELL_KINDS)[number];
 
+/** The kinds a tab on this machine can actually be, for the colour picker. A
+ * Mac has no Command Prompt and no WSL; its own shells are `posix`. */
+export const LOCAL_SHELL_KINDS: readonly ShellKind[] = IS_MAC
+  ? ["posix", "powershell", "serial"]
+  : SHELL_KINDS;
+
 /** What each kind is called where the colour is chosen. */
 export const SHELL_KIND_LABELS: Record<ShellKind, string> = {
   powershell: "PowerShell",
   cmd: "Command Prompt",
   wsl: "WSL",
-  posix: "Bash-like (Git Bash, MSYS2, Cygwin)",
+  posix: IS_MAC ? "Bash-like (zsh, bash, fish)" : "Bash-like (Git Bash, MSYS2, Cygwin)",
   serial: "Serial console",
 };
 

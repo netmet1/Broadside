@@ -18,6 +18,7 @@ import { useHint } from "@/lib/status";
 import { isTintable } from "@/lib/terminalColors";
 import { useRowDrag } from "@/lib/useRowDrag";
 import { useShellColors } from "@/lib/useShellColors";
+import { FALLBACK_SHELL_KIND } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { LauncherSectionHeader } from "@/pages/terminals/LauncherSection";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
@@ -206,7 +207,7 @@ export function ProfileLauncherList({
                   }
                 >
                   <LocalShellIcon
-                    kind={shell?.kind ?? "cmd"}
+                    kind={shell?.kind ?? FALLBACK_SHELL_KIND}
                     className={cn(
                       "h-3.5 w-3.5 shrink-0",
                       !isTintable(profileColor) && "text-muted-foreground",

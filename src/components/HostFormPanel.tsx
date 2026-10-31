@@ -15,6 +15,7 @@ import {
   shellCapabilityMessage,
   type ShellIntegrationPref,
 } from "@/lib/shells";
+import { WORDS } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -957,7 +958,7 @@ export function HostFormPanel({
                           void keyPathReg.onBlur(e);
                           void probeKeyFile(e.target.value);
                         }}
-                        placeholder="C:\Users\you\.ssh\id_ed25519"
+                        placeholder={WORDS.keyFileExample}
                         className={`font-mono text-xs ${errors.keyPath ? "border-destructive" : ""}`}
                       />
                       <Button

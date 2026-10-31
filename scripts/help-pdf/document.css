@@ -33,7 +33,7 @@ html {
 
 body {
   margin: 0;
-  font-family: "Geist Doc", "Segoe UI", Arial, sans-serif;
+  font-family: "Geist Doc", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   font-size: 10pt;
   line-height: 1.55;
   color: var(--body);
@@ -261,11 +261,26 @@ a {
   font-weight: 600;
 }
 
+/* The handbook serves both apps, so where Windows and the Mac differ it says
+   both (see src/pages/help/platform.tsx). The Mac's half is marked, quietly:
+   it is a note on the sentence, not a second voice. */
+[data-h="plat"] {
+  color: var(--muted);
+}
+
+[data-h="plat-label"] {
+  font-size: 0.8em;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 code {
   padding: 0.5pt 3pt;
   border-radius: 2pt;
   background: var(--wash);
-  font-family: Consolas, "Cascadia Mono", monospace;
+  font-family: Consolas, "Cascadia Mono", Menlo, monospace;
   font-size: 0.88em;
   color: var(--ink);
 }
@@ -276,7 +291,7 @@ kbd {
   border-bottom-width: 2px;
   border-radius: 3pt;
   background: #fafbfc;
-  font-family: Consolas, "Cascadia Mono", monospace;
+  font-family: Consolas, "Cascadia Mono", Menlo, monospace;
   font-size: 0.84em;
   font-weight: 500;
   color: var(--ink);

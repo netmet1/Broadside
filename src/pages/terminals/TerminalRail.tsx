@@ -114,6 +114,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ShortcutBar } from "@/components/ShortcutBar";
+import { keyLabel, SHORTCUTS } from "@/lib/platform";
 import { useHint } from "@/lib/status";
 import { useRailCompact } from "@/lib/useRailCompact";
 import { useUiPrefs } from "@/lib/uiPrefs";
@@ -283,7 +284,9 @@ export function TerminalRail({
   // not learn it is there for when they do have a terminal open. Greyed says
   // both things at once: it exists, and not yet.
   const canFullscreen = gridMode ? gridCount > 0 : activeId !== null;
-  const fullscreenKey = gridMode ? "Ctrl+Shift+G" : "F11";
+  const maximizeKey = keyLabel(SHORTCUTS.maximize);
+  const gridKey = keyLabel(SHORTCUTS.gridFullscreen);
+  const fullscreenKey = gridMode ? gridKey : maximizeKey;
   const toggleFullscreen = () => {
     if (gridMode) onGridFullscreen(!gridFullscreen);
     else maximizeActive();
@@ -293,10 +296,10 @@ export function TerminalRail({
       ? "Nothing is in the grid to fill the screen with. Put a tab back in the grid first."
       : "No terminal is open to fill the window with. Open one first."
     : !gridMode
-      ? "Fill the window with the active terminal (F11). F11 again brings the app back."
+      ? `Fill the window with the active terminal (${maximizeKey}). ${maximizeKey} again brings the app back.`
       : gridFullscreen
-        ? "The grid fills the screen. Click, or press Ctrl+Shift+G, to come back."
-        : "Fill the screen with the grid (Ctrl+Shift+G). The controls collapse to a tab at the top centre you hover or click to bring them back.";
+        ? `The grid fills the screen. Click, or press ${gridKey}, to come back.`
+        : `Fill the screen with the grid (${gridKey}). The controls collapse to a tab at the top centre you hover or click to bring them back.`;
 
   // What the Sessions menu is offering right now. Its two repair entries come
   // and go with the state of the sessions, so the hint that advertises the menu

@@ -6,6 +6,7 @@ import {
   TerminalIcon,
 } from "lucide-react";
 
+import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import type {
   LocalTermSession,
@@ -19,12 +20,16 @@ import { LocalBroadcastPanel } from "@/pages/ptyBroadcast/LocalBroadcastPanel";
  * is open (each panel renders its own empty state). */
 type PtyTab = "ssh" | "powershell" | "cmd" | "wsl" | "serial";
 
+/** What the POSIX family is called. On a Mac it is where the Mac's own shells
+ * go (zsh, bash), and there is no WSL. */
+const POSIX_LABEL = IS_MAC ? "Local shells" : "WSL / POSIX";
+
 /** Persisted last-open tab (restored across restarts; defaults to SSH). */
 const TAB_KEY = "pty-broadcast-tab";
 
 function readTab(): PtyTab {
   const v = localStorage.getItem(TAB_KEY);
-  return v === "powershell" || v === "cmd" || v === "wsl" || v === "serial"
+  return v === "powershell" || (v === "cmd" && !IS_MAC) || v === "wsl" || v === "serial"
     ? v
     : "ssh";
 }
@@ -127,18 +132,21 @@ export function PtyBroadcastPage({
           label="PowerShell"
           count={powershellSessions.length}
         />
-        <TabButton
-          active={tab === "cmd"}
-          onClick={() => setTab("cmd")}
-          icon={<SquareTerminalIcon className="h-4 w-4" />}
-          label="Command Prompt"
-          count={cmdSessions.length}
-        />
+        {/* A Mac has no Command Prompt, so no tab for one. */}
+        {!IS_MAC && (
+          <TabButton
+            active={tab === "cmd"}
+            onClick={() => setTab("cmd")}
+            icon={<SquareTerminalIcon className="h-4 w-4" />}
+            label="Command Prompt"
+            count={cmdSessions.length}
+          />
+        )}
         <TabButton
           active={tab === "wsl"}
           onClick={() => setTab("wsl")}
           icon={<TerminalIcon className="h-4 w-4" />}
-          label="WSL / POSIX"
+          label={POSIX_LABEL}
           count={wslSessions.length}
         />
         <TabButton
@@ -188,7 +196,7 @@ export function PtyBroadcastPage({
         <div className={tab === "wsl" ? "h-full" : "hidden"}>
           <LocalBroadcastPanel
             visible={visible && tab === "wsl"}
-            family="WSL / POSIX"
+            family={POSIX_LABEL}
             sessions={wslSessions}
             connectedSessions={connectedSessions}
             scope="ssh"

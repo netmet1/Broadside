@@ -7,6 +7,7 @@ import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { PALETTE } from "@/lib/palette";
 import {
   DEFAULT_SHELL_COLORS,
+  LOCAL_SHELL_KINDS,
   loadShellColors,
   notifyShellColorsChanged,
   saveShellColors,
@@ -76,7 +77,7 @@ export function TerminalColorsBlock() {
       </div>
 
       <ul className="space-y-2">
-        {SHELL_KINDS.map((kind) => {
+        {LOCAL_SHELL_KINDS.map((kind) => {
           const color = colors[kind];
           return (
             <li key={kind} className="flex flex-wrap items-center gap-1.5">

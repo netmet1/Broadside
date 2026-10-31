@@ -1,7 +1,7 @@
 [package]
 name = "broadside"
 version = "1.4.0"
-description = "Windows desktop SSH broadcast console"
+description = "Desktop SSH broadcast console for Windows and macOS"
 authors = ["netmet1"]
 license = "GPL-3.0-only"
 # `publish = false` keeps this off crates.io; the SPDX license above is the
@@ -36,7 +36,11 @@ serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
-keyring = { version = "3", features = ["windows-native"] }
+# One backend per platform: Credential Manager on Windows, the login Keychain on
+# macOS. Each feature pulls in only its own platform's crates. With neither on
+# for the target, keyring silently falls back to an in-memory mock, which is why
+# credentials::keyring_store also names the backend in code.
+keyring = { version = "3", features = ["windows-native", "apple-native"] }
 age = "0.11"
 # default-features off to swap aws-lc-rs (needs CMake/NASM on Windows) for ring
 russh = { version = "0.61", default-features = false, features = ["flate2", "ring", "rsa"] }
@@ -64,18 +68,26 @@ vte = "0.13"
 regex = "1"
 argon2 = "0.5.3"
 portable-pty = "0.9.0"
-# Serial console tabs: a COM port opened as a terminal session, so the console
-# cable into a router/switch is a pane beside the SSH ones. Enumeration is a
-# registry read and the port itself is CreateFile; no C deps, no service.
+# Serial console tabs: a COM port (Windows) or a /dev/cu.* device (macOS) opened
+# as a terminal session, so the console cable into a router/switch is a pane
+# beside the SSH ones. Enumeration is a registry read on Windows and IOKit on
+# macOS; no C deps, no service.
 #
 # default-features off drops the `libudev` feature, which is Linux-only and is
-# the one part of this crate that wants a C library. Broadside is a Windows
-# application, so it was never going to be compiled; leaving it on only put
+# the one part of this crate that wants a C library. Broadside ships for Windows
+# and macOS, so it was never going to be compiled; leaving it on only put
 # libudev-sys and its friends in the lock file for `cargo audit` to walk.
 serialport = { version = "4", default-features = false }
-# Local-side deletes go to the Recycle Bin (recoverable) rather than std::fs
-# permanent removal. Pure-Rust Windows shell bindings, no C deps.
+# Local-side deletes go to the Recycle Bin / Trash (recoverable) rather than
+# std::fs permanent removal. Windows shell bindings and NSFileManager, no C deps.
 trash = "5"
+
+# The terminal's right-click paste on macOS. WKWebView puts a "Paste" button in
+# front of navigator.clipboard.readText() whenever the text came from another
+# app; reading the pasteboard natively has no such prompt. WebView2 has none
+# either, so Windows keeps the browser API and never builds this.
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-plugin-clipboard-manager = "2"
 
 [dev-dependencies]
 tempfile = "3"

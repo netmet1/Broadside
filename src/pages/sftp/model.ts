@@ -1,7 +1,8 @@
 //! Pure helpers for the SFTP browser: POSIX remote-path math + formatting.
-//! Remote paths are always forward-slash even though the app runs on Windows,
+//! Remote paths are always forward-slash, whichever platform the app runs on,
 //! so we never touch Node/`path` semantics here.
 
+import { IS_MAC } from "@/lib/platform";
 import type { TransferMode } from "@/lib/tauri/sftp";
 
 /** localStorage key for the shared "When a file already exists" clash mode.
@@ -82,11 +83,17 @@ export function isSessionGone(message: string): boolean {
   return message.includes("no such sftp session");
 }
 
-// --- Local (Windows) path helpers for the Commander's left pane. Local paths
-// use backslashes; navigating up past a drive root yields the drive list. ---
+// --- Local path helpers for the Commander's left pane. On Windows local paths
+// use backslashes and navigating up past a drive root yields the drive list;
+// on a Mac they are POSIX, and up from `/` yields the volume list. ---
 
-/** Parent of a local path, or `null` at a drive root (→ show the drive list). */
-export function winDirname(path: string): string | null {
+/** Parent of a local path, or `null` at a drive root / `/` (→ show the drive
+ * or volume list). */
+export function localDirname(path: string): string | null {
+  if (IS_MAC) {
+    if (path === "/" || path === "") return null;
+    return posixDirname(path);
+  }
   const trimmed = path.replace(/[\\/]+$/, "");
   // "C:" (a bare drive) → up means the drive list.
   if (/^[A-Za-z]:$/.test(trimmed)) return null;
@@ -98,8 +105,10 @@ export function winDirname(path: string): string | null {
   return parent === "" ? null : parent;
 }
 
-/** Joins a local directory and a child name with a single backslash. */
-export function winJoin(dir: string, name: string): string {
+/** Joins a local directory and a child name with a single separator: a
+ * backslash on Windows, a slash on a Mac. */
+export function localJoin(dir: string, name: string): string {
+  if (IS_MAC) return posixJoin(dir, name);
   return dir.endsWith("\\") || dir.endsWith("/") ? `${dir}${name}` : `${dir}\\${name}`;
 }
 
@@ -212,9 +221,9 @@ export function folderCancelText(
 
 /**
  * Why a name can't be used, or null when it can. The local side follows
- * Windows' rules, the remote side only POSIX's (a `/` or a NUL). The backend
- * checks the same things; this is here so the rename dialog can say so while
- * the name is being typed instead of after it was sent.
+ * Windows' rules (macOS's, on a Mac), the remote side only POSIX's (a `/` or
+ * a NUL). The backend checks the same things; this is here so the rename
+ * dialog can say so while the name is being typed instead of after it was sent.
  */
 export function nameProblem(side: "local" | "remote", name: string): string | null {
   if (name === "") return "A name can't be empty.";
@@ -222,6 +231,16 @@ export function nameProblem(side: "local" | "remote", name: string): string | nu
   if (side === "remote") {
     if (name.includes("/")) return "A name can't contain /.";
     if (name.includes("\0")) return "A name can't contain a NUL character.";
+    return null;
+  }
+  if (IS_MAC) {
+    // `:` as well as `/`: Finder shows a colon as a slash. The limit is bytes
+    // of UTF-8, which is how APFS counts. Same rules as localfs.rs.
+    // eslint-disable-next-line no-control-regex -- control characters are refused too
+    if (/[/:\x00-\x1f]/.test(name)) return "A name can't contain / or :";
+    if (new TextEncoder().encode(name).length > 255) {
+      return "That name is longer than macOS allows.";
+    }
     return null;
   }
   // eslint-disable-next-line no-control-regex -- control characters are exactly what Windows refuses

@@ -62,6 +62,7 @@ import {
 } from "@/lib/tauri/skilllog";
 import { onSkillDone } from "@/lib/tauri/skills";
 import { announceCommandHistory } from "@/lib/commandHistory";
+import { isModKey } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { ToastsTab } from "./logs/ToastsTab";
@@ -259,11 +260,11 @@ export function LogsPage({ visible }: { visible: boolean }) {
               ? toastSearch
               : errorSearch;
 
-  // Ctrl+F / Ctrl+Shift+F while this page is visible (D-015).
+  // Ctrl+F / Ctrl+Shift+F (⌘F / ⇧⌘F on a Mac) while this page is visible (D-015).
   useEffect(() => {
     if (!visible) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && (e.key === "f" || e.key === "F")) {
+      if (isModKey(e) && (e.key === "f" || e.key === "F")) {
         e.preventDefault();
         search.setMode(e.shiftKey ? "filter" : "find");
       }

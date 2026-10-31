@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The hardened runtime refuses Apple Events without this, and a local
+	     shell tab is a terminal: what runs in it is the operator's own. Nothing
+	     else is needed; PTYs, child processes and WebKit's JIT are all allowed
+	     under the hardened runtime as they are. -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>

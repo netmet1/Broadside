@@ -19,7 +19,8 @@
         "minHeight": 700,
         "dragDropEnabled": false,
         "visible": false,
-        "backgroundColor": "#0a0a0a"
+        "backgroundColor": "#0a0a0a",
+        "acceptFirstMouse": true
       }
     ],
     "security": {

@@ -1,11 +1,13 @@
-//! Local shell sessions (PowerShell / pwsh / Command Prompt / WSL distros) hosted
-//! over a Windows pseudo-console (ConPTY) via `portable-pty`, surfaced as terminal
-//! tabs alongside SSH sessions. This reuses the SAME session plumbing as the SSH
-//! path (`crate::ssh::pty`): the `PtyState` registry, the `SessionCmd`
-//! write/resize/close channel, and the `pty:data` / `pty:closed` events. Only the
-//! data SOURCE differs (a local child process instead of an SSH channel), so the
-//! frontend's `pty_write`/`pty_resize`/`pty_close` and xterm rendering are
-//! identical. None of the SSH-only machinery (host-key trust, sudo auto-fill,
+//! Local shell sessions hosted over a pseudo-terminal via `portable-pty` (a
+//! ConPTY on Windows, a Unix pty on macOS), surfaced as terminal tabs alongside
+//! SSH sessions. Which shells exist is the platform's business: PowerShell /
+//! pwsh / Command Prompt / WSL distros on Windows (`windows.rs`), the shells in
+//! `/etc/shells` on macOS (`macos.rs`). This reuses the SAME session plumbing as
+//! the SSH path (`crate::ssh::pty`): the `PtyState` registry, the `SessionCmd`
+//! write/resize/close channel, and the `pty:data` / `pty:closed` events. Only
+//! the data SOURCE differs (a local child process instead of an SSH channel),
+//! so the frontend's `pty_write`/`pty_resize`/`pty_close` and xterm rendering
+//! are identical. None of the SSH-only machinery (host-key trust, sudo auto-fill,
 //! guard rules, MultiTerminal blocks) applies to local shells.
 
 use std::io::{Read, Write};
@@ -16,19 +18,32 @@ use serde::Serialize;
 use crate::error::{AppError, AppResult};
 use crate::ssh::pty::{PtyClosed, PtyData, PtyEvents, PtyState, SessionCmd};
 
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(windows)]
+mod windows;
+
+#[cfg(target_os = "macos")]
+use macos as platform;
+#[cfg(windows)]
+use windows as platform;
+
 /// A launchable local shell discovered on this machine.
 #[derive(Debug, Clone, Serialize)]
 pub struct LocalShell {
     /// Stable id used to launch it: `powershell`, `pwsh`, `cmd`, or
-    /// `wsl:<distro>` (e.g. `wsl:Ubuntu-24.04`).
+    /// `wsl:<distro>` (e.g. `wsl:Ubuntu-24.04`) on Windows; `unix:<name>`
+    /// (e.g. `unix:zsh`) on macOS.
     pub id: String,
     /// Human label for the launcher menu.
     pub label: String,
-    /// Coarse kind for the UI icon: `powershell` | `pwsh` | `cmd` | `wsl`.
+    /// Coarse kind for the UI icon: `powershell` | `pwsh` | `cmd` | `wsl` on
+    /// Windows; `posix` on macOS, which puts them in the same family as a
+    /// Bash-like custom terminal.
     pub kind: String,
 }
 
-/// Shell detection result, computed once per launch (below). Detection spawns
+/// Shell detection result, computed once per launch (below). On Windows detection spawns
 /// `wsl.exe`, which can take seconds when the WSL service is cold, so it must
 /// only ever run on a blocking thread, never on the main/IPC thread (a sync
 /// command doing this froze every in-flight IPC call AND the event loop, which
@@ -43,7 +58,7 @@ static SHELLS: tokio::sync::OnceCell<Vec<LocalShell>> = tokio::sync::OnceCell::c
 pub async fn list_local_shells_cached() -> Vec<LocalShell> {
     SHELLS
         .get_or_init(|| async {
-            tauri::async_runtime::spawn_blocking(detect_local_shells)
+            tauri::async_runtime::spawn_blocking(platform::detect)
                 .await
                 .unwrap_or_default()
         })
@@ -59,77 +74,6 @@ pub fn prewarm_shells() {
     });
 }
 
-/// Detects the local shells: PowerShell (always present on Windows), pwsh if
-/// installed, Command Prompt, and each installed WSL distro. Blocking, spawns
-/// wsl.exe; only run via `list_local_shells_cached`.
-fn detect_local_shells() -> Vec<LocalShell> {
-    let mut shells = vec![LocalShell {
-        id: "powershell".into(),
-        label: "PowerShell".into(),
-        kind: "powershell".into(),
-    }];
-    if on_path("pwsh.exe") {
-        shells.push(LocalShell {
-            id: "pwsh".into(),
-            label: "PowerShell 7 (pwsh)".into(),
-            kind: "pwsh".into(),
-        });
-    }
-    shells.push(LocalShell {
-        id: "cmd".into(),
-        label: "Command Prompt".into(),
-        kind: "cmd".into(),
-    });
-    for distro in list_wsl_distros() {
-        shells.push(LocalShell {
-            id: format!("wsl:{distro}"),
-            label: format!("WSL: {distro}"),
-            kind: "wsl".into(),
-        });
-    }
-    shells
-}
-
-/// Whether `exe` resolves on PATH, searched in-process (no `where.exe` spawn;
-/// process spawns from a GUI app pay conhost startup and AV scanning).
-fn on_path(exe: &str) -> bool {
-    let Some(path) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&path).any(|dir| !dir.as_os_str().is_empty() && dir.join(exe).is_file())
-}
-
-/// Installed WSL distro names, from `wsl.exe -l -q` (which emits UTF-16LE).
-fn list_wsl_distros() -> Vec<String> {
-    use std::os::windows::process::CommandExt;
-    // Don't create a console for the child: avoids conhost startup cost and a
-    // possible window flash (this app is a windows-subsystem GUI process).
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let output = match std::process::Command::new("wsl.exe")
-        .args(["-l", "-q"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-    {
-        Ok(o) if o.status.success() => o.stdout,
-        _ => return Vec::new(),
-    };
-    decode_utf16le(&output)
-        .lines()
-        .map(|l| l.trim().trim_matches('\0').trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect()
-}
-
-/// Decode WSL's UTF-16LE output (with an optional BOM) to a String.
-fn decode_utf16le(bytes: &[u8]) -> String {
-    let bytes = bytes.strip_prefix(&[0xFF, 0xFE]).unwrap_or(bytes);
-    let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
-        .collect();
-    String::from_utf16_lossy(&units)
-}
-
 /// A user-defined terminal application resolved from the database, ready to
 /// launch. The command layer looks a `custom:<id>` shell id up and hands the
 /// row's stored program and arguments over; nothing here ever sees a path that
@@ -137,56 +81,6 @@ fn decode_utf16le(bytes: &[u8]) -> String {
 pub struct CustomLaunch {
     pub exe_path: String,
     pub args: Vec<String>,
-}
-
-/// Put the console into UTF-8 before anything is typed into it, quietly.
-///
-/// A ConPTY does **not** come up in UTF-8. Measured, on this machine and every
-/// other Windows box: `CreatePseudoConsole` starts at the system OEM code page,
-/// 437 on a US install, and it does not inherit ours, so there is nothing we
-/// can set on our side of the pipe to change it. Everything a program writes is
-/// then decoded as 437 and re-encoded as UTF-8 on the way out, which turns the
-/// four characters a rounded box is drawn with, `╭─╮`, into `Γò¡ΓöÇΓò«`. That
-/// is the "mangled logo": `claude` is a node program writing raw UTF-8, and so
-/// is most of what an operator runs.
-///
-/// The code page has to be in force *before* the writing program starts, not
-/// merely before it prints: a console program caches its encoding when it
-/// launches. Running this at shell startup is exactly right for that, because
-/// every command typed afterwards is a fresh child of a console that is already
-/// UTF-8. Running it any later would fix nothing already on screen and nothing
-/// already running.
-///
-/// Only the three shells we launch ourselves get this. `wsl.exe` puts the
-/// console into UTF-8 on its own account, and a custom terminal is the
-/// operator's own program: wrapping it would mean building a command *string*
-/// out of a path and arguments they supplied, which is the one thing
-/// [`build_command`] is careful never to do.
-const CHCP_UTF8_CMD: &str = "chcp 65001 >nul";
-
-/// The same thing in PowerShell's language. `>nul` is cmd's null device and
-/// PowerShell would take it for a file of that name, so the redirect differs
-/// even though the command does not.
-const CHCP_UTF8_PS: &str = "chcp 65001 > $null";
-
-/// PowerShell, with the console *and* PowerShell's own encoder in UTF-8.
-///
-/// The `chcp` alone is not enough here, because PowerShell caches
-/// `[Console]::OutputEncoding` at startup exactly as cmd does, so its own
-/// output would go on being encoded at 437 while its children were fine. Both
-/// lines are needed and neither prints anything.
-///
-/// `-Command` runs after the profile, so an operator's own `$PROFILE` still
-/// loads first; `-NoExit` is what keeps the shell interactive afterwards, which
-/// is the whole point of a terminal tab.
-fn utf8_powershell(exe: &str) -> CommandBuilder {
-    let mut c = CommandBuilder::new(exe);
-    c.arg("-NoExit");
-    c.arg("-Command");
-    c.arg(format!(
-        "{CHCP_UTF8_PS}; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)"
-    ));
-    c
 }
 
 /// Map a shell id to the process to launch. `cwd` is the directory to start the
@@ -197,20 +91,16 @@ fn utf8_powershell(exe: &str) -> CommandBuilder {
 /// otherwise. Its arguments are passed as argv, one `.arg()` each, so nothing
 /// is handed to a shell to re-parse and there is no quoting to get wrong.
 ///
-/// The three shells we launch ourselves are also put into UTF-8 on the way up;
-/// see [`CHCP_UTF8_CMD`] for why that is necessary and why WSL and custom
-/// terminals are left alone.
+/// Every other id is one of the platform's own shells, which the platform
+/// module launches the way that shell needs: in UTF-8 on Windows (see
+/// `windows::CHCP_UTF8_CMD`), as a login shell with a terminal environment on
+/// macOS. Custom terminals are left alone on both.
 fn build_command(
     shell_id: &str,
     cwd: Option<&str>,
     custom: Option<&CustomLaunch>,
 ) -> AppResult<CommandBuilder> {
-    let mut cmd = if let Some(distro) = shell_id.strip_prefix("wsl:") {
-        let mut c = CommandBuilder::new("wsl.exe");
-        c.arg("-d");
-        c.arg(distro);
-        c
-    } else if shell_id.starts_with("custom:") {
+    let mut cmd = if shell_id.starts_with("custom:") {
         let Some(custom) = custom else {
             // Only reachable if a caller forgot to resolve the row, which would
             // be a bug here rather than bad input. Refusing to launch is the
@@ -224,33 +114,23 @@ fn build_command(
             c.arg(a);
         }
         c
+    } else if let Some(c) = platform::builtin_command(shell_id) {
+        c
     } else {
-        match shell_id {
-            "powershell" => utf8_powershell("powershell.exe"),
-            "pwsh" => utf8_powershell("pwsh.exe"),
-            "cmd" => {
-                let mut c = CommandBuilder::new("cmd.exe");
-                c.arg("/k");
-                c.arg(CHCP_UTF8_CMD);
-                c
-            }
-            other => {
-                return Err(AppError::InvalidInput(format!(
-                    "unknown local shell: {other}"
-                )))
-            }
-        }
+        return Err(AppError::InvalidInput(format!(
+            "unknown local shell: {shell_id}"
+        )));
     };
     // A profile's working directory wins; a blank/whitespace one counts as unset.
     // For a WSL shell this sets wsl.exe's Windows working directory, which the
     // distro then starts in (translated to its /mnt path). We don't verify the
     // path exists here, the shell surfaces its own error, and the UI validates
-    // before saving. Falls back to USERPROFILE so a shell never inherits the
-    // app's own working directory.
+    // before saving. Falls back to the home directory (USERPROFILE, HOME) so a
+    // shell never inherits the app's own working directory.
     let cwd = cwd.map(str::trim).filter(|s| !s.is_empty());
     if let Some(dir) = cwd {
         cmd.cwd(dir);
-    } else if let Ok(home) = std::env::var("USERPROFILE") {
+    } else if let Some(home) = platform::home_dir() {
         cmd.cwd(home);
     }
     Ok(cmd)
@@ -265,9 +145,9 @@ fn pty_size(cols: u32, rows: u32) -> PtySize {
     }
 }
 
-/// Spawns a local shell over ConPTY and wires it into the shared session
-/// registry, emitting `pty:data` as output streams and `pty:closed` when the
-/// shell exits. The blocking ConPTY reader/waiter run on dedicated threads and
+/// Spawns a local shell over a pty (ConPTY on Windows) and wires it into the
+/// shared session registry, emitting `pty:data` as output streams and
+/// `pty:closed` when the shell exits. The blocking pty reader/waiter run on dedicated threads and
 /// feed an async task that also services the write/resize/close channel.
 pub fn open_local<E: PtyEvents>(
     events: E,
@@ -424,12 +304,14 @@ mod tests {
             .collect()
     }
 
+    #[cfg(windows)]
     #[test]
     fn cmd_starts_in_utf8() {
         let cmd = build_command("cmd", None, None).unwrap();
         assert_eq!(args_of(&cmd), vec!["/k", "chcp 65001 >nul"]);
     }
 
+    #[cfg(windows)]
     #[test]
     fn powershell_starts_in_utf8_and_stays_interactive() {
         for id in ["powershell", "pwsh"] {
@@ -461,6 +343,7 @@ mod tests {
     /// program: the only way to prepend a command to it would be to build a
     /// shell *string* out of the path and arguments they gave us, which is the
     /// one thing `build_command` is careful never to do.
+    #[cfg(windows)]
     #[test]
     fn wsl_and_custom_are_launched_untouched() {
         let cmd = build_command("wsl:Ubuntu", None, None).unwrap();
@@ -472,5 +355,49 @@ mod tests {
         };
         let cmd = build_command("custom:7", None, Some(&custom)).unwrap();
         assert_eq!(args_of(&cmd), vec!["--login", "-i"]);
+    }
+
+    /// Every Mac has zsh, and it is the default shell, so the list is never
+    /// empty and every entry is in the POSIX family the UI groups Bash-likes in.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_finds_zsh_and_names_shells_by_name() {
+        let shells = platform::detect();
+        assert!(shells.iter().any(|s| s.id == "unix:zsh"), "{shells:?}");
+        for s in &shells {
+            assert_eq!(s.kind, "posix");
+            assert!(!s.id.contains('/'), "an id must never carry a path: {}", s.id);
+        }
+    }
+
+    /// A login shell, told what terminal it is on, and nothing from whichever
+    /// terminal app `tauri dev` happened to be started in.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_shells_start_as_login_shells_on_xterm() {
+        for shell in platform::detect() {
+            let cmd = build_command(&shell.id, None, None).unwrap();
+            assert_eq!(args_of(&cmd), vec!["-l"], "{}", shell.id);
+            assert_eq!(
+                cmd.get_env("TERM").and_then(|v| v.to_str()),
+                Some("xterm-256color"),
+                "{}",
+                shell.id
+            );
+            assert_eq!(cmd.get_env("TERM_PROGRAM"), None, "{}", shell.id);
+        }
+    }
+
+    /// The launcher sends a name, never a program: a path, or a shell this Mac
+    /// does not have, is refused rather than run.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_refuses_paths_and_unknown_shells() {
+        assert!(build_command("unix:/bin/zsh", None, None).is_err());
+        assert!(build_command("unix:no-such-shell", None, None).is_err());
+        assert!(build_command("/bin/zsh", None, None).is_err());
+        // A Windows profile restored onto a Mac fails cleanly, not strangely.
+        assert!(build_command("powershell", None, None).is_err());
+        assert!(build_command("wsl:Ubuntu", None, None).is_err());
     }
 }

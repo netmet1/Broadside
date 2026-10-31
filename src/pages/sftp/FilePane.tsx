@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { IS_MAC, MOD_KEY } from "@/lib/platform";
 import { useHint } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import { formatMtime, formatSize } from "@/pages/sftp/model";
@@ -44,9 +45,11 @@ export type DragPayload = { side: PaneSide; items: DragItem[] };
 
 const DND_MIME = "application/x-broadside-file";
 
-/** A drive root in the local pane's drive list (`C:\`). */
+/** A drive root in the local pane's drive list (`C:\`), or on a Mac a volume
+ *  in its volume list (`/`, `/Volumes/USB`). */
 function isDrivePath(side: PaneSide, path: string): boolean {
-  return side === "local" && /^[A-Za-z]:\\?$/.test(path);
+  if (side !== "local") return false;
+  return IS_MAC ? /^\/(Volumes\/[^/]+\/?)?$/.test(path) : /^[A-Za-z]:\\?$/.test(path);
 }
 
 /** True when a key press is someone else's to handle: text is being typed,
@@ -417,7 +420,7 @@ export function FilePane({
                     ? `${entry.name}: double-click to open`
                     : isDir
                       ? `${entry.name}: double-click to open, or drag to the other pane to transfer the folder`
-                      : `${entry.name}: click to select, Ctrl/Shift-click for many, drag to transfer`
+                      : `${entry.name}: click to select, ${MOD_KEY}/Shift-click for many, drag to transfer`
                 }
               >
                 <div

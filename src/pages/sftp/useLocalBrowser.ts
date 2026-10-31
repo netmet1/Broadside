@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { WORDS } from "@/lib/platform";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
   type LocalEntry,
@@ -11,12 +12,12 @@ import {
   localMkdir,
   localRename,
 } from "@/lib/tauri/localfs";
-import { winDirname, winJoin } from "@/pages/sftp/model";
+import { localDirname, localJoin } from "@/pages/sftp/model";
 
 /**
- * Owns the Commander's local (left) pane: a Windows filesystem browser. `cwd`
- * is `null` in the drive-list view (reached by going up past a drive root),
- * where `entries` holds one row per drive.
+ * Owns the Commander's local (left) pane: a filesystem browser for this PC or
+ * Mac. `cwd` is `null` in the drive-list view (reached by going up past a drive
+ * root, or past `/` on a Mac), where `entries` holds one row per drive or volume.
  */
 export function useLocalBrowser(visible: boolean) {
   const [cwd, setCwd] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export function useLocalBrowser(visible: boolean) {
 
   const goUp = useCallback(() => {
     if (cwd === null) return; // already at the drive list
-    const parent = winDirname(cwd);
+    const parent = localDirname(cwd);
     if (parent === null) void showDrives();
     else void listDir(parent);
   }, [cwd, listDir, showDrives]);
@@ -86,7 +87,7 @@ export function useLocalBrowser(visible: boolean) {
     (name: string) => {
       if (cwd === null || !name.trim()) return;
       setBusy(true);
-      localMkdir(winJoin(cwd, name.trim()))
+      localMkdir(localJoin(cwd, name.trim()))
         .then(() => {
           toast.success(`Created ${name.trim()}`);
           return listDir(cwd);
@@ -103,7 +104,7 @@ export function useLocalBrowser(visible: boolean) {
       setBusy(true);
       localDelete(entry.path)
         .then(() => {
-          toast.success(`Moved ${entry.name} to the Recycle Bin`);
+          toast.success(`Moved ${entry.name} to the ${WORDS.trash}`);
           return listDir(cwd);
         })
         .catch((e) => toast.error(errorMessage(e)))

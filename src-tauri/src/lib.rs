@@ -13,6 +13,8 @@ pub mod guard;
 pub mod import;
 mod licensing;
 pub mod local;
+#[cfg(target_os = "macos")]
+mod macos_menu;
 pub mod omni;
 pub mod probe;
 pub mod serial;
@@ -74,7 +76,17 @@ fn ensure_window_on_screen(window: &tauri::WebviewWindow) {
 pub fn run() {
     let _tier = licensing::entitlement();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // The menu bar (and with it ⌘C/⌘V in text fields, and a ⌘Q that the exit
+    // guard sees), plus the native clipboard read the terminal's right-click
+    // paste uses there. See macos_menu.rs and Cargo.toml.
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .menu(macos_menu::build)
+        .on_menu_event(macos_menu::on_event);
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         // Remember the window size, position and maximized state across restarts
@@ -316,6 +328,21 @@ pub fn run() {
             commands::templates::export_template,
             commands::templates::read_template_file,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            // A click on the Dock icon brings the window back, minimized or not
+            // yet shown, as it does for every Mac app; the Windows taskbar does
+            // this on its own.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }

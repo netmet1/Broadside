@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { isExitGuardEnabled } from "@/lib/exitGuard";
+import { IS_MAC } from "@/lib/platform";
 import {
   KEEPALIVE_SECS,
   SESSION_PREFS_EVENT,
@@ -781,9 +782,14 @@ function App() {
   // failure than any amount of hunting for the way back out. So the ways out
   // are F11 and the restore button in the banner (Ctrl+Shift+G and the strip's
   // own button, in the grid), and Esc reaches the terminal untouched.
+  //
+  // On a Mac the key is ⇧⌘↩ (F11 there is Show Desktop or the volume, and the
+  // system has ⌃⌘F for its own full screen); F11 is still taken if it arrives.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "F11") return;
+      const macKey =
+        IS_MAC && e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey && e.key === "Enter";
+      if (e.key !== "F11" && !macKey) return;
       e.preventDefault();
       e.stopPropagation();
       if (maximized) {

@@ -13,6 +13,9 @@
 
 import { Fragment, type ReactNode } from "react";
 
+import { SHORTCUTS as KEYS } from "@/lib/platform";
+import { Keys, Plat } from "@/pages/help/platform";
+
 import { textOf } from "./searchText";
 
 /** A key or chord, set apart from the prose around it. */
@@ -63,7 +66,7 @@ function GroupRow({ label, span }: { label: string; span: number }) {
   );
 }
 
-type ShortcutRow = { keys: ReactNode; where: string; what: string };
+type ShortcutRow = { keys: ReactNode; where: string; what: ReactNode };
 type ShortcutGroup = { group: string; rows: ShortcutRow[] };
 
 const SHORTCUTS: ShortcutGroup[] = [
@@ -71,14 +74,27 @@ const SHORTCUTS: ShortcutGroup[] = [
     group: "Anywhere in Broadside",
     rows: [
       {
-        keys: <Kbd>F11</Kbd>,
+        keys: (
+          <Kbd>
+            <Keys k={KEYS.maximize} />
+          </Kbd>
+        ),
         where: "Terminals",
         what: "Maximize the selected terminal to fill the window. Press it again to restore. Esc does not restore: it goes to the program in the terminal, since editors such as vi depend on it.",
       },
       {
-        keys: <Kbd>Ctrl+F</Kbd>,
+        keys: (
+          <Kbd>
+            <Keys k={KEYS.find} />
+          </Kbd>
+        ),
         where: "Terminals, Broadcast, Logs",
-        what: "Open the find bar for whatever output you are looking at, instead of sending Ctrl+F to the shell.",
+        what: (
+          <Plat
+            win="Open the find bar for whatever output you are looking at, instead of sending Ctrl+F to the shell."
+            mac="Open the find bar for whatever output you are looking at. Ctrl+F itself still goes to the shell."
+          />
+        ),
       },
       {
         keys: <Kbd>Enter</Kbd>,
@@ -96,17 +112,31 @@ const SHORTCUTS: ShortcutGroup[] = [
     group: "The Terminals grid",
     rows: [
       {
-        keys: <Kbd>Ctrl+Shift+G</Kbd>,
+        keys: (
+          <Kbd>
+            <Keys k={KEYS.gridFullscreen} />
+          </Kbd>
+        ),
         where: "Grid",
         what: "Fill the screen with the grid: the sidebar, status bar, toolbar and tab strip slide away. Press it again to bring them back, or use the tab at the top of the screen. Esc does not leave fullscreen, so it still reaches vi.",
       },
       {
         keys: <Kbd>Esc</Kbd>,
         where: "Terminal controls",
-        what: "Hand the keyboard back to the terminal after Ctrl+Shift+T put it in the toolbar. It does not leave fullscreen.",
+        what: (
+          <>
+            Hand the keyboard back to the terminal after{" "}
+            <Keys k={KEYS.focusControls} /> put it in the toolbar. It does not
+            leave fullscreen.
+          </>
+        ),
       },
       {
-        keys: <Kbd>Ctrl+Shift+T</Kbd>,
+        keys: (
+          <Kbd>
+            <Keys k={KEYS.focusControls} />
+          </Kbd>
+        ),
         where: "Terminals",
         what: "Put the keyboard into the toolbar, with a ring around the button that has focus. In fullscreen the hidden controls slide down too.",
       },
@@ -117,12 +147,24 @@ const SHORTCUTS: ShortcutGroup[] = [
           </>
         ),
         where: "Terminal controls",
-        what: "Move along the toolbar and tab strip once Ctrl+Shift+T has put you there. Tab wraps round at the last control. Esc goes back to the terminal.",
+        what: (
+          <>
+            Move along the toolbar and tab strip once{" "}
+            <Keys k={KEYS.focusControls} /> has put you there. Tab wraps round
+            at the last control. Esc goes back to the terminal.
+          </>
+        ),
       },
       {
         keys: (
           <>
-            <Kbd>Alt+Left</Kbd> / <Kbd>Alt+Right</Kbd>
+            <Kbd>
+              <Keys k={KEYS.prevTab} />
+            </Kbd>{" "}
+            /{" "}
+            <Kbd>
+              <Keys k={KEYS.nextTab} />
+            </Kbd>
           </>
         ),
         where: "Terminals",
@@ -143,14 +185,27 @@ const SHORTCUTS: ShortcutGroup[] = [
     group: "Inside a terminal",
     rows: [
       {
-        keys: <Kbd>Ctrl+Shift+C</Kbd>,
+        keys: (
+          <Kbd>
+            <Keys k={KEYS.copy} />
+          </Kbd>
+        ),
         where: "Terminals",
         what: "Copy the selection and clear it, the same as right-clicking it. Plain Ctrl+C still interrupts what is running.",
       },
       {
-        keys: <Kbd>Ctrl+Shift+V</Kbd>,
+        keys: (
+          <Kbd>
+            <Keys k={KEYS.paste} />
+          </Kbd>
+        ),
         where: "Terminals",
-        what: "Paste the clipboard into the shell as if typed. Plain Ctrl+V is left to the shell.",
+        what: (
+          <Plat
+            win="Paste the clipboard into the shell as if typed. Plain Ctrl+V is left to the shell."
+            mac="Paste the clipboard into the shell as if typed. Ctrl+V is left to the shell."
+          />
+        ),
       },
       {
         keys: <Kbd>Right-click</Kbd>,
@@ -160,12 +215,31 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Select with the mouse</Kbd>,
         where: "Terminals, Skills",
-        what: "Selects text without copying it; right-click or press Ctrl+Shift+C to copy. Hold Shift to select in tmux or vim when they have the mouse on.",
+        what: (
+          <>
+            Selects text without copying it; right-click or press{" "}
+            <Keys k={KEYS.copy} /> to copy. Hold{" "}
+            <Plat win="Shift" mac="Option (⌥)" /> to select in tmux or vim when
+            they have the mouse on.
+          </>
+        ),
       },
       {
-        keys: <Kbd>Ctrl+mouse wheel</Kbd>,
+        keys: (
+          <Kbd>
+            <Plat win="Ctrl" mac="⌘" />
+            +mouse wheel
+          </Kbd>
+        ),
         where: "Terminals, Skills",
-        what: "Make the text in every terminal bigger or smaller, between 8 and 32 px. The size is saved in Settings, Appearance. Tick Strict beside that setting if a program in your terminal needs Ctrl and the wheel for itself.",
+        what: (
+          <>
+            Make the text in every terminal bigger or smaller, between 8 and 32
+            px. The size is saved in Settings, Appearance. Tick Strict beside
+            that setting if a program in your terminal needs{" "}
+            <Plat win="Ctrl" mac="⌘" /> and the wheel for itself.
+          </>
+        ),
       },
       {
         keys: <Kbd>Tab</Kbd>,
@@ -217,7 +291,11 @@ const SHORTCUTS: ShortcutGroup[] = [
     group: "SFTP Commander",
     rows: [
       {
-        keys: <Kbd>Ctrl+click</Kbd>,
+        keys: (
+          <Kbd>
+            <Plat win="Ctrl+click" mac="⌘-click" />
+          </Kbd>
+        ),
         where: "File list",
         what: "Add or remove one file from the selection.",
       },
@@ -263,7 +341,18 @@ const SHORTCUTS: ShortcutGroup[] = [
       {
         keys: <Kbd>Type in the filter</Kbd>,
         where: "Help",
-        what: "Narrows the help to the sections that mention what you type, including these tables. Matches are marked in amber, with arrows beside the count to move between them. Punctuation is optional: ctrl shift g finds Ctrl+Shift+G. The list on the left shows how many matches each section has.",
+        what: (
+          <>
+            Narrows the help to the sections that mention what you type,
+            including these tables. Matches are marked in amber, with arrows
+            beside the count to move between them. Punctuation is optional:{" "}
+            <Plat
+              win="ctrl shift g finds Ctrl+Shift+G"
+              mac="shift tab finds Shift+Tab"
+            />
+            . The list on the left shows how many matches each section has.
+          </>
+        ),
       },
     ],
   },
@@ -306,12 +395,12 @@ export function ShortcutMatrix() {
 // same array the table renders from, means a row that is added is searchable
 // the moment it is added.
 ShortcutMatrix.searchText = SHORTCUTS.map((g) =>
-  [g.group, ...g.rows.map((r) => `${textOf(r.keys)} ${r.where} ${r.what}`)].join(
+  [g.group, ...g.rows.map((r) => `${textOf(r.keys)} ${r.where} ${textOf(r.what)}`)].join(
     " ",
   ),
 ).join(" ");
 
-type WarningRow = { message: ReactNode; where: string; means: string };
+type WarningRow = { message: ReactNode; where: string; means: ReactNode };
 type WarningGroup = { group: string; rows: WarningRow[] };
 
 /** Quoted app text, so a row reads as "the words you saw". */
@@ -383,14 +472,21 @@ const WARNINGS: WarningGroup[] = [
       {
         message: <Msg>Unreachable: …</Msg>,
         where: "Terminal pane",
-        means:
-          "Broadside could not reach the host; the rest of the line is Windows' explanation. Most of these are worth a Try again.",
+        means: (
+          <>
+            Broadside could not reach the host; the rest of the line is{" "}
+            <Plat win="Windows'" mac="macOS's" /> explanation. Most of these
+            are worth a Try again.
+          </>
+        ),
       },
       {
         message: (
           <Msg>
-            Unreachable: An existing connection was forcibly closed by the
-            remote host. (os error 10054)
+            <Plat
+              win="Unreachable: An existing connection was forcibly closed by the remote host. (os error 10054)"
+              mac="Unreachable: Connection reset by peer (os error 54)"
+            />
           </Msg>
         ),
         where: "Terminal pane",
@@ -536,6 +632,6 @@ export function WarningMatrix() {
 WarningMatrix.searchText = WARNINGS.map((g) =>
   [
     g.group,
-    ...g.rows.map((r) => `${textOf(r.message)} ${r.where} ${r.means}`),
+    ...g.rows.map((r) => `${textOf(r.message)} ${r.where} ${textOf(r.means)}`),
   ].join(" "),
 ).join(" ");

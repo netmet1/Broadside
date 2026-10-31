@@ -25,6 +25,7 @@ import {
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { useActivity } from "@/lib/activity";
+import { WORDS } from "@/lib/platform";
 import { useHint } from "@/lib/status";
 import type { Host } from "@/lib/tauri/hosts";
 import { type TransferMode } from "@/lib/tauri/sftp";
@@ -33,8 +34,8 @@ import {
   clashText,
   formatSize,
   isLargeTransfer,
-  winDirname,
-  winJoin,
+  localDirname,
+  localJoin,
 } from "@/pages/sftp/model";
 import {
   type DragPayload,
@@ -76,7 +77,7 @@ const SPLIT_KEY = "sftp-split-pct";
  * connected remote host on the right. A click selects; a double-click or Enter
  * opens a folder. Transfer by **dragging to the other pane** (local→remote =
  * put, remote→local = get). Both panes support New folder, Rename (F2 or the
- * pencil) and (double-click) Delete: local deletes go to the Recycle Bin,
+ * pencil) and (double-click) Delete: local deletes go to the Recycle Bin / Trash,
  * remote deletes are permanent.
  */
 export function CommanderTab({
@@ -238,7 +239,7 @@ export function CommanderTab({
       }
       const localCwd = local.cwd;
       if (direction === "get" && localCwd === null) {
-        toast.error("Open a local folder first (you're at the drive list)");
+        toast.error(`Open a local folder first (you're at the ${WORDS.driveList})`);
         return;
       }
       // One drop, one success toast once everything in it has settled.
@@ -252,7 +253,7 @@ export function CommanderTab({
         } else {
           remote.download(
             { path: item.path, name: item.name, size: item.size ?? undefined },
-            winJoin(localCwd ?? "", item.name),
+            localJoin(localCwd ?? "", item.name),
             batch,
           );
         }
@@ -263,7 +264,7 @@ export function CommanderTab({
           direction,
           path: item.path,
           name: item.name,
-          localDest: winJoin(localCwd ?? "", item.name),
+          localDest: localJoin(localCwd ?? "", item.name),
           batch,
         });
       }
@@ -351,10 +352,10 @@ export function CommanderTab({
             title={
               <span className="flex items-center gap-1.5 text-sm font-medium">
                 <MonitorIcon className="h-4 w-4 text-muted-foreground" />
-                This PC
+                {WORDS.ThisComputer}
               </span>
             }
-            pathLabel={local.cwd ?? "Drives"}
+            pathLabel={local.cwd ?? WORDS.drives}
             entries={local.entries}
             loading={local.loading}
             busy={local.busy}
@@ -524,7 +525,7 @@ export function CommanderTab({
         whereLabel={
           renaming?.side === "remote"
             ? `on ${remote.session?.host.label ?? "the host"}`
-            : "on this PC"
+            : `on ${WORDS.thisComputer}`
         }
         onClose={() => setRenaming(null)}
         onRename={renameEntry}
@@ -545,7 +546,7 @@ export function CommanderTab({
                   <span className="font-mono text-foreground">
                     {deleting?.entry.path}
                   </span>{" "}
-                  to the <span className="font-medium">Recycle Bin</span>.
+                  to the <span className="font-medium">{WORDS.trash}</span>.
                 </>
               ) : (
                 <>
@@ -602,9 +603,9 @@ export function CommanderTab({
                 <>
                   <span className="font-medium">download</span> the folder to{" "}
                   <span className="font-mono text-foreground">
-                    {winDirname(pendingDir?.localDest ?? "")}
+                    {localDirname(pendingDir?.localDest ?? "")}
                   </span>{" "}
-                  on this PC
+                  on {WORDS.thisComputer}
                 </>
               )}
               . {clashText(pendingDir?.batch.mode ?? mode)} Continue?

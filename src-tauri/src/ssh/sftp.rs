@@ -1352,4 +1352,42 @@ mod tests {
             );
         }
     }
+
+    // The same two rules in macOS's path shape, which is what the local pane
+    // builds there.
+    #[test]
+    #[cfg(unix)]
+    fn safe_local_destination_accepts_what_the_commander_builds_on_macos() {
+        for good in [
+            "/Users/ops/Downloads/report.csv",
+            "/Users/ops/Downloads/a b.log",
+            "/Volumes/USB/backups/host-a",
+        ] {
+            assert!(
+                safe_local_destination(good).is_ok(),
+                "expected acceptance for {good:?}",
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn safe_local_destination_refuses_a_path_that_climbs_on_macos() {
+        for bad in [
+            "",
+            "/Users/ops/Downloads/../../evil",
+            "/Users/ops/Downloads/../../../etc/hosts",
+            "/Users/ops/Downloads/sub/../../evil",
+            "../evil",
+            "evil",
+            "Downloads/evil",
+            "/",
+            "/Users/ops/Downloads/name\0.txt",
+        ] {
+            assert!(
+                safe_local_destination(bad).is_err(),
+                "expected rejection for {bad:?}",
+            );
+        }
+    }
 }

@@ -19,7 +19,8 @@ pub enum AuthInput {
 }
 
 enum Backend {
-    /// The Windows Credential Manager, under this service name.
+    /// The OS credential store (Windows Credential Manager, macOS Keychain),
+    /// under this service name.
     Keyring(String),
     File(file_store::FileStore),
 }

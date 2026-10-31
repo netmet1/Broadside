@@ -10,6 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
+import { readText as readNativeClipboard } from "@tauri-apps/plugin-clipboard-manager";
 import { ArrowDownIcon, Loader2Icon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -39,7 +40,12 @@ import {
   shellWarningDismissed,
 } from "@/lib/shells";
 import type { SearchOptions } from "@/lib/search";
-import { copyTerminalSelection, pasteBytes } from "@/lib/terminalClipboard";
+import { IS_MAC, isBypassKey, isModKey } from "@/lib/platform";
+import {
+  copyTerminalSelection,
+  copyTerminalSelectionInto,
+  pasteBytes,
+} from "@/lib/terminalClipboard";
 import { watchStatusFooter } from "@/lib/terminalFooter";
 import { relayHeldMouse } from "@/lib/terminalMouseRelay";
 import { useReachability } from "@/lib/useReachability";
@@ -48,9 +54,29 @@ import { useTerminalFontZoom } from "@/lib/terminalZoom";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
 
-/** Read the clipboard and paste it into `sessionId` (see `pasteBytes` for what
- * goes over the wire), then flash a short confirmation. Both paste routes (a
- * right-click with nothing selected, and Ctrl+Shift+V) go through here so they
+/** Read the clipboard and paste it into `sessionId` (see `pasteTextToSession`).
+ *
+ * On a Mac the read goes through the native pasteboard. WKWebView answers
+ * `navigator.clipboard.readText()` with a "Paste" button the operator has to
+ * click first whenever the text came from another app, which would make every
+ * right-click paste a two-step job; WebView2 has no such step, so Windows keeps
+ * the browser API it always used. */
+function pasteToSession(term: Terminal, sessionId: string) {
+  const read = IS_MAC
+    ? readNativeClipboard()
+    : navigator.clipboard
+      ? navigator.clipboard.readText()
+      : Promise.resolve("");
+  read
+    .then((text) => pasteTextToSession(term, sessionId, text))
+    .catch(() => {
+      // Clipboard unreadable (empty or permission denied), ignore.
+    });
+}
+
+/** Paste `text` into `sessionId` (see `pasteBytes` for what goes over the
+ * wire), then flash a short confirmation. Every paste route (a right-click with
+ * nothing selected, Ctrl+Shift+V, and on a Mac ⌘V) goes through here so they
  * say the same thing. A paste into a live shell is consequential (a trailing
  * newline runs what went in) and right-click is easy to press by accident, so
  * the toast reports the line count when there is more than one line: that is
@@ -58,26 +84,19 @@ import { cn } from "@/lib/utils";
  * Nothing is said when the clipboard is empty or unreadable, or when the
  * session is gone and the text went nowhere. That is why this writes to the PTY
  * itself rather than calling `term.paste()`, which reports nothing back. */
-function pasteToSession(term: Terminal, sessionId: string) {
-  navigator.clipboard
-    ?.readText()
-    .then((text) => {
-      if (!text) return;
-      const lines = text.replace(/\r?\n$/, "").split(/\r?\n/).length;
-      ptyWrite(sessionId, pasteBytes(text, term.modes.bracketedPasteMode))
-        .then(() => {
-          // As typing does: a paste made while scrolled back lands in view.
-          term.scrollToBottom();
-          toast.success(
-            lines > 1 ? `Pasted ${lines} lines from clipboard` : "Pasted from clipboard",
-            { duration: 1200 },
-          );
-        })
-        .catch(() => {});
+function pasteTextToSession(term: Terminal, sessionId: string, text: string) {
+  if (!text) return;
+  const lines = text.replace(/\r?\n$/, "").split(/\r?\n/).length;
+  ptyWrite(sessionId, pasteBytes(text, term.modes.bracketedPasteMode))
+    .then(() => {
+      // As typing does: a paste made while scrolled back lands in view.
+      term.scrollToBottom();
+      toast.success(
+        lines > 1 ? `Pasted ${lines} lines from clipboard` : "Pasted from clipboard",
+        { duration: 1200 },
+      );
     })
-    .catch(() => {
-      // Clipboard unreadable (empty or permission denied), ignore.
-    });
+    .catch(() => {});
 }
 
 /** A menu that is up and staying up. Radix marks a closing menu
@@ -542,6 +561,13 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // the gate shut the call throws, which is why the Find bar could never say
       // how many matches there were (see findNext below).
       allowProposedApi: true,
+      // Both already Windows' defaults, set for the Mac, where xterm's own
+      // defaults differ. A right-click that selected the word under it first
+      // would always find a selection to copy and never paste. And Option is
+      // the only modifier that forces a selection past a mouse-reporting
+      // program there, but only when this is on (see isBypassKey).
+      rightClickSelectsWord: false,
+      macOptionClickForcesSelection: true,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -592,10 +618,14 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // ours, which is exactly what made Ctrl+Shift+V paste twice: we wrote the
     // clipboard to the PTY, then Chromium's paste-and-match-style fired a
     // `paste` event at xterm's hidden textarea and xterm wrote it again.
+    //
+    // On a Mac the same jobs sit on ⌘ (⌘F here; ⌘C and ⌘V arrive as copy and
+    // paste events from the menu bar, handled below), and Ctrl stays the
+    // shell's entirely, as in every Mac terminal.
     term.attachCustomKeyEventHandler((e) => {
       if (
         e.type === "keydown" &&
-        e.ctrlKey &&
+        isModKey(e) &&
         (e.key === "f" || e.key === "F")
       ) {
         e.preventDefault();
@@ -608,24 +638,56 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       // (SIGINT / literal paste-through the shell may want). The copy clears
       // the selection, as the right-click does, so the two leave the pane in
       // the same state and the next right-click pastes.
-      if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
+      if (
+        !IS_MAC &&
+        e.type === "keydown" &&
+        e.ctrlKey &&
+        e.shiftKey &&
+        (e.key === "C" || e.key === "c")
+      ) {
         e.preventDefault();
         copyTerminalSelection(term);
         return false;
       }
-      if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) {
+      if (
+        !IS_MAC &&
+        e.type === "keydown" &&
+        e.ctrlKey &&
+        e.shiftKey &&
+        (e.key === "V" || e.key === "v")
+      ) {
         e.preventDefault();
         pasteToSession(term, sessionId);
         return false;
       }
-      // Alt+Left/Right switch terminal tabs even while the terminal is focused.
+      // Option+Left/Right on a Mac move by word, as they do in Terminal.app:
+      // readline's and zsh's ESC-b / ESC-f. xterm on its own sends the
+      // xterm-style modified arrow for them, which a default shell has no
+      // binding for, so the cursor stayed put. Sent through the terminal so it
+      // is input like any other keystroke. Matched on `code` because with
+      // Option held `key` can be whatever the layout composes.
+      if (
+        IS_MAC &&
+        e.type === "keydown" &&
+        e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey &&
+        (e.code === "ArrowLeft" || e.code === "ArrowRight")
+      ) {
+        e.preventDefault();
+        term.input(e.code === "ArrowLeft" ? "\x1bb" : "\x1bf");
+        return false;
+      }
+      // Alt+Left/Right switch terminal tabs even while the terminal is focused
+      // (⌘⌥←/→ on a Mac, where Option+arrows belong to the shell, above).
       // Intercept here so the shell never receives the escape sequence (and so
       // the webview doesn't treat Alt+Left/Right as back/forward navigation).
       if (
         e.type === "keydown" &&
         e.altKey &&
         !e.ctrlKey &&
-        !e.metaKey &&
+        e.metaKey === IS_MAC &&
         !e.shiftKey &&
         (e.key === "ArrowLeft" || e.key === "ArrowRight")
       ) {
@@ -798,10 +860,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     // right-click too (xterm has already sent it to them), unless that is
     // switched off in Settings: copying or pasting as well made one click do
     // two things. Shift+right-click is never sent to the program, so it stays
-    // ours either way, and copies what a Shift-drag selected.
+    // ours either way, and copies what a Shift-drag selected. On a Mac the
+    // modifier for both is Option, the one xterm forces a selection with there.
     const onContextMenu = (e: MouseEvent) => {
       e.preventDefault();
-      if (term.modes.mouseTrackingMode !== "none" && !e.shiftKey && rightClickToProgram()) {
+      if (term.modes.mouseTrackingMode !== "none" && !isBypassKey(e) && rightClickToProgram()) {
         return;
       }
       if (copyTerminalSelection(term)) return;
@@ -809,6 +872,36 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     };
     const contextMenuEl = containerRef.current;
     contextMenuEl?.addEventListener("contextmenu", onContextMenu);
+
+    // ⌘C and ⌘V on a Mac. They are not keys the terminal sees: macOS sends
+    // them to the menu bar's Edit → Copy / Paste, which fire `copy` and
+    // `paste` events at the focused element, xterm's hidden textarea. Caught on
+    // the way down, in the capture phase, so they are ours before xterm's own
+    // listeners run; without stopping them there xterm would paste the text a
+    // second time, the same doubled paste the note on the key handler above
+    // describes. The paste reads the text off the event itself, which is what
+    // a real paste is allowed to do without the "Paste" prompt WKWebView puts
+    // in front of a script reading the clipboard. Not registered on Windows,
+    // where Ctrl+V is the shell's and nothing else fires these.
+    const onCopy = (e: ClipboardEvent) => {
+      if (!e.clipboardData || !(e.target instanceof Node) || !term.element?.contains(e.target)) {
+        return;
+      }
+      if (copyTerminalSelectionInto(term, e.clipboardData)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      if (!(e.target instanceof Node) || !term.element?.contains(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pasteTextToSession(term, sessionId, e.clipboardData?.getData("text/plain") ?? "");
+    };
+    if (IS_MAC) {
+      contextMenuEl?.addEventListener("copy", onCopy, true);
+      contextMenuEl?.addEventListener("paste", onPaste, true);
+    }
 
     // Everything the session says goes through here rather than to
     // `term.write` directly, so a reconnect's clean screen cannot be missed by
@@ -912,6 +1005,8 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       observer.disconnect();
       io.disconnect();
       contextMenuEl?.removeEventListener("contextmenu", onContextMenu);
+      contextMenuEl?.removeEventListener("copy", onCopy, true);
+      contextMenuEl?.removeEventListener("paste", onPaste, true);
       unlistenData.then((fn) => fn());
       unlistenClosed.then((fn) => fn());
       term.dispose();

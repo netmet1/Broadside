@@ -17,7 +17,8 @@ export type UiPrefs = {
 };
 
 export const DEFAULT_UI_PREFS: UiPrefs = {
-  terminalFontFamily: "Consolas, 'Cascadia Mono', monospace",
+  // Menlo is the Mac's; Windows has Consolas and never reaches it.
+  terminalFontFamily: "Consolas, 'Cascadia Mono', Menlo, monospace",
   terminalFontSize: 13,
   appFontSize: 16,
   // Mirrors DEFAULT_TERMINAL_SCROLLBACK in commands/settings.rs. Only ever seen

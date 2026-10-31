@@ -24,8 +24,14 @@ import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { SECTIONS } from "@/pages/help/content";
+import { setHelpPlatform } from "@/pages/help/platform";
 
 import { PAGE } from "./page.mjs";
+
+// One handbook ships with both apps, so it is printed saying both wherever the
+// two differ, rather than in the voice of whichever machine happens to build it.
+// The components read this as they render, which is after the import above.
+setHelpPlatform("both");
 
 const [repoRoot, outPath, paper = "letter", version] = process.argv.slice(2);
 if (!repoRoot || !outPath || !version) {
@@ -136,6 +142,13 @@ ${contents}
     ${esc(version)}. The copy inside Broadside is the one that is kept up to
     date: open <span data-h="nav">Help</span> in the app if this document is
     older than the version you are running.
+  </p>
+  <p class="toc-note">
+    It covers Broadside on Windows and on a Mac. Where the two differ, the
+    Windows wording comes first and the Mac's follows it, marked
+    <span data-h="plat">(on a Mac, &hellip;)</span> or
+    <span data-h="plat-label">On a Mac:</span>. Inside the app, Help shows only
+    the wording for the computer it is running on.
   </p>
 </section>
 

@@ -20,6 +20,7 @@ import {
 import { AboutDialog } from "@/components/AboutDialog";
 import { StatusBar } from "@/components/StatusBar";
 import logoUrl from "@/assets/rail_image.png";
+import { keyLabel, SHORTCUTS } from "@/lib/platform";
 import { useHint, useStatus } from "@/lib/status";
 import { pageLabel } from "@/lib/pages";
 import { useAppVersion } from "@/lib/useAppVersion";
@@ -313,7 +314,7 @@ export function AppShell({
             type="button"
             onClick={onRestore}
             aria-label="Restore terminal"
-            title="Restore terminal (F11)"
+            title={`Restore terminal (${keyLabel(SHORTCUTS.maximize)})`}
             className="ml-auto rounded-md p-1 text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
           >
             <Minimize2Icon className="h-4 w-4" />

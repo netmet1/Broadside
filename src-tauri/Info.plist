@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- macOS 15 and later ask before an app reaches a device on the local
+	     network, and an SSH console's whole job is reaching them. This is the
+	     sentence shown in that prompt. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Broadside connects to the SSH servers, switches and routers on your local network that you add as hosts.</string>
+	<!-- Programs run in a local shell tab (osascript, for one) are charged to
+	     Broadside when they send Apple Events, so the prompt is Broadside's. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>A program running in one of your Broadside terminal tabs wants to control another app.</string>
+</dict>
+</plist>

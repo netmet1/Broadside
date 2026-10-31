@@ -1,12 +1,23 @@
+import { IS_MAC } from "@/lib/platform";
 import { type ShortcutScope } from "@/lib/tauri/settings";
 
-/** Human-readable scope names for the add/edit form and row tooltips. */
-export const SCOPE_LABELS: Record<ShortcutScope, string> = {
-  ssh: "SSH / WSL (Linux)",
-  local: "Command Prompt / PowerShell",
-  both: "Both (Linux and Windows)",
-  serial: "Serial console (COM port)",
-};
+/** Human-readable scope names for the add/edit form and row tooltips. On a Mac
+ * the local shells are zsh and bash, which speak the same language as an SSH
+ * host and so share its scope, and the `local` scope is left with PowerShell
+ * alone (a custom terminal there). */
+export const SCOPE_LABELS: Record<ShortcutScope, string> = IS_MAC
+  ? {
+      ssh: "SSH / local shells (Unix)",
+      local: "PowerShell",
+      both: "Both (Unix and PowerShell)",
+      serial: "Serial console",
+    }
+  : {
+      ssh: "SSH / WSL (Linux)",
+      local: "Command Prompt / PowerShell",
+      both: "Both (Linux and Windows)",
+      serial: "Serial console (COM port)",
+    };
 
 /** Stable DOM id for a settings section, used by the jump-to dropdown. */
 export function sectionDomId(title: string): string {
@@ -70,6 +81,24 @@ export const SECTION_KEYWORDS: Record<string, string> = {
   Reset: "defaults factory restore preferences start over clear settings start page",
   "Danger Zone": "delete all hosts wipe destroy remove everything purge credentials",
 };
+
+// The words a Mac user reaches for that the lists above, written for Windows,
+// do not have. Added rather than swapped in, so a search that works on Windows
+// works the same here.
+if (IS_MAC) {
+  const more: Record<string, string> = {
+    "Shortcut commands": "mac unix zsh",
+    Appearance: "cmd command key wheel menlo sf mono monaco",
+    "Custom terminals": "zsh fish homebrew brew opt bin nushell pwsh mac",
+    Sessions: "option alt right-click copy paste",
+    "Backup & Restore": "another mac keychain",
+    Security: "keychain",
+    "Danger Zone": "keychain",
+  };
+  for (const [title, words] of Object.entries(more)) {
+    SECTION_KEYWORDS[title] = `${SECTION_KEYWORDS[title]} ${words}`;
+  }
+}
 
 // The search filter and the section scrolled to. Settings stays mounted once it
 // has been opened, so a trip to another tab keeps both without any storage;

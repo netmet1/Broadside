@@ -5,21 +5,39 @@ use crate::error::{AppError, AppResult};
 /// The service name every saved password lives under for the released app.
 /// Never change it: installed copies would lose every saved password.
 const SERVICE: &str = "broadside";
-/// The released app's Tauri identifier.
-const RELEASE_IDENTIFIER: &str = "com.broadside.app";
+/// The released app's Tauri identifiers: Windows, then macOS (set by
+/// `tauri.macos.conf.json`). The Mac one differs only because an identifier
+/// ending in `.app` makes Finder show the data folder as a broken app; both are
+/// the real app and both keep the plain service name.
+const RELEASE_IDENTIFIERS: [&str; 2] = ["com.broadside.app", "com.broadside.desktop"];
 
-/// The Credential Manager service for this build. The released app keeps
-/// "broadside"; a build with any other identifier (a sandbox test build) gets
-/// its own, so its host 1 is never the real host 1.
+/// The credential store service (Credential Manager / Keychain) for this build.
+/// The released app keeps "broadside"; a build with any other identifier (a
+/// sandbox test build) gets its own, so its host 1 is never the real host 1.
 pub fn service_for(identifier: &str) -> String {
-    if identifier == RELEASE_IDENTIFIER {
+    if RELEASE_IDENTIFIERS.contains(&identifier) {
         SERVICE.to_string()
     } else {
         format!("{SERVICE}:{identifier}")
     }
 }
 
+/// Names the platform's real store as keyring's backend.
+///
+/// The features in Cargo.toml already select it, so at run time this changes
+/// nothing. It is here for the build: `keyring::macos` and `keyring::windows`
+/// exist only while their feature is on, so losing one fails to compile. Without
+/// it, keyring quietly falls back to an in-memory mock, `probe` passes against
+/// that, and every saved password is gone when the app quits.
+fn use_native_store() {
+    #[cfg(target_os = "macos")]
+    keyring::set_default_credential_builder(keyring::macos::default_credential_builder());
+    #[cfg(windows)]
+    keyring::set_default_credential_builder(keyring::windows::default_credential_builder());
+}
+
 pub fn probe(service: &str) -> bool {
+    use_native_store();
     let Ok(entry) = Entry::new(service, "__probe__") else {
         return false;
     };
@@ -70,6 +88,11 @@ mod tests {
     }
 
     #[test]
+    fn the_released_mac_app_shares_the_service_name() {
+        assert_eq!(service_for("com.broadside.desktop"), "broadside");
+    }
+
+    #[test]
     fn a_sandbox_build_gets_its_own_service() {
         assert_eq!(
             service_for("com.broadside.test"),
@@ -77,7 +100,7 @@ mod tests {
         );
     }
 
-    /// Hits the real Credential Manager, so it only runs when asked:
+    /// Hits the real Credential Manager / Keychain, so it only runs when asked:
     /// `cargo test --lib keyring_store -- --ignored`.
     #[test]
     #[ignore]

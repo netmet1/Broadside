@@ -4,6 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { IS_MAC } from "@/lib/platform";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
@@ -29,12 +30,22 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 // `reveal_main_window` shows the window and, only then (while it is visible),
 // re-applies the saved maximized state. Maximizing the still-hidden window is
 // what flashed an empty frame on launch, so it is deliberately deferred here.
-requestAnimationFrame(() => {
+function revealWindow() {
+  // Don't swallow failures: if revealing the window ever fails (e.g. a missing
+  // capability), surfacing it beats a silently invisible app.
+  invoke("reveal_main_window").catch((e) =>
+    console.error("[main] failed to reveal window", e),
+  );
+}
+
+if (IS_MAC) {
+  // WebKit runs no animation frames for a window that is not on screen, so on
+  // a Mac the wait below would never end and the app would never appear. The
+  // window is shown straight away instead; at most its dark background shows
+  // for the moment before the first paint.
+  revealWindow();
+} else {
   requestAnimationFrame(() => {
-    // Don't swallow failures: if revealing the window ever fails (e.g. a missing
-    // capability), surfacing it beats a silently invisible app.
-    invoke("reveal_main_window").catch((e) =>
-      console.error("[main] failed to reveal window", e),
-    );
+    requestAnimationFrame(revealWindow);
   });
-});
+}
