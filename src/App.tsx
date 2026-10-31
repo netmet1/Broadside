@@ -565,7 +565,6 @@ function App() {
     (w) => w.id === activeWorkspaceId,
   );
 
-
   /** Close a workspace: every tab in it, then the workspace itself, which
    * useWorkspaces removes once it is empty. Closing a tab is what ends its
    * shell, as everywhere else. */
@@ -1199,7 +1198,6 @@ function App() {
               pendingLaunch?.placement && "data-[size=default]:sm:max-w-lg",
             )}
           >
-
             <AlertDialogHeader>
               <AlertDialogTitle>
                 {(pendingLaunch?.templates.length ?? 0) > 1 ? (
