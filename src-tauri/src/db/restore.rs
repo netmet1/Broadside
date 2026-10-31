@@ -31,8 +31,18 @@
 //!
 //! - `hosts`, `command_history`, `broadcast_results`, `pty_dispatch_results`,
 //!   `omni_blocks`: read as data, shown as text, never executed. A planted row
-//!   here is a line in a list. (A restored host pointing somewhere unexpected
-//!   still meets the host-key check before any credential is sent.)
+//!   here is a line in a list.
+//!
+//!   Except for one thing a host row carries: its id, which is what this
+//!   machine's saved password, key passphrase and sudo password are filed
+//!   under. The rows keep the file's ids, so a file could give host 5 the
+//!   address of a server its author runs, and host 5's saved password would be
+//!   typed to that server on the next connect, behind nothing but an
+//!   unknown-key prompt that looks like any first connection. So every host id
+//!   the file drops, or points at a different address, port or user, is found
+//!   by [`stale_credentials`], and the caller removes that id's saved secrets
+//!   before the import runs. A restore of the operator's own backup changes
+//!   nothing here: same ids, same addresses, secrets kept.
 //! - `skills`: a skill's text does get typed at a host, but never without
 //!   passing the destructive guard and the operator's own confirmation on the
 //!   way (see `commands::skills::run_skill`).
@@ -128,6 +138,31 @@ pub struct Restored {
     pub cleared_startup_commands: usize,
     /// Shell profiles that named a custom local shell and now name none.
     pub orphaned_custom_profiles: usize,
+}
+
+/// A host's id and the place its secrets are for: address (case-insensitive),
+/// port and user.
+type HostTarget = (i64, String, i64, String);
+
+fn host_targets(conn: &Connection) -> AppResult<Vec<HostTarget>> {
+    let mut stmt =
+        conn.prepare("SELECT id, lower(hostname), port, username FROM main.hosts")?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// The live host ids whose saved secrets a restore of `stage` would leave
+/// filed under a different server: the file drops the host, or gives its id
+/// another address, port or user. See the module notes.
+pub fn stale_credentials(live: &Connection, stage: &Connection) -> AppResult<Vec<i64>> {
+    let restored = host_targets(stage)?;
+    Ok(host_targets(live)?
+        .into_iter()
+        .filter(|old| !restored.contains(old))
+        .map(|(id, ..)| id)
+        .collect())
 }
 
 /// Replaces the restorable parts of `live` with the backup at `src_path`.
@@ -416,6 +451,50 @@ mod tests {
         let hosts = host_repo::list_all(&live).unwrap();
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0].label, "from-backup");
+    }
+
+    /// The operator's own backup puts every host back where it was, so no
+    /// saved secret is touched; a change of case in the address is the same
+    /// server.
+    #[test]
+    fn restoring_your_own_backup_keeps_every_saved_secret() {
+        let live = live_db();
+        host_repo::create(&live, host("second", "Server.Example")).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let file = to_file(&live, &dir);
+        live.execute(
+            "UPDATE hosts SET hostname = 'server.example' WHERE label = 'second'",
+            [],
+        )
+        .unwrap();
+
+        let staged = stage(&file).unwrap();
+        assert!(stale_credentials(&live, &staged).unwrap().is_empty());
+    }
+
+    /// A file that gives an id another address, port or user, or drops it,
+    /// gets that id's saved secrets removed: they were for somewhere else.
+    #[test]
+    fn a_host_id_the_file_points_elsewhere_loses_its_saved_secrets() {
+        let live = live_db(); // id 1: current, 192.168.1.1:22, ops
+        for (label, addr) in [("b", "10.0.0.2"), ("c", "10.0.0.3"), ("d", "10.0.0.4")] {
+            host_repo::create(&live, host(label, addr)).unwrap();
+        }
+        let src = open_in_memory().unwrap();
+        src.execute_batch(
+            "INSERT INTO hosts (id, label, hostname, port, username, color, created_at, updated_at)
+             VALUES (1, 'current', 'attacker.example', 22, 'ops', '#000000', 'then', 'then'),
+                    (2, 'b', '10.0.0.2', 2222, 'ops', '#000000', 'then', 'then'),
+                    (3, 'c', '10.0.0.3', 22, 'root', '#000000', 'then', 'then');",
+        )
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let file = to_file(&src, &dir);
+
+        let mut stale = stale_credentials(&live, &stage(&file).unwrap()).unwrap();
+        stale.sort();
+        // 1: new address, 2: new port, 3: new user, 4: not in the file.
+        assert_eq!(stale, vec![1, 2, 3, 4]);
     }
 
     /// The two tables a restore must not carry over, because in each a row is

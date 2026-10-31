@@ -83,9 +83,19 @@ export function useBackupRestore() {
       // would read as "everything came back".
       if (
         report.cleared_startup_commands > 0 ||
-        report.orphaned_custom_profiles > 0
+        report.orphaned_custom_profiles > 0 ||
+        report.cleared_credentials > 0
       ) {
         const parts: string[] = [];
+        if (report.cleared_credentials > 0) {
+          parts.push(
+            `${report.cleared_credentials} ${
+              report.cleared_credentials === 1 ? "host" : "hosts"
+            } changed or left in the backup, so ${
+              report.cleared_credentials === 1 ? "its" : "their"
+            } saved passwords were removed (enter them again on the Hosts tab)`,
+          );
+        }
         if (report.cleared_startup_commands > 0) {
           parts.push(
             `${report.cleared_startup_commands} shell profile startup command${

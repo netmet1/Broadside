@@ -1463,8 +1463,12 @@ export function SettingsPage({
             variant="outline"
             size="sm"
             onClick={pickRestoreFile}
-            disabled={backingUp || restoring}
-            {...hint("Replace all current data with a backup .db file you choose")}
+            disabled={backingUp || restoring || adminLocked}
+            {...hint(
+              adminLocked
+                ? "Locked by the admin passcode; unlock in the Security section first"
+                : "Replace all current data with a backup .db file you choose",
+            )}
           >
             {restoring ? (
               <Loader2Icon className="animate-spin" />
@@ -1481,6 +1485,11 @@ export function SettingsPage({
           host keys and security settings are never taken from the file, but
           restore only a backup you made yourself.
         </p>
+        {adminLocked && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Restore is locked. Unlock in Settings → Security to enable it.
+          </p>
+        )}
       </section>
       )}
 
