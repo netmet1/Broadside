@@ -28,6 +28,12 @@ export function localMkdir(path: string): Promise<void> {
   return invoke<void>("local_mkdir", { path });
 }
 
+/** Commander's New folder: makes `name` in `dir`. Refuses a name the OS won't
+ *  take, the same as a rename. */
+export function localNewFolder(dir: string, name: string): Promise<void> {
+  return invoke<void>("local_new_folder", { dir, name });
+}
+
 /** Moves a local file/folder to the Recycle Bin / Trash (recoverable). */
 export function localDelete(path: string): Promise<void> {
   return invoke<void>("local_delete", { path });

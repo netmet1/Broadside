@@ -222,8 +222,9 @@ export function folderCancelText(
 /**
  * Why a name can't be used, or null when it can. The local side follows
  * Windows' rules (macOS's, on a Mac), the remote side only POSIX's (a `/` or
- * a NUL). The backend checks the same things; this is here so the rename
- * dialog can say so while the name is being typed instead of after it was sent.
+ * a NUL). The backend checks the same things; this is here so the rename and
+ * New folder dialogs can say so while the name is being typed instead of after
+ * it was sent.
  */
 export function nameProblem(side: "local" | "remote", name: string): string | null {
   if (name === "") return "A name can't be empty.";

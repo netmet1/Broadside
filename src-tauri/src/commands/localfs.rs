@@ -82,10 +82,22 @@ pub fn local_list_dir(path: String) -> AppResult<Vec<LocalEntry>> {
     Ok(entries)
 }
 
-/// Creates a local directory.
+/// Creates a local directory at a full path. A broadcast download makes its
+/// per-host folders with it; a folder the operator names goes through
+/// [`local_new_folder`], which checks the name first.
 #[tauri::command]
 pub fn local_mkdir(path: String) -> AppResult<()> {
     fs::create_dir(&path)?;
+    Ok(())
+}
+
+/// Commander's New folder: creates a folder called `name` in `dir`. The name is
+/// checked like a rename's, so `a/b` cannot make a folder inside another one,
+/// and on a Mac `a:b` cannot make one that Finder shows as `a/b`.
+#[tauri::command]
+pub fn local_new_folder(dir: String, name: String) -> AppResult<()> {
+    check_local_name(&name).map_err(AppError::InvalidInput)?;
+    fs::create_dir(Path::new(&dir).join(&name))?;
     Ok(())
 }
 
@@ -423,5 +435,22 @@ mod tests {
         let moved = local_rename(upper, "c.txt".into()).unwrap();
         assert_eq!(fs::read(&moved).unwrap(), b"a");
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn new_folder_refuses_a_bad_name_and_makes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let at = || dir.path().to_string_lossy().to_string();
+        fs::create_dir(dir.path().join("a")).unwrap();
+
+        // `a/b` would otherwise make `b` inside the existing `a`.
+        assert!(local_new_folder(at(), "a/b".into()).is_err());
+        assert!(!dir.path().join("a").join("b").exists());
+        assert!(local_new_folder(at(), "a:b".into()).is_err());
+        assert!(!dir.path().join("a:b").exists());
+        assert!(local_new_folder(at(), "..".into()).is_err());
+
+        local_new_folder(at(), "reports".into()).unwrap();
+        assert!(dir.path().join("reports").is_dir());
     }
 }

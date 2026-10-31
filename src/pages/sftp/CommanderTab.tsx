@@ -36,6 +36,7 @@ import {
   isLargeTransfer,
   localDirname,
   localJoin,
+  nameProblem,
 } from "@/pages/sftp/model";
 import {
   type DragPayload,
@@ -317,7 +318,16 @@ export function CommanderTab({
         : `SFTP: ${inFlight} transfers in progress`,
   );
 
+  // Checked as it is typed, like a rename. An empty box only greys out Create.
+  const newFolderTrimmed = newFolderName.trim();
+  const newFolderProblem =
+    newFolderSide === null || newFolderTrimmed === ""
+      ? null
+      : nameProblem(newFolderSide, newFolderTrimmed);
+  const canCreateFolder = newFolderTrimmed !== "" && newFolderProblem === null;
+
   const submitNewFolder = () => {
+    if (!canCreateFolder) return;
     if (newFolderSide === "local") local.mkdir(newFolderName);
     else if (newFolderSide === "remote") remote.mkdir(newFolderName);
     setNewFolderName("");
@@ -501,18 +511,22 @@ export function CommanderTab({
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && newFolderName.trim()) submitNewFolder();
+                if (e.key === "Enter") submitNewFolder();
               }}
+              aria-invalid={newFolderProblem !== null}
               autoComplete="off"
               spellCheck={false}
               autoFocus
             />
+            {newFolderProblem && (
+              <p className="text-xs break-words text-destructive">{newFolderProblem}</p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewFolderSide(null)}>
               Cancel
             </Button>
-            <Button onClick={submitNewFolder} disabled={!newFolderName.trim()}>
+            <Button onClick={submitNewFolder} disabled={!canCreateFolder}>
               Create
             </Button>
           </DialogFooter>

@@ -9,10 +9,10 @@ import {
   localHomeDir,
   localListDir,
   localListDrives,
-  localMkdir,
+  localNewFolder,
   localRename,
 } from "@/lib/tauri/localfs";
-import { localDirname, localJoin } from "@/pages/sftp/model";
+import { localDirname } from "@/pages/sftp/model";
 
 /**
  * Owns the Commander's local (left) pane: a filesystem browser for this PC or
@@ -87,7 +87,7 @@ export function useLocalBrowser(visible: boolean) {
     (name: string) => {
       if (cwd === null || !name.trim()) return;
       setBusy(true);
-      localMkdir(localJoin(cwd, name.trim()))
+      localNewFolder(cwd, name.trim())
         .then(() => {
           toast.success(`Created ${name.trim()}`);
           return listDir(cwd);

@@ -255,6 +255,7 @@ pub fn run() {
             commands::localfs::local_list_dir,
             commands::localfs::local_list_drives,
             commands::localfs::local_mkdir,
+            commands::localfs::local_new_folder,
             commands::localfs::local_delete,
             commands::localfs::local_rename,
             commands::localfs::local_scan_dir,
