@@ -639,6 +639,17 @@ function App() {
     setPage("templates");
   }, []);
 
+  /** The Terminals launcher's Duplicate: an unsaved copy in the editor, to be
+   * changed and then saved. Nothing is written until it is. */
+  const duplicateTemplate = useCallback((template: Template) => {
+    setTemplateFocus((f) => ({
+      template: null,
+      copyOf: template,
+      n: (f?.n ?? 0) + 1,
+    }));
+    setPage("templates");
+  }, []);
+
   const openHelpAt = useCallback((section: HelpSectionId) => {
     setHelpFocus(section);
     setPage("help");
@@ -976,6 +987,9 @@ function App() {
           onOpenHosts={openTerminals}
           onNewHost={openNewHost}
           onSaveAsTemplate={saveGridAsTemplate}
+          onOpenTemplate={openTemplate}
+          onEditTemplate={editTemplate}
+          onDuplicateTemplate={duplicateTemplate}
           onManageShortcuts={openShortcutSettings}
           onOpenSessionSettings={openSessionSettings}
         />

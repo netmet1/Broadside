@@ -46,6 +46,9 @@ export function useRowDrag<T extends string | number>(
   const rowProps = (id: T) => ({
     draggable: armedId === id,
     onDragStart: (e: DragEvent) => {
+      // A drag that started on something draggable inside this one (a row in
+      // a launcher section that is itself draggable) is that one's, not ours.
+      if (e.target !== e.currentTarget) return;
       setDragId(id);
       e.dataTransfer.effectAllowed = "move";
       // Some webviews need drag data set or the drag is rejected.

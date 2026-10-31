@@ -13,11 +13,40 @@
  * "Serial console" is deliberately not in here. It is the one section that is
  * short on every machine (a COM port or two, usually none), and it carries the
  * explanation of what to do when there are none. */
-export type LauncherSection = "shells" | "hosts" | "profiles";
+export type LauncherSection = "shells" | "hosts" | "profiles" | "templates";
 
 const COLLAPSED_KEY = "launcher-collapsed";
 
-const KNOWN: LauncherSection[] = ["shells", "hosts", "profiles"];
+const KNOWN: LauncherSection[] = ["shells", "hosts", "profiles", "templates"];
+
+const ORDER_KEY = "launcher-order";
+
+/** The order the sections were dragged into, or the built-in order. Any
+ * section the stored value does not mention (one added by a later build) goes
+ * on the end, and anything it does not recognise is dropped, so the result is
+ * always every known section exactly once. */
+export function loadSectionOrder(): LauncherSection[] {
+  try {
+    const raw = localStorage.getItem(ORDER_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    const stored = Array.isArray(parsed)
+      ? parsed.filter((s, i): s is LauncherSection =>
+          KNOWN.includes(s as LauncherSection) && parsed.indexOf(s) === i,
+        )
+      : [];
+    return [...stored, ...KNOWN.filter((s) => !stored.includes(s))];
+  } catch {
+    return [...KNOWN];
+  }
+}
+
+export function rememberSectionOrder(order: LauncherSection[]): void {
+  try {
+    localStorage.setItem(ORDER_KEY, JSON.stringify(order));
+  } catch {
+    // The order lasts until the menu remounts; nothing else depends on it.
+  }
+}
 
 /** The sections rolled up last time. Anything unrecognised in the stored value
  * is dropped rather than kept, so a name this build has never heard of cannot

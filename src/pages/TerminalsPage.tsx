@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -86,13 +87,21 @@ import {
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
 import { HostLauncherList } from "@/pages/terminals/HostLauncherList";
-import { LauncherTwisty } from "@/pages/terminals/LauncherSection";
+import {
+  LauncherSectionHeader,
+  SectionDropLine,
+  type SectionDrag,
+} from "@/pages/terminals/LauncherSection";
+import { useRowDrag } from "@/lib/useRowDrag";
 import { ProfileLauncherList } from "@/pages/terminals/ProfileLauncherList";
+import { TemplateLauncherList } from "@/pages/terminals/TemplateLauncherList";
+import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
+import { copyName } from "@/pages/templates/copyName";
 import { useProfileActions } from "@/lib/useProfileActions";
 import { useGridLayout } from "@/pages/terminals/useGridLayout";
 import { useGridResize } from "@/pages/terminals/useGridResize";
 import { useGridTemplate } from "@/pages/terminals/useGridTemplate";
-import type { TemplateItem } from "@/lib/tauri/templates";
+import type { Template, TemplateItem } from "@/lib/tauri/templates";
 import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { TerminalRail } from "@/pages/terminals/TerminalRail";
@@ -112,6 +121,8 @@ import {
 } from "@/lib/tauri/settings";
 import {
   loadCollapsedSections,
+  loadSectionOrder,
+  rememberSectionOrder,
   rememberCollapsedSections,
   type LauncherSection,
 } from "@/lib/launcherSections";
@@ -248,6 +259,13 @@ type Props = {
   /** Hand the grid on screen to the Templates tab as a new template, to be
    * named and saved there. */
   onSaveAsTemplate: (items: TemplateItem[]) => void;
+  /** Open a saved template from the launcher's Templates section. App asks
+   * where the tabs go when some are open already. */
+  onOpenTemplate: (template: Template) => void;
+  /** Put a template in the Templates tab's editor: the saved one for Edit, an
+   * unsaved copy for Duplicate, an empty one for New (null). */
+  onEditTemplate: (template: Template | null) => void;
+  onDuplicateTemplate: (template: Template) => void;
 };
 
 /** Whether this session's shell treats a form feed (Ctrl-L) as "redraw the
@@ -287,6 +305,9 @@ export function TerminalsPage({
   onOpenHosts,
   onNewHost,
   onSaveAsTemplate,
+  onOpenTemplate,
+  onEditTemplate,
+  onDuplicateTemplate,
 }: Props) {
   const shortcuts = useShortcuts(visible);
   // Local shells available on this machine, for the "+" launcher menu.
@@ -424,6 +445,23 @@ export function TerminalsPage({
     },
     [collapsed],
   );
+
+  // The order of the four sections, dragged by the grip on each header and
+  // remembered like the rolled-up ones. The same row drag the lists inside
+  // them use, one level up.
+  const [sectionOrder, setSectionOrder] =
+    useState<LauncherSection[]>(loadSectionOrder);
+  const reorderSections = useCallback((next: LauncherSection[]) => {
+    rememberSectionOrder(next);
+    setSectionOrder(next);
+  }, []);
+  const sectionRowDrag = useRowDrag(sectionOrder, reorderSections);
+  const sectionDrag = (section: LauncherSection): SectionDrag => ({
+    rowProps: sectionRowDrag.rowProps(section),
+    gripProps: sectionRowDrag.gripProps(section),
+    dropSide: sectionRowDrag.dropSide(section),
+    dragging: sectionRowDrag.isDragging(section),
+  });
 
   // Saved hosts, for the launcher's Hosts section. Read every time the menu
   // opens, like the COM ports and unlike the shells: hosts are added and edited
@@ -644,6 +682,9 @@ export function TerminalsPage({
    * after the list underneath has changed.
    */
   const [profileDelete, setProfileDelete] = useState<ShellProfile | null>(null);
+  /** The same guard for a template in the launcher's Templates section. */
+  const [templateDelete, setTemplateDelete] = useState<Template | null>(null);
+  const launcherTemplates = useLauncherTemplates(shellMenuOpen);
   /**
    * The pending "double-click to delete" hint, and the toast it becomes.
    *
@@ -685,7 +726,7 @@ export function TerminalsPage({
    */
   useDismissOnOutside(
     launcherRef,
-    shellMenuOpen && !profileDelete,
+    shellMenuOpen && !profileDelete && !templateDelete,
     closeShellMenu,
   );
 
@@ -2054,35 +2095,11 @@ export function TerminalsPage({
                     profile below opens this many; a large batch confirms first.
                     Capped at the max concurrent sessions from Settings.
 
-                    This row is the local-shell section's header, and it is the
-                    one header that does not roll away with its section: the
-                    count governs the hosts and the profiles further down too,
-                    so hiding it with the shells would take the control away
-                    from the two lists still on screen. The twisty rolls up the
-                    shells themselves. */}
-                <div
-                  className={cn(
-                    // Short lists give way last: the proportional shrink
-                    // would otherwise take eight shells down to one row while
-                    // sixty profiles kept eight. `shrink-[0.3]` still lets
-                    // it give up height once the long lists are at theirs.
-                    "flex shrink-[0.3] flex-col",
-                    !collapsed.has("shells") &&
-                      enabledShells.length > 0 &&
-                      "min-h-[4.5rem]",
-                  )}
-                >
-                <div className="mb-1 flex shrink-0 items-center gap-1.5 border-b border-border/60 px-1.5 py-1.5">
-                  <LauncherTwisty
-                    open={!collapsed.has("shells")}
-                    onToggle={() => toggleSection("shells")}
-                    label="local shells"
-                    hintText={
-                      collapsed.has("shells")
-                        ? "Show the local shells"
-                        : "Roll the local shells away. It stays rolled up until you open it again, restarts included"
-                    }
-                  />
+                    Its own row above the sections rather than one section's
+                    header, because it governs the shells, the hosts and the
+                    profiles alike, and the sections can be dragged into any
+                    order: it stays on top whichever comes first. */}
+                <div className="flex shrink-0 items-center gap-1.5 px-1.5 py-1.5">
                   <label
                     htmlFor="shell-count"
                     className="text-xs text-muted-foreground"
@@ -2117,97 +2134,194 @@ export function TerminalsPage({
                     max {maxShells}
                   </span>
                 </div>
-                {collapsed.has("shells") ? null : localShells.length === 0 ? (
-                  <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                    {shellsError
-                      ? "Couldn't list local shells. Rebuild the app and try again."
-                      : "No local shells found."}
-                  </p>
-                ) : enabledShells.length === 0 ? (
-                  <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                    All local shells are hidden. Enable them in Settings,
-                    Appearance.
-                  </p>
-                ) : (
-                  <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain">
-                    {enabledShells.map((sh) => (
-                      <button
-                        key={sh.id}
-                        type="button"
-                        onClick={() => requestOpenShells(sh)}
-                        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                      >
-                        <LocalShellIcon
-                          kind={sh.kind}
-                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+
+                {/* The four sections, in the order they were dragged into (a grip
+                    on each header; see sectionDrag). Serial console stays last: it
+                    is short on every machine and carries its own explanation. */}
+                {sectionOrder.map((section) => (
+                  <Fragment key={section}>
+                    {section === "shells" && (
+                      <>
+                        {/* The local shells this machine has, minus the ones hidden in
+                            Settings. Short lists give way last: the proportional shrink
+                            would otherwise take eight shells down to one row while sixty
+                            profiles kept eight. `shrink-[0.3]` still lets it give up
+                            height once the long lists are at theirs. */}
+                        <div
+                          {...sectionDrag("shells").rowProps}
+                          className={cn(
+                            "relative mt-1 flex shrink-[0.3] flex-col border-t border-border/60 pt-1",
+                            !collapsed.has("shells") &&
+                              enabledShells.length > 0 &&
+                              "min-h-[4.75rem]",
+                            sectionDrag("shells").dragging && "opacity-40",
+                          )}
+                        >
+                          <SectionDropLine side={sectionDrag("shells").dropSide} />
+                          <LauncherSectionHeader
+                            title="Local shells"
+                            count={enabledShells.length}
+                            open={!collapsed.has("shells")}
+                            onToggle={() => toggleSection("shells")}
+                            gripProps={sectionDrag("shells").gripProps}
+                            hintText={
+                              collapsed.has("shells")
+                                ? "Show the local shells"
+                                : "Roll the local shells away. It stays rolled up until you open it again, restarts included"
+                            }
+                          />
+                          {collapsed.has("shells") ? null : localShells.length === 0 ? (
+                            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                              {shellsError
+                                ? "Couldn't list local shells. Rebuild the app and try again."
+                                : "No local shells found."}
+                            </p>
+                          ) : enabledShells.length === 0 ? (
+                            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                              All local shells are hidden. Enable them in Settings,
+                              Appearance.
+                            </p>
+                          ) : (
+                            <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain">
+                              {enabledShells.map((sh) => (
+                                <button
+                                  key={sh.id}
+                                  type="button"
+                                  onClick={() => requestOpenShells(sh)}
+                                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                                >
+                                  <LocalShellIcon
+                                    kind={sh.kind}
+                                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                                  />
+                                  {sh.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                    {section === "hosts" && (
+                      <>
+                        {/* Saved hosts. Second by default, between the shells and
+                            the profiles: this machine, then a machine you have
+                            saved, then a saved way of opening this machine. */}
+                        <HostLauncherList
+                          sectionDrag={sectionDrag("hosts")}
+                          hosts={launcherHosts}
+                          loading={launcherHostsLoading}
+                          error={launcherHostsError}
+                          openHostIds={openHostIds}
+                          count={launchCount}
+                          open={!collapsed.has("hosts")}
+                          onToggle={() => toggleSection("hosts")}
+                          onOpen={requestOpenHost}
+                          onNew={() => {
+                            setShellMenuOpen(false);
+                            onNewHost();
+                          }}
                         />
-                        {sh.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                </div>
+                      </>
+                    )}
+                    {section === "profiles" && (
+                      <>
+                        {/* Saved launch profiles: a named shell + folder + optional
+                            startup command. Shown regardless of the hide-list (a
+                            profile may launch a shell hidden from the plain list) and
+                            managed inline: edit, duplicate, delete, drag to reorder,
+                            import and export. Import and export close the menu, since
+                            each opens a file dialog and the import preview. */}
+                        <ProfileLauncherList
+                          sectionDrag={sectionDrag("profiles")}
+                          open={!collapsed.has("profiles")}
+                          onToggle={() => toggleSection("profiles")}
+                          profiles={profiles}
+                          loading={profilesLoading}
+                          shells={localShells}
+                          onNew={() => {
+                            setShellMenuOpen(false);
+                            setProfileEdit({ profile: null });
+                          }}
+                          onImport={() => {
+                            setShellMenuOpen(false);
+                            void startImport();
+                          }}
+                          onExport={() => {
+                            setShellMenuOpen(false);
+                            void exportProfiles();
+                          }}
+                          onOpen={openProfile}
+                          onEdit={(p) => {
+                            cancelDeleteHint();
+                            setShellMenuOpen(false);
+                            setProfileEdit({ profile: p });
+                          }}
+                          onDuplicate={(p) => {
+                            cancelDeleteHint();
+                            duplicateProfile(p);
+                          }}
+                          onDeleteClick={hintDeleteGesture}
+                          onDeleteRequest={(p) => {
+                            cancelDeleteHint();
+                            setProfileDelete(p);
+                          }}
+                          onReorder={reorderProfiles}
+                        />
+                      </>
+                    )}
+                    {section === "templates" && (
+                      <>
+                        {/* Saved templates: a set of hosts, shells and profiles opened
+                            together. Opening one asks where the tabs go when some are
+                            open already. Edit and Duplicate go to the Templates tab,
+                            so they close the menu. */}
+                        <TemplateLauncherList
+                          sectionDrag={sectionDrag("templates")}
+                          open={!collapsed.has("templates")}
+                          onToggle={() => toggleSection("templates")}
+                          templates={launcherTemplates.templates}
+                          loading={launcherTemplates.loading}
+                          onNew={() => {
+                            setShellMenuOpen(false);
+                            onEditTemplate(null);
+                          }}
+                          onOpen={(t) => {
+                            cancelDeleteHint();
+                            setShellMenuOpen(false);
+                            onOpenTemplate(t);
+                          }}
+                          onEdit={(t) => {
+                            cancelDeleteHint();
+                            setShellMenuOpen(false);
+                            onEditTemplate(t);
+                          }}
+                          onDuplicate={(t) => {
+                            cancelDeleteHint();
+                            setShellMenuOpen(false);
+                            // Named as it will be saved ("Name 02"), from the
+                            // list this menu has just read, so the editor does
+                            // not show the original's name on a copy.
+                            onDuplicateTemplate({
+                              ...t,
+                              name: copyName(
+                                t.name,
+                                launcherTemplates.templates.map((x) => x.name),
+                              ),
+                            });
+                          }}
 
-                {/* Saved hosts. Between the shells and the profiles because
-                    that is the order of how far away the thing you are opening
-                    is: this machine, then a machine you have saved, then a
-                    saved way of opening this machine. */}
-                <HostLauncherList
-                  hosts={launcherHosts}
-                  loading={launcherHostsLoading}
-                  error={launcherHostsError}
-                  openHostIds={openHostIds}
-                  count={launchCount}
-                  open={!collapsed.has("hosts")}
-                  onToggle={() => toggleSection("hosts")}
-                  onOpen={requestOpenHost}
-                  onNew={() => {
-                    setShellMenuOpen(false);
-                    onNewHost();
-                  }}
-                />
-
-                {/* Saved launch profiles: a named shell + folder + optional
-                    startup command. Shown regardless of the hide-list (a
-                    profile may launch a shell hidden from the plain list) and
-                    managed inline: edit, duplicate, delete, drag to reorder,
-                    import and export. Import and export close the menu, since
-                    each opens a file dialog and the import preview. */}
-                <ProfileLauncherList
-                  open={!collapsed.has("profiles")}
-                  onToggle={() => toggleSection("profiles")}
-                  profiles={profiles}
-                  loading={profilesLoading}
-                  shells={localShells}
-                  onNew={() => {
-                    setShellMenuOpen(false);
-                    setProfileEdit({ profile: null });
-                  }}
-                  onImport={() => {
-                    setShellMenuOpen(false);
-                    void startImport();
-                  }}
-                  onExport={() => {
-                    setShellMenuOpen(false);
-                    void exportProfiles();
-                  }}
-                  onOpen={openProfile}
-                  onEdit={(p) => {
-                    cancelDeleteHint();
-                    setShellMenuOpen(false);
-                    setProfileEdit({ profile: p });
-                  }}
-                  onDuplicate={(p) => {
-                    cancelDeleteHint();
-                    duplicateProfile(p);
-                  }}
-                  onDeleteClick={hintDeleteGesture}
-                  onDeleteRequest={(p) => {
-                    cancelDeleteHint();
-                    setProfileDelete(p);
-                  }}
-                  onReorder={reorderProfiles}
-                />
+                          onDeleteClick={hintDeleteGesture}
+                          onDeleteRequest={(t) => {
+                            cancelDeleteHint();
+                            setTemplateDelete(t);
+                          }}
+                          onReorder={launcherTemplates.reorder}
+                        />
+                      </>
+                    )}
+                  </Fragment>
+                ))}
 
                 {/* Serial consoles. A COM port is not a shell and does not
                     belong in the list above: nothing is spawned, there is no
@@ -3200,6 +3314,38 @@ export function TerminalsPage({
               variant="destructive"
               onClick={() => {
                 if (profileDelete) deleteProfile(profileDelete.id);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!templateDelete}
+        onOpenChange={(open) => {
+          if (!open) setTemplateDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this template?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold text-foreground">
+                {templateDelete?.name}
+              </span>{" "}
+              will be removed. Templates have no undo, so this cannot be taken
+              back. The hosts and shells it names are untouched, and terminals
+              already open from it keep running.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (templateDelete) void launcherTemplates.remove(templateDelete);
               }}
             >
               Delete
