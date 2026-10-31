@@ -146,6 +146,8 @@ export function TerminalRail({
   gridMode,
   sizeIsPinned,
   resetTileSize,
+  lockedTiles,
+  toggleLockedTiles,
   gridFullscreen,
   onGridFullscreen,
   maximizeActive,
@@ -199,6 +201,9 @@ export function TerminalRail({
   gridMode: boolean;
   sizeIsPinned: boolean;
   resetTileSize: () => void;
+  /** Tiles resize together when dragged (the default), or one at a time. */
+  lockedTiles: boolean;
+  toggleLockedTiles: () => void;
   gridFullscreen: boolean;
   onGridFullscreen: (on: boolean) => void;
   /** Fill the window with the active terminal (what F11 does). No-op with no
@@ -735,6 +740,23 @@ export function TerminalRail({
               Settings) and goes back to fit-to-window. It is Grid's, so it is
               here only in Grid: in Tabs there is no grid on screen to reset and
               a greyed entry would be answering a question nobody asked. */}
+          {/* Whether dragging a tile's edge resizes every tile or only that
+              one. A checkbox, so it stays open to be read back, and Grid's
+              alone like Reset grid below. */}
+          {gridMode && (
+            <DropdownMenuCheckboxItem
+              checked={lockedTiles}
+              onCheckedChange={toggleLockedTiles}
+              {...hint(
+                lockedTiles
+                  ? "Dragging a tile's edge resizes every tile. Untick to resize tiles one at a time."
+                  : "Dragging a tile's edge resizes only that tile, and the others wrap around it. Tick to resize them all together again.",
+              )}
+            >
+              Resize tiles together
+            </DropdownMenuCheckboxItem>
+          )}
+
           {gridMode && (
             <DropdownMenuItem
               disabled={!sizeIsPinned}
