@@ -46,7 +46,7 @@ export function AboutDialog({
               size="sm"
               onClick={() => void openDonatePage()}
             >
-              <HeartIcon />
+              <HeartIcon className="fill-red-500 text-red-500" />
               Donate
             </Button>
           </div>
