@@ -785,7 +785,8 @@ export const SECTIONS: HelpSection[] = [
               already open, you are asked whether the new ones go at the front
               or the end. Hover a template for <Nav>edit</Nav>,{" "}
               <Nav>duplicate</Nav> and <Nav>delete</Nav>: edit and duplicate open
-              it on the <Nav>Templates</Nav> tab, and a duplicate is not saved
+              it on the <Nav>Templates</Nav> tab. A duplicate arrives named
+              with the next free number (<Nav>Name 02</Nav>) and is not saved
               until you save it there. Drag the grip to change the order, which
               is the same order as the Hosts tab's template list.
             </li>

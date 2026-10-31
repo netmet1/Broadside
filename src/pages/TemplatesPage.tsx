@@ -292,10 +292,13 @@ export function TemplatesPage({
       );
     } else if (focus.copyOf) {
       // A copy, not yet saved: no id, so the button says Create, and measured
-      // against an empty draft so leaving it behind asks first. The name is
-      // kept as it is; saving numbers it ("Morning check 02") and the editor
-      // shows the name it got. Startup is off, since only one template can
-      // open at startup and a copy must not take that from the original.
+      // against an empty draft so leaving it behind asks first. The name
+      // arrives already numbered ("Morning check 02", see copyName), so the
+      // editor shows what will be saved; if that name is taken by the time it
+      // is, saving numbers it on and the editor shows the name it got.
+      // Startup is off, since only one template can open at startup and a
+      // copy must not take that from the original.
+
       const { name, color, items } = focus.copyOf;
       replaceDraft(
         { id: null, name, color, items, startup: "off" },

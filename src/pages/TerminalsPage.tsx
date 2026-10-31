@@ -96,6 +96,7 @@ import { useRowDrag } from "@/lib/useRowDrag";
 import { ProfileLauncherList } from "@/pages/terminals/ProfileLauncherList";
 import { TemplateLauncherList } from "@/pages/terminals/TemplateLauncherList";
 import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
+import { copyName } from "@/pages/templates/copyName";
 import { useProfileActions } from "@/lib/useProfileActions";
 import { useGridLayout } from "@/pages/terminals/useGridLayout";
 import { useGridResize } from "@/pages/terminals/useGridResize";
@@ -2298,8 +2299,18 @@ export function TerminalsPage({
                           onDuplicate={(t) => {
                             cancelDeleteHint();
                             setShellMenuOpen(false);
-                            onDuplicateTemplate(t);
+                            // Named as it will be saved ("Name 02"), from the
+                            // list this menu has just read, so the editor does
+                            // not show the original's name on a copy.
+                            onDuplicateTemplate({
+                              ...t,
+                              name: copyName(
+                                t.name,
+                                launcherTemplates.templates.map((x) => x.name),
+                              ),
+                            });
                           }}
+
                           onDeleteClick={hintDeleteGesture}
                           onDeleteRequest={(t) => {
                             cancelDeleteHint();
