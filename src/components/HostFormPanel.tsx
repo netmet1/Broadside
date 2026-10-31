@@ -3,12 +3,13 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { EyeIcon, EyeOffIcon, FolderOpenIcon, LockIcon } from "lucide-react";
+import { FolderOpenIcon, LockIcon } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SecretInput } from "@/components/SecretInput";
 import { allTags } from "@/lib/hostTags";
 import {
   capabilityIsWarning,
@@ -403,6 +404,11 @@ export function HostFormPanel({
   // Named in the reconnect-check note, so it follows the field as it is typed:
   // a host on a non-standard port should not be told its panes will probe 22.
   const portValue = watch("port");
+  // What the secret boxes hold, for their colouring while shown: they are
+  // registered, so there is no value prop to read it from.
+  const passwordValue = watch("password") ?? "";
+  const keyPassphraseValue = watch("keyPassphrase") ?? "";
+  const sudoPasswordValue = watch("sudoPassword") ?? "";
 
   const hasSudo = host?.has_sudo_password ?? false;
   // Whether the effective auth method is password (so "same as SSH
@@ -922,27 +928,14 @@ export function HostFormPanel({
               {authMethod === "password" && (
                 <div className="grid max-w-md gap-1">
                   <Label htmlFor="password">Password</Label>
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      {...register("password")}
-                      className="pr-9"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      tabIndex={-1}
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                    >
-                      {showPassword ? (
-                        <EyeOffIcon className="h-4 w-4" />
-                      ) : (
-                        <EyeIcon className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
+                  <SecretInput
+                    id="password"
+                    noun="password"
+                    shown={showPassword}
+                    onShownChange={setShowPassword}
+                    text={passwordValue}
+                    {...register("password")}
+                  />
                 </div>
               )}
 
@@ -995,31 +988,15 @@ export function HostFormPanel({
                           : "(optional, only if the key is encrypted)"}
                       </span>
                     </Label>
-                    <div className="relative">
-                      <Input
-                        id="keyPassphrase"
-                        type={showKeyPassphrase ? "text" : "password"}
-                        {...register("keyPassphrase")}
-                        className={`pr-9 ${errors.keyPassphrase ? "border-destructive" : ""}`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowKeyPassphrase((v) => !v)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        tabIndex={-1}
-                        aria-label={
-                          showKeyPassphrase
-                            ? "Hide passphrase"
-                            : "Show passphrase"
-                        }
-                      >
-                        {showKeyPassphrase ? (
-                          <EyeOffIcon className="h-4 w-4" />
-                        ) : (
-                          <EyeIcon className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
+                    <SecretInput
+                      id="keyPassphrase"
+                      noun="passphrase"
+                      shown={showKeyPassphrase}
+                      onShownChange={setShowKeyPassphrase}
+                      text={keyPassphraseValue}
+                      {...register("keyPassphrase")}
+                      className={errors.keyPassphrase ? "border-destructive" : ""}
+                    />
                     {/* Always rendered so this cell matches the Key file
                         cell's height, otherwise the 2-col grid stretches this
                         cell and the input drifts down (H13). */}
@@ -1101,32 +1078,15 @@ export function HostFormPanel({
           )}
           {!adminLocked && sudoEditing && (
             <div className="grid max-w-md gap-2">
-              <div className="relative">
-                <Input
-                  id="sudoPassword"
-                  type={showSudoPassword ? "text" : "password"}
-                  {...register("sudoPassword")}
-                  disabled={sudoSameAsLogin && passwordAuthEffective}
-                  className="pr-9"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSudoPassword((v) => !v)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  tabIndex={-1}
-                  aria-label={
-                    showSudoPassword
-                      ? "Hide sudo password"
-                      : "Show sudo password"
-                  }
-                >
-                  {showSudoPassword ? (
-                    <EyeOffIcon className="h-4 w-4" />
-                  ) : (
-                    <EyeIcon className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
+              <SecretInput
+                id="sudoPassword"
+                noun="sudo password"
+                shown={showSudoPassword}
+                onShownChange={setShowSudoPassword}
+                text={sudoPasswordValue}
+                {...register("sudoPassword")}
+                disabled={sudoSameAsLogin && passwordAuthEffective}
+              />
               {passwordAuthEffective && (
                 <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
                   <input

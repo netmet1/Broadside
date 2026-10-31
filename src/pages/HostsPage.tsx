@@ -1493,6 +1493,9 @@ export function HostsPage({
                   key={h.id}
                   {...hostDrag.rowProps(h.id)}
                   data-state={selectedIds.has(h.id) ? "selected" : undefined}
+                  // Opens a terminal, the same as the row's terminal button
+                  // (and a template row on the Templates side).
+                  onDoubleClick={() => handleOpenTerminal(h)}
                   className={cn(
                     "group",
                     hostDrag.isDragging(h.id) && "opacity-40",
@@ -1510,6 +1513,7 @@ export function HostsPage({
                       className="accent-primary align-middle"
                       checked={selectedIds.has(h.id)}
                       onChange={() => toggleSelected(h.id)}
+                      onDoubleClick={(e) => e.stopPropagation()}
                       aria-label={`Select ${h.label}`}
                     />
                     <RowGrip
@@ -1527,7 +1531,12 @@ export function HostsPage({
                   {colOrder.map((id) => (
                     <Fragment key={id}>{bodyCell(h, id)}</Fragment>
                   ))}
-                  <TableCell className="text-right">
+                  <TableCell
+                    className="text-right"
+                    // The buttons are not the row: double-clicking one must
+                    // not also open a terminal.
+                    onDoubleClick={(e) => e.stopPropagation()}
+                  >
                     {hiddenCols.size > 0 && (
                       <Button
                         variant="ghost"
@@ -1544,7 +1553,9 @@ export function HostsPage({
                       size="icon-sm"
                       onClick={() => handleOpenTerminal(h)}
                       aria-label="Open terminal"
-                      {...hint(`Open a terminal tab on ${h.label}`)}
+                      {...hint(
+                        `Open a terminal tab on ${h.label}. Double-clicking the row does the same`,
+                      )}
                     >
                       <TerminalIcon />
                     </Button>

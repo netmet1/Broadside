@@ -1,6 +1,6 @@
 [package]
 name = "broadside"
-version = "1.4.0"
+version = "1.5.0"
 description = "Desktop SSH broadcast console for Windows and macOS"
 authors = ["netmet1"]
 license = "GPL-3.0-only"
@@ -28,7 +28,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
@@ -81,6 +80,11 @@ serialport = { version = "4", default-features = false }
 # Local-side deletes go to the Recycle Bin / Trash (recoverable) rather than
 # std::fs permanent removal. Windows shell bindings and NSFileManager, no C deps.
 trash = "5"
+# Opens the About dialog's Donate page in the default browser. It replaced
+# tauri-plugin-opener, whose Linux build pulled in zbus 5 (zvariant and
+# zbus_names, flagged unmaintained by RustSec) for one link; this is the crate
+# the plugin itself used underneath.
+open = "5"
 
 # The terminal's right-click paste on macOS. WKWebView puts a "Paste" button in
 # front of navigator.clipboard.readText() whenever the text came from another

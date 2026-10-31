@@ -14,6 +14,7 @@ import {
   loadSessionPrefs,
   saveIdleEnabled,
   saveIdleSecs,
+  saveControlsAutoHide,
   saveKeepalive,
   saveRightClickToProgram,
 } from "@/lib/sessionPrefs";
@@ -44,7 +45,7 @@ export function SessionsSection({ id }: { id: string }) {
     <section id={id} className="space-y-4">
       <SectionHeading
         title="Sessions"
-        hint="How long an idle terminal is kept open, whether the connection is kept warm, and what a right-click does."
+        hint="How long an idle terminal is kept open, whether the connection is kept warm, what a right-click does, and whether the Terminals controls row tucks away."
       />
       <div className="grid max-w-md gap-4">
         <div className="grid gap-1.5">
@@ -137,6 +138,32 @@ export function SessionsSection({ id }: { id: string }) {
             if a right-click in one of those programs should paste.
           </p>
         </div>
+
+        <div className="grid gap-1.5">
+          <Label>Controls row</Label>
+          <label
+            className="flex cursor-pointer items-center gap-2 text-sm"
+            {...hint(
+              "Off keeps the Terminals controls row on screen all the time",
+            )}
+          >
+            <input
+              type="checkbox"
+              className="accent-primary"
+              checked={prefs.controlsAutoHide}
+              onChange={(e) => saveControlsAutoHide(e.target.checked)}
+            />
+            Hide the Terminals controls until the pointer reaches them
+          </label>
+          <p className="text-xs text-muted-foreground">
+            The row with Tabs, Grid, View, Sessions and <strong>+</strong> slides
+            up out of the way, leaving a small tab at the top centre of the
+            Terminals tab. Point at the tab, or click it, to bring the row down;
+            Ctrl+Shift+T puts the keyboard in it. The row stays put while no
+            terminal is open. On by default.
+          </p>
+        </div>
+
       </div>
     </section>
   );

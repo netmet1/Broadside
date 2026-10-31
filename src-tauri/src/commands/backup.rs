@@ -13,6 +13,8 @@ use serde::Serialize;
 use tauri::State;
 
 use super::ssh::with_db;
+use crate::admin_lock::AdminLockState;
+use crate::credentials::CredentialState;
 use crate::db::{hosts as host_repo, DbState};
 use crate::error::{AppError, AppResult};
 
@@ -34,6 +36,10 @@ pub struct RestoreReport {
     /// shell picking again. Each one keeps the name of the terminal it wanted,
     /// so the launcher can say which shell to re-add.
     pub orphaned_custom_profiles: usize,
+    /// Hosts whose saved password, key passphrase and sudo password were
+    /// removed, because the backup dropped them or gave their id a different
+    /// address, port or user. See [`crate::db::restore`].
+    pub cleared_credentials: usize,
 }
 
 /// Online snapshot of the live database via `VACUUM INTO`, safe while the
@@ -101,8 +107,19 @@ pub fn backup_app_data(
 /// trusted host keys, startup commands and the security settings stay as they
 /// are on this machine. See [`crate::db::restore`] for what and why. No app
 /// restart is required.
+///
+/// Restoring replaces every host, so with an admin passcode set it needs the
+/// session unlocked, like Delete all hosts. Saved secrets that the file would
+/// re-file under another server are removed first; if the credential store is
+/// locked that cannot be done, and the restore is refused before anything
+/// changes.
 #[tauri::command]
-pub fn restore_app_data(path: String, state: State<'_, DbState>) -> AppResult<RestoreReport> {
+pub fn restore_app_data(
+    path: String,
+    state: State<'_, DbState>,
+    cred_state: State<'_, CredentialState>,
+    lock_state: State<'_, AdminLockState>,
+) -> AppResult<RestoreReport> {
     let src_path = PathBuf::from(&path);
     if !src_path.is_file() {
         return Err(AppError::InvalidInput(format!(
@@ -118,11 +135,25 @@ pub fn restore_app_data(path: String, state: State<'_, DbState>) -> AppResult<Re
         .0
         .lock()
         .map_err(|_| AppError::State("db mutex poisoned".into()))?;
+    crate::admin_lock::ensure_unlocked(&guard, &lock_state)?;
+    // Removed before the import, so a store that cannot remove them (the
+    // encrypted file, still locked) stops the restore with nothing changed,
+    // rather than leaving a secret filed under a server it was never for.
+    let stale = crate::db::restore::stale_credentials(&guard, &staged)?;
+    for id in &stale {
+        cred_state.clear_host(*id).map_err(|e| match e {
+            AppError::CredentialsLocked => AppError::InvalidInput(
+                "unlock your saved passwords first: this backup changes hosts that have some, and they have to be removed before it is restored".into(),
+            ),
+            other => other,
+        })?;
+    }
     let restored = crate::db::restore::import(&guard, &staged)?;
     Ok(RestoreReport {
         host_count: restored.host_count,
         cleared_startup_commands: restored.cleared_startup_commands,
         orphaned_custom_profiles: restored.orphaned_custom_profiles,
+        cleared_credentials: stale.len(),
     })
 }
 

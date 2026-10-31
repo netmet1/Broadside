@@ -47,6 +47,8 @@ import {
 import type { HelpSectionId } from "@/pages/help/sections";
 import { BroadcastPage } from "@/pages/BroadcastPage";
 import { TerminalsPage } from "@/pages/TerminalsPage";
+import { useWorkspaces } from "@/pages/terminals/useWorkspaces";
+import { cn } from "@/lib/utils";
 import {
   sessionLabel,
   type TermSession,
@@ -104,6 +106,15 @@ function App() {
   // duplicate suffix and pane order survive drag-reordering. Never resets.
   const seqRef = useRef(0);
   const nextSeq = useCallback(() => seqRef.current++, []);
+  // Which workspace each new tab lands in, and which one the Terminals tab
+  // shows. See pages/terminals/useWorkspaces.
+  const ws = useWorkspaces({ sessions, activeSessionId, setActiveSessionId });
+  const {
+    activeWorkspaceId,
+    create: createWorkspace,
+    adoptIfBlank,
+    removeEmpty: removeEmptyWorkspace,
+  } = ws;
   // Session ids with a live PTY connection (drives Hosts connected dots).
   const [connectedSessions, setConnectedSessions] = useState<Set<string>>(
     new Set(),
@@ -197,12 +208,13 @@ function App() {
       id: crypto.randomUUID(),
       type: "ssh",
       seq: nextSeq(),
+      workspaceId: activeWorkspaceId,
       host,
     };
     setSessions((prev) => [...prev, session]);
     setActiveSessionId(session.id);
     setPage("terminals");
-  }, [nextSeq]);
+  }, [nextSeq, activeWorkspaceId]);
 
   /** Adopt a skill run's live shell as a terminal tab. The tab reuses the
    * backend session id as its own, so the very shell the skill was driving (its
@@ -215,6 +227,7 @@ function App() {
         id: sessionId,
         type: "ssh",
         seq: nextSeq(),
+        workspaceId: activeWorkspaceId,
         host,
         adopted: true,
         adoptSnapshot: snapshot ?? undefined,
@@ -225,7 +238,7 @@ function App() {
       setActiveSessionId(sessionId);
       setPage("terminals");
     },
-    [nextSeq],
+    [nextSeq, activeWorkspaceId],
   );
 
   /** Open a terminal tab for every host at once (Hosts multi-select). */
@@ -235,12 +248,13 @@ function App() {
       id: crypto.randomUUID(),
       type: "ssh" as const,
       seq: nextSeq(),
+      workspaceId: activeWorkspaceId,
       host,
     }));
     setSessions((prev) => [...prev, ...newSessions]);
     setActiveSessionId(newSessions[0].id);
     setPage("terminals");
-  }, [nextSeq]);
+  }, [nextSeq, activeWorkspaceId]);
 
   /** A second tab on whatever this one is on: another session to the same host,
    * or another copy of the same local shell.
@@ -269,12 +283,14 @@ function App() {
               id: crypto.randomUUID(),
               type: "ssh",
               seq: nextSeq(),
+              workspaceId: from.workspaceId,
               host: from.host,
             }
           : {
               id: crypto.randomUUID(),
               type: "local",
               seq: nextSeq(),
+              workspaceId: from.workspaceId,
               shell: from.shell,
               cwd: from.cwd,
               startupCommand: from.startupCommand,
@@ -301,6 +317,7 @@ function App() {
         id: crypto.randomUUID(),
         type: "local",
         seq: nextSeq(),
+        workspaceId: activeWorkspaceId,
         shell,
         cwd: opts?.cwd,
         startupCommand: opts?.startupCommand,
@@ -312,7 +329,7 @@ function App() {
       setActiveSessionId(session.id);
       setPage("terminals");
     },
-    [nextSeq],
+    [nextSeq, activeWorkspaceId],
   );
 
   const handleConnectionChange = useCallback(
@@ -363,12 +380,18 @@ function App() {
 
   const closeSession = useCallback((id: string) => {
     setSessions((prev) => {
-      const idx = prev.findIndex((s) => s.id === id);
+      const closing = prev.find((s) => s.id === id);
       const next = prev.filter((s) => s.id !== id);
       setActiveSessionId((current) => {
-        if (current !== id) return current;
-        if (next.length === 0) return null;
-        return next[Math.min(idx, next.length - 1)].id;
+        if (current !== id || !closing) return current;
+        // The neighbour in the same workspace: the next one along has slid into
+        // this one's place. None left means the workspace has emptied, and
+        // useWorkspaces moves on to the next one.
+        const before = prev.filter((s) => s.workspaceId === closing.workspaceId);
+        const after = next.filter((s) => s.workspaceId === closing.workspaceId);
+        if (after.length === 0) return null;
+        const idx = before.findIndex((s) => s.id === id);
+        return after[Math.min(idx, after.length - 1)].id;
       });
       return next;
     });
@@ -385,7 +408,10 @@ function App() {
       if (next.length === prev.length) return prev;
       setActiveSessionId((current) => {
         if (current && !next.some((s) => s.id === current)) {
-          return next.length ? next[next.length - 1].id : null;
+          // The last one left in the workspace the closed tab was in.
+          const was = prev.find((s) => s.id === current)?.workspaceId;
+          const same = next.filter((s) => s.workspaceId === was);
+          return same.length ? same[same.length - 1].id : null;
         }
         return current;
       });
@@ -433,16 +459,34 @@ function App() {
 
   /** Turn a resolved plan into tabs. `connect` false makes every pane mount
    * onto its Reconnect button instead of opening a shell, which is what a
-   * template set to "open the tabs at startup" asks for. */
+   * template set to "open the tabs at startup" asks for.
+   *
+   * `place` is the front or end of the workspace on screen, or a new workspace
+   * named after `from` (the template). Opened into the shown workspace while
+   * that is still the empty, unnamed default, the workspace takes the
+   * template's name and colour, so the strip says what it holds once there are
+   * more. */
   const launchTemplate = useCallback(
-    (sessions: LaunchSession[], place: "front" | "end", connect: boolean) => {
+    (
+      sessions: LaunchSession[],
+      place: "front" | "end" | "new",
+      connect: boolean,
+      from?: { name: string; color: string },
+    ) => {
       if (sessions.length === 0) return;
+      let workspaceId = activeWorkspaceId;
+      if (place === "new") {
+        workspaceId = createWorkspace(from?.name, from?.color);
+      } else if (from) {
+        adoptIfBlank(from.name, from.color);
+      }
       const made: TermSession[] = sessions.map((s) =>
         s.type === "ssh"
           ? {
               id: crypto.randomUUID(),
               type: "ssh" as const,
               seq: nextSeq(),
+              workspaceId,
               host: s.host,
               startClosed: !connect,
             }
@@ -450,6 +494,7 @@ function App() {
               id: crypto.randomUUID(),
               type: "local" as const,
               seq: nextSeq(),
+              workspaceId,
               shell: s.shell,
               cwd: s.opts.cwd,
               startupCommand: s.opts.startupCommand,
@@ -462,10 +507,82 @@ function App() {
       setSessions((prev) =>
         place === "front" ? [...made, ...prev] : [...prev, ...made],
       );
+      // In a new workspace, this is also what brings it on screen.
       setActiveSessionId(made[0].id);
       setPage("terminals");
     },
-    [nextSeq],
+    [nextSeq, activeWorkspaceId, createWorkspace, adoptIfBlank],
+  );
+
+  /** Several templates' sessions, one after another, each into a workspace of
+   * its own: the dialog's New workspace with more than one template. */
+  const launchIntoWorkspaces = useCallback(
+    (
+      templates: { template: Template; count: number }[],
+      sessions: LaunchSession[],
+    ) => {
+      let at = 0;
+      for (const { template, count } of templates) {
+        const slice = sessions.slice(at, at + count);
+        at += count;
+        launchTemplate(slice, "new", true, template);
+      }
+    },
+    [launchTemplate],
+  );
+
+  /** Move a tab to another workspace, or to a new one (`null`). The workspace
+   * on screen stays on screen: the tab leaves it, and if it was the selected
+   * one its neighbour takes over. */
+  const moveToWorkspace = useCallback(
+    (id: string, target: string | null) => {
+      const moving = sessions.find((s) => s.id === id);
+      if (!moving) return;
+      const to = target ?? createWorkspace();
+      if (to === moving.workspaceId) return;
+      if (activeSessionId === id) {
+        const same = sessions.filter(
+          (s) => s.workspaceId === moving.workspaceId,
+        );
+        const idx = same.findIndex((s) => s.id === id);
+        const rest = same.filter((s) => s.id !== id);
+        setActiveSessionId(
+          rest.length ? rest[Math.min(idx, rest.length - 1)].id : null,
+        );
+      }
+      setSessions((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, workspaceId: to } : s)),
+      );
+    },
+    [sessions, activeSessionId, createWorkspace],
+  );
+
+  /** How many tabs the workspace on screen holds, for the open-template
+   * dialog: with none, front and end are the same place. */
+  const activeWorkspaceCount = sessions.filter(
+    (s) => s.workspaceId === activeWorkspaceId,
+  ).length;
+  const activeWorkspace = ws.workspaces.find(
+    (w) => w.id === activeWorkspaceId,
+  );
+
+  /** Close a workspace: every tab in it, then the workspace itself, which
+   * useWorkspaces removes once it is empty. Closing a tab is what ends its
+   * shell, as everywhere else. */
+  const closeWorkspace = useCallback(
+    (id: string) => {
+      if (!sessions.some((s) => s.workspaceId === id)) {
+        removeEmptyWorkspace(id);
+        return;
+      }
+      if (
+        sessions.some((s) => s.id === activeSessionId && s.workspaceId === id)
+      ) {
+        setActiveSessionId(null);
+      }
+      setSessions((prev) => prev.filter((s) => s.workspaceId !== id));
+    },
+    [sessions, activeSessionId, removeEmptyWorkspace],
   );
 
   /**
@@ -566,7 +683,7 @@ function App() {
             plan.skipped.length === 0 &&
             plan.sessions.length <= BUSY_TEMPLATE_ITEMS
           ) {
-            launchTemplate(plan.sessions, "end", true);
+            launchTemplate(plan.sessions, "end", true, template);
             return;
           }
           setPendingLaunch({
@@ -640,6 +757,17 @@ function App() {
     setPage("templates");
   }, []);
 
+  /** The Terminals launcher's Duplicate: an unsaved copy in the editor, to be
+   * changed and then saved. Nothing is written until it is. */
+  const duplicateTemplate = useCallback((template: Template) => {
+    setTemplateFocus((f) => ({
+      template: null,
+      copyOf: template,
+      n: (f?.n ?? 0) + 1,
+    }));
+    setPage("templates");
+  }, []);
+
   const openHelpAt = useCallback((section: HelpSectionId) => {
     setHelpFocus(section);
     setPage("help");
@@ -698,6 +826,7 @@ function App() {
           ready.plan.sessions,
           "end",
           ready.t.startup === "connect",
+          ready.t,
         );
         if (ready.plan.skipped.length > 0) {
           toast.warning(
@@ -982,6 +1111,17 @@ function App() {
           onOpenHosts={openTerminals}
           onNewHost={openNewHost}
           onSaveAsTemplate={saveGridAsTemplate}
+          workspaces={ws.workspaces}
+          activeWorkspaceId={activeWorkspaceId}
+          onSwitchWorkspace={ws.switchTo}
+          onNewWorkspace={ws.createAndShow}
+          onRenameWorkspace={ws.rename}
+          onRecolorWorkspace={ws.recolor}
+          onCloseWorkspace={closeWorkspace}
+          onMoveToWorkspace={moveToWorkspace}
+          onOpenTemplate={openTemplate}
+          onEditTemplate={editTemplate}
+          onDuplicateTemplate={duplicateTemplate}
           onManageShortcuts={openShortcutSettings}
           onOpenSessionSettings={openSessionSettings}
         />
@@ -1045,18 +1185,25 @@ function App() {
           onUnlocked={() => {}}
         />
         {/* Opening a template when there is something to say first.
-            Three buttons rather than two when terminals are already open,
-            because "replace" is not one of the answers: a launch never closes
-            anything, so the only question is which end of the strip it lands
-            on. The arrangement will not match the template either way, and
-            saying so is the point of asking. */}
+            With terminals already open the question is where the new tabs go:
+            a workspace of their own, or the front or end of the one on screen.
+            "Replace" is not one of the answers, because a launch never closes
+            anything. With the workspace on screen empty, front and end are the
+            same place, so they become one Open here. */}
         <AlertDialog
           open={pendingLaunch !== null}
           onOpenChange={(o) => {
             if (!o) setPendingLaunch(null);
           }}
         >
-          <AlertDialogContent>
+          {/* Wider when it asks where the tabs go: four buttons do not fit
+              the default width, and the row ran out past the text above it
+              (smoke 77-1). Same variant as the default, so it replaces it. */}
+          <AlertDialogContent
+            className={cn(
+              pendingLaunch?.placement && "data-[size=default]:sm:max-w-lg",
+            )}
+          >
             <AlertDialogHeader>
               <AlertDialogTitle>
                 {(pendingLaunch?.templates.length ?? 0) > 1 ? (
@@ -1105,9 +1252,11 @@ function App() {
                     <p>
                       {sessions.length}{" "}
                       {sessions.length === 1 ? "terminal is" : "terminals are"}{" "}
-                      already open, so the grid will not look like the template
-                      did. Nothing is closed either way; choose which end the new
-                      tabs go on.
+                      already open.{" "}
+                      {activeWorkspaceCount > 0
+                        ? "Open the new tabs in a workspace of their own, or add them to the front or end of this one. "
+                        : "Open the new tabs in this empty workspace, or in a new one. "}
+                      Nothing is closed either way.
                     </p>
                   )}
                   {(pendingLaunch?.plan.skipped.length ?? 0) > 0 && (
@@ -1126,7 +1275,9 @@ function App() {
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogFooter>
+            {/* Buttons top-aligned, so the caption under the front and end
+                pair does not stretch Cancel and New workspace to its height. */}
+            <AlertDialogFooter className="sm:items-start">
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               {pendingLaunch?.placement && (
                 <AlertDialogAction
@@ -1134,21 +1285,87 @@ function App() {
                   onClick={() => {
                     const p = pendingLaunch;
                     setPendingLaunch(null);
-                    if (p) launchTemplate(p.plan.sessions, "front", true);
+                    if (!p) return;
+                    if (p.templates.length > 1) {
+                      launchIntoWorkspaces(p.templates, p.plan.sessions);
+                    } else {
+                      launchTemplate(
+                        p.plan.sessions,
+                        "new",
+                        true,
+                        p.templates[0]?.template,
+                      );
+                    }
                   }}
                 >
-                  Add to the front
+                  New workspace
                 </AlertDialogAction>
               )}
-              <AlertDialogAction
-                onClick={() => {
-                  const p = pendingLaunch;
-                  setPendingLaunch(null);
-                  if (p) launchTemplate(p.plan.sessions, "end", true);
-                }}
-              >
-                {pendingLaunch?.placement ? "Add to the end" : "Open"}
-              </AlertDialogAction>
+              {/* Front and end are both "into the workspace on screen", so
+                  once there is more than one workspace they say which, in a
+                  line under the pair. */}
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                  {pendingLaunch?.placement && activeWorkspaceCount > 0 && (
+                    <AlertDialogAction
+                      variant="outline"
+                      onClick={() => {
+                        const p = pendingLaunch;
+                        setPendingLaunch(null);
+                        if (p) launchTemplate(p.plan.sessions, "front", true);
+                      }}
+                    >
+                      Add to the front
+                    </AlertDialogAction>
+                  )}
+                  <AlertDialogAction
+                    onClick={() => {
+                      const p = pendingLaunch;
+                      setPendingLaunch(null);
+                      // One template opening into the empty, unnamed default
+                      // workspace names it; several do not pick one to name it.
+                      if (p) {
+                        launchTemplate(
+                          p.plan.sessions,
+                          "end",
+                          true,
+                          p.templates.length === 1
+                            ? p.templates[0]?.template
+                            : undefined,
+                        );
+                      }
+                    }}
+                  >
+                    {!pendingLaunch?.placement
+                      ? "Open"
+                      : activeWorkspaceCount > 0
+                        ? "Add to the end"
+                        : "Open here"}
+                  </AlertDialogAction>
+                </div>
+                {pendingLaunch?.placement &&
+                  ws.workspaces.length > 1 &&
+                  activeWorkspace && (
+                    <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                      into
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "inline-block h-2 w-2 shrink-0 rounded-full border border-border",
+                          !activeWorkspace.color && "border-dashed",
+                        )}
+                        style={
+                          activeWorkspace.color
+                            ? { backgroundColor: activeWorkspace.color }
+                            : undefined
+                        }
+                      />
+                      <span className="max-w-40 truncate font-medium text-foreground">
+                        {activeWorkspace.name}
+                      </span>
+                    </p>
+                  )}
+              </div>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

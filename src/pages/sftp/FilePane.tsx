@@ -52,6 +52,10 @@ function isDrivePath(side: PaneSide, path: string): boolean {
   return IS_MAC ? /^\/(Volumes\/[^/]+\/?)?$/.test(path) : /^[A-Za-z]:\\?$/.test(path);
 }
 
+/** How long a pause ends a type-to-jump search, so the next key starts a new
+ *  one. A second, as the Windows file list and the Mac Finder use. */
+const TYPE_AHEAD_MS = 1000;
+
 /** True when a key press is someone else's to handle: text is being typed,
  *  Enter is aimed at a focused button, or a dialog or menu is up. */
 function keyBelongsElsewhere(key: string): boolean {
@@ -217,35 +221,73 @@ export function FilePane({
   // Explorer: a single selection that scrolls into view. With nothing selected
   // yet, the first press lands on the first (or last) row.
   const listRef = useRef<HTMLUListElement>(null);
-  const moveSelection = (step: 1 | -1) => {
-    if (entries.length === 0) return;
-    const from = anchorRef.current;
-    const to =
-      from < 0
-        ? step === 1
-          ? 0
-          : entries.length - 1
-        : Math.min(entries.length - 1, Math.max(0, from + step));
+  const selectIndex = (to: number) => {
     anchorRef.current = to;
     setSelected(new Set([entries[to].path]));
     listRef.current
       ?.querySelector(`[data-row-index="${to}"]`)
       ?.scrollIntoView({ block: "nearest" });
   };
+  const moveSelection = (step: 1 | -1) => {
+    if (entries.length === 0) return;
+    const from = anchorRef.current;
+    selectIndex(
+      from < 0
+        ? step === 1
+          ? 0
+          : entries.length - 1
+        : Math.min(entries.length - 1, Math.max(0, from + step)),
+    );
+  };
+
+  // Type to jump, as in Explorer and the Finder: letters typed in quick
+  // succession build up a search, and the selection jumps to the first name
+  // that starts with it (or, failing that, has it anywhere in the name). A
+  // pause starts a new search. Typing the same letter again steps through
+  // the names that start with it.
+  const typeAheadRef = useRef({ text: "", at: 0 });
+  const typeAhead = (key: string) => {
+    if (entries.length === 0) return;
+    const now = Date.now();
+    const prev = typeAheadRef.current;
+    const text = (now - prev.at < TYPE_AHEAD_MS ? prev.text : "") + key.toLowerCase();
+    typeAheadRef.current = { text, at: now };
+    // "hhh" is the same as "h" pressed three times: move on to the next match.
+    // A longer search keeps the current row if it still matches.
+    const repeat = text.split("").every((c) => c === text[0]);
+    const needle = repeat ? text[0] : text;
+    const from = anchorRef.current;
+    const start = from < 0 ? 0 : from + (repeat ? 1 : 0);
+    const order = entries.map((_, i) => (start + i) % entries.length);
+    const name = (i: number) => entries[i].name.toLowerCase();
+    const hit =
+      order.find((i) => name(i).startsWith(needle)) ??
+      order.find((i) => name(i).includes(needle));
+    if (hit !== undefined) selectIndex(hit);
+  };
 
   // Keys act on the pane last clicked, while the Commander is on screen:
   // Backspace goes up, Enter opens the selected folder, F2 renames the selected
-  // entry, the arrows move the selection. Not while typing in a field, with a
-  // button focused (Enter belongs to the button), or while a dialog or menu is
-  // open.
+  // entry, the arrows move the selection, and a printable key types to jump.
+  // Not while typing in a field, with a button focused (Enter belongs to the
+  // button), or while a dialog or menu is open.
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (!["Backspace", "Enter", "F2", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+      // A space only counts inside a search that is already going, so it can
+      // match "my file" without a lone space doing anything.
+      const printable =
+        e.key.length === 1 &&
+        (e.key !== " " || Date.now() - typeAheadRef.current.at < TYPE_AHEAD_MS);
+      if (!printable && !["Backspace", "Enter", "F2", "ArrowUp", "ArrowDown"].includes(e.key)) {
+        return;
+      }
       if (keyBelongsElsewhere(e.key)) return;
       e.preventDefault();
-      if (e.key === "Backspace") {
+      if (printable) {
+        typeAhead(e.key);
+      } else if (e.key === "Backspace") {
         onUp();
       } else if (e.key === "Enter") {
         const entry = soleSelected();

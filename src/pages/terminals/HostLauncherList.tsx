@@ -4,7 +4,11 @@ import type { Host } from "@/lib/tauri/hosts";
 import { useHint } from "@/lib/status";
 import { isTintable } from "@/lib/terminalColors";
 import { cn } from "@/lib/utils";
-import { LauncherSectionHeader } from "@/pages/terminals/LauncherSection";
+import {
+  LauncherSectionHeader,
+  SectionDropLine,
+  type SectionDrag,
+} from "@/pages/terminals/LauncherSection";
 
 type Props = {
   hosts: Host[];
@@ -19,6 +23,8 @@ type Props = {
   count: number;
   open: boolean;
   onToggle: () => void;
+  /** Dragging the whole section to another place in the menu. */
+  sectionDrag?: SectionDrag;
   onOpen: (host: Host) => void;
   /** Go and add a host: the Hosts tab, with its form open. */
   onNew: () => void;
@@ -50,6 +56,7 @@ export function HostLauncherList({
   onToggle,
   onOpen,
   onNew,
+  sectionDrag,
 }: Props) {
   const hint = useHint();
   const showsRows = open && !loading && !error && hosts.length > 0;
@@ -57,12 +64,16 @@ export function HostLauncherList({
     // A flex item of the menu's column: it gives up height down to its header
     // and one row, and the list below is what shrinks (see TerminalsPage).
     <div
+      {...sectionDrag?.rowProps}
       className={cn(
-        "mt-1 flex flex-col border-t border-border/60 pt-1",
+        "relative mt-1 flex flex-col border-t border-border/60 pt-1",
+        sectionDrag?.dragging && "opacity-40",
         showsRows && "min-h-[5.25rem]",
       )}
     >
+      <SectionDropLine side={sectionDrag?.dropSide ?? null} />
       <LauncherSectionHeader
+        gripProps={sectionDrag?.gripProps}
         title="Hosts"
         count={loading ? null : hosts.length}
         open={open}

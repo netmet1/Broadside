@@ -20,7 +20,11 @@ import { useRowDrag } from "@/lib/useRowDrag";
 import { useShellColors } from "@/lib/useShellColors";
 import { FALLBACK_SHELL_KIND } from "@/lib/platform";
 import { cn } from "@/lib/utils";
-import { LauncherSectionHeader } from "@/pages/terminals/LauncherSection";
+import {
+  LauncherSectionHeader,
+  SectionDropLine,
+  type SectionDrag,
+} from "@/pages/terminals/LauncherSection";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 
 type Props = {
@@ -47,6 +51,8 @@ type Props = {
    * three sections share one stored preference. */
   open: boolean;
   onToggle: () => void;
+  /** Dragging the whole section to another place in the menu. */
+  sectionDrag?: SectionDrag;
 };
 
 /**
@@ -71,6 +77,7 @@ export function ProfileLauncherList({
   onReorder,
   open,
   onToggle,
+  sectionDrag,
 }: Props) {
   const hint = useHint();
   const shellColors = useShellColors();
@@ -89,12 +96,16 @@ export function ProfileLauncherList({
     // A flex item of the menu's column: it gives up height down to its header
     // and one row, and the list below is what shrinks (see TerminalsPage).
     <div
+      {...sectionDrag?.rowProps}
       className={cn(
-        "mt-1 flex flex-col border-t border-border/60 pt-1",
+        "relative mt-1 flex flex-col border-t border-border/60 pt-1",
+        sectionDrag?.dragging && "opacity-40",
         showsRows && "min-h-[4.75rem]",
       )}
     >
+      <SectionDropLine side={sectionDrag?.dropSide ?? null} />
       <LauncherSectionHeader
+        gripProps={sectionDrag?.gripProps}
         title="Profiles"
         count={loading ? null : profiles.length}
         open={open}

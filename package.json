@@ -1,7 +1,7 @@
 {
   "name": "broadside",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.5.0",
   "license": "GPL-3.0-only",
   "description": "Desktop SSH broadcast console for Windows and macOS (Tauri 2 + Rust + React)",
   "type": "module",
@@ -20,7 +20,6 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.3",
     "@tauri-apps/plugin-dialog": "^2.7.1",
-    "@tauri-apps/plugin-opener": "^2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-serialize": "0.14.0",
@@ -54,5 +53,8 @@
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.0.0",
     "vite": "^8.0.16"
+  },
+  "overrides": {
+    "minimatch": "^11.0.3"
   }
 }

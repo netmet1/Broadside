@@ -22,6 +22,8 @@ export type SshTermSession = {
   id: string;
   type: "ssh";
   seq: number;
+  /** The workspace the tab belongs to. See lib/useWorkspaces. */
+  workspaceId: string;
   /** Snapshot of the host at open time (rename/recolor mid-session is fine). */
   host: Host;
   /** This tab adopted a PTY a skill run already had open (its `id` is that
@@ -42,6 +44,8 @@ export type LocalTermSession = {
   id: string;
   type: "local";
   seq: number;
+  /** The workspace the tab belongs to. See lib/useWorkspaces. */
+  workspaceId: string;
   shell: LocalShell;
   /** Opened from a saved profile: its working directory, startup command, and
    * name (shown as the tab label so a profile tab is distinguishable from a

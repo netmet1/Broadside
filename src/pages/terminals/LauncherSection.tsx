@@ -1,50 +1,38 @@
-import type { ReactNode } from "react";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import type { HTMLAttributes, ReactNode } from "react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  GripVerticalIcon,
+} from "lucide-react";
 
 import { useHint } from "@/lib/status";
+import type { DropSide } from "@/lib/useRowDrag";
 import { cn } from "@/lib/utils";
 
 /**
- * The twisty that rolls a section of the Terminals "+" launcher away.
- *
- * Icon-only, for the one header that is already a control of its own (the
- * "How many" row, which is a label and a number input). Everywhere else the
- * twisty and the section's name are one button; see
- * {@link LauncherSectionHeader}.
+ * What a launcher section needs to be dragged into another place in the menu:
+ * the props for its outer element and for the grip on its header, and where
+ * the drop line goes. Built by the page from one `useRowDrag` over the
+ * sections, the same hook the rows inside them use.
  */
-export function LauncherTwisty({
-  open,
-  onToggle,
-  label,
-  hintText,
-  className,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  /** What the section is called, for the screen-reader label only. */
-  label: string;
-  hintText: string;
-  className?: string;
-}) {
-  const hint = useHint();
+export type SectionDrag = {
+  rowProps: HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
+  gripProps: HTMLAttributes<HTMLSpanElement>;
+  dropSide: DropSide | null;
+  dragging: boolean;
+};
+
+/** The line a dragged section will land at, drawn on the section's edge. */
+export function SectionDropLine({ side }: { side: DropSide | null }) {
+  if (!side) return null;
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={open}
-      aria-label={`${open ? "Collapse" : "Expand"} ${label}`}
-      {...hint(hintText)}
+    <span
+      aria-hidden="true"
       className={cn(
-        "shrink-0 rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground",
-        className,
+        "pointer-events-none absolute inset-x-1 h-0.5 rounded-full bg-primary",
+        side === "before" ? "-top-px" : "-bottom-px",
       )}
-    >
-      {open ? (
-        <ChevronDownIcon className="h-3.5 w-3.5" />
-      ) : (
-        <ChevronRightIcon className="h-3.5 w-3.5" />
-      )}
-    </button>
+    />
   );
 }
 
@@ -64,6 +52,7 @@ export function LauncherSectionHeader({
   open,
   onToggle,
   hintText,
+  gripProps,
   children,
 }: {
   title: string;
@@ -72,11 +61,25 @@ export function LauncherSectionHeader({
   open: boolean;
   onToggle: () => void;
   hintText: string;
+  /** The grip that drags the whole section to another place in the menu. */
+  gripProps?: HTMLAttributes<HTMLSpanElement>;
   children?: ReactNode;
 }) {
   const hint = useHint();
   return (
-    <div className="flex shrink-0 items-center justify-between gap-1 px-1.5 py-1">
+    <div className="group/header flex shrink-0 items-center justify-between gap-1 py-1 pl-0.5 pr-1.5">
+      {gripProps && (
+        <span
+          aria-hidden="true"
+          {...gripProps}
+          className="shrink-0 cursor-grab rounded p-0.5 text-muted-foreground opacity-0 group-hover/header:opacity-100 active:cursor-grabbing"
+          {...hint(
+            "Drag to move this whole section up or down the menu. The order is kept across restarts",
+          )}
+        >
+          <GripVerticalIcon className="h-3.5 w-3.5" />
+        </span>
+      )}
       <button
         type="button"
         onClick={onToggle}

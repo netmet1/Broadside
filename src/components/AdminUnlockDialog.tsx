@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/components/SecretInput";
 import { Label } from "@/components/ui/label";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { verifyAdminPasscode } from "@/lib/tauri/settings";
@@ -63,9 +63,9 @@ export function AdminUnlockDialog({ open, onOpenChange, onUnlocked }: Props) {
         </DialogHeader>
         <div className="grid gap-2">
           <Label htmlFor="admin-passcode">Admin passcode</Label>
-          <Input
+          <SecretInput
             id="admin-passcode"
-            type="password"
+            noun="passcode"
             value={passcode}
             onChange={(e) => setPasscode(e.target.value)}
             onKeyDown={(e) => {

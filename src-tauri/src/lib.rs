@@ -87,7 +87,6 @@ pub fn run() {
         .on_menu_event(macos_menu::on_event);
 
     builder
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         // Remember the window size, position and maximized state across restarts
         // (saved on exit, restored on launch). The recenter check in setup below
@@ -191,6 +190,7 @@ pub fn run() {
             commands::hosts::export_hosts,
             commands::hosts::path_is_file,
             commands::hosts::check_private_key,
+            commands::about::open_donate_page,
             commands::help::help_pdf_available,
             commands::help::export_help_pdf,
             commands::credentials::set_host_credentials,

@@ -1,5 +1,6 @@
 /**
- * Drag a grid tile's edge to set the tile size for the whole grid.
+ * Drag a grid tile's edge to set the tile size: for the whole grid while the
+ * tiles are locked together (the default), for that tile alone when not.
  *
  * The drag sets the size for this session only (see `dragSize` in
  * useGridLayout): it does not touch the Settings -> Grid numbers and it is gone
@@ -26,8 +27,15 @@ import { TILE_BORDER_X, TILE_BORDER_Y } from "@/pages/terminals/useGridLayout";
  * height, and the corner sets both at once. */
 export type ResizeAxis = "x" | "y" | "both";
 
+/** The tile being dragged and its size in characters when the drag began. */
+export type ResizeTarget = {
+  id: string;
+  start: { cols: number; rows: number };
+};
+
 type Drag = {
   axis: ResizeAxis;
+  target: ResizeTarget;
   /** Tile size in px when the drag started, plus the pointer position, so the
    * new size tracks the pointer's total travel rather than accumulating
    * per-event deltas (which drift). */
@@ -36,6 +44,25 @@ type Drag = {
   startX: number;
   startY: number;
 };
+
+/** A tile width in px as whole characters, within the Settings limits. */
+function toCols(px: number, cellW: number): number {
+  return Math.min(
+    GRID_ITEM_COLS_MAX,
+    Math.max(GRID_ITEM_COLS_MIN, Math.round((px - TILE_BORDER_X) / cellW)),
+  );
+}
+
+/** A tile height in px as whole rows, after its title bar, within the limits. */
+function toRows(px: number, cellH: number, headerH: number): number {
+  return Math.min(
+    GRID_ITEM_ROWS_MAX,
+    Math.max(
+      GRID_ITEM_ROWS_MIN,
+      Math.round((px - headerH - TILE_BORDER_Y) / cellH),
+    ),
+  );
+}
 
 export function useGridResize({
   cell,
@@ -48,9 +75,10 @@ export function useGridResize({
    * is divided into rows. Comes from the layout rather than a constant: it
    * scales with the app font, and it is zero when the titles are hidden. */
   headerH: number;
-  /** New tile width / height in characters, once a whole cell is crossed. */
-  onCols: (cols: number) => void;
-  onRows: (rows: number) => void;
+  /** New tile width / height in characters, once a whole cell is crossed, and
+   * which tile is being dragged. */
+  onCols: (cols: number, target: ResizeTarget) => void;
+  onRows: (rows: number, target: ResizeTarget) => void;
 }) {
   const [resizing, setResizing] = useState(false);
   const drag = useRef<Drag | null>(null);
@@ -63,7 +91,12 @@ export function useGridResize({
   });
 
   const begin = useCallback(
-    (e: React.MouseEvent, axis: ResizeAxis, tile: HTMLElement | null) => {
+    (
+      e: React.MouseEvent,
+      axis: ResizeAxis,
+      tile: HTMLElement | null,
+      id: string,
+    ) => {
       if (!tile) return;
       // Don't let the mousedown reach the tile, which would select that
       // terminal, or start a text selection.
@@ -72,6 +105,13 @@ export function useGridResize({
       const r = tile.getBoundingClientRect();
       drag.current = {
         axis,
+        target: {
+          id,
+          start: {
+            cols: toCols(r.width, cell.cellW),
+            rows: toRows(r.height, cell.cellH, headerH),
+          },
+        },
         startW: r.width,
         startH: r.height,
         startX: e.clientX,
@@ -80,7 +120,7 @@ export function useGridResize({
       lastSent.current = { cols: null, rows: null };
       setResizing(true);
     },
-    [],
+    [cell, headerH],
   );
 
   useEffect(() => {
@@ -90,31 +130,21 @@ export function useGridResize({
       const d = drag.current;
       if (!d) return;
       if (d.axis === "x" || d.axis === "both") {
-        const px = d.startW + (e.clientX - d.startX);
-        const cols = Math.min(
-          GRID_ITEM_COLS_MAX,
-          Math.max(
-            GRID_ITEM_COLS_MIN,
-            Math.round((px - TILE_BORDER_X) / cell.cellW),
-          ),
-        );
+        const cols = toCols(d.startW + (e.clientX - d.startX), cell.cellW);
         if (cols !== lastSent.current.cols) {
           lastSent.current.cols = cols;
-          onCols(cols);
+          onCols(cols, d.target);
         }
       }
       if (d.axis === "y" || d.axis === "both") {
-        const px = d.startH + (e.clientY - d.startY);
-        const rows = Math.min(
-          GRID_ITEM_ROWS_MAX,
-          Math.max(
-            GRID_ITEM_ROWS_MIN,
-            Math.round((px - headerH - TILE_BORDER_Y) / cell.cellH),
-          ),
+        const rows = toRows(
+          d.startH + (e.clientY - d.startY),
+          cell.cellH,
+          headerH,
         );
         if (rows !== lastSent.current.rows) {
           lastSent.current.rows = rows;
-          onRows(rows);
+          onRows(rows, d.target);
         }
       }
     };

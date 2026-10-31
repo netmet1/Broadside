@@ -21,6 +21,11 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  CharClassInput,
+  CharClassText,
+  SecretInput,
+} from "@/components/SecretInput";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -1464,8 +1469,12 @@ export function SettingsPage({
             variant="outline"
             size="sm"
             onClick={pickRestoreFile}
-            disabled={backingUp || restoring}
-            {...hint("Replace all current data with a backup .db file you choose")}
+            disabled={backingUp || restoring || adminLocked}
+            {...hint(
+              adminLocked
+                ? "Locked by the admin passcode; unlock in the Security section first"
+                : "Replace all current data with a backup .db file you choose",
+            )}
           >
             {restoring ? (
               <Loader2Icon className="animate-spin" />
@@ -1482,6 +1491,11 @@ export function SettingsPage({
           host keys and security settings are never taken from the file, but
           restore only a backup you made yourself.
         </p>
+        {adminLocked && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Restore is locked. Unlock in Settings → Security to enable it.
+          </p>
+        )}
       </section>
       )}
 
@@ -1701,23 +1715,23 @@ export function SettingsPage({
                 <Label htmlFor="pc-new">
                   {lockStatus?.lock_set ? "New passcode" : "Passcode"}
                 </Label>
-                <Input
+                <SecretInput
                   id="pc-new"
-                  type="password"
+                  noun="passcode"
                   value={pcNew}
                   onChange={(e) => setPcNew(e.target.value)}
-                  className="max-w-xs"
+                  wrapperClassName="max-w-xs"
                   autoComplete="new-password"
                 />
               </div>
               <div className="grid gap-1">
                 <Label htmlFor="pc-confirm">Confirm passcode</Label>
-                <Input
+                <SecretInput
                   id="pc-confirm"
-                  type="password"
+                  noun="passcode"
                   value={pcConfirm}
                   onChange={(e) => setPcConfirm(e.target.value)}
-                  className="max-w-xs"
+                  wrapperClassName="max-w-xs"
                   autoComplete="new-password"
                 />
               </div>
@@ -2007,7 +2021,7 @@ export function SettingsPage({
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border border-border/50 bg-muted/40 px-3 py-2 text-center font-mono text-sm tracking-wider">
-            {recoveryCode}
+            {recoveryCode && <CharClassText text={recoveryCode} />}
           </div>
           <DialogFooter>
             <Button
@@ -2041,19 +2055,20 @@ export function SettingsPage({
           <div className="grid gap-3">
             <div className="grid gap-1">
               <Label htmlFor="rec-code">Recovery code</Label>
-              <Input
+              <CharClassInput
                 id="rec-code"
+                coloured
                 value={recCode}
                 onChange={(e) => setRecCode(e.target.value)}
-                className="font-mono"
                 autoComplete="off"
+                spellCheck={false}
               />
             </div>
             <div className="grid gap-1">
               <Label htmlFor="rec-new">New passcode</Label>
-              <Input
+              <SecretInput
                 id="rec-new"
-                type="password"
+                noun="passcode"
                 value={recNewPc}
                 onChange={(e) => setRecNewPc(e.target.value)}
                 autoComplete="new-password"
