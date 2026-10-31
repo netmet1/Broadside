@@ -1,5 +1,4 @@
 import { HeartIcon } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 
 import {
   Dialog,
@@ -9,15 +8,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { openDonatePage } from "@/lib/tauri/about";
 import { useAppVersion } from "@/lib/useAppVersion";
-
-/** Ko-fi donations page; funnels from the About dialog's Donate button. */
-const DONATE_URL = "https://ko-fi.com/netmet";
 
 /**
  * About dialog (D-019): version, donations link, NOTICE reference.
- * The Donate button opens DONATE_URL in the default browser via the
- * Tauri opener plugin.
+ * The Donate button asks the backend to open the donations page in the
+ * default browser; the address lives there (`commands/about.rs`).
  */
 export function AboutDialog({
   open,
@@ -47,7 +44,7 @@ export function AboutDialog({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void openUrl(DONATE_URL)}
+              onClick={() => void openDonatePage()}
             >
               <HeartIcon />
               Donate

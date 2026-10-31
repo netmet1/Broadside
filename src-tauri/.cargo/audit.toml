@@ -9,4 +9,32 @@ ignore = [
     # private-key operations; not applicable to occasional client-side auth
     # signatures. Revisit at beta hardening (D-037).
     "RUSTSEC-2023-0071",
+
+    # The rest are RustSec "unmaintained" or "unsound" notices, not
+    # vulnerabilities, and none has a release to move to. Each was checked on
+    # 2026-10-31. cargo-deny already scopes unmaintained notices to direct
+    # dependencies (deny.toml), so only this file needs them.
+    #
+    # Tauri 2's Linux webview stack (GTK3 through muda and wry). Not compiled
+    # for Windows or macOS. glib's fix is 0.20, which needs the GTK4 move that
+    # only Tauri 3 makes (alpha as of this date). Revisit on Tauri 3.
+    "RUSTSEC-2024-0429", # glib 0.18: unsound VariantStrIter
+    "RUSTSEC-2024-0370", # proc-macro-error 1: glib-macros, compile time only
+    #
+    # unic-* via urlpattern 0.3 via tauri-utils 2, which matches the URL
+    # patterns in our own capability config. Every Tauri 2 release pins
+    # urlpattern 0.3. Revisit on Tauri 3.
+    "RUSTSEC-2025-0075", # unic-char-range
+    "RUSTSEC-2025-0080", # unic-common
+    "RUSTSEC-2025-0081", # unic-char-property
+    "RUSTSEC-2025-0098", # unic-ucd-version
+    "RUSTSEC-2025-0100", # unic-ucd-ident
+    #
+    # age 0.11's compile-time translation macros (i18n-embed-fl), which read
+    # age's own bundled i18n.toml while it builds; nothing at run time. age
+    # 0.12 swaps proc-macro-error2 for a maintained fork, but cannot build
+    # beside russh 0.61 yet (its ml-kem 0.2 needs the pre-release kem 0.3 API,
+    # russh's ml-kem 0.3 the final one). Revisit when age moves on.
+    "RUSTSEC-2026-0173", # proc-macro-error2
+    "RUSTSEC-2026-0374", # basic-toml
 ]

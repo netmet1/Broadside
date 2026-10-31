@@ -1,3 +1,4 @@
+pub mod about;
 pub mod audit;
 pub mod backup;
 pub mod broadcast;
