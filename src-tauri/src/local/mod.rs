@@ -94,7 +94,9 @@ pub struct CustomLaunch {
 /// Every other id is one of the platform's own shells, which the platform
 /// module launches the way that shell needs: in UTF-8 on Windows (see
 /// `windows::CHCP_UTF8_CMD`), as a login shell with a terminal environment on
-/// macOS. Custom terminals are left alone on both.
+/// macOS. A custom terminal's program and arguments are left alone on both,
+/// but on macOS it still gets the terminal environment: without `TERM` there,
+/// pwsh cannot redraw the line being typed.
 fn build_command(
     shell_id: &str,
     cwd: Option<&str>,
@@ -113,6 +115,8 @@ fn build_command(
         for a in &custom.args {
             c.arg(a);
         }
+        #[cfg(target_os = "macos")]
+        platform::set_terminal_env(&mut c);
         c
     } else if let Some(c) = platform::builtin_command(shell_id) {
         c
@@ -386,6 +390,26 @@ mod tests {
             );
             assert_eq!(cmd.get_env("TERM_PROGRAM"), None, "{}", shell.id);
         }
+    }
+
+    /// A custom terminal runs with exactly the arguments it was saved with (no
+    /// `-l` added), on the same terminal as the built-in shells. Smoke test 76:
+    /// pwsh from a Dock-launched app had no `TERM`, so its line editor could not
+    /// move the cursor and typing `ifc` printed `i> if> ifc`.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_custom_terminal_keeps_its_args_on_xterm() {
+        let custom = CustomLaunch {
+            exe_path: "/opt/homebrew/bin/pwsh".into(),
+            args: vec!["-NoLogo".into()],
+        };
+        let cmd = build_command("custom:7", None, Some(&custom)).unwrap();
+        assert_eq!(args_of(&cmd), vec!["-NoLogo"]);
+        assert_eq!(
+            cmd.get_env("TERM").and_then(|v| v.to_str()),
+            Some("xterm-256color")
+        );
+        assert_eq!(cmd.get_env("TERM_PROGRAM"), None);
     }
 
     /// The launcher sends a name, never a program: a path, or a shell this Mac

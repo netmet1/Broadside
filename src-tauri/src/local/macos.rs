@@ -121,16 +121,26 @@ const INHERITED_TERMINAL_VARS: [&str; 8] = [
 /// Dock gets launchd's bare PATH, and it is the login profile (`path_helper`
 /// in `/etc/zprofile`, Homebrew's `shellenv`) that puts the operator's tools on
 /// it. zsh, bash, sh, dash, ksh, csh, tcsh and fish all take `-l`.
-///
-/// The environment is the Mac's half of what `chcp 65001` is on Windows. A GUI
-/// app has no `TERM`, so curses programs would not know what they are drawing
-/// on, and usually no `LANG`, so a shell would treat every byte above 127 as
-/// unprintable and `╭─╮` would come out as escapes.
 pub(super) fn builtin_command(shell_id: &str) -> Option<CommandBuilder> {
     let name = shell_id.strip_prefix("unix:")?;
     let shell = shells().iter().find(|s| s.name == name)?;
     let mut c = CommandBuilder::new(&shell.path);
     c.arg("-l");
+    set_terminal_env(&mut c);
+    Some(c)
+}
+
+/// Tells a program what terminal it is running on, for the built-in shells and
+/// custom terminals alike: the terminal is Broadside's, whoever's program is in
+/// it. This is the Mac's half of what `chcp 65001` is on Windows.
+///
+/// A GUI app has no `TERM`, so curses programs would not know what they are
+/// drawing on, and PowerShell's line editor would have no way to move the
+/// cursor: every keystroke would print a fresh copy of the line after the old
+/// one (`i> if> ifc`) instead of redrawing it. It usually has no `LANG` either,
+/// so a shell would treat every byte above 127 as unprintable and `╭─╮` would
+/// come out as escapes.
+pub(super) fn set_terminal_env(c: &mut CommandBuilder) {
     c.env("TERM", "xterm-256color");
     c.env("COLORTERM", "truecolor");
     for var in INHERITED_TERMINAL_VARS {
@@ -142,7 +152,6 @@ pub(super) fn builtin_command(shell_id: &str) -> Option<CommandBuilder> {
     if !has_locale {
         c.env("LANG", utf8_locale());
     }
-    Some(c)
 }
 
 /// A UTF-8 locale in the operator's own language, `en_GB.UTF-8` for a British
