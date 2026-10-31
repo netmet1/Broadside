@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/components/SecretInput";
 import { Label } from "@/components/ui/label";
 import { errorMessage, unlockCredentials } from "@/lib/tauri/hosts";
 
@@ -61,9 +61,9 @@ export function UnlockDialog({ open, onOpenChange, onUnlocked }: Props) {
         </DialogHeader>
         <div className="grid gap-2">
           <Label htmlFor="master">Master password</Label>
-          <Input
+          <SecretInput
             id="master"
-            type="password"
+            noun="master password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => {

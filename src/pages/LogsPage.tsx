@@ -12,7 +12,7 @@ import {
 } from "@tauri-apps/plugin-dialog";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/components/SecretInput";
 import {
   Dialog,
   DialogContent,
@@ -1035,9 +1035,9 @@ export function LogsPage({ visible }: { visible: boolean }) {
           </DialogHeader>
           <div className="grid gap-1">
             <Label htmlFor="open-passphrase">Passphrase</Label>
-            <Input
+            <SecretInput
               id="open-passphrase"
-              type="password"
+              noun="passphrase"
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
               onKeyDown={(e) => {

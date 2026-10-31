@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { toast } from "sonner";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 
@@ -12,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/components/SecretInput";
 import { Label } from "@/components/ui/label";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { saveSession, type OtlogLine } from "@/lib/tauri/logs";
@@ -94,29 +93,15 @@ export function SaveSessionDialog({ open, onOpenChange, buildLines }: Props) {
             Passphrase{" "}
             <span className="text-xs text-muted-foreground">(optional)</span>
           </Label>
-          <div className="relative">
-            <Input
-              id="otlog-passphrase"
-              type={show ? "text" : "password"}
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              className="pr-9"
-              autoComplete="off"
-            />
-            <button
-              type="button"
-              onClick={() => setShow((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              tabIndex={-1}
-              aria-label={show ? "Hide passphrase" : "Show passphrase"}
-            >
-              {show ? (
-                <EyeOffIcon className="h-4 w-4" />
-              ) : (
-                <EyeIcon className="h-4 w-4" />
-              )}
-            </button>
-          </div>
+          <SecretInput
+            id="otlog-passphrase"
+            noun="passphrase"
+            shown={show}
+            onShownChange={setShow}
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.target.value)}
+            autoComplete="off"
+          />
         </div>
         <DialogFooter>
           <Button
