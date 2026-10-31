@@ -285,6 +285,11 @@ export type RestoreReport = {
    * than left holding an id that names one of this machine's own entries. Pick
    * the shell again in Edit once the entry is added. */
   orphaned_custom_profiles: number;
+  /** Hosts whose saved password, key passphrase and sudo password were
+   * removed, because the backup dropped them or gave them a different address,
+   * port or user. Saved secrets are filed per host, so keeping them would have
+   * handed them to whatever server the file named. */
+  cleared_credentials: number;
 };
 
 /** Restores a backup `.db` into the live database (hosts, history, skills,

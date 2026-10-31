@@ -2140,7 +2140,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored profile struck through after a restore profile lost its custom shell profile points at nothing which custom shell did it use name of the wanted shell remembered re-add the shell then edit has it chosen already backup from someone else untrusted backup file startup start page open on which tab first tab home greyed template holds startup panel table of contents left side section list highlight follows scroll jump to hidden narrow window profile table columns profiles columns hide shell folder startup command column restore warning disappeared too fast right-click right click mouse programs tmux claude code paste twice",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored profile struck through after a restore profile lost its custom shell profile points at nothing which custom shell did it use name of the wanted shell remembered re-add the shell then edit has it chosen already backup from someone else untrusted backup file restore removed my saved passwords host changed in the backup restore locked admin passcode startup start page open on which tab first tab home greyed template holds startup panel table of contents left side section list highlight follows scroll jump to hidden narrow window profile table columns profiles columns hide shell folder startup command column restore warning disappeared too fast right-click right click mouse programs tmux claude code paste twice",
     body: (
       <>
         <Lead>
@@ -2230,8 +2230,11 @@ export const SECTIONS: HelpSection[] = [
               clean-up, audit log and skill log location switches. Profile
               startup commands come back empty, and a profile that used a
               custom local shell comes back struck through: add the shell, then
-              open <Nav>Edit</Nav> on the profile and save it. A list of what
-              changed is shown once the app reloads, and kept in{" "}
+              open <Nav>Edit</Nav> on the profile and save it. A host the backup
+              leaves out, or gives a different address, port or user, loses its
+              saved passwords, so enter them again. With an admin passcode set,
+              unlock first. A list of what changed is shown once the app
+              reloads, and kept in{" "}
               <Nav>Logs</Nav> &rarr; <Nav>Toasts History</Nav>.
             </li>
             <li>
