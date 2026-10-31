@@ -159,7 +159,7 @@ export function SessionsSection({ id }: { id: string }) {
             The row with Tabs, Grid, View, Sessions and <strong>+</strong> slides
             up out of the way, leaving a small tab at the top centre of the
             Terminals tab. Point at the tab, or click it, to bring the row down;
-            Ctrl+Shift+T puts the keyboard in it. The row stays put while no
+            {keyLabel(SHORTCUTS.focusControls)} puts the keyboard in it. The row stays put while no
             terminal is open. On by default.
           </p>
         </div>

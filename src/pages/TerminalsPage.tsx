@@ -2595,7 +2595,7 @@ export function TerminalsPage({
             setStripDismissed(false);
           }}
           className="absolute left-1/2 top-full flex h-3 w-48 -translate-x-1/2 cursor-pointer items-center justify-center rounded-b-md border border-t-0 border-border bg-background/50 shadow-md transition-colors hover:bg-accent"
-          title="Hover or click here to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
+          title={`Hover or click here to show the controls, or press ${keyLabel(SHORTCUTS.focusControls)} to put the keyboard in them`}
         >
           <div className="h-1 w-24 rounded-full bg-muted-foreground/70" />
         </div>

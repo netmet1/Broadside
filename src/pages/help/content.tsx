@@ -841,7 +841,7 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Sessions</Nav> and the <Nav>plus button</Nav>) is tucked away
               behind a small tab at the top centre. Hover or click the tab to
               bring the row down; it goes back up once you have used it, and{" "}
-              <Nav>Ctrl+Shift+T</Nav> brings it down with the keyboard in it. To
+              <Nav><Keys k={SHORTCUTS.focusControls} /></Nav> brings it down with the keyboard in it. To
               keep it on screen, untick{" "}
               <Nav>Settings → Sessions → Controls row</Nav>.
             </li>
