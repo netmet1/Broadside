@@ -280,6 +280,12 @@ export function ProfilesView({
                   {...rowDrag.rowProps(p.id)}
                   data-state={selectedIds.has(p.id) ? "selected" : undefined}
                   onClick={() => onToggle(p.id)}
+                  // A double-click is two clicks first, so the tick goes on and
+                  // off again and is left as it was. A profile whose shell is
+                  // missing cannot open, as its greyed Open button says.
+                  onDoubleClick={() => {
+                    if (shell) onOpen(p);
+                  }}
                   className={cn(
                     "group cursor-pointer",
                     rowDrag.isDragging(p.id) && "opacity-40",
@@ -298,14 +304,16 @@ export function ProfilesView({
                       checked={selectedIds.has(p.id)}
                       onChange={() => onToggle(p.id)}
                       onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
                       aria-label={`Select ${p.label}`}
                     />
                   </TableCell>
                   <TableCell
                     className="px-0 text-center"
                     // A press beside the grip is still not a click on the
-                    // row's tick.
+                    // row's tick, nor a double-click to open.
                     onClick={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => e.stopPropagation()}
                   >
                     <RowGrip
                       gripProps={rowDrag.gripProps(p.id)}
@@ -326,7 +334,12 @@ export function ProfilesView({
                     <Fragment key={id}>{bodyCell(id)}</Fragment>
                   ))}
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
+                    <div
+                      className="flex justify-end gap-1"
+                      // The buttons are not the row: double-clicking one must
+                      // not also open the profile.
+                      onDoubleClick={(e) => e.stopPropagation()}
+                    >
                       {/* First, because it is the thing you came to do, and in
                           the same position as the Hosts side's terminal
                           button. Wrapped in a span so the hint still fires
@@ -357,7 +370,7 @@ export function ProfilesView({
                             ? hint(
                                 `Open "${p.label}" as a terminal tab: ${shell.label}${
                                   p.cwd ? ` in ${p.cwd}` : ""
-                                }`,
+                                }. Double-clicking the row does the same`,
                               )
                             : {})}
                         >
