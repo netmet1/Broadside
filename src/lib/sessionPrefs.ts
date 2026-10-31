@@ -9,6 +9,7 @@ const IDLE_SECS_KEY = "session-idle-timeout-secs";
 const IDLE_ON_KEY = "session-idle-timeout-on";
 const KEEPALIVE_KEY = "session-keepalive";
 const RIGHT_CLICK_KEY = "terminal-right-click-to-program";
+const CONTROLS_AUTOHIDE_KEY = "terminal-controls-autohide";
 
 /** Fired on this window whenever a session pref is written.
  *
@@ -59,6 +60,9 @@ export type SessionPrefs = {
   /** Whether a right-click goes to a program that has taken the mouse (tmux,
    * vim, Claude Code) instead of being our copy/paste. */
   rightClickToProgram: boolean;
+  /** Whether the Terminals controls row stays tucked away until the pointer
+   * reaches the tab at the top. */
+  controlsAutoHide: boolean;
 };
 
 function readInt(key: string, fallback: number): number {
@@ -85,7 +89,25 @@ export function loadSessionPrefs(): SessionPrefs {
     // very hard to tell apart from a broken network.
     keepalive: localStorage.getItem(KEEPALIVE_KEY) !== "0",
     rightClickToProgram: rightClickToProgram(),
+    controlsAutoHide: controlsAutoHide(),
   };
+}
+
+/**
+ * Whether the Terminals page's controls row (Tabs / Grid, broadcast, the eye,
+ * View, shortcuts, Sessions, "+") slides away until it is wanted. On by
+ * default, which is what was asked for: the row is somewhere to go and do one
+ * thing, and the height it takes belongs to the terminals the rest of the time.
+ * It works the way the grid's fullscreen strip does, with a tab at the top
+ * centre to hover.
+ */
+export function controlsAutoHide(): boolean {
+  return localStorage.getItem(CONTROLS_AUTOHIDE_KEY) !== "0";
+}
+
+export function saveControlsAutoHide(on: boolean): void {
+  localStorage.setItem(CONTROLS_AUTOHIDE_KEY, on ? "1" : "0");
+  announce();
 }
 
 /**
@@ -123,12 +145,14 @@ export function saveRightClickToProgram(on: boolean): void {
 }
 
 /** Puts them all back to what they ship as: no timeout, keepalive on, the
- * right-click to mouse programs. */
+ * right-click to mouse programs, the controls row tucked away. */
+
 export function resetSessionPrefs(): void {
   localStorage.removeItem(IDLE_SECS_KEY);
   localStorage.removeItem(IDLE_ON_KEY);
   localStorage.removeItem(KEEPALIVE_KEY);
   localStorage.removeItem(RIGHT_CLICK_KEY);
+  localStorage.removeItem(CONTROLS_AUTOHIDE_KEY);
   announce();
 }
 

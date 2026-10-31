@@ -97,6 +97,7 @@ import { useRowDrag } from "@/lib/useRowDrag";
 import { ProfileLauncherList } from "@/pages/terminals/ProfileLauncherList";
 import { TemplateLauncherList } from "@/pages/terminals/TemplateLauncherList";
 import { WorkspaceStrip } from "@/pages/terminals/WorkspaceStrip";
+import { useControlsAutoHide } from "@/pages/terminals/useControlsAutoHide";
 import type { Workspace } from "@/pages/terminals/useWorkspaces";
 import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
 import { copyName } from "@/pages/templates/copyName";
@@ -1009,12 +1010,26 @@ export function TerminalsPage({
   const [stripHover, setStripHover] = useState(false);
   const stripHoverRef = useRef(false);
   const stripTabRef = useRef<HTMLDivElement | null>(null);
+  // Outside fullscreen the same machinery can tuck away the controls row alone
+  // (Settings -> Sessions, on by default), leaving the tab strip where it is.
+  // Never while the workspace on screen has no terminal: the row holds the "+"
+  // that opens one, and an empty page with its only way forward hidden gives
+  // no sign of what to do next. Fullscreen gives the chrome back in that case
+  // for the same reason.
+  const controlsAutoHide = useControlsAutoHide();
+  const railTucked = controlsAutoHide && !gridFullscreen && sessions.length > 0;
+  const railRef = useRef<HTMLDivElement | null>(null);
+  // Whichever is sliding: the whole chrome in fullscreen, the controls row
+  // when tucked. Everything below that says "in fullscreen" about the strip
+  // holds for the tucked row too.
+  const stripSlides = gridFullscreen || railTucked;
   useEffect(() => {
-    if (!gridFullscreen) return;
+    if (!gridFullscreen && !railTucked) return;
     const onMove = (e: MouseEvent) => {
+      const strip = gridFullscreen ? chromeRef.current : railRef.current;
       const inside =
         e.clientY <= STRIP_REACH_PX &&
-        (pointInBox(chromeRef.current, e.clientX, e.clientY) ||
+        (pointInBox(strip, e.clientX, e.clientY) ||
           pointInBox(stripTabRef.current, e.clientX, e.clientY));
       if (inside === stripHoverRef.current) return;
       stripHoverRef.current = inside;
@@ -1032,7 +1047,7 @@ export function TerminalsPage({
       stripHoverRef.current = false;
       setStripHover(false);
     };
-  }, [gridFullscreen]);
+  }, [gridFullscreen, railTucked]);
   const chromeHasFocus = useCallback(
     () =>
       document.activeElement !== null &&
@@ -1158,7 +1173,7 @@ export function TerminalsPage({
         // off, then press Tab, and without this focus would walk along a strip
         // that had already slid away. Outside fullscreen the chrome is always
         // visible and ordinary Tab should stay ordinary, so nothing changes.
-        if (!gridFullscreen) return;
+        if (!stripSlides) return;
         setChromeKeyboard(true);
         setStripDismissed(false);
       }
@@ -1172,7 +1187,7 @@ export function TerminalsPage({
       e.preventDefault();
       items[e.shiftKey ? items.length - 1 : 0]?.focus();
     },
-    [chromeKeyboard, gridFullscreen],
+    [chromeKeyboard, stripSlides],
   );
 
   // Leaving Grid (or maximizing a pane) has to give the chrome back, or it
@@ -1193,7 +1208,8 @@ export function TerminalsPage({
   // clicked before it was. Outside fullscreen the flag does nothing, so it can
   // sit set for as long as it likes; this is only so it cannot be found still
   // set on the way back in.
-  if (!gridFullscreen && stripDismissed) setStripDismissed(false);
+  if (!stripSlides && stripDismissed) setStripDismissed(false);
+
 
   // Drag-to-reorder tab state: the session being dragged and the tab it's
   // currently hovering over (drives the drop-indicator border).
@@ -1804,6 +1820,16 @@ export function TerminalsPage({
     }
     setCloseAllOpen(false);
   };
+  // And the same across every workspace, offered once there are two. Always
+  // asks: it reaches tabs that are not on screen.
+  const [closeEverywhereOpen, setCloseEverywhereOpen] = useState(false);
+  const closeEverywhere = () => {
+    for (const s of allSessions) {
+      ptyClose(s.id).catch(() => {});
+      onCloseSession(s.id);
+    }
+    setCloseEverywhereOpen(false);
+  };
 
   // Alt+Left/Right cycle through the open tabs (wrapping around the ends),
   // following the displayed tab order. The tabs on screen only: stepping onto a
@@ -1953,6 +1979,9 @@ export function TerminalsPage({
             // so where it landed has to be obvious; the default ring is a grey
             // at half opacity on a grey strip, and it was not.
             "terminal-chrome",
+            // Room at the top for the tucked controls row's tab, so it hangs
+            // in a gap of its own rather than over the first tab.
+            railTucked && "pt-2.5",
             // There used to be a `!gridFullscreen && "relative"` here, to give
             // the floating "+" something to hang its `top-full` on when the tab
             // strip was rolled up. The "+" is in the rail now and the rolled-up
@@ -2030,6 +2059,25 @@ export function TerminalsPage({
             gridFullscreen && !stripDismissed && "hover:translate-y-0",
           )}
         >
+      {/* The controls row, tucked away when Settings asks for it: the
+          fullscreen strip's slide, its three holders (the measured pointer,
+          an open menu, the keyboard sent here by Ctrl+Shift+T) and its click
+          latch, applied to this row alone, so the tabs below stay put. See
+          the chrome above for why each holder is what it is. Out of the flow
+          while tucked, so the terminals get its height; it comes down over
+          the top of them. The page's scroll container clips it on the way up. */}
+      <div
+        ref={railRef}
+        data-chrome-keyboard={railTucked && chromeKeyboard ? "1" : undefined}
+        data-strip-hover={
+          railTucked && stripHover && !stripDismissed ? "1" : undefined
+        }
+        className={cn(
+          railTucked &&
+            "absolute inset-x-0 top-0 z-40 -translate-y-[calc(100%+1px)] bg-background shadow-lg transition-transform duration-150 data-chrome-keyboard:translate-y-0 has-[[data-state=open]]:translate-y-0 data-strip-hover:translate-y-0",
+          railTucked && !stripDismissed && "hover:translate-y-0",
+        )}
+      >
       <TerminalRail
         tabsCompact={tabsCompact}
         toggleTabsCompact={toggleTabsCompact}
@@ -2077,6 +2125,9 @@ export function TerminalsPage({
         onDisconnectAll={requestDisconnectAll}
         onCloseAll={() => setCloseAllOpen(true)}
         onNewWorkspace={onNewWorkspace}
+        workspaceCount={workspaces.length}
+        allSessionCount={allSessions.length}
+        onCloseAllWorkspaces={() => setCloseEverywhereOpen(true)}
         retryableCount={retryableIds.length}
         onReconnectAll={requestReconnectAll}
         onCloseFailed={requestCloseFailed}
@@ -2491,8 +2542,28 @@ export function TerminalsPage({
           </div>
         }
       />
+      {/* The tucked row's tab: the fullscreen one below, a little shorter,
+          because here it sits in a gap above the tabs rather than over a
+          terminal. Same click rule, for the same reason. */}
+      {railTucked && (
+        <div
+          ref={stripTabRef}
+          data-strip-tab=""
+          onClick={() => {
+            stripHoverRef.current = true;
+            setStripHover(true);
+            setStripDismissed(false);
+          }}
+          className="absolute left-1/2 top-full flex h-3 w-48 -translate-x-1/2 cursor-pointer items-center justify-center rounded-b-md border border-t-0 border-border bg-background/50 shadow-md transition-colors hover:bg-accent"
+          title="Hover or click here to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
+        >
+          <div className="h-1 w-24 rounded-full bg-muted-foreground/70" />
+        </div>
+      )}
+      </div>
 
       {/* Tab strip on its own line below the controls. The row itself does NOT
+
           scroll/clip, only the inner tab list does, so nothing opening
           downward out of a tab is clipped by an overflow container.
           (overflow-x:auto forces overflow-y to compute to auto too, which
@@ -3517,7 +3588,35 @@ export function TerminalsPage({
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={closeEverywhereOpen}
+        onOpenChange={setCloseEverywhereOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close all workspaces?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This closes{" "}
+              <span className="font-semibold text-foreground">
+                all {allSessions.length}
+              </span>{" "}
+              open terminal {allSessions.length === 1 ? "session" : "sessions"}{" "}
+              in all {workspaces.length} workspaces, including the ones not on
+              screen, and disconnects them. Any unsaved work in those shells is
+              lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={closeEverywhere}>
+              Close all workspaces
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <CloseOthersDialog closeOthers={closeOthers} shells={localShells} />
+
 
       {/* Not destructive, unlike the two dialogs either side of it: nothing is
           lost by saying yes, the cost is the size of the burst. So it is worded

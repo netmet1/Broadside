@@ -47,6 +47,7 @@ import type { HelpSectionId } from "@/pages/help/sections";
 import { BroadcastPage } from "@/pages/BroadcastPage";
 import { TerminalsPage } from "@/pages/TerminalsPage";
 import { useWorkspaces } from "@/pages/terminals/useWorkspaces";
+import { cn } from "@/lib/utils";
 import {
   sessionLabel,
   type TermSession,
@@ -560,6 +561,10 @@ function App() {
   const activeWorkspaceCount = sessions.filter(
     (s) => s.workspaceId === activeWorkspaceId,
   ).length;
+  const activeWorkspace = ws.workspaces.find(
+    (w) => w.id === activeWorkspaceId,
+  );
+
 
   /** Close a workspace: every tab in it, then the workspace itself, which
    * useWorkspaces removes once it is empty. Closing a tab is what ends its
@@ -1258,7 +1263,9 @@ function App() {
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogFooter>
+            {/* Buttons top-aligned, so the caption under the front and end
+                pair does not stretch Cancel and New workspace to its height. */}
+            <AlertDialogFooter className="sm:items-start">
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               {pendingLaunch?.placement && (
                 <AlertDialogAction
@@ -1282,42 +1289,71 @@ function App() {
                   New workspace
                 </AlertDialogAction>
               )}
-              {pendingLaunch?.placement && activeWorkspaceCount > 0 && (
-                <AlertDialogAction
-                  variant="outline"
-                  onClick={() => {
-                    const p = pendingLaunch;
-                    setPendingLaunch(null);
-                    if (p) launchTemplate(p.plan.sessions, "front", true);
-                  }}
-                >
-                  Add to the front
-                </AlertDialogAction>
-              )}
-              <AlertDialogAction
-                onClick={() => {
-                  const p = pendingLaunch;
-                  setPendingLaunch(null);
-                  // One template opening into the empty, unnamed default
-                  // workspace names it; several do not pick one to name it.
-                  if (p) {
-                    launchTemplate(
-                      p.plan.sessions,
-                      "end",
-                      true,
-                      p.templates.length === 1
-                        ? p.templates[0]?.template
-                        : undefined,
-                    );
-                  }
-                }}
-              >
-                {!pendingLaunch?.placement
-                  ? "Open"
-                  : activeWorkspaceCount > 0
-                    ? "Add to the end"
-                    : "Open here"}
-              </AlertDialogAction>
+              {/* Front and end are both "into the workspace on screen", so
+                  once there is more than one workspace they say which, in a
+                  line under the pair. */}
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                  {pendingLaunch?.placement && activeWorkspaceCount > 0 && (
+                    <AlertDialogAction
+                      variant="outline"
+                      onClick={() => {
+                        const p = pendingLaunch;
+                        setPendingLaunch(null);
+                        if (p) launchTemplate(p.plan.sessions, "front", true);
+                      }}
+                    >
+                      Add to the front
+                    </AlertDialogAction>
+                  )}
+                  <AlertDialogAction
+                    onClick={() => {
+                      const p = pendingLaunch;
+                      setPendingLaunch(null);
+                      // One template opening into the empty, unnamed default
+                      // workspace names it; several do not pick one to name it.
+                      if (p) {
+                        launchTemplate(
+                          p.plan.sessions,
+                          "end",
+                          true,
+                          p.templates.length === 1
+                            ? p.templates[0]?.template
+                            : undefined,
+                        );
+                      }
+                    }}
+                  >
+                    {!pendingLaunch?.placement
+                      ? "Open"
+                      : activeWorkspaceCount > 0
+                        ? "Add to the end"
+                        : "Open here"}
+                  </AlertDialogAction>
+                </div>
+                {pendingLaunch?.placement &&
+                  ws.workspaces.length > 1 &&
+                  activeWorkspace && (
+                    <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                      into
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "inline-block h-2 w-2 shrink-0 rounded-full border border-border",
+                          !activeWorkspace.color && "border-dashed",
+                        )}
+                        style={
+                          activeWorkspace.color
+                            ? { backgroundColor: activeWorkspace.color }
+                            : undefined
+                        }
+                      />
+                      <span className="max-w-40 truncate font-medium text-foreground">
+                        {activeWorkspace.name}
+                      </span>
+                    </p>
+                  )}
+              </div>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
