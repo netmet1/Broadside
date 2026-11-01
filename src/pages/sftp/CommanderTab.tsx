@@ -34,8 +34,6 @@ import {
   clashText,
   formatSize,
   isLargeTransfer,
-  localDirname,
-  localJoin,
   nameProblem,
 } from "@/pages/sftp/model";
 import {
@@ -58,9 +56,9 @@ type DirRequest = {
   direction: "put" | "get";
   path: string;
   name: string;
-  /** The local folder a download creates (the drop folder joined with
-   *  `name`); unused for an upload, which goes to the remote cwd. */
-  localDest: string;
+  /** The local folder a download lands in, as a `name` folder; unused for an
+   *  upload, which goes to the remote cwd. */
+  localDir: string;
   batch: TransferBatch;
 };
 
@@ -173,7 +171,7 @@ export function CommanderTab({
       } else {
         remote.downloadDir(
           { path: req.path, name: req.name },
-          req.localDest,
+          req.localDir,
           req.batch.mode,
           totals,
           req.batch,
@@ -254,7 +252,7 @@ export function CommanderTab({
         } else {
           remote.download(
             { path: item.path, name: item.name, size: item.size ?? undefined },
-            localJoin(localCwd ?? "", item.name),
+            localCwd ?? "",
             batch,
           );
         }
@@ -265,7 +263,7 @@ export function CommanderTab({
           direction,
           path: item.path,
           name: item.name,
-          localDest: localJoin(localCwd ?? "", item.name),
+          localDir: localCwd ?? "",
           batch,
         });
       }
@@ -617,7 +615,7 @@ export function CommanderTab({
                 <>
                   <span className="font-medium">download</span> the folder to{" "}
                   <span className="font-mono text-foreground">
-                    {localDirname(pendingDir?.localDest ?? "")}
+                    {pendingDir?.localDir}
                   </span>{" "}
                   on {WORDS.thisComputer}
                 </>

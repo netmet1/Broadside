@@ -241,7 +241,9 @@ pub async fn sftp_upload(
     Ok(transfer)
 }
 
-/// Downloads a remote file to the local path and audits the transfer. When a
+/// Downloads a remote file as `local_name` in the folder `local_dir`, and audits
+/// the transfer. The name is checked as a name before it is joined (see
+/// `sftp::download_destination`), because the remote host chose it. When a
 /// `transfer_id` is given, emits `sftp:transfer_progress` (keyed by it) as the
 /// file streams, so the broadcast tab can show a live byte progress bar.
 ///
@@ -254,7 +256,8 @@ pub async fn sftp_download(
     host_id: i64,
     session_id: String,
     remote_path: String,
-    local_path: String,
+    local_dir: String,
+    local_name: String,
     transfer_id: Option<String>,
     mode: TransferMode,
     app: AppHandle,
@@ -263,6 +266,9 @@ pub async fn sftp_download(
     audit: State<'_, AuditState>,
     errlog: State<'_, ErrLogState>,
 ) -> AppResult<FileTransfer> {
+    let local_path = sftp::download_destination(&local_dir, &local_name).inspect_err(|e| {
+        errlog.log("sftp_download", Some(host_id), None, &e.to_string());
+    })?;
     let on_progress = |bytes_done: u64| {
         if let Some(tid) = &transfer_id {
             let _ = app.emit(
@@ -376,14 +382,16 @@ pub async fn sftp_upload_dir(
     Ok(stats)
 }
 
-/// Recursively downloads a remote directory and audits the transfer. Emits
+/// Recursively downloads a remote directory as `local_name` in the folder
+/// `local_dir` (checked as for [`sftp_download`]) and audits the transfer. Emits
 /// `sftp:transfer_progress` events (keyed by `transfer_id`) as it runs.
 #[tauri::command]
 pub async fn sftp_download_dir(
     host_id: i64,
     session_id: String,
     remote_path: String,
-    local_path: String,
+    local_dir: String,
+    local_name: String,
     transfer_id: String,
     mode: TransferMode,
     app: AppHandle,
@@ -392,6 +400,9 @@ pub async fn sftp_download_dir(
     audit: State<'_, AuditState>,
     errlog: State<'_, ErrLogState>,
 ) -> AppResult<TransferStats> {
+    let local_path = sftp::download_destination(&local_dir, &local_name).inspect_err(|e| {
+        errlog.log("sftp_download_dir", Some(host_id), None, &e.to_string());
+    })?;
     let on_progress = |files_done: u64, bytes_done: u64| {
         let _ = app.emit(
             "sftp:transfer_progress",

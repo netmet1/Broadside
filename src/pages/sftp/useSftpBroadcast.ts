@@ -382,7 +382,6 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
         let skipped = 0;
         for (const e of matches) {
           const remoteItem = posixJoin(dir, e.name);
-          const localTarget = localJoin(destFolder, e.name);
           // Each file gets its own transfer id, but it's deliberately NOT mapped
           // in xferIdToHost: live progress events would overwrite the cumulative
           // filesDone/bytesDone we patch after each file with per-file values and
@@ -393,7 +392,8 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
               hostId: host.id,
               sessionId,
               remotePath: remoteItem,
-              localPath: localTarget,
+              localDir: destFolder,
+              localName: e.name,
               transferId,
               mode: cfg.mode,
             });
@@ -405,7 +405,8 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
               hostId: host.id,
               sessionId,
               remotePath: remoteItem,
-              localPath: localTarget,
+              localDir: destFolder,
+              localName: e.name,
               transferId,
               mode: cfg.mode,
             });
@@ -444,7 +445,6 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
       });
       const transferId = crypto.randomUUID();
       xferIdToHost.current.set(transferId, host.id);
-      const localTarget = localJoin(destFolder, baseName(src));
       if (entry.kind === "dir") {
         const totals = await sftpScanDir(sessionId, src);
         patch(host.id, { status: "running", filesTotal: totals.files, bytesTotal: totals.bytes });
@@ -452,7 +452,8 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
           hostId: host.id,
           sessionId,
           remotePath: src,
-          localPath: localTarget,
+          localDir: destFolder,
+          localName: baseName(src),
           transferId,
           mode: cfg.mode,
         });
@@ -469,7 +470,8 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
           hostId: host.id,
           sessionId,
           remotePath: src,
-          localPath: localTarget,
+          localDir: destFolder,
+          localName: baseName(src),
           transferId,
           mode: cfg.mode,
         });

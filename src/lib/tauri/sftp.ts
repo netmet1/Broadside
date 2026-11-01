@@ -104,14 +104,17 @@ export function sftpUpload(args: {
   });
 }
 
-/** Downloads a remote file to a local path. When `transferId` is given, emits
+/** Downloads a remote file as `localName` in the folder `localDir`. The two go
+ *  apart because the name is the remote host's, and the backend checks it as a
+ *  name before joining it. When `transferId` is given, emits
  *  `sftp:transfer_progress` (keyed by it) as the file streams, for a live byte
  *  progress bar. */
 export function sftpDownload(args: {
   hostId: number;
   sessionId: string;
   remotePath: string;
-  localPath: string;
+  localDir: string;
+  localName: string;
   transferId?: string;
   mode: TransferMode;
 }): Promise<FileTransfer> {
@@ -119,7 +122,8 @@ export function sftpDownload(args: {
     hostId: args.hostId,
     sessionId: args.sessionId,
     remotePath: args.remotePath,
-    localPath: args.localPath,
+    localDir: args.localDir,
+    localName: args.localName,
     transferId: args.transferId ?? null,
     mode: args.mode,
   });
@@ -190,13 +194,15 @@ export function sftpUploadDir(args: {
   });
 }
 
-/** Recursively downloads a remote directory; resolves with the transfer stats.
+/** Recursively downloads a remote directory as `localName` in `localDir` (apart
+ *  for the same reason as `sftpDownload`); resolves with the transfer stats.
  *  Emits `sftp:transfer_progress` events keyed by `transferId` as it runs. */
 export function sftpDownloadDir(args: {
   hostId: number;
   sessionId: string;
   remotePath: string;
-  localPath: string;
+  localDir: string;
+  localName: string;
   transferId: string;
   mode: TransferMode;
 }): Promise<TransferStats> {
@@ -204,7 +210,8 @@ export function sftpDownloadDir(args: {
     hostId: args.hostId,
     sessionId: args.sessionId,
     remotePath: args.remotePath,
-    localPath: args.localPath,
+    localDir: args.localDir,
+    localName: args.localName,
     transferId: args.transferId,
     mode: args.mode,
   });
