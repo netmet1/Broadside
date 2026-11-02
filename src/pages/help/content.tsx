@@ -2816,16 +2816,17 @@ export const SECTIONS: HelpSection[] = [
             <Bullets>
               <li>
                 A build that Apple has not notarized is stopped the first time
-                you open it, with a message that macOS cannot check it for
-                malicious software. That is not a detection: it only means the
-                app is not signed with an Apple developer certificate.
+                you open it, with a message that Apple could not verify
+                Broadside is free of malware. That is not a detection: it only
+                means the app is not signed with an Apple developer certificate.
               </li>
               <li>
-                Control-click Broadside in Applications and choose{" "}
-                <Nav>Open</Nav>, or open <Nav>System Settings</Nav> &rarr;{" "}
-                <Nav>Privacy &amp; Security</Nav> and click{" "}
-                <Nav>Open Anyway</Nav>. macOS remembers the answer for that
-                version.
+                Press <Nav>Done</Nav>, then open <Nav>System Settings</Nav>{" "}
+                &rarr; <Nav>Privacy &amp; Security</Nav>, scroll down to the
+                line about Broadside and click <Nav>Open Anyway</Nav>. Confirm
+                with your password or Touch ID. macOS remembers the answer for
+                that version. (Control-click &rarr; <Nav>Open</Nav> no longer
+                does this since macOS 15.)
               </li>
               <li>
                 Before you do, check the disk image's SHA-256 against the one

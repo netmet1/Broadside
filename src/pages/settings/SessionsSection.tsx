@@ -158,7 +158,7 @@ export function SessionsSection({ id }: { id: string }) {
           <p className="text-xs text-muted-foreground">
             The row with Tabs, Grid, View, Sessions and <strong>+</strong> slides
             up out of the way, leaving a small tab at the top centre of the
-            Terminals tab. Point at the tab, or click it, to bring the row down;
+            Terminals tab. Point at the tab, or click it, to bring the row down;{" "}
             {keyLabel(SHORTCUTS.focusControls)} puts the keyboard in it. The row stays put while no
             terminal is open. On by default.
           </p>

@@ -120,10 +120,12 @@ Download the latest `dmg` from the [Releases](../../releases) page, open it, and
 drag Broadside to Applications.
 
 A build that is not notarized by Apple is stopped the first time you open it, with
-a message that macOS cannot check it for malicious software. Control-click
-Broadside in Applications and choose `Open`, or open `System Settings` ->
-`Privacy & Security` and click `Open Anyway`. macOS then asks two things the first
-time they come up; allow both:
+a message that Apple could not verify Broadside is free of malware. That is not a
+detection: it only means the app is not signed with an Apple developer
+certificate. Press `Done`, then open `System Settings` -> `Privacy & Security`,
+scroll down to the line about Broadside and click `Open Anyway`, and confirm with
+your password or Touch ID. (Control-click -> `Open` no longer does this since
+macOS 15.) macOS then asks two things the first time they come up; allow both:
 
 - **Local Network**, the first time Broadside connects to a host on your own
   network. Without it, every LAN connection fails with `No route to host`.
