@@ -94,7 +94,9 @@ export function WorkspaceStrip({
 
   // The workspace on screen is always one you can see in the row: switched to
   // from a menu, brought forward by a tab, or just made with the "+". The least
-  // scroll that shows it whole, with a little of its neighbour.
+  // scroll that shows it whole, with a little of its neighbour. Not on a
+  // reorder, though: the row jumping away under the pointer the moment a
+  // workspace is dropped would undo the scrolling that got you there.
   useEffect(() => {
     const c = scrollRef.current;
     const t = chipRefs.current.get(activeId);
@@ -104,7 +106,7 @@ export function WorkspaceStrip({
     if (tr.left >= cr.left && tr.right <= cr.right) return;
     const delta = tr.left < cr.left ? tr.left - cr.left - 16 : tr.right - cr.right + 16;
     c.scrollTo({ left: c.scrollLeft + delta, behavior: "smooth" });
-  }, [activeId, workspaces]);
+  }, [activeId, workspaces.length]);
 
   const startRename = (w: Workspace) => {
     setDraft(w.name);
