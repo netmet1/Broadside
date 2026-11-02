@@ -23,6 +23,7 @@ pub mod skilllog;
 pub mod ssh;
 pub mod toastlog;
 
+use tauri::webview::PageLoadEvent;
 use tauri::Manager;
 use tauri_plugin_window_state::{StateFlags, WindowExt};
 
@@ -72,6 +73,27 @@ fn ensure_window_on_screen(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Closes every session the backend holds, when the main window's page starts
+/// loading. After the first load that is a reload (Restore from backup and
+/// Reset everything in Settings both do one). The new page starts with no tabs
+/// and knows none of the old session ids, so without this its SSH connections,
+/// local shells, serial ports, SFTP sessions and skill runs would carry on
+/// unseen until the app quit. On the first load nothing is open yet.
+///
+/// `try_state`, because the first page may start loading before `setup` has
+/// managed the state.
+fn close_every_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(runs) = app.try_state::<ssh::skill_run::state::SkillRunState>() {
+        runs.cancel_all();
+    }
+    if let Some(ptys) = app.try_state::<ssh::pty::PtyState>() {
+        ptys.close_all();
+    }
+    if let Some(sftp) = app.try_state::<ssh::sftp::SftpState>() {
+        sftp.close_all();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _tier = licensing::entitlement();
@@ -87,6 +109,11 @@ pub fn run() {
         .on_menu_event(macos_menu::on_event);
 
     builder
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main" && payload.event() == PageLoadEvent::Started {
+                close_every_session(webview.app_handle());
+            }
+        })
         .plugin(tauri_plugin_dialog::init())
         // Remember the window size, position and maximized state across restarts
         // (saved on exit, restored on launch). The recenter check in setup below
@@ -229,6 +256,7 @@ pub fn run() {
             commands::pty::pty_write_bytes,
             commands::pty::pty_resize,
             commands::pty::pty_close,
+            commands::pty::open_session_count,
             commands::pty::pty_history_add,
             commands::pty::pty_history_list,
             commands::pty::pty_history_clear,

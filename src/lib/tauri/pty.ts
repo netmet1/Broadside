@@ -67,6 +67,15 @@ export function ptyClose(sessionId: string): Promise<void> {
   return invoke<void>("pty_close", { sessionId });
 }
 
+/** What is open in the backend right now, on every tab: what a page reload
+ * closes. `terminals` counts every PTY session (SSH, local shell, serial and
+ * skill-run shells); `sftp` every SFTP connection. */
+export type OpenSessions = { terminals: number; sftp: number };
+
+export function openSessionCount(): Promise<OpenSessions> {
+  return invoke<OpenSessions>("open_session_count");
+}
+
 /** Base64-decoded terminal output for one session.
  *
  * The session is named here rather than checked by the caller, and the filter

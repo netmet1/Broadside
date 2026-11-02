@@ -329,6 +329,27 @@ pub fn pty_close(session_id: String, pty_state: State<'_, PtyState>) -> AppResul
     pty_state.close(&session_id)
 }
 
+/// What a page reload would close (see `close_every_session` in lib.rs), for
+/// the Settings dialogs that end in one to say so.
+#[derive(serde::Serialize)]
+pub struct OpenSessions {
+    /// Every PTY session: SSH, local shell, serial and skill-run shells, on
+    /// any tab.
+    pub terminals: usize,
+    pub sftp: usize,
+}
+
+#[tauri::command]
+pub fn open_session_count(
+    pty_state: State<'_, PtyState>,
+    sftp_state: State<'_, crate::ssh::sftp::SftpState>,
+) -> OpenSessions {
+    OpenSessions {
+        terminals: pty_state.count(),
+        sftp: sftp_state.count(),
+    }
+}
+
 /// Records one PTY-broadcast dispatch run for the persistent history (D-059).
 /// Also records the command in the shared recall history so Up/Down works the
 /// same as on the Broadcast tab.

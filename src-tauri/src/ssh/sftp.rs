@@ -275,6 +275,23 @@ impl SftpState {
             }
         }
     }
+
+    /// How many SFTP sessions are open.
+    pub fn count(&self) -> usize {
+        self.conns.lock().unwrap().len()
+    }
+
+    /// Stops every transfer and drops every session, as [`remove`](Self::remove)
+    /// does for one, and returns how many sessions there were. For a page
+    /// reload, which leaves the new page knowing none of the old ids.
+    pub fn close_all(&self) -> usize {
+        for flag in self.cancels.lock().unwrap().values() {
+            flag.store(true, Ordering::Relaxed);
+        }
+        let conns: Vec<Arc<SftpConn>> =
+            self.conns.lock().unwrap().drain().map(|(_, c)| c).collect();
+        conns.len()
+    }
 }
 
 /// dir → 0, symlink → 1, file → 2, so listings show folders first.
@@ -1444,5 +1461,17 @@ mod tests {
             assert!(download_destination(dir, bad).is_err(), "{bad:?} should be refused");
         }
         assert!(download_destination("", "report.csv").is_err());
+    }
+
+    /// A reload stops every transfer, whichever session it belongs to.
+    #[test]
+    fn close_all_stops_every_transfer() {
+        let state = SftpState::default();
+        let (_, one) = state.begin_transfer("s1", Some("t1"));
+        let (_, two) = state.begin_transfer("s2", None);
+        assert_eq!(state.close_all(), 0);
+        assert!(one.load(Ordering::Relaxed));
+        assert!(two.load(Ordering::Relaxed));
+        assert_eq!(state.count(), 0);
     }
 }

@@ -443,6 +443,23 @@ impl PtyState {
         }
         Ok(())
     }
+
+    /// How many sessions are open: SSH, local shell and serial alike.
+    pub fn count(&self) -> usize {
+        self.0.lock().unwrap().len()
+    }
+
+    /// Closes every session, the same way [`close`](Self::close) closes one,
+    /// and returns how many there were. For a page reload: the new page knows
+    /// none of the old ids, so nothing could ever close these otherwise.
+    pub fn close_all(&self) -> usize {
+        let entries: Vec<SessionEntry> =
+            self.0.lock().unwrap().drain().map(|(_, e)| e).collect();
+        for entry in &entries {
+            let _ = entry.tx.try_send(SessionCmd::Close);
+        }
+        entries.len()
+    }
 }
 
 /// Points the first-screen timer at whatever deadline the curtain is on.
@@ -907,5 +924,27 @@ mod pump_tests {
         // through the size cap, and it must not emit an empty payload.
         let mut slot = PumpSlot::default();
         assert!(slot.take_pending(Instant::now()).is_none());
+    }
+}
+
+#[cfg(test)]
+mod state_tests {
+    use super::*;
+
+    /// A reload closes every session at once: each task is told to close, and
+    /// the registry is left empty, so no old id can be written to again.
+    #[test]
+    fn close_all_closes_every_session_and_empties_the_registry() {
+        let state = PtyState::default();
+        let (_, mut a) = state.register("a".into());
+        let (_, mut b) = state.register("b".into());
+        assert_eq!(state.count(), 2);
+
+        assert_eq!(state.close_all(), 2);
+        assert_eq!(state.count(), 0);
+        assert!(matches!(a.try_recv(), Ok(SessionCmd::Close)));
+        assert!(matches!(b.try_recv(), Ok(SessionCmd::Close)));
+        assert!(state.write("a", b"x").is_err());
+        assert_eq!(state.close_all(), 0);
     }
 }

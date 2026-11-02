@@ -282,6 +282,15 @@ impl SkillRunState {
     pub fn is_active(&self, run_id: &str) -> bool {
         self.0.lock().unwrap().contains_key(run_id)
     }
+
+    /// Drops every run, as [`cancel`](Self::cancel) does for one: each engine
+    /// reads its closed control channel as an abort. Their shells are PTY
+    /// sessions, closed by `PtyState::close_all` alongside. For a page reload.
+    pub fn cancel_all(&self) -> usize {
+        let runs: Vec<RunEntry> =
+            self.0.lock().unwrap().drain().map(|(_, r)| r).collect();
+        runs.len()
+    }
 }
 
 #[cfg(test)]
@@ -479,5 +488,18 @@ mod tests {
         let _rx = state.register_host("run1", 7, "sess-7");
         assert!(state.detach("run1", 99).is_err());
         assert!(state.detach("nope", 7).is_err());
+    }
+
+    /// A reload drops every run: each engine's control channel closes, which
+    /// it reads as an abort.
+    #[test]
+    fn cancel_all_drops_every_run() {
+        let state = SkillRunState::default();
+        let mut one = state.register_host("run1", 7, "sess-7");
+        let mut two = state.register_host("run2", 8, "sess-8");
+        assert_eq!(state.cancel_all(), 2);
+        assert!(!state.is_active("run1") && !state.is_active("run2"));
+        assert!(one.try_recv().is_err() && two.try_recv().is_err());
+        assert_eq!(state.cancel_all(), 0);
     }
 }

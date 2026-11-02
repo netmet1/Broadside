@@ -91,6 +91,7 @@ import {
   PROFILE_ORDERABLE_COLUMNS,
 } from "@/lib/profileColumns";
 import { SessionsSection } from "@/pages/settings/SessionsSection";
+import { ReloadClosesSessions } from "@/pages/settings/ReloadClosesSessions";
 import { CustomTerminalsSection } from "@/pages/settings/CustomTerminalsSection";
 import { DismissedWarnings } from "@/pages/settings/DismissedWarnings";
 import { SkillsSection } from "@/pages/settings/SkillsSection";
@@ -1514,7 +1515,8 @@ export function SettingsPage({
               <span className="font-mono">{restoreFileName}</span>. Your current
               data will be lost. Saved passwords aren't included in a backup, so
               restored hosts may need their password re-entered. Broadside will
-              reload when the restore finishes.
+              reload when the restore finishes.{" "}
+              <ReloadClosesSessions />
               <br />
               <br />
               <strong>Only restore a backup you made yourself.</strong> A backup
@@ -1964,7 +1966,7 @@ export function SettingsPage({
               the tab Broadside opens on, and the warnings you dismissed. Hosts,
               credentials, saved shell profiles, templates, skills, guard rules,
               shortcuts, command history and logs are <strong>not</strong>{" "}
-              affected. This can&apos;t be undone.
+              affected. This can&apos;t be undone. <ReloadClosesSessions />
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
