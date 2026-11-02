@@ -196,6 +196,21 @@ export function useWorkspaces({
     );
   }, []);
 
+  /** Move a workspace to where another one is, the way the tab strip reorders
+   * tabs: dragged right it lands after the target, dragged left before it. */
+  const reorder = useCallback((sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    setWorkspaces((prev) => {
+      const from = prev.findIndex((w) => w.id === sourceId);
+      const to = prev.findIndex((w) => w.id === targetId);
+      if (from < 0 || to < 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }, []);
+
   /** Give the shown workspace a template's name and colour, if it is still the
    * unnamed default and has nothing in it. Called just before the template's
    * tabs land in it. */
@@ -239,6 +254,7 @@ export function useWorkspaces({
     createAndShow,
     rename,
     recolor,
+    reorder,
     adoptIfBlank,
     removeEmpty,
   };

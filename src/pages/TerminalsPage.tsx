@@ -236,6 +236,8 @@ type Props = {
   onNewWorkspace: () => void;
   onRenameWorkspace: (id: string, name: string) => void;
   onRecolorWorkspace: (id: string, color: string) => void;
+  /** Move a workspace to where another one is in the row. */
+  onReorderWorkspace: (sourceId: string, targetId: string) => void;
   /** Close every tab in a workspace, and the workspace. Asked about here
    * first when it has tabs. */
   onCloseWorkspace: (id: string) => void;
@@ -315,6 +317,7 @@ export function TerminalsPage({
   onNewWorkspace,
   onRenameWorkspace,
   onRecolorWorkspace,
+  onReorderWorkspace,
   onCloseWorkspace,
   onMoveToWorkspace,
   activeId,
@@ -2626,6 +2629,7 @@ export function TerminalsPage({
           onNew={onNewWorkspace}
           onRename={onRenameWorkspace}
           onRecolor={onRecolorWorkspace}
+          onReorder={onReorderWorkspace}
           onClose={requestCloseWorkspace}
           draggingTabId={dragId}
           onDropTab={(tabId, wsId) => {

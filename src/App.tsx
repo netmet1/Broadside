@@ -1121,6 +1121,7 @@ function App() {
           onNewWorkspace={ws.createAndShow}
           onRenameWorkspace={ws.rename}
           onRecolorWorkspace={ws.recolor}
+          onReorderWorkspace={ws.reorder}
           onCloseWorkspace={closeWorkspace}
           onMoveToWorkspace={moveToWorkspace}
           onOpenTemplate={openTemplate}

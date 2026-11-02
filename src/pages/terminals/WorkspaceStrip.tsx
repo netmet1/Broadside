@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PencilIcon, PlusIcon, XIcon } from "lucide-react";
 
 import {
@@ -29,6 +29,8 @@ type Props = {
    * workspace to move it there. */
   draggingTabId: string | null;
   onDropTab: (tabId: string, workspaceId: string) => void;
+  /** Move a workspace to where another one is in the row. */
+  onReorder: (sourceId: string, targetId: string) => void;
 };
 
 /**
@@ -37,8 +39,12 @@ type Props = {
  * as it did before workspaces existed.
  *
  * Click to show a workspace, double-click to rename it, right-click for its
- * colour and Close. A tab dragged from the strip below can be dropped on one
- * to move it there.
+ * colour and Close, drag one along the row to move it. A tab dragged from the
+ * strip below can be dropped on one to move it there.
+ *
+ * More than fit scroll sideways, under the mouse wheel as well as the
+ * scrollbar, and the one on screen is scrolled into view when it changes. The
+ * "+" sits outside the scrolling part, so it never goes off the end.
  */
 export function WorkspaceStrip({
   workspaces,
@@ -51,11 +57,54 @@ export function WorkspaceStrip({
   onClose,
   draggingTabId,
   onDropTab,
+  onReorder,
 }: Props) {
   const hint = useHint();
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [dropOver, setDropOver] = useState<string | null>(null);
+  // A workspace being dragged along the row, and the one it is over.
+  const [dragWs, setDragWs] = useState<string | null>(null);
+  const [dragOverWs, setDragOverWs] = useState<string | null>(null);
+  const endWsDrag = () => {
+    setDragWs(null);
+    setDragOverWs(null);
+  };
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const chipRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // A plain wheel scrolls the row sideways. Left to itself it scrolls nothing,
+  // since the row only overflows across, and a wheel mouse has no other way to
+  // reach the far end short of the scrollbar. A sideways trackpad swipe is
+  // already horizontal and is left alone, as is Ctrl+wheel.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 16 : e.deltaY;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // The workspace on screen is always one you can see in the row: switched to
+  // from a menu, brought forward by a tab, or just made with the "+". The least
+  // scroll that shows it whole, with a little of its neighbour.
+  useEffect(() => {
+    const c = scrollRef.current;
+    const t = chipRefs.current.get(activeId);
+    if (!c || !t) return;
+    const cr = c.getBoundingClientRect();
+    const tr = t.getBoundingClientRect();
+    if (tr.left >= cr.left && tr.right <= cr.right) return;
+    const delta = tr.left < cr.left ? tr.left - cr.left - 16 : tr.right - cr.right + 16;
+    c.scrollTo({ left: c.scrollLeft + delta, behavior: "smooth" });
+  }, [activeId, workspaces]);
 
   const startRename = (w: Workspace) => {
     setDraft(w.name);
@@ -67,51 +116,95 @@ export function WorkspaceStrip({
   };
 
   return (
+    <div className="flex min-w-0 items-center gap-1 pl-1 pr-2 pt-1.5">
     <div
+      ref={scrollRef}
       role="tablist"
       aria-label="Workspaces"
-      className="flex min-w-0 items-center gap-1 overflow-x-auto px-2 pt-2"
+      // Padding inside the scrolling box, so a focus or drop ring and the
+      // drop bar beside the first chip are not clipped by it.
+      className="flex min-w-0 items-center gap-1 overflow-x-auto px-1 py-0.5"
     >
-      {workspaces.map((w) => {
+      {workspaces.map((w, i) => {
         const isActive = w.id === activeId;
         const n = counts.get(w.id) ?? 0;
+        // Where a dragged workspace would land: after this one when it comes
+        // from the left, before it from the right. The bar is drawn on that side.
+        const dragFrom = dragWs ? workspaces.findIndex((x) => x.id === dragWs) : -1;
+        const dropBar =
+          dragOverWs === w.id && dragWs !== w.id
+            ? dragFrom < i
+              ? "right"
+              : "left"
+            : null;
         return (
           <ContextMenu key={w.id}>
             <ContextMenuTrigger asChild>
               <div
+                ref={(el) => {
+                  if (el) chipRefs.current.set(w.id, el);
+                  else chipRefs.current.delete(w.id);
+                }}
                 role="tab"
                 aria-selected={isActive}
                 tabIndex={isActive ? 0 : -1}
+                // Off while renaming: a draggable ancestor swallows text
+                // selection in the input, the same as on a tab.
+                draggable={renaming !== w.id}
                 onClick={() => onSwitch(w.id)}
                 onDoubleClick={() => startRename(w)}
                 onKeyDown={(e) => {
                   if (e.key === "F2") startRename(w);
                 }}
+                onDragStart={(e) => {
+                  setDragWs(w.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  // Some webviews reject a drag that carries no data.
+                  e.dataTransfer.setData("text/plain", w.name);
+                }}
+                onDragEnd={endWsDrag}
                 onDragOver={(e) => {
-                  if (!draggingTabId) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  if (dropOver !== w.id) setDropOver(w.id);
+                  if (draggingTabId) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (dropOver !== w.id) setDropOver(w.id);
+                  } else if (dragWs) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (dragOverWs !== w.id) setDragOverWs(w.id);
+                  }
                 }}
                 onDragLeave={() => setDropOver(null)}
                 onDrop={(e) => {
                   e.preventDefault();
                   setDropOver(null);
                   if (draggingTabId) onDropTab(draggingTabId, w.id);
+                  else if (dragWs) onReorder(dragWs, w.id);
+                  endWsDrag();
                 }}
                 className={cn(
-                  "group flex h-7 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs",
+                  "group relative flex h-7 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs",
                   isActive
                     ? "border-primary/60 bg-accent text-foreground"
                     : "border-border/60 text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                   dropOver === w.id && "ring-2 ring-primary",
+                  dragWs === w.id && "opacity-40",
                 )}
                 {...hint(
                   isActive
-                    ? `${w.name}: the workspace on screen. Double-click to rename, right-click for its colour and Close`
-                    : `Show ${w.name}. Its terminals keep running while hidden. Drop a tab here to move it`,
+                    ? `${w.name}: the workspace on screen. Double-click to rename, right-click for its colour and Close, drag to move it along the row`
+                    : `Show ${w.name}. Its terminals keep running while hidden. Drop a tab here to move it, or drag this along the row to reorder`,
                 )}
               >
+                {dropBar && (
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "pointer-events-none absolute inset-y-0.5 w-0.5 rounded-full bg-primary",
+                      dropBar === "left" ? "-left-[3px]" : "-right-[3px]",
+                    )}
+                  />
+                )}
                 <span
                   aria-hidden="true"
                   className={cn(
@@ -191,6 +284,7 @@ export function WorkspaceStrip({
           </ContextMenu>
         );
       })}
+    </div>
       <button
         type="button"
         onClick={onNew}

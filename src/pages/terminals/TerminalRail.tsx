@@ -116,6 +116,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ShortcutBar } from "@/components/ShortcutBar";
 import { keyLabel, SHORTCUTS } from "@/lib/platform";
+import { saveControlsAutoHide } from "@/lib/sessionPrefs";
 import { useHint } from "@/lib/status";
 import { useRailCompact } from "@/lib/useRailCompact";
 import { useUiPrefs } from "@/lib/uiPrefs";
@@ -123,6 +124,7 @@ import type { ShortcutScope } from "@/lib/tauri/settings";
 import type { ScopedShortcut } from "@/lib/useShortcuts";
 import { cn } from "@/lib/utils";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
+import { useControlsAutoHide } from "@/pages/terminals/useControlsAutoHide";
 import {
   sessionColor,
   sessionLabel,
@@ -286,6 +288,7 @@ export function TerminalRail({
 }) {
   const hint = useHint();
   const shellColors = useShellColors();
+  const controlsAutoHide = useControlsAutoHide();
   // The flip is only meaningful at exactly two tiles: one fills the area, three
   // or more tile and scroll. Two always take this layout whether or not a Grid
   // size is pinned, so customGrid is false here by construction.
@@ -549,8 +552,8 @@ export function TerminalRail({
               filterOn
                 ? `The Filter is hiding ${filterHiddenCount} ${
                     filterHiddenCount === 1 ? "session" : "sessions"
-                  }, all still running. Open View, then Filter, to show them. Also here: fullscreen, the tab bar, tile arrangement and the two reset actions.`
-                : "Fullscreen, the tab bar and its labels, filtering tabs by kind, tile arrangement and the two reset actions.",
+                  }, all still running. Open View, then Filter, to show them. Also here: fullscreen, the tab bar, auto-hiding this row, tile arrangement and the two reset actions.`
+                : "Fullscreen, the tab bar and its labels, auto-hiding this row, filtering tabs by kind, tile arrangement and the two reset actions.",
             )}
           >
             <SlidersHorizontalIcon className="h-3.5 w-3.5" />
@@ -625,6 +628,23 @@ export function TerminalRail({
               Tab bar
             </DropdownMenuCheckboxItem>
           )}
+
+          {/* The same switch as Settings -> Sessions -> Controls row, from the
+              row it is about: both write the one preference and both follow
+              it. Named for what it does rather than for what is on screen,
+              unlike the two above, because the row is on screen either way
+              while this menu is open. */}
+          <DropdownMenuCheckboxItem
+            checked={controlsAutoHide}
+            onCheckedChange={(on) => saveControlsAutoHide(on)}
+            {...hint(
+              controlsAutoHide
+                ? "This row slides up out of the way and comes back when the pointer reaches the tab at the top. Click to keep it on screen. Same as Settings, Sessions, Controls row."
+                : `This row stays on screen. Click to have it slide up out of the way until the pointer reaches the top, or ${keyLabel(SHORTCUTS.focusControls)} is pressed. Same as Settings, Sessions, Controls row.`,
+            )}
+          >
+            Auto-hide controls
+          </DropdownMenuCheckboxItem>
 
           {/* Which kinds of session are on screen. A submenu, because the list
               is as long as the kinds open and would otherwise push every other
