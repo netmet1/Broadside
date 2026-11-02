@@ -2168,7 +2168,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files rename f2 pencil double click open enter backspace up arrow keys single click select skipped single file still uploaded overwrote anyway skip existing ignored slow even though it exists already there not newer open terminal from sftp go to terminal ssh into this host shell button type to jump type ahead first letter find file by name quick search keyboard" +
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files rename f2 pencil double click open enter backspace up arrow keys single click select skipped single file still uploaded overwrote anyway skip existing ignored slow even though it exists already there not newer open terminal from sftp go to terminal ssh into this host shell button type to jump type ahead first letter find select all files ctrl a cmd a command a whole window highlighted file by name quick search keyboard" +
       onMac("trash finder cmd click volumes mac"),
     body: (
       <>
@@ -2194,7 +2194,8 @@ export const SECTIONS: HelpSection[] = [
               first item starting with h, and <Nav>he</Nav> typed quickly the first
               starting with he. If nothing starts with it, the first name that
               contains it is picked. Pressing the same letter again moves to the
-              next match.
+              next match. <Nav><Keys k="mod+a" /></Nav> selects everything in the
+              pane.
             </li>
             <li>
               Transfer by dragging an item from one side to the other. Folders copy

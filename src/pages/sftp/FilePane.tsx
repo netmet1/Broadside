@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { IS_MAC, MOD_KEY } from "@/lib/platform";
+import { IS_MAC, MOD_KEY, isModKey } from "@/lib/platform";
 import { useHint } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import { formatMtime, formatSize } from "@/pages/sftp/model";
@@ -266,14 +266,29 @@ export function FilePane({
     if (hit !== undefined) selectIndex(hit);
   };
 
+  // Every item in the pane, as a Shift-click range from the first row to the
+  // last would select it: drives (in the drive list) are left out.
+  const selectAll = () => {
+    setSelected(
+      new Set(entries.filter((en) => !isDrivePath(side, en.path)).map((en) => en.path)),
+    );
+  };
+
   // Keys act on the pane last clicked, while the Commander is on screen:
   // Backspace goes up, Enter opens the selected folder, F2 renames the selected
-  // entry, the arrows move the selection, and a printable key types to jump.
+  // entry, the arrows move the selection, a printable key types to jump, and
+  // Ctrl+A (⌘A on a Mac) selects everything in the pane.
   // Not while typing in a field, with a button focused (Enter belongs to the
   // button), or while a dialog or menu is open.
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isModKey(e) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "a") {
+        if (keyBelongsElsewhere(e.key)) return;
+        e.preventDefault();
+        selectAll();
+        return;
+      }
       if (e.ctrlKey || e.altKey || e.metaKey) return;
       // A space only counts inside a search that is already going, so it can
       // match "my file" without a lone space doing anything.

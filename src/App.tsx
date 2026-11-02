@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { isExitGuardEnabled } from "@/lib/exitGuard";
+import { useNoPageSelectAll } from "@/lib/useNoPageSelectAll";
 import { IS_MAC } from "@/lib/platform";
 import {
   KEEPALIVE_SECS,
@@ -897,6 +898,9 @@ function App() {
     setGridFullscreen(false);
   }, []);
   const restoreTerminal = useCallback(() => setMaxSessionId(null), []);
+
+  // ⌘A / Ctrl+A outside a text box doesn't select the whole window's text.
+  useNoPageSelectAll();
 
   // F11 toggles the maximized terminal, the standard fullscreen key, and
   // (unlike Esc) one the shell and TUI apps like vim/less never use, so it's
