@@ -11,6 +11,7 @@ pub mod error;
 pub mod export;
 pub mod guard;
 pub mod import;
+pub mod instances;
 mod licensing;
 pub mod local;
 #[cfg(target_os = "macos")]
@@ -139,6 +140,10 @@ pub fn run() {
                 .app_data_dir()
                 .map_err(|e| format!("app_data_dir: {e}"))?;
 
+            // Copies already running on this data folder, for the startup
+            // warning. Registers this one too, so the next launch counts it.
+            app.manage(instances::InstanceState::register(&app_data_dir));
+
             // Rolling audit log (D-011): on by default, persisted toggle.
             let audit_enabled = {
                 let conn = db_state.0.lock().expect("fresh db mutex");
@@ -205,6 +210,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             reveal_main_window,
+            instances::other_instance_count,
             commands::hosts::list_hosts,
             commands::hosts::get_host,
             commands::hosts::create_host,

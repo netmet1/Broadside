@@ -2781,6 +2781,19 @@ export const SECTIONS: HelpSection[] = [
               </li>
             </OnMac>
             <li>
+              Opening Broadside while it is already running asks first, saying
+              how many instances are open. <Nav>Open another instance</Nav> goes
+              ahead; <Nav>Quit</Nav> (or <Nav>Esc</Nav>) closes the new one. It
+              asks on every launch, because all instances share the same hosts,
+              credentials and settings.
+              <OnMac>
+                {" "}
+                Opening the app from the Dock or Finder while it runs only brings
+                its window forward, so this appears only when a second copy
+                really starts.
+              </OnMac>
+            </li>
+            <li>
               Memory use grows with the number of open terminals and how much
               scrollback each keeps (<Nav>Settings</Nav> &rarr;{" "}
               <Nav>Appearance</Nav> &rarr; <Nav>Terminal scrollback</Nav>).
