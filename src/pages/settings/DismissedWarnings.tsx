@@ -54,8 +54,8 @@ export function DismissedWarnings() {
         <p className="text-xs text-muted-foreground">
           Every warning that can be turned off is currently on. When one is
           dismissed with its &ldquo;don&apos;t warn me again&rdquo; or
-          &ldquo;don&apos;t ask me again&rdquo; box, it is
-          listed here so it can be put back.
+          &ldquo;don&apos;t ask me again&rdquo; box, it is listed here so it can
+          be put back.
         </p>
       ) : (
         <ul className="space-y-2">
