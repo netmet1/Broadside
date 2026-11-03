@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { dismissWarning, isWarningDismissed } from "@/lib/dismissedWarnings";
 
 /**
  * Stands in front of the app when another copy of Broadside is already
@@ -19,8 +20,10 @@ import {
  * startup template, saved workspaces and the master-password prompt all wait
  * for the answer, and Quit leaves without having opened anything.
  *
- * Every launch asks again: the count comes from the backend at startup, and
- * there is no "don't ask again".
+ * Every launch asks again unless "Don't ask me again" was ticked on a launch
+ * that went ahead. Quitting never records it, so a tick followed by Quit (or
+ * Esc) changes nothing. Settings > Security > Dismissed warnings turns it back
+ * on.
  */
 export function InstanceGuard({
   others,
@@ -30,7 +33,10 @@ export function InstanceGuard({
   others: number;
   children: ReactNode;
 }) {
-  const [proceed, setProceed] = useState(others === 0);
+  const [proceed, setProceed] = useState(
+    () => others === 0 || isWarningDismissed("second-instance"),
+  );
+  const [dontAsk, setDontAsk] = useState(false);
   if (proceed) return children;
 
   const quit = () => {
@@ -66,9 +72,28 @@ export function InstanceGuard({
               picked up by the others. Are you sure you want to open another?
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-1">
+            <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                className="accent-primary"
+                checked={dontAsk}
+                onChange={(e) => setDontAsk(e.target.checked)}
+              />
+              Don&apos;t ask me again
+            </label>
+            <p className="text-xs text-muted-foreground">
+              You can turn this warning back on in Settings, under Security.
+            </p>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={quit}>Quit</AlertDialogCancel>
-            <AlertDialogAction onClick={() => setProceed(true)}>
+            <AlertDialogAction
+              onClick={() => {
+                if (dontAsk) dismissWarning("second-instance");
+                setProceed(true);
+              }}
+            >
               Open another instance
             </AlertDialogAction>
           </AlertDialogFooter>

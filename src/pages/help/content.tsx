@@ -2622,7 +2622,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-system",
     title: "System requirements",
     keywords:
-      "system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install antivirus defender windows security false positive quarantine flagged virus trojan bearfoos ml detection code signing unsigned publisher unknown smartscreen sha256 checksum verify protection history restore exclusion" +
+      "already running another instance second copy open twice multiple instances warning dont ask me again turn back on dismissed warnings system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install antivirus defender windows security false positive quarantine flagged virus trojan bearfoos ml detection code signing unsigned publisher unknown smartscreen sha256 checksum verify protection history restore exclusion" +
       onMac(
         "macos mac ventura sonoma sequoia apple silicon m1 m2 m3 m4 intel universal webkit gatekeeper cannot be opened unidentified developer open anyway control click notarized notarization damaged local network privacy no route to host keychain always allow asks again after update dmg applications shasum",
       ),
@@ -2785,7 +2785,10 @@ export const SECTIONS: HelpSection[] = [
               how many instances are open. <Nav>Open another instance</Nav> goes
               ahead; <Nav>Quit</Nav> (or <Nav>Esc</Nav>) closes the new one. It
               asks on every launch, because all instances share the same hosts,
-              credentials and settings.
+              credentials and settings. Tick <Nav>Don&apos;t ask me again</Nav>{" "}
+              before opening another instance to stop it; <Nav>Turn back on</Nav>{" "}
+              beside it in <Nav>Settings</Nav> &rarr; <Nav>Security</Nav> &rarr;{" "}
+              <Nav>Dismissed warnings</Nav> brings it back.
               <OnMac>
                 {" "}
                 Opening the app from the Dock or Finder while it runs only brings
