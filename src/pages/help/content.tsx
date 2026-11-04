@@ -2791,9 +2791,10 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Dismissed warnings</Nav> brings it back.
               <OnMac>
                 {" "}
-                Opening the app from the Dock or Finder while it runs only brings
-                its window forward, so this appears only when a second copy
-                really starts.
+                Opening the running copy again from the Dock or Finder only
+                brings its window forward. A different copy of the app, such as
+                the one in the disk image you installed from, starts a second
+                instance and asks.
               </OnMac>
             </li>
             <li>
