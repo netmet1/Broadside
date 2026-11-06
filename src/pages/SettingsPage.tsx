@@ -1373,7 +1373,7 @@ export function SettingsPage({
           />
           <TableColumnsBox
             title="Profile table columns"
-            tableName="the Profiles table (Hosts tab, Profiles side)"
+            tableName="the Profiles table (Library tab, Profiles side)"
             alwaysShown="Name and actions"
             hideable={PROFILE_HIDEABLE_COLUMNS}
             orderable={PROFILE_ORDERABLE_COLUMNS}

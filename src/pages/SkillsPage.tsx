@@ -526,7 +526,7 @@ export function SkillsPage({
         <div className="max-h-[40%] min-h-0 flex-1 overflow-y-auto p-2">
           {sel.hosts.length === 0 ? (
             <p className="px-2 py-4 text-xs text-muted-foreground">
-              No saved hosts. Add one on the Hosts page first.
+              No saved hosts. Add one on the Library tab first.
             </p>
           ) : (
             sel.visibleHosts.map((h) => (

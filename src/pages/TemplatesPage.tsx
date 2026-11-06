@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { LayoutTemplateIcon } from "lucide-react";
+import { HouseIcon, LayoutTemplateIcon, ListIcon, PencilRulerIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { EmptyState } from "@/components/EmptyState";
+import { SegmentedTabs } from "@/components/SegmentedTabs";
 import {
   dismissWarning,
   isWarningDismissed,
@@ -45,23 +46,27 @@ import { useRailFilter } from "@/lib/useRailFilter";
 import { cn } from "@/lib/utils";
 import { HELP_TEMPLATES, type HelpSectionId } from "@/pages/help/sections";
 import { TemplateCanvas } from "@/pages/templates/TemplateCanvas";
+import { TemplateListView } from "@/pages/templates/TemplateListView";
 import { TemplateRail } from "@/pages/templates/TemplateRail";
 import { TemplateTopBar } from "@/pages/templates/TemplateTopBar";
 import { moveItem } from "@/pages/templates/items";
 import { useTemplateSources } from "@/pages/templates/useTemplateSources";
 
-/** Which template the editor was last on, so opening the tab on its own lands
- * where the operator left off rather than on a blank screen. A view preference
- * about this machine, so localStorage rather than a column. */
-const LAST_EDITED_KEY = "templates-last-edited";
+/** Where builds before prompts135 kept the template the editor was last on, to
+ * reopen it on the tab's first visit. The tab now always starts on Home, so the
+ * key is only removed. */
+const OLD_LAST_EDITED_KEY = "templates-last-edited";
 const SORT_KEY = "templates-rail-sort";
 
-/** How many saved templates the closed-editor screen offers before it stops
- * listing them and points at the Hosts tab instead. The screen is a way back
- * into the editor, not a second copy of the list: past a handful it would grow
- * past the window, and the list that scrolls, sorts and deletes already exists
- * one tab away. */
+/** How many saved templates the Home screen offers before it stops listing
+ * them and points at the List instead. Home is a way back into the editor, not
+ * a second copy of the list: past a handful it would grow past the window. */
 const SPLASH_RECENT = 5;
+
+/** The tab's three views. Editor is whenever a draft is open; the other two
+ * are where the tab rests with the editor closed. */
+type TemplatesView = "home" | "editor" | "list";
+type RestView = Exclude<TemplatesView, "editor">;
 
 /** What the editor is holding: a saved template being changed (`id` set) or one
  * that does not exist yet (`id` null). */
@@ -73,8 +78,8 @@ type Draft = {
   startup: TemplateStartup;
 };
 
-/** A request from the Hosts tab: edit this template, or start a new one
- * (`template: null`). A new one can arrive with its sessions already in it
+/** A request from another tab: edit this template, or start a new one
+ * (`template: null`), or (`list`) show the List. A new one can arrive with its sessions already in it
  * (`items`): the Terminals tab's Save as template, which hands over the grid
  * on screen to be named and saved here.
  *
@@ -91,6 +96,8 @@ export type TemplateFocus = {
   /** Duplicate from the Terminals launcher: this template's contents as a new,
    * unsaved one. */
   copyOf?: Template;
+  /** Library's Templates button: show the List. */
+  list?: boolean;
   n: number;
 };
 
@@ -121,16 +128,15 @@ function fingerprint(d: Draft): string {
 /**
  * The Templates tab: where an arrangement of sessions is built, and only that.
  *
- * Nothing is launched from here, which is worth stating because the page looks
- * like it could. A template is opened from the Hosts tab, where the list of
- * them lives beside the list of machines, or from the Terminals "+" launcher;
- * this is the workshop. Keeping the two
- * apart means the screen you build on has no button that opens twelve
- * connections, and the screen you launch from has no way to change what it is
- * about to open.
+ * Three views, switched at the top left: Home (the way in), Editor, and List
+ * (every template, and where they are opened). Nothing is launched from the
+ * Editor, which is worth stating because the page looks like it could: the
+ * screen you build on has no button that opens twelve connections, and the
+ * List you launch from has no way to change what it is about to open.
  *
  * Stays mounted like the other working pages, so a half-built template survives
- * a trip to Hosts to check a hostname.
+ * a trip to Library to check a hostname. It starts on Home every run; an editor
+ * the operator opened and did not leave is still there when they come back.
  */
 export function TemplatesPage({
   visible,
@@ -138,21 +144,29 @@ export function TemplatesPage({
   focus,
   onOpenHelp,
   onOpenGridSettings,
-  onBrowseTemplates,
+  onOpenTemplates,
 }: {
   visible: boolean;
   connectedHostIds: Set<number>;
   focus: TemplateFocus | null;
   onOpenHelp: (section: HelpSectionId) => void;
   onOpenGridSettings: () => void;
-  /** Go to the Hosts tab's Templates list, where all of them are. */
-  onBrowseTemplates: () => void;
+  /** Open every session in these templates, one template after another (the
+   * List's play button, double-click and Multi-template). */
+  onOpenTemplates: (templates: Template[]) => void;
 }) {
   const hint = useHint();
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [loading, setLoading] = useState(true);
+
   const [draft, setDraft] = useState<Draft | null>(null);
   const [baseline, setBaseline] = useState<string>("");
+  // Where the tab rests while no draft is open. Plain state: every run starts
+  // on Home.
+  const [restView, setRestView] = useState<RestView>("home");
+  const view: TemplatesView = draft !== null ? "editor" : restView;
+  useEffect(() => {
+    localStorage.removeItem(OLD_LAST_EDITED_KEY);
+  }, []);
   const [saving, setSaving] = useState(false);
   // A template deleted somewhere else while the editor was holding it. The
   // arrangement on the canvas is not lost, it has only lost the row it belonged
@@ -184,8 +198,6 @@ export function TemplatesPage({
     } catch (e) {
       toast.error(errorMessage(e));
       return null;
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -209,16 +221,12 @@ export function TemplatesPage({
         setTemplates(list);
         const open = openIdRef.current;
         if (open != null && !list.some((t) => t.id === open)) {
-          localStorage.removeItem(LAST_EDITED_KEY);
           setDraft((d) => (d && d.id === open ? { ...d, id: null } : d));
           setVanished(true);
         }
       })
       .catch((e) => {
         if (alive) toast.error(errorMessage(e));
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
       });
     return () => {
       alive = false;
@@ -230,23 +238,14 @@ export function TemplatesPage({
     setBaseline(fingerprint(next));
   }, []);
 
-  // Where the editor was last, so opening the tab on its own lands there. An
-  // effect because it writes to something outside React and sets no state,
-  // which is what an effect is for.
-  //
-  // The same number goes into the ref above, written in a *layout* effect,
-  // which is where this codebase keeps its latest-value refs: a render can be
-  // discarded and must not mutate anything outside itself, while a layout
-  // effect lands before the browser paints, so nothing can read a value older
-  // than the screen.
+  // Which template the editor has open, into the ref above, written in a
+  // *layout* effect, which is where this codebase keeps its latest-value refs:
+  // a render can be discarded and must not mutate anything outside itself,
+  // while a layout effect lands before the browser paints, so nothing can read
+  // a value older than the screen.
   const currentId = draft?.id ?? null;
   useLayoutEffect(() => {
     openIdRef.current = currentId;
-  }, [currentId]);
-  useEffect(() => {
-    if (currentId != null) {
-      localStorage.setItem(LAST_EDITED_KEY, String(currentId));
-    }
   }, [currentId]);
 
   const dirty = draft !== null && fingerprint(draft) !== baseline;
@@ -281,9 +280,21 @@ export function TemplatesPage({
   // template's boxes appearing under the new template's name. It converges
   // because consuming the serial makes the condition false.
   const [consumedFocus, setConsumedFocus] = useState(0);
+  // Leaving the editor for Home or the List, held here while the "Close without
+  // saving?" question is up.
+  const [leaveTo, setLeaveTo] = useState<RestView | null>(null);
   if (focus && focus.n !== consumedFocus) {
     setConsumedFocus(focus.n);
-    if (focus.template) {
+    if (focus.list) {
+      // Library's Templates button. With a draft open it is the same as
+      // pressing List: unsaved work asks first.
+      if (draft !== null && dirty) setLeaveTo("list");
+      else {
+        setDraft(null);
+        setBaseline("");
+        setRestView("list");
+      }
+    } else if (focus.template) {
       const next = draftOf(focus.template);
       replaceDraft(
         next,
@@ -324,22 +335,10 @@ export function TemplatesPage({
     }
   }
 
-  // Opened on its own: pick up where the operator left off. Once per run, so
-  // closing the editor is not immediately undone by re-opening the same
-  // template, and never while there is a draft, so it cannot throw away work.
-  const [autoOpened, setAutoOpened] = useState(false);
-  if (visible && !autoOpened && !loading && draft === null) {
-    setAutoOpened(true);
-    const last = Number(localStorage.getItem(LAST_EDITED_KEY));
-    const found =
-      templates.find((t) => t.id === last) ??
-      [...templates].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
-    if (found) openDraft(draftOf(found));
-  }
 
   // Most recently touched first, which is the order that makes a short list
-  // useful. The Hosts tab shows them in the operator's own order, because that
-  // is the one they open in.
+  // useful. The List shows them in the operator's own order, because that is
+  // the one they open in.
   const recent = useMemo(
     () =>
       [...templates]
@@ -354,7 +353,8 @@ export function TemplatesPage({
       : `${draft.name.trim() || "Untitled"} · ${draft.items.length} ${
           draft.items.length === 1 ? "session" : "sessions"
         }${dirty ? " · unsaved" : ""}`,
-    visible,
+    // The List says its own, with the ticked count.
+    visible && view !== "list",
   );
 
   /* ---------------------------------------------------------------- *
@@ -524,7 +524,6 @@ export function TemplatesPage({
    * ---------------------------------------------------------------- */
 
   const [deleting, setDeleting] = useState<Draft | null>(null);
-  const [discarding, setDiscarding] = useState(false);
 
   const runDelete = useCallback(async () => {
     const target = deleting;
@@ -532,7 +531,6 @@ export function TemplatesPage({
     if (!target?.id) return;
     try {
       await deleteTemplate(target.id);
-      localStorage.removeItem(LAST_EDITED_KEY);
       setDraft(null);
       setBaseline("");
       await reload();
@@ -543,18 +541,68 @@ export function TemplatesPage({
   }, [deleting, reload]);
 
   const closeEditor = useCallback(() => {
-    setDiscarding(false);
     setDraft(null);
     setBaseline("");
   }, []);
 
-  const requestClose = useCallback(() => {
-    if (dirty) {
-      setDiscarding(true);
-      return;
-    }
-    closeEditor();
-  }, [dirty, closeEditor]);
+  /** Home or List, from the switch. Leaving the editor with unsaved changes
+   * asks first; Discard closes it and goes on, Keep editing stays. */
+  const requestView = useCallback(
+    (next: TemplatesView) => {
+      if (next === "editor") return;
+      if (draft !== null && dirty) {
+        setLeaveTo(next);
+        return;
+      }
+      closeEditor();
+      setRestView(next);
+    },
+    [draft, dirty, closeEditor],
+  );
+
+  const reloadQuietly = useCallback(() => {
+    void reload();
+  }, [reload]);
+
+  const strip = (
+    <SegmentedTabs<TemplatesView>
+      label="Templates: home, editor or list"
+      value={view}
+      onChange={requestView}
+      segments={[
+        {
+          value: "home",
+          label: "Home",
+          icon: HouseIcon,
+          hint:
+            view === "editor"
+              ? dirty
+                ? "Close the editor and go to the start screen. Unsaved changes ask first."
+                : "Close the editor and go to the start screen"
+              : "Start a template, import one, or pick up a recent one",
+        },
+        {
+          value: "editor",
+          label: "Editor",
+          icon: PencilRulerIcon,
+          disabled: draft === null,
+          hint:
+            draft === null
+              ? "Nothing is open in the editor. Start a new template, or edit one from Home or the List."
+              : "The template being edited",
+        },
+        {
+          value: "list",
+          label: "List",
+          icon: ListIcon,
+          hint:
+            view === "editor" && dirty
+              ? "Close the editor and show every template. Unsaved changes ask first."
+              : "Every template: open, edit, duplicate, reorder or delete them",
+        },
+      ]}
+    />
+  );
 
   const pickTemplate = useCallback(
     (id: number | null) => {
@@ -595,9 +643,27 @@ export function TemplatesPage({
   // Nothing open in the editor. With no templates at all that is a fresh
   // install and takes the empty state every tab now shows; with some, it is
   // simply a closed editor, and what is wanted is the way back into one.
+  if (draft === null && restView === "list") {
+    return (
+      <TemplateListView
+        visible={visible}
+        strip={strip}
+        onOpenTemplates={onOpenTemplates}
+        onEdit={(t) => openDraft(draftOf(t))}
+        onNew={() => openDraft(EMPTY_DRAFT)}
+        onChanged={reloadQuietly}
+        onOpenHelp={onOpenHelp}
+      />
+    );
+  }
+
   if (draft === null) {
     return (
-      <div className="flex h-full flex-col overflow-y-auto">
+      <div className="flex h-full flex-col">
+        <div className="flex shrink-0 items-center border-b border-border/50 px-3 py-2">
+          {strip}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
         <EmptyState
           icon={LayoutTemplateIcon}
           title="Templates"
@@ -609,7 +675,7 @@ export function TemplatesPage({
           secondaryLabel="Import"
           onSecondary={requestImport}
           secondaryHint="Read a template file someone exported. It opens in the editor, and nothing is saved until you press Create."
-          description="A template is a saved arrangement of terminal sessions. Build it once here, then open the whole set from the Hosts tab in a single action."
+          description="A template is a saved arrangement of terminal sessions. Build it once here, then open the whole set from the List, or the Terminals tab's + menu, in a single action."
           helpSection={HELP_TEMPLATES}
           onOpenHelp={onOpenHelp}
         />
@@ -642,28 +708,31 @@ export function TemplatesPage({
                 </button>
               ))}
             </div>
-            {/* Always, not only when the short list is cut: the Hosts tab is
+            {/* Always, not only when the short list is cut: the List is
                 where templates are opened, so it is the way there either way. */}
             <button
               type="button"
-              onClick={onBrowseTemplates}
+              onClick={() => setRestView("list")}
               className="mt-2 w-full text-center text-xs font-medium text-primary hover:underline"
-              {...hint(
-                "Open the Hosts tab at the Templates list, where every one of them is",
-              )}
+              {...hint("Show the List, where every template is opened")}
             >
               {templates.length > recent.length
                 ? `Show all ${templates.length} templates`
-                : "Show them on the Hosts tab"}
+                : "Show them in the List"}
             </button>
           </div>
         )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center border-b border-border/50 px-3 py-2">
+        {strip}
+      </div>
+    <div className="flex min-h-0 flex-1">
       <TemplateRail
         {...railProps}
         filter={filter}
@@ -677,7 +746,6 @@ export function TemplatesPage({
           templates={templates}
           currentId={draft.id}
           onPick={pickTemplate}
-          onBrowseTemplates={onBrowseTemplates}
           name={draft.name}
           onNameChange={(name) => setDraft((d) => (d ? { ...d, name } : d))}
           color={draft.color}
@@ -690,7 +758,6 @@ export function TemplatesPage({
           dirty={dirty}
           saving={saving}
           onSave={requestSave}
-          onCancel={requestClose}
           onDelete={() => setDeleting(draft)}
           onExport={requestExport}
           onImport={requestImport}
@@ -716,6 +783,7 @@ export function TemplatesPage({
           visible={visible}
         />
       </div>
+    </div>
 
       {/* Saving a template that connects everything at startup. */}
       <GuardDialog
@@ -802,7 +870,7 @@ export function TemplatesPage({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* A template deleted on the Hosts tab while it was open here. */}
+      {/* A template deleted on the List, or elsewhere, while it was open here. */}
       <AlertDialog
         open={vanished}
         onOpenChange={(o) => {
@@ -844,7 +912,12 @@ export function TemplatesPage({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={discarding} onOpenChange={setDiscarding}>
+      <AlertDialog
+        open={leaveTo !== null}
+        onOpenChange={(o) => {
+          if (!o) setLeaveTo(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Close without saving?</AlertDialogTitle>
@@ -854,7 +927,15 @@ export function TemplatesPage({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={closeEditor}>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                const to = leaveTo;
+                setLeaveTo(null);
+                closeEditor();
+                if (to) setRestView(to);
+              }}
+            >
               Discard
             </AlertDialogAction>
           </AlertDialogFooter>

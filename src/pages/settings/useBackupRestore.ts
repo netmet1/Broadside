@@ -93,7 +93,7 @@ export function useBackupRestore() {
               report.cleared_credentials === 1 ? "host" : "hosts"
             } changed or left in the backup, so ${
               report.cleared_credentials === 1 ? "its" : "their"
-            } saved passwords were removed (enter them again on the Hosts tab)`,
+            } saved passwords were removed (enter them again on the Library tab)`,
           );
         }
         if (report.cleared_startup_commands > 0) {

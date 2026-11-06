@@ -716,7 +716,7 @@ export function BroadcastPage({
           )}
           {hosts.length === 0 && !railCollapsed && (
             <p className="px-2 py-4 text-xs text-muted-foreground">
-              No hosts configured. Add hosts on the Hosts page first.
+              No hosts configured. Add hosts on the Library tab first.
             </p>
           )}
           {hosts.length > 0 &&

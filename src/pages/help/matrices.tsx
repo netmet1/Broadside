@@ -418,25 +418,25 @@ const WARNINGS: WarningGroup[] = [
     rows: [
       {
         message: <Msg>An amber chip naming a shell (fish, csh, tcsh, …)</Msg>,
-        where: "Hosts in full; a triangle alone in the picker rails",
+        where: "Library in full; a triangle alone in the picker rails",
         means:
           "This host's login shell is not one Broadside can fully work with. Terminals, broadcasts, file transfer and sudo auto-fill all work as normal, but MultiTerminal cannot separate its output into command blocks and skills cannot run here. A command written for bash may not behave the same in its shell.",
       },
       {
         message: <Msg>An amber “no shell” chip</Msg>,
-        where: "Hosts in full; a triangle alone in the picker rails",
+        where: "Library in full; a triangle alone in the picker rails",
         means:
           "What this host runs at login is not a shell but, usually, an appliance's console menu (a pfSense admin account, for example). Broadside sends it nothing on connect, so the menu appears exactly as the device draws it. MultiTerminal command blocks and skills are unavailable; terminals, broadcasts and file transfer are not affected.",
       },
       {
         message: <Msg>An amber “shell unread” chip</Msg>,
-        where: "Hosts in full; a triangle alone in the picker rails",
+        where: "Library in full; a triangle alone in the picker rails",
         means:
-          "The connection worked, but the host would not say what its login shell is (a restricted account, for example), so Broadside sends nothing rather than guess. MultiTerminal command blocks and skills are unavailable. If you know the host runs bash or zsh, open it in Hosts and set Shell integration to Always. It can also mean the host was too slow to answer: a slow network home directory, or a .bashrc that loads tools such as nvm or conda before its interactive check. The same fix applies.",
+          "The connection worked, but the host would not say what its login shell is (a restricted account, for example), so Broadside sends nothing rather than guess. MultiTerminal command blocks and skills are unavailable. If you know the host runs bash or zsh, open it on the Library tab and set Shell integration to Always. It can also mean the host was too slow to answer: a slow network home directory, or a .bashrc that loads tools such as nvm or conda before its interactive check. The same fix applies.",
       },
       {
         message: <Msg>An amber “no integration” chip</Msg>,
-        where: "Hosts in full; a triangle alone in the picker rails",
+        where: "Library in full; a triangle alone in the picker rails",
         means:
           "Shell integration is set to Never on this host, so Broadside sends it nothing on connect. MultiTerminal command blocks and skills are unavailable while it is set. Change it in the host's form.",
       },
@@ -448,19 +448,19 @@ const WARNINGS: WarningGroup[] = [
       },
       {
         message: <Msg>A red Test connection icon</Msg>,
-        where: "Hosts",
+        where: "Library",
         means:
           "The last attempt to reach this host failed (a test, a terminal, a broadcast, an SFTP session or a skill run). It is kept after a restart and clears itself the next time anything connects to the host successfully. Hover the button for the details, and see Logs for what went wrong.",
       },
       {
         message: <Msg>No credentials set</Msg>,
-        where: "Hosts",
+        where: "Library",
         means:
           "The host is saved but has no password or key stored, so nothing can connect to it. Edit the host and add one.",
       },
       {
         message: <Msg>A latency in milliseconds after a test</Msg>,
-        where: "Hosts",
+        where: "Library",
         means:
           "Not a warning: the test connection worked, and this is how long it took to connect and log in.",
       },
@@ -528,7 +528,7 @@ const WARNINGS: WarningGroup[] = [
           "The passphrase you entered does not unlock this key file.",
       },
       {
-        message: <Msg>No credentials stored. Edit the host on the Hosts page.</Msg>,
+        message: <Msg>No credentials stored. Edit the host on the Library tab.</Msg>,
         where: "Terminal pane, Broadcast",
         means: "Nothing was tried: there is no password or key saved for this host.",
       },

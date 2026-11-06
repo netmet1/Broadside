@@ -594,7 +594,7 @@ export function MultiTerminalPage({
     <div ref={pageRef} className="flex h-full flex-col">
       {!ready && (
         <div className="shrink-0 border-b border-amber-300/70 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300/90">
-          Open at least 2 terminals (from the Hosts page) to use MultiTerminal.
+          Open at least 2 terminals (from the Library tab) to use MultiTerminal.
         </div>
       )}
       <div className="flex min-h-0 flex-1">
@@ -764,7 +764,7 @@ export function MultiTerminalPage({
             })}
             {sessions.length === 0 && !railCollapsed && (
               <p className="px-2 py-4 text-xs text-muted-foreground">
-                No open terminal sessions. Open terminals from the Hosts page
+                No open terminal sessions. Open terminals from the Library tab
                 first.
               </p>
             )}
