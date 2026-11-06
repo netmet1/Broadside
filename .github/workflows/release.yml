@@ -76,6 +76,9 @@ jobs:
             throw "Release $tag already exists. Delete the existing (draft) release or bump the version, then re-run."
           }
           Write-Host "Release $tag is free."
+          # The runner ends a pwsh step with the last program's exit code, and
+          # here that is the gh call above failing because the release is free.
+          exit 0
 
   windows:
     name: Build MSI
