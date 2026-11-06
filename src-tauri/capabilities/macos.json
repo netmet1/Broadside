@@ -1,8 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "macos",
-  "description": "macOS-only additions for the main window: the native clipboard read behind the terminal's right-click paste",
+  "description": "macOS-only additions for the main window: the native clipboard read and write behind the terminal's right-click paste and copy",
   "windows": ["main"],
   "platforms": ["macOS"],
-  "permissions": ["clipboard-manager:allow-read-text"]
+  "permissions": [
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text"
+  ]
 }

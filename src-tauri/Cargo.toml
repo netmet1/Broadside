@@ -86,10 +86,11 @@ trash = "5"
 # the plugin itself used underneath.
 open = "5"
 
-# The terminal's right-click paste on macOS. WKWebView puts a "Paste" button in
-# front of navigator.clipboard.readText() whenever the text came from another
-# app; reading the pasteboard natively has no such prompt. WebView2 has none
-# either, so Windows keeps the browser API and never builds this.
+# The terminal's right-click paste and copy on macOS. WKWebView puts a
+# "Paste" button in front of navigator.clipboard.readText() whenever the text
+# came from another app, and refuses navigator.clipboard.writeText() from a
+# right-click; the native pasteboard does neither. WebView2 has neither
+# problem, so Windows keeps the browser API and never builds this.
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-plugin-clipboard-manager = "2"
 

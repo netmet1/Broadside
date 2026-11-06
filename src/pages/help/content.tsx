@@ -1382,7 +1382,12 @@ export const SECTIONS: HelpSection[] = [
             <li>
               <strong className="font-semibold">Copy</strong> by selecting text
               and right-clicking, or with <Nav><Keys k={SHORTCUTS.copy} /></Nav>. Selecting on
-              its own copies nothing. Double-click selects a word and
+              its own copies nothing.{" "}
+              <Plat
+                win=""
+                mac="A Control-click or a two-finger click counts as a right-click."
+                both="On a Mac, a Control-click or a two-finger click counts as a right-click."
+              /> Double-click selects a word and
               triple-click a line. In a program that uses the mouse itself (tmux
               or vim with the mouse on), hold{" "}
               <Nav>
