@@ -45,7 +45,7 @@ export type Page =
  * describe the same page in two slightly different ways is worse than either
  * alone. */
 export const HOSTS_NAV_HINT =
-  "Your saved hosts and launch profiles, and the way to your templates";
+  "Your saved hosts, launch profiles and snapshots, and the way to your templates";
 
 type NavItem = {
   page: Page;

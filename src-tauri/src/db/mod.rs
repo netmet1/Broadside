@@ -16,6 +16,7 @@ pub mod restore;
 pub mod settings;
 pub mod shell_profiles;
 pub mod skills;
+pub mod snapshots;
 pub mod templates;
 
 pub struct DbState(pub Mutex<Connection>);
@@ -338,6 +339,17 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     // templates::TemplateLayout. Empty for every existing row, which is
     // exactly what they had: an even split.
     "ALTER TABLE templates ADD COLUMN layout_json TEXT NOT NULL DEFAULT '';",
+    // 28: workspace snapshots (prompts135): every open workspace saved under a
+    // name, opened again as a set. `data_json` holds the workspaces, each with
+    // its name, colour, grid sizes and tabs as template items; see
+    // db/snapshots.rs. References only, never a secret, as with templates.
+    "CREATE TABLE IF NOT EXISTS snapshots (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL,
+        data_json   TEXT NOT NULL DEFAULT '{}',
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    );",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {

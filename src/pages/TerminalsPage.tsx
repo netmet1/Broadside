@@ -102,6 +102,7 @@ import { WorkspaceStrip } from "@/pages/terminals/WorkspaceStrip";
 import { useControlsAutoHide } from "@/pages/terminals/useControlsAutoHide";
 import type { Workspace } from "@/pages/terminals/useWorkspaces";
 import { SplitHandles } from "@/pages/terminals/SplitHandles";
+import { HeldWorkspace } from "@/pages/terminals/HeldWorkspace";
 import { useGridSplitters } from "@/pages/terminals/useGridSplitters";
 import {
   GRID_FLOOR_COLS,
@@ -248,6 +249,11 @@ type Props = {
   onRecolorWorkspace: (id: string, color: string) => void;
   /** Set how a workspace's grid shares the pane (null: evenly). */
   onSetWorkspaceTracks: (id: string, tracks: GridTracks | null) => void;
+  /** A held workspace's Connect was pressed (see useSnapshots). */
+  onReleaseWorkspace: (id: string) => void;
+  /** Ask for a name and save every open workspace as a snapshot. */
+  onSaveSnapshot: () => void;
+  canSaveSnapshot: boolean;
   /** Move a workspace to where another one is in the row. */
   onReorderWorkspace: (sourceId: string, targetId: string) => void;
   /** Close every tab in a workspace, and the workspace. Asked about here
@@ -330,6 +336,9 @@ export function TerminalsPage({
   onRenameWorkspace,
   onRecolorWorkspace,
   onSetWorkspaceTracks,
+  onReleaseWorkspace,
+  onSaveSnapshot,
+  canSaveSnapshot,
   onReorderWorkspace,
   onCloseWorkspace,
   onMoveToWorkspace,
@@ -875,8 +884,21 @@ export function TerminalsPage({
   // How the workspace on screen shares its grid, once a line between tiles has
   // been dragged (or a template brought sizes). Kept on the workspace, so each
   // one keeps its own and a template or snapshot can hand them over.
-  const shownTracks =
-    workspaces.find((w) => w.id === activeWorkspaceId)?.tracks ?? null;
+  const shownWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
+  const shownTracks = shownWorkspace?.tracks ?? null;
+  // Opened from a snapshot with its sessions held: they were made without
+  // connecting, and this workspace waits behind one Connect button until it is
+  // pressed. Pressing it connects these tabs and no others.
+  // A pane connected some other way (Reconnect all, its own Reconnect) ends
+  // the hold too, so the cover never sits over a live shell.
+  const held =
+    shownWorkspace?.held === true &&
+    sessions.length > 0 &&
+    !sessions.some((s) => connectedSessions.has(s.id));
+  const connectHeld = () => {
+    for (const s of sessions) reconnectSession(s.id);
+    onReleaseWorkspace(activeWorkspaceId);
+  };
   const clearTracks = useCallback(
     () => onSetWorkspaceTracks(activeWorkspaceId, null),
     [onSetWorkspaceTracks, activeWorkspaceId],
@@ -2228,6 +2250,8 @@ export function TerminalsPage({
         onDisconnectAll={requestDisconnectAll}
         onCloseAll={() => setCloseAllOpen(true)}
         onNewWorkspace={onNewWorkspace}
+        onSaveSnapshot={onSaveSnapshot}
+        canSaveSnapshot={canSaveSnapshot}
         workspaceCount={workspaces.length}
         allSessionCount={allSessions.length}
         onCloseAllWorkspaces={() => setCloseEverywhereOpen(true)}
@@ -3234,6 +3258,14 @@ export function TerminalsPage({
           />
         </div>
       )}
+      <div className="relative flex min-h-0 min-w-0 flex-1">
+      {held && (
+        <HeldWorkspace
+          name={shownWorkspace?.name ?? ""}
+          count={sessions.length}
+          onConnect={connectHeld}
+        />
+      )}
       <div
         ref={gridScrollRef}
         className={cn(
@@ -3578,6 +3610,7 @@ export function TerminalsPage({
             </div>
           );
         })}
+      </div>
       </div>
       </div>
 

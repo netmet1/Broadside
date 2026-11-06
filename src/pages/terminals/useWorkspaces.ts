@@ -44,7 +44,14 @@ export type Workspace = {
    * unlocked or brought by a template. Null shares it equally. Per workspace,
    * because each one is its own wall of tiles. */
   tracks: GridTracks | null;
+  /** Opened from a snapshot with its sessions held: they wait, not connected,
+   * behind a Connect button over the grid until it is pressed. */
+  held: boolean;
 };
+
+/** What a new workspace is given beyond its name: grid sizes, and whether its
+ * sessions are held (see Workspace). */
+export type WorkspaceExtras = { tracks?: GridTracks | null; held?: boolean };
 
 function freshWorkspace(n: number): Workspace {
   return {
@@ -53,6 +60,7 @@ function freshWorkspace(n: number): Workspace {
     color: "",
     named: false,
     tracks: null,
+    held: false,
   };
 }
 
@@ -136,7 +144,14 @@ export function useWorkspaces({
         // Everything has closed. Keep the one that was shown, unnamed again.
         const keep = workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0]!;
         next = [
-          { ...keep, name: "Workspace 1", color: "", named: false, tracks: null },
+          {
+            ...keep,
+            name: "Workspace 1",
+            color: "",
+            named: false,
+            tracks: null,
+            held: false,
+          },
         ];
       }
       setWorkspaces(next);
@@ -169,16 +184,17 @@ export function useWorkspaces({
   /** Make a workspace and return its id. It is not shown; the caller decides
    * (a tab made active in it brings it forward by rule 1). */
   const create = useCallback(
-    (name?: string, color?: string, tracks?: GridTracks | null): string => {
+    (name?: string, color?: string, extras?: WorkspaceExtras): string => {
+      const more = { tracks: extras?.tracks ?? null, held: extras?.held ?? false };
       const ws: Workspace = name
         ? {
             id: crypto.randomUUID(),
             name,
             color: color ?? "",
             named: true,
-            tracks: tracks ?? null,
+            ...more,
           }
-        : { ...freshWorkspace(nextNumber(workspaces)), tracks: tracks ?? null };
+        : { ...freshWorkspace(nextNumber(workspaces)), ...more };
       setWorkspaces((prev) => [...prev, ws]);
       return ws.id;
     },
@@ -217,6 +233,13 @@ export function useWorkspaces({
     );
   }, []);
 
+  /** A held workspace's Connect was pressed: it is an ordinary one now. */
+  const release = useCallback((id: string) => {
+    setWorkspaces((prev) =>
+      prev.map((w) => (w.id === id && w.held ? { ...w, held: false } : w)),
+    );
+  }, []);
+
   /** Move a workspace to where another one is, the way the tab strip reorders
    * tabs: dragged right it lands after the target, dragged left before it. */
   const reorder = useCallback((sourceId: string, targetId: string) => {
@@ -236,17 +259,25 @@ export function useWorkspaces({
    * is still the unnamed default and has nothing in it. Called just before the
    * template's tabs land in it. */
   const adoptIfBlank = useCallback(
-    (name: string, color: string, tracks?: GridTracks | null) => {
+    (name: string, color: string, extras?: WorkspaceExtras): string | null => {
       const ws = workspaces.find((w) => w.id === activeWorkspaceId);
-      if (!ws || ws.named) return;
-      if (sessions.some((s) => s.workspaceId === ws.id)) return;
+      if (!ws || ws.named) return null;
+      if (sessions.some((s) => s.workspaceId === ws.id)) return null;
       setWorkspaces((prev) =>
         prev.map((w) =>
           w.id === ws.id
-            ? { ...w, name, color, named: true, tracks: tracks ?? null }
+            ? {
+                ...w,
+                name,
+                color,
+                named: true,
+                tracks: extras?.tracks ?? null,
+                held: extras?.held ?? false,
+              }
             : w,
         ),
       );
+      return ws.id;
     },
     [workspaces, activeWorkspaceId, sessions],
   );
@@ -278,6 +309,7 @@ export function useWorkspaces({
     rename,
     recolor,
     setTracks,
+    release,
     reorder,
     adoptIfBlank,
     removeEmpty,

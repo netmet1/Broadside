@@ -16,6 +16,7 @@ pub mod settings;
 pub mod shell_profiles;
 pub mod skilllog;
 pub mod skills;
+pub mod snapshots;
 pub mod ssh;
 pub mod templates;
 pub mod toastlog;
