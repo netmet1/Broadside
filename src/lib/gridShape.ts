@@ -75,6 +75,123 @@ export function fitsTwoUp(paneW: number, threshold: number, was: boolean): boole
 export type TwoUpSplit = "cols" | "rows";
 
 /**
+ * How the default grid's rows and columns share the pane, as relative sizes
+ * (CSS `fr`), set by dragging the line between two tiles while the tiles are
+ * not resized together. One number per track, top to bottom and left to right.
+ *
+ * Fractions rather than pixels or characters, so the same arrangement fits a
+ * laptop and a wall of monitors, which is what lets a template or a snapshot
+ * carry it. They only apply while the grid has exactly that many rows and
+ * columns: three tiles in two columns is 2 x 2, and closing one makes it 1 x 2,
+ * whose tracks these say nothing about.
+ */
+export type GridTracks = { rows: number[]; cols: number[] };
+
+/** How many rows and columns the default grid has for this many tiles. */
+export function gridTrackCounts({
+  count,
+  cols,
+  twoUpSplit,
+  twoUpFits,
+}: {
+  count: number;
+  cols: number | null;
+  twoUpSplit: TwoUpSplit;
+  twoUpFits: boolean;
+}): { rows: number; cols: number } {
+  if (count <= 1) return { rows: 1, cols: 1 };
+  if (count === 2) {
+    return twoUpSplit === "cols" && twoUpFits
+      ? { rows: 1, cols: 2 }
+      : { rows: 2, cols: 1 };
+  }
+  const c = Math.max(cols ?? 1, 1);
+  return { rows: Math.ceil(count / c), cols: c };
+}
+
+/** These tracks, if they were made for a grid of this shape; otherwise null,
+ * and the grid shares the pane equally. */
+export function tracksFor(
+  tracks: GridTracks | null | undefined,
+  shape: { rows: number; cols: number },
+): GridTracks | null {
+  if (!tracks) return null;
+  return tracks.rows.length === shape.rows && tracks.cols.length === shape.cols
+    ? tracks
+    : null;
+}
+
+/** Scale a list of sizes so they average 1: the same proportions, in numbers
+ * that read as `fr` and stay small whatever pixel sizes they came from. */
+export function normalizeTracks(sizes: number[]): number[] {
+  const sum = sizes.reduce((a, b) => a + b, 0);
+  if (!(sum > 0)) return sizes.map(() => 1);
+  return sizes.map((s) => Math.round(((s * sizes.length) / sum) * 1000) / 1000);
+}
+
+function frTracks(sizes: number[], min: string): string {
+  return sizes.map((f) => `minmax(${min}, ${f}fr)`).join(" ");
+}
+
+/** Where a tile sits in the default grid: its first row and column, and how
+ * many of each it spans. The same placement CSS grid's auto-flow gives the
+ * spans `tileSpan` hands out, worked out so the page knows which of a tile's
+ * edges are lines it shares with another tile. */
+export type TilePlacement = {
+  row: number;
+  col: number;
+  rowSpan: number;
+  colSpan: number;
+};
+
+export function tilePlacement({
+  slot,
+  count,
+  cols,
+  twoUpSplit,
+  twoUpFits,
+  rowFill,
+}: {
+  slot: number;
+  count: number;
+  cols: number | null;
+  twoUpSplit: TwoUpSplit;
+  twoUpFits: boolean;
+  rowFill: RowFill;
+}): TilePlacement {
+  const one = { rowSpan: 1, colSpan: 1 };
+  if (count <= 1) return { row: 0, col: 0, ...one };
+  if (count === 2) {
+    return twoUpSplit === "cols" && twoUpFits
+      ? { row: 0, col: slot, ...one }
+      : { row: slot, col: 0, ...one };
+  }
+  const c = Math.max(cols ?? 1, 1);
+  const plain = { row: Math.floor(slot / c), col: slot % c, ...one };
+  if (rowFill === "gaps" || c < 2 || count <= c) return plain;
+  const rows = Math.ceil(count / c);
+  const lastRowStart = (rows - 1) * c;
+  const lastRowCount = count - lastRowStart;
+  const gap = c - lastRowCount;
+  if (gap <= 0) return plain;
+  if (rowFill === "tall" && gap === 1) {
+    if (slot === lastRowStart - 1) {
+      return { row: rows - 2, col: c - 1, rowSpan: 2, colSpan: 1 };
+    }
+    return plain;
+  }
+  if (slot < lastRowStart) return plain;
+  // The stretched last row: each tile's span as tileSpan works it out, and its
+  // column is the spans of the tiles before it.
+  const spanOf = (nth: number) =>
+    Math.floor(c / lastRowCount) + (nth < c % lastRowCount ? 1 : 0);
+  const nth = slot - lastRowStart;
+  let col = 0;
+  for (let i = 0; i < nth; i++) col += spanOf(i);
+  return { row: rows - 1, col, rowSpan: 1, colSpan: spanOf(nth) };
+}
+
+/**
  * The tracks for the **default** (nothing pinned) grid.
  *
  * One terminal fills the pane and two split it, whatever any Grid setting says:
@@ -87,6 +204,9 @@ export type TwoUpSplit = "cols" | "rows";
  * there, and growing the window bought nothing but dead space below the last
  * row. `minmax(floor, 1fr)` shares the pane when the rows fit and holds the
  * legible floor and scrolls when they do not.
+ *
+ * `tracks`, when they fit this shape, share the pane unequally instead (see
+ * GridTracks): the same floors, other proportions.
  */
 export function defaultGridStyle({
   count,
@@ -94,6 +214,7 @@ export function defaultGridStyle({
   twoUpSplit,
   twoUpFits,
   tileMinH,
+  tracks,
 }: {
   count: number;
   /** The column count for three or more tiles. Null falls back to one. */
@@ -101,11 +222,22 @@ export function defaultGridStyle({
   twoUpSplit: TwoUpSplit;
   twoUpFits: boolean;
   tileMinH: number;
+  tracks?: GridTracks | null;
 }): React.CSSProperties {
   if (count <= 1) {
     return {
       gridTemplateColumns: "minmax(0, 1fr)",
       gridTemplateRows: "minmax(0, 1fr)",
+    };
+  }
+  const own = tracksFor(
+    tracks,
+    gridTrackCounts({ count, cols, twoUpSplit, twoUpFits }),
+  );
+  if (own) {
+    return {
+      gridTemplateColumns: frTracks(own.cols, "0"),
+      gridTemplateRows: frTracks(own.rows, count === 2 ? "0" : `${tileMinH}px`),
     };
   }
   if (count === 2) {

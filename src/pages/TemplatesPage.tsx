@@ -40,6 +40,7 @@ import {
   updateTemplate,
   type Template,
   type TemplateItem,
+  type TemplateLayout,
   type TemplateStartup,
 } from "@/lib/tauri/templates";
 import { useRailFilter } from "@/lib/useRailFilter";
@@ -76,6 +77,8 @@ type Draft = {
   color: string;
   items: TemplateItem[];
   startup: TemplateStartup;
+  /** Grid sizes saved from the Terminals tab, or null for an even split. */
+  layout: TemplateLayout | null;
 };
 
 /** A request from another tab: edit this template, or start a new one
@@ -93,6 +96,8 @@ type Draft = {
 export type TemplateFocus = {
   template: Template | null;
   items?: TemplateItem[];
+  /** With `items`: the grid's sizes, when its lines had been dragged. */
+  layout?: TemplateLayout | null;
   /** Duplicate from the Terminals launcher: this template's contents as a new,
    * unsaved one. */
   copyOf?: Template;
@@ -107,6 +112,7 @@ const EMPTY_DRAFT: Draft = {
   color: "",
   items: [],
   startup: "off",
+  layout: null,
 };
 
 function draftOf(t: Template): Draft {
@@ -116,13 +122,14 @@ function draftOf(t: Template): Draft {
     color: t.color,
     items: t.items,
     startup: t.startup,
+    layout: t.layout,
   };
 }
 
 /** What "unsaved" is measured against. The id is left out so a create landing
  * an id does not by itself count as a change. */
 function fingerprint(d: Draft): string {
-  return JSON.stringify([d.name.trim(), d.color, d.startup, d.items]);
+  return JSON.stringify([d.name.trim(), d.color, d.startup, d.items, d.layout]);
 }
 
 /**
@@ -310,9 +317,9 @@ export function TemplatesPage({
       // Startup is off, since only one template can open at startup and a
       // copy must not take that from the original.
 
-      const { name, color, items } = focus.copyOf;
+      const { name, color, items, layout } = focus.copyOf;
       replaceDraft(
-        { id: null, name, color, items, startup: "off" },
+        { id: null, name, color, items, startup: "off", layout },
         fingerprint(EMPTY_DRAFT),
         `Duplicate puts a copy of “${name}” in the editor`,
       );
@@ -322,7 +329,7 @@ export function TemplatesPage({
       // arrangement is unsaved work from the first frame, and leaving it
       // behind should say so.
       replaceDraft(
-        { ...EMPTY_DRAFT, items: focus.items },
+        { ...EMPTY_DRAFT, items: focus.items, layout: focus.layout ?? null },
         fingerprint(EMPTY_DRAFT),
         "Save as template puts the Terminals tab's grid in the editor",
       );
@@ -404,6 +411,7 @@ export function TemplatesPage({
           color: d.color,
           items: d.items,
           startup: d.startup,
+          layout: d.layout,
         };
         const saved =
           d.id == null
@@ -490,6 +498,7 @@ export function TemplatesPage({
         color: input.color,
         items: input.items,
         startup: "off",
+        layout: input.layout ?? null,
       };
       const unresolved = next.items.filter(
         (i) => i.kind === "host" && i.hostId == null,
@@ -781,6 +790,10 @@ export function TemplatesPage({
           onRemove={remove}
           onOpenGridSettings={onOpenGridSettings}
           visible={visible}
+          layout={draft.layout}
+          onForgetLayout={() =>
+            setDraft((d) => (d ? { ...d, layout: null } : d))
+          }
         />
       </div>
     </div>

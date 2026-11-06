@@ -98,6 +98,7 @@ export function useTemplateList(onChanged: () => void) {
             color: source.color,
             items: source.items,
             startup: "off",
+            layout: source.layout,
           },
           source.id,
         );

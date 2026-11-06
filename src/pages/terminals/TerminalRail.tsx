@@ -83,6 +83,7 @@ import {
   EyeIcon,
   EyeOffIcon,
   LayoutTemplateIcon,
+  SaveIcon,
   Grid2x2Icon,
   LayersIcon,
   LayoutGridIcon,
@@ -217,7 +218,13 @@ export function TerminalRail({
   /** Save the grid on screen as a template, or null when that is not on offer:
    * outside Grid, with fewer than two tiles, or when a saved template already
    * opens exactly these sessions. `count` is how many sessions it would hold. */
-  saveAsTemplate: { count: number; onSave: () => void } | null;
+  /** `sizesTo`: the grid is that saved template's sessions with new sizes, and
+   * the button saves the sizes to it rather than making a new template. */
+  saveAsTemplate: {
+    count: number;
+    sizesTo: string | null;
+    onSave: () => void;
+  } | null;
   /** Whether the tab strip is rolled up. Grid-only, and remembered. */
   tabBarHidden: boolean;
   toggleTabBar: () => void;
@@ -522,12 +529,20 @@ export function TerminalRail({
           size="icon-sm"
           variant="outline"
           onClick={saveAsTemplate.onSave}
-          aria-label="Save as template"
+          aria-label={
+            saveAsTemplate.sizesTo ? "Save sizes to template" : "Save as template"
+          }
           {...hint(
-            `Save this grid as a template: the Templates tab opens with these ${saveAsTemplate.count} sessions in this order, ready to name and save`,
+            saveAsTemplate.sizesTo
+              ? `Save these tile sizes to "${saveAsTemplate.sizesTo}", so opening it lays the grid out like this`
+              : `Save this grid as a template: the Templates tab opens with these ${saveAsTemplate.count} sessions in this order, and their sizes, ready to name and save`,
           )}
         >
-          <LayoutTemplateIcon className="h-3.5 w-3.5" />
+          {saveAsTemplate.sizesTo ? (
+            <SaveIcon className="h-3.5 w-3.5" />
+          ) : (
+            <LayoutTemplateIcon className="h-3.5 w-3.5" />
+          )}
         </Button>
       )}
 
@@ -772,8 +787,8 @@ export function TerminalRail({
               onCheckedChange={toggleLockedTiles}
               {...hint(
                 lockedTiles
-                  ? "Dragging a tile's edge resizes every tile. Untick to resize tiles one at a time."
-                  : "Dragging a tile's edge resizes only that tile, and the others wrap around it. Tick to resize them all together again.",
+                  ? "Dragging a tile's edge resizes every tile. Untick to drag the lines between tiles instead."
+                  : "Dragging the line between two tiles moves it: one grows, its neighbour shrinks. Tick to resize every tile together again.",
               )}
             >
               Resize tiles together

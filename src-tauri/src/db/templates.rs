@@ -1,11 +1,13 @@
 //! Session templates (migration 22): a saved arrangement of terminal sessions
 //! that can be opened again in one action.
 //!
-//! A template is an **ordered list and nothing else**. There is no layout in
-//! it: no tabs-versus-grid, no column count, no per-tile size. The grid falls
-//! out of the number of sessions exactly as the Terminals tab already works it
-//! out, so a template can never argue with the operator's own Grid settings,
-//! and the same file opened on two machines looks right on both.
+//! A template is an **ordered list**, plus, optionally, how its grid shares the
+//! pane (migration 27). There is no tabs-versus-grid, no column count and no
+//! per-tile size in characters: the grid's shape falls out of the number of
+//! sessions exactly as the Terminals tab already works it out, so a template
+//! can never argue with the operator's own Grid settings. The saved sizes are
+//! fractions of whatever pane it opens in ([`TemplateLayout`]), so the same
+//! file opened on two machines still looks right on both.
 //!
 //! **Why the database and not localStorage**, where the neighbouring launcher
 //! preferences live: a template is listed in the Hosts table, carries a
@@ -98,6 +100,22 @@ pub enum TemplateItem {
     Profile { profile_id: String, label: String },
 }
 
+/// The most rows, or columns, a saved layout may describe. Far past any grid
+/// [`MAX_ITEMS`] sessions can make; a ceiling for a hand-edited file.
+pub const MAX_LAYOUT_TRACKS: usize = 16;
+
+/// How a template's grid shares the pane: one relative size (a CSS `fr`) per
+/// row, top to bottom, and per column, left to right, as the Terminals tab had
+/// them when the template was saved. Fractions, never pixels, so the
+/// arrangement fits any window. Used only while the grid it opens into has
+/// exactly this many rows and columns; otherwise the grid shares the pane
+/// evenly, as a template without one does.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TemplateLayout {
+    pub rows: Vec<f64>,
+    pub cols: Vec<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Template {
     pub id: i64,
@@ -106,6 +124,7 @@ pub struct Template {
     pub color: String,
     pub items: Vec<TemplateItem>,
     pub startup: String,
+    pub layout: Option<TemplateLayout>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -119,16 +138,20 @@ pub struct TemplateInput {
     pub items: Vec<TemplateItem>,
     #[serde(default = "startup_off")]
     pub startup: String,
+    #[serde(default)]
+    pub layout: Option<TemplateLayout>,
 }
 
 fn startup_off() -> String {
     STARTUP_OFF.to_string()
 }
 
-const SELECT_COLS: &str = "id, name, color, items_json, startup, created_at, updated_at";
+const SELECT_COLS: &str =
+    "id, name, color, items_json, startup, created_at, updated_at, layout_json";
 
 fn from_row(row: &Row) -> rusqlite::Result<Template> {
     let items_json: String = row.get(3)?;
+    let layout_json: String = row.get(7)?;
     Ok(Template {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -138,9 +161,47 @@ fn from_row(row: &Row) -> rusqlite::Result<Template> {
         // the whole read would take every other template down with it.
         items: serde_json::from_str(&items_json).unwrap_or_default(),
         startup: row.get(4)?,
+        // The same for the sizes, and a set that is not valid (from a restored
+        // file, say) is dropped the same way: the grid shares the pane evenly.
+        layout: parse_layout(&layout_json),
         created_at: row.get(5)?,
         updated_at: row.get(6)?,
     })
+}
+
+fn parse_layout(json: &str) -> Option<TemplateLayout> {
+    if json.is_empty() {
+        return None;
+    }
+    serde_json::from_str::<TemplateLayout>(json)
+        .ok()
+        .filter(|l| validate_layout(l).is_ok())
+}
+
+fn layout_json(layout: &Option<TemplateLayout>) -> AppResult<String> {
+    Ok(match layout {
+        Some(l) => serde_json::to_string(l)?,
+        None => String::new(),
+    })
+}
+
+/// Every size a positive, finite number of sane magnitude, and a sane number
+/// of them. The sizes become CSS on the Terminals tab, so a value that is not
+/// a plain number never gets that far.
+pub fn validate_layout(layout: &TemplateLayout) -> AppResult<()> {
+    for (what, sizes) in [("rows", &layout.rows), ("columns", &layout.cols)] {
+        if sizes.is_empty() || sizes.len() > MAX_LAYOUT_TRACKS {
+            return Err(AppError::InvalidInput(format!(
+                "a layout has 1 to {MAX_LAYOUT_TRACKS} {what}"
+            )));
+        }
+        if sizes.iter().any(|s| !s.is_finite() || *s <= 0.0 || *s > 1000.0) {
+            return Err(AppError::InvalidInput(format!(
+                "a layout's {what} must be sizes between 0 and 1000"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate(input: &TemplateInput) -> AppResult<()> {
@@ -173,6 +234,9 @@ fn validate(input: &TemplateInput) -> AppResult<()> {
     }
     for item in &input.items {
         validate_item(item)?;
+    }
+    if let Some(layout) = &input.layout {
+        validate_layout(layout)?;
     }
     Ok(())
 }
@@ -256,6 +320,7 @@ pub fn create_after(
     validate(input)?;
     let now = Utc::now().to_rfc3339();
     let items_json = serde_json::to_string(&input.items)?;
+    let layout_json = layout_json(&input.layout)?;
     let tx = conn.transaction()?;
     let name = unique_name(&tx, input.name.trim(), None)?;
     clear_other_startups(&tx, input, None)?;
@@ -284,9 +349,9 @@ pub fn create_after(
         )?,
     };
     tx.execute(
-        "INSERT INTO templates (name, color, items_json, startup, created_at, updated_at, sort_order)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![name, input.color, items_json, input.startup, now, now, position],
+        "INSERT INTO templates (name, color, items_json, startup, created_at, updated_at, sort_order, layout_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![name, input.color, items_json, input.startup, now, now, position, layout_json],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;
@@ -297,14 +362,16 @@ pub fn update(conn: &mut Connection, id: i64, input: &TemplateInput) -> AppResul
     validate(input)?;
     let now = Utc::now().to_rfc3339();
     let items_json = serde_json::to_string(&input.items)?;
+    let layout_json = layout_json(&input.layout)?;
     let tx = conn.transaction()?;
     let name = unique_name(&tx, input.name.trim(), Some(id))?;
     clear_other_startups(&tx, input, Some(id))?;
     let changed = tx.execute(
         "UPDATE templates
-            SET name = ?1, color = ?2, items_json = ?3, startup = ?4, updated_at = ?5
+            SET name = ?1, color = ?2, items_json = ?3, startup = ?4, updated_at = ?5,
+                layout_json = ?7
           WHERE id = ?6",
-        params![name, input.color, items_json, input.startup, now, id],
+        params![name, input.color, items_json, input.startup, now, id, layout_json],
     )?;
     if changed == 0 {
         return Err(AppError::InvalidInput(format!("no such template: {id}")));
@@ -521,7 +588,53 @@ mod tests {
                 },
             ],
             startup: STARTUP_OFF.into(),
+            layout: None,
         }
+    }
+
+    #[test]
+    fn a_layout_round_trips_and_a_bad_one_is_refused() {
+        let mut conn = open_in_memory().unwrap();
+        let mut with = input("sized");
+        with.layout = Some(TemplateLayout {
+            rows: vec![1.4, 0.6],
+            cols: vec![1.0, 1.0],
+        });
+        let t = create(&mut conn, &with).unwrap();
+        assert_eq!(get(&conn, t.id).unwrap().layout, with.layout);
+
+        // Saving without one clears it.
+        let t = update(&mut conn, t.id, &input("sized")).unwrap();
+        assert_eq!(t.layout, None);
+
+        for bad in [
+            TemplateLayout { rows: vec![], cols: vec![1.0] },
+            TemplateLayout { rows: vec![1.0, -1.0], cols: vec![1.0] },
+            TemplateLayout { rows: vec![1.0], cols: vec![f64::INFINITY] },
+            TemplateLayout { rows: vec![1.0; MAX_LAYOUT_TRACKS + 1], cols: vec![1.0] },
+        ] {
+            let mut i = input("bad");
+            i.layout = Some(bad);
+            assert!(create(&mut conn, &i).is_err());
+        }
+    }
+
+    #[test]
+    fn a_stored_layout_that_is_not_valid_reads_as_none() {
+        let mut conn = open_in_memory().unwrap();
+        let t = create(&mut conn, &input("tampered")).unwrap();
+        conn.execute(
+            "UPDATE templates SET layout_json = ?1 WHERE id = ?2",
+            params![r#"{"rows":[1e9],"cols":[1]}"#, t.id],
+        )
+        .unwrap();
+        assert_eq!(get(&conn, t.id).unwrap().layout, None);
+        conn.execute(
+            "UPDATE templates SET layout_json = 'not json' WHERE id = ?1",
+            params![t.id],
+        )
+        .unwrap();
+        assert_eq!(get(&conn, t.id).unwrap().layout, None);
     }
 
     #[test]
