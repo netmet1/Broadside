@@ -24,6 +24,7 @@ import {
 import {
   GRID_FLOOR_COLS,
   GRID_MIN_TILE_ROWS,
+  GRID_SPLIT_MIN_ROWS,
   TILE_BORDER_X,
   TILE_BORDER_Y,
   defaultGridStyle,
@@ -128,8 +129,14 @@ export type GridLayout = {
    * it. Zero when the titles are hidden, and it grows with the app font. */
   headerH: number;
   /** A tile's legible minimum height in px. The row track's floor and the tile's
-   * own `min-height` are handed this same number, so they cannot disagree. */
+   * own `min-height` are handed this same number (`tileFloorH` while the
+   * workspace's own sizes are in force), so they cannot disagree. */
   tileMinH: number;
+  /** How short a row may be dragged with the tiles unlocked, in px. */
+  splitMinH: number;
+  /** The floor actually in force for a tile of the default grid: `splitMinH`
+   * once the lines have been dragged, `tileMinH` otherwise. */
+  tileFloorH: number;
 
   /** True while the Grid settings are the last word and a drag is temporary
    * (the default). False lets a drag write the tile size into Settings. */
@@ -410,6 +417,8 @@ export function useGridLayout({
   const headerH = gridHeaderH(uiPrefs.appFontSize, hideGridHeaders);
   const tileMinH =
     Math.round(GRID_MIN_TILE_ROWS * cell.cellH) + headerH + TILE_BORDER_Y;
+  const splitMinH =
+    Math.round(GRID_SPLIT_MIN_ROWS * cell.cellH) + headerH + TILE_BORDER_Y;
   /** The pane's `gap-2` in pixels. Another rem, so another thing that is not a
    * constant once the app font moves off 16px. */
   const gapPx = Math.round(0.5 * uiPrefs.appFontSize);
@@ -482,6 +491,7 @@ export function useGridLayout({
   );
   const ownTracks = gridMode && !customGrid ? tracksFor(tracks, trackShape) : null;
   const hasTracks = ownTracks !== null;
+  const tileFloorH = hasTracks ? splitMinH : tileMinH;
   const splitGrid = gridMode && !lockedTiles && !customGrid && gridCount >= 2;
 
   const gridStyle = useMemo<React.CSSProperties | undefined>(() => {
@@ -501,7 +511,7 @@ export function useGridLayout({
         cols: effectiveCols,
         twoUpSplit,
         twoUpFits,
-        tileMinH,
+        tileMinH: tileFloorH,
         tracks: ownTracks,
       });
     }
@@ -546,6 +556,7 @@ export function useGridLayout({
     cell,
     headerH,
     tileMinH,
+    tileFloorH,
   ]);
 
   // Where each tile sits in the laid-out order. `displayIndex` is a position in
@@ -619,6 +630,8 @@ export function useGridLayout({
     cell,
     headerH,
     tileMinH,
+    splitMinH,
+    tileFloorH,
     strictGrid,
     gridSlot,
     effectiveCols,

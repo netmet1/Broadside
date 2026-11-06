@@ -910,7 +910,8 @@ export function TerminalsPage({
     placement,
     cell,
     headerH,
-    tileMinH,
+    splitMinH,
+    tileFloorH,
     gridSlot,
     tileSpan,
     customGrid,
@@ -986,7 +987,7 @@ export function TerminalsPage({
   const { dragging: draggingLine, begin: beginSplit } = useGridSplitters({
     gridRef: gridScrollRef,
     cell,
-    minRowPx: tileMinH,
+    minRowPx: splitMinH,
     minColPx: Math.round(GRID_FLOOR_COLS * cell.cellW) + TILE_BORDER_X,
     onTracks,
   });
@@ -3336,7 +3337,7 @@ export function TerminalsPage({
                 // rows are already sized by Settings, and one or two tiles
                 // always fill the pane, so neither takes a floor.
                 ...(!customGrid && gridCount > 2
-                  ? { minHeight: tileMinH }
+                  ? { minHeight: tileFloorH }
                   : {}),
                 // Filling a short last row (Settings -> Grid). Nothing for most
                 // tiles; a span for the ones that take up the slack.

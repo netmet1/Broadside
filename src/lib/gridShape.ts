@@ -56,6 +56,13 @@ export const TILE_BORDER_Y = 2;
  * computed from the metrics it is actually about, cannot do that. */
 export const GRID_MIN_TILE_ROWS = 13;
 
+/** How short a row may be dragged with the tiles unlocked, in rows of the
+ * terminal font. Far below GRID_MIN_TILE_ROWS on purpose: that floor is the
+ * grid choosing a height on the operator's behalf, and this is the operator
+ * asking for a short tile (a log tail under two big shells), which is theirs
+ * to ask for. Enough left to read a prompt and a few lines. */
+export const GRID_SPLIT_MIN_ROWS = 4;
+
 /** How wide a pane has to be before two legible columns fit in it: two tiles at
  * the floor, the gap between them, and the pane's own padding on both sides,
  * because `clientWidth` counts padding in. */
