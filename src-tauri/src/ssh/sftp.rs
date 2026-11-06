@@ -275,6 +275,23 @@ impl SftpState {
             }
         }
     }
+
+    /// How many SFTP sessions are open.
+    pub fn count(&self) -> usize {
+        self.conns.lock().unwrap().len()
+    }
+
+    /// Stops every transfer and drops every session, as [`remove`](Self::remove)
+    /// does for one, and returns how many sessions there were. For a page
+    /// reload, which leaves the new page knowing none of the old ids.
+    pub fn close_all(&self) -> usize {
+        for flag in self.cancels.lock().unwrap().values() {
+            flag.store(true, Ordering::Relaxed);
+        }
+        let conns: Vec<Arc<SftpConn>> =
+            self.conns.lock().unwrap().drain().map(|(_, c)| c).collect();
+        conns.len()
+    }
 }
 
 /// dir → 0, symlink → 1, file → 2, so listings show folders first.
@@ -941,8 +958,9 @@ fn safe_local_child(ldir: &Path, name: &str) -> AppResult<PathBuf> {
 /// created.
 ///
 /// SECURITY: [`safe_local_child`] guards the names `download_dir` invents for
-/// itself as it recurses, but the destination that *starts* a transfer arrives
-/// from the caller already joined, as one string, and it is built from the folder
+/// itself as it recurses, and [`download_destination`] the name that *starts* a
+/// transfer, which the IPC commands take apart from the folder for that reason.
+/// This is the second line behind it: the path is built from the folder
 /// the operator is looking at plus a name the **remote host chose**: an entry
 /// name from a listing in the Commander, or a glob match on the Broadcast tab.
 /// Joining a name of `..\..\evil.exe` gives a path that climbs out of the folder
@@ -975,6 +993,22 @@ fn safe_local_destination(local_path: &str) -> AppResult<&Path> {
             "refusing unsafe local destination {local_path:?} (possible path traversal)"
         )));
     }
+    Ok(path)
+}
+
+/// The local path a GET writes to: `name` in the folder `local_dir`.
+///
+/// SECURITY: `name` is the remote entry's own name, so the host chose it, and it
+/// arrives apart from the folder so it can be checked as a name. Joined by the
+/// caller, a name with separators in it but no `..` (`Library/LaunchAgents`,
+/// or on Windows `AppData\Roaming\...\Startup\x.bat`, an ordinary file name on
+/// a Linux server) makes a path [`safe_local_destination`] has no reason to
+/// refuse, and that lands wherever the host wanted.
+pub fn download_destination(local_dir: &str, name: &str) -> AppResult<String> {
+    let path = safe_local_child(Path::new(local_dir), name)?
+        .to_string_lossy()
+        .into_owned();
+    safe_local_destination(&path)?;
     Ok(path)
 }
 
@@ -1351,5 +1385,93 @@ mod tests {
                 "expected rejection for {bad:?}",
             );
         }
+    }
+
+    // The same two rules in macOS's path shape, which is what the local pane
+    // builds there.
+    #[test]
+    #[cfg(unix)]
+    fn safe_local_destination_accepts_what_the_commander_builds_on_macos() {
+        for good in [
+            "/Users/ops/Downloads/report.csv",
+            "/Users/ops/Downloads/a b.log",
+            "/Volumes/USB/backups/host-a",
+        ] {
+            assert!(
+                safe_local_destination(good).is_ok(),
+                "expected acceptance for {good:?}",
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn safe_local_destination_refuses_a_path_that_climbs_on_macos() {
+        for bad in [
+            "",
+            "/Users/ops/Downloads/../../evil",
+            "/Users/ops/Downloads/../../../etc/hosts",
+            "/Users/ops/Downloads/sub/../../evil",
+            "../evil",
+            "evil",
+            "Downloads/evil",
+            "/",
+            "/Users/ops/Downloads/name\0.txt",
+        ] {
+            assert!(
+                safe_local_destination(bad).is_err(),
+                "expected rejection for {bad:?}",
+            );
+        }
+    }
+
+    // A GET's name is the host's. One with separators in it but no `..` joins
+    // into a path that looks ordinary, so it is refused as a name, before the
+    // join, on every platform.
+    #[test]
+    #[cfg(windows)]
+    fn a_download_name_with_separators_is_refused() {
+        let dir = r"C:\Users\ops";
+        assert_eq!(
+            download_destination(dir, "report.csv").unwrap(),
+            r"C:\Users\ops\report.csv"
+        );
+        for bad in [
+            r"AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\x.bat",
+            "Documents/evil.txt",
+            "report.txt:hidden",
+            "..",
+            ".",
+            "",
+        ] {
+            assert!(download_destination(dir, bad).is_err(), "{bad:?} should be refused");
+        }
+        assert!(download_destination("", "report.csv").is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_download_name_with_separators_is_refused_on_macos() {
+        let dir = "/Users/ops";
+        assert_eq!(
+            download_destination(dir, "report.csv").unwrap(),
+            "/Users/ops/report.csv"
+        );
+        for bad in ["Library/LaunchAgents", r"a\b", "..", ".", ""] {
+            assert!(download_destination(dir, bad).is_err(), "{bad:?} should be refused");
+        }
+        assert!(download_destination("", "report.csv").is_err());
+    }
+
+    /// A reload stops every transfer, whichever session it belongs to.
+    #[test]
+    fn close_all_stops_every_transfer() {
+        let state = SftpState::default();
+        let (_, one) = state.begin_transfer("s1", Some("t1"));
+        let (_, two) = state.begin_transfer("s2", None);
+        assert_eq!(state.close_all(), 0);
+        assert!(one.load(Ordering::Relaxed));
+        assert!(two.load(Ordering::Relaxed));
+        assert_eq!(state.count(), 0);
     }
 }

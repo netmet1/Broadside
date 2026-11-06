@@ -14,9 +14,18 @@
 
 import { isValidElement, type ReactNode } from "react";
 
-import { textOf } from "./searchText";
+import { type NodeSearchable, textOf } from "./searchText";
 
 export type Subheading = { isSubheading: true };
+
+/** The platform blocks (./platform) say which of their children are on the
+ * page; a heading inside one written for the other platform is not. */
+function onScreen(type: unknown): type is NodeSearchable {
+  return (
+    typeof type === "function" &&
+    typeof (type as Partial<NodeSearchable>).searchNode === "function"
+  );
+}
 
 function isSubheading(type: unknown): type is Subheading {
   return (
@@ -34,7 +43,12 @@ export function subheadingsOf(node: ReactNode): string[] {
       return;
     }
     if (!isValidElement(n)) return;
-    const children = (n.props as { children?: ReactNode }).children;
+    const props = n.props as Record<string, unknown> & { children?: ReactNode };
+    if (onScreen(n.type)) {
+      walk(n.type.searchNode(props));
+      return;
+    }
+    const children = props.children;
     if (isSubheading(n.type)) {
       const title = textOf(children).replace(/\s+/g, " ").trim();
       if (title) out.push(title);

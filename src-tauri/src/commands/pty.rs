@@ -200,7 +200,8 @@ pub fn pty_resize(
 }
 
 /// Lists the local shells available on this machine (PowerShell / pwsh / Command
-/// Prompt / installed WSL distros) for the "New local shell" launcher. Async and
+/// Prompt / installed WSL distros on Windows; zsh, bash and the rest of
+/// `/etc/shells` on macOS) for the "New local shell" launcher. Async and
 /// cached: detection spawns wsl.exe (seconds when the WSL service is cold), and
 /// running that inside a sync command blocked the main thread, freezing every
 /// other IPC call (the Settings-spinner stall) and the event loop itself.
@@ -209,9 +210,9 @@ pub async fn list_local_shells() -> Vec<crate::local::LocalShell> {
     crate::local::list_local_shells_cached().await
 }
 
-/// The COM ports on this machine, for the "New local shell" launcher's serial
+/// The serial ports on this machine, for the "New local shell" launcher's serial
 /// section. Not cached, unlike the shell list: a USB serial adapter is meant to
-/// be unplugged, and the enumeration is only a registry read.
+/// be unplugged, and the enumeration is only a registry read (IOKit on macOS).
 #[tauri::command]
 pub fn list_serial_ports() -> Vec<crate::serial::SerialPort> {
     crate::serial::list_ports()
@@ -230,7 +231,7 @@ fn parse_serial_id(rest: &str) -> AppResult<(&str, u32)> {
     Ok((port, baud))
 }
 
-/// Opens a local shell tab over ConPTY. Mirrors `pty_open` but the source is a
+/// Opens a local shell tab over a pty (ConPTY on Windows). Mirrors `pty_open` but the source is a
 /// local process rather than an SSH host; the same session id then flows through
 /// `pty_write`/`pty_resize`/`pty_close`.
 ///
@@ -326,6 +327,27 @@ pub fn delete_custom_terminal(id: i64, state: State<'_, DbState>) -> AppResult<u
 #[tauri::command]
 pub fn pty_close(session_id: String, pty_state: State<'_, PtyState>) -> AppResult<()> {
     pty_state.close(&session_id)
+}
+
+/// What a page reload would close (see `close_every_session` in lib.rs), for
+/// the Settings dialogs that end in one to say so.
+#[derive(serde::Serialize)]
+pub struct OpenSessions {
+    /// Every PTY session: SSH, local shell, serial and skill-run shells, on
+    /// any tab.
+    pub terminals: usize,
+    pub sftp: usize,
+}
+
+#[tauri::command]
+pub fn open_session_count(
+    pty_state: State<'_, PtyState>,
+    sftp_state: State<'_, crate::ssh::sftp::SftpState>,
+) -> OpenSessions {
+    OpenSessions {
+        terminals: pty_state.count(),
+        sftp: sftp_state.count(),
+    }
 }
 
 /// Records one PTY-broadcast dispatch run for the persistent history (D-059).

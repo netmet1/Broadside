@@ -1,5 +1,6 @@
 /**
- * Ctrl + mouse wheel over a terminal changes the terminal font size.
+ * Ctrl + mouse wheel (⌘ + wheel on a Mac) over a terminal changes the terminal
+ * font size.
  *
  * The size already lives in Settings -> Appearance and every open pane follows
  * it live, so zooming is not a second setting: a wheel notch moves the same
@@ -25,6 +26,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { toast } from "sonner";
 
+import { IS_MAC } from "@/lib/platform";
 import { errorMessage } from "@/lib/tauri/hosts";
 import { setUiSettings } from "@/lib/tauri/settings";
 import { useUiPrefs, type UiPrefs } from "@/lib/uiPrefs";
@@ -131,7 +133,10 @@ export function useTerminalFontZoom(
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey || e.deltaY === 0) return;
+      // ⌘ on a Mac, the modifier every other app there zooms with. Ctrl is
+      // taken as well, so the habit from Windows still works.
+      const zoomKey = IS_MAC ? e.metaKey || e.ctrlKey : e.ctrlKey;
+      if (!zoomKey || e.deltaY === 0) return;
       // Read at the event rather than held in state: the checkbox is on another
       // page that may not be mounted, and an unchecked box has to take effect
       // on the next notch, not the next remount.

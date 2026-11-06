@@ -2,9 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { LocalShell } from "@/lib/tauri/local";
 
-/** A COM port present on this machine right now. */
+/** A serial port present on this machine right now. */
 export type SerialPort = {
-  /** Always `COM<n>`. */
+  /** Always `COM<n>` on Windows, `/dev/cu.<name>` on a Mac. This is the id;
+   * see {@link portLabel} for what is shown. */
   name: string;
   /** What the OS knows the port to be: a USB adapter's product string, or the
    * driver's name for a built-in port. Empty when there is nothing to say. */
@@ -24,7 +25,7 @@ export const BAUD_RATES = [
  * remembered per port from then on. */
 export const DEFAULT_BAUD = 9600;
 
-/** The COM ports on this machine. Asked for fresh every time the launcher
+/** The serial ports on this machine. Asked for fresh every time the launcher
  * opens: a serial adapter is a thing you unplug. */
 export function listSerialPorts(): Promise<SerialPort[]> {
   return invoke<SerialPort[]>("list_serial_ports");
@@ -57,6 +58,12 @@ export function serialPortOf(shellId: string): string | null {
   return port || null;
 }
 
+/** A port as a person reads it: `COM3`, or on a Mac `cu.usbserial-1420`, the
+ * device's own name without the `/dev/` every Mac port shares. */
+export function portLabel(name: string): string {
+  return name.startsWith("/dev/") ? name.slice("/dev/".length) : name;
+}
+
 /** A port and speed as a launchable shell. The label is what the tab is called,
  * so it carries the speed: two consoles open at different speeds are otherwise
  * indistinguishable, and the speed is exactly what you check when the output is
@@ -64,7 +71,7 @@ export function serialPortOf(shellId: string): string | null {
 export function serialAsShell(port: SerialPort, baud: number): LocalShell {
   return {
     id: serialShellId(port.name, baud),
-    label: `${port.name} @ ${baud}`,
+    label: `${portLabel(port.name)} @ ${baud}`,
     kind: "serial",
   };
 }

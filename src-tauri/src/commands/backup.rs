@@ -2,9 +2,9 @@
 //! (hosts, settings, host keys, command history) into a user-chosen folder,
 //! optionally alongside a re-importable hosts CSV (reuses the export module).
 //!
-//! Credentials are deliberately NOT included; they live in Windows
-//! Credential Manager / the age-encrypted store (D-008), and copying secrets
-//! into ad-hoc backup folders would undo that protection.
+//! Credentials are deliberately NOT included; they live in the OS credential
+//! store (Credential Manager, Keychain) / the age-encrypted store (D-008), and
+//! copying secrets into ad-hoc backup folders would undo that protection.
 
 use std::path::{Path, PathBuf};
 
@@ -98,9 +98,9 @@ pub fn backup_app_data(
 
 /// Restores a backup `.db` into the live database. This OVERWRITES hosts,
 /// history, skills, templates, shell profiles and preferences with the
-/// snapshot's contents. Credentials are untouched: they live in Windows
-/// Credential Manager, not the DB, so a restored host may need its password
-/// re-entered.
+/// snapshot's contents. Credentials are untouched: they live in the OS
+/// credential store (Credential Manager, Keychain), not the DB, so a restored
+/// host may need its password re-entered.
 ///
 /// The file is imported row by row inside one transaction, never copied over
 /// the live database, and some of it is never read at all: launcher entries,

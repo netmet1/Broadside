@@ -31,8 +31,8 @@ export function reconcileDisabledShells(detectedIds: string[]): Set<string> {
   // is a caller holding the array it starts with, before detection has
   // answered. Pruning against it would delete every choice the operator has
   // made and write the deletion straight back, which is the one thing this must
-  // never do. Windows always has at least Command Prompt, so a genuinely empty
-  // list means detection did not run, not that the machine has no shells.
+  // never do. Windows always has at least Command Prompt (a Mac, zsh), so a
+  // genuinely empty list means detection did not run, not that the machine has no shells.
   if (detectedIds.length === 0) return stored;
   const detected = new Set(detectedIds);
   let changed = false;

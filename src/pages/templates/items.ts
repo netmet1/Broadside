@@ -13,6 +13,7 @@
  */
 
 import type { Host } from "@/lib/tauri/hosts";
+import { FALLBACK_SHELL_KIND } from "@/lib/platform";
 import type { LocalShell } from "@/lib/tauri/local";
 import type { TemplateItem } from "@/lib/tauri/templates";
 import {
@@ -85,7 +86,7 @@ export function resolveItem(
       return {
         ...base,
         label: shell?.label || item.label || item.shellId,
-        shellKind: shell?.kind ?? "cmd",
+        shellKind: shell?.kind ?? FALLBACK_SHELL_KIND,
         color: shell ? tintOrNull(src.shellColors[shell.kind]) : null,
         shell,
         missing: shell
@@ -101,7 +102,7 @@ export function resolveItem(
       return {
         ...base,
         label: profile?.label || item.label || "Profile",
-        shellKind: shell?.kind ?? "cmd",
+        shellKind: shell?.kind ?? FALLBACK_SHELL_KIND,
         color: profile
           ? tintOrNull(profile.color || src.shellColors[shell?.kind ?? ""])
           : null,

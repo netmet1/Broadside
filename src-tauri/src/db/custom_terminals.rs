@@ -1,5 +1,5 @@
-//! User-defined terminal applications (migration 16): Git Bash, MSYS2, Cygwin,
-//! or anything else the operator would rather launch than the shells Broadside
+//! User-defined terminal applications (migration 16): Git Bash, MSYS2, Cygwin on
+//! Windows, a Homebrew fish or PowerShell on macOS, or anything else the operator would rather launch than the shells Broadside
 //! detects on its own.
 //!
 //! **Why this is in the database and not a localStorage UI pref** (which is
@@ -32,11 +32,20 @@ pub const FAMILY_CMD: &str = "cmd";
 
 const FAMILIES: [&str; 3] = [FAMILY_POSIX, FAMILY_POWERSHELL, FAMILY_CMD];
 
-/// Only `.exe` is accepted. `.bat` / `.cmd` are not executables in their own
-/// right: launching one means handing a command line to `cmd.exe` to interpret,
-/// which is exactly the shell re-parsing this design avoids. If those are ever
-/// wanted they need their own deliberate design, not a widened extension list.
+/// On Windows only `.exe` is accepted. `.bat` / `.cmd` are not executables in
+/// their own right: launching one means handing a command line to `cmd.exe` to
+/// interpret, which is exactly the shell re-parsing this design avoids. If those
+/// are ever wanted they need their own deliberate design, not a widened
+/// extension list. macOS programs carry no extension; there the test is the
+/// file's execute permission instead, checked once the file is found.
+#[cfg(windows)]
 const ALLOWED_EXT: &str = "exe";
+
+/// What a full path looks like here, for the message that asks for one.
+#[cfg(windows)]
+const EXAMPLE_PROGRAM: &str = r"C:\Program Files\Git\bin\bash.exe";
+#[cfg(not(windows))]
+const EXAMPLE_PROGRAM: &str = "/opt/homebrew/bin/fish";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomTerminal {
@@ -109,10 +118,11 @@ fn validate(input: &CustomTerminalInput) -> AppResult<()> {
     // directory the app happened to have, which is not a decision the operator
     // is making when they type a path.
     if !path.is_absolute() {
-        return Err(AppError::InvalidInput(
-            "program path must be a full path, e.g. C:\\Program Files\\Git\\bin\\bash.exe".into(),
-        ));
+        return Err(AppError::InvalidInput(format!(
+            "program path must be a full path, e.g. {EXAMPLE_PROGRAM}"
+        )));
     }
+    #[cfg(windows)]
     match path.extension().and_then(|e| e.to_str()) {
         Some(ext) if ext.eq_ignore_ascii_case(ALLOWED_EXT) => {}
         _ => {
@@ -129,6 +139,16 @@ fn validate(input: &CustomTerminalInput) -> AppResult<()> {
         return Err(AppError::InvalidInput(format!(
             "no such program: {exe}"
         )));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = path.metadata().map(|m| m.permissions().mode()).unwrap_or(0);
+        if mode & 0o111 == 0 {
+            return Err(AppError::InvalidInput(format!(
+                "{exe} is not a program (it is not marked executable)"
+            )));
+        }
     }
 
     if !FAMILIES.contains(&input.family.as_str()) {
@@ -234,16 +254,13 @@ mod tests {
         c
     }
 
-    /// A real .exe to point at, so the is_file() check can pass in tests.
+    /// A real program to point at, so the existence checks can pass in tests.
+    /// The test binary itself: an .exe on Windows, an executable file on macOS.
     fn a_real_exe() -> String {
-        let mut p = std::env::current_exe().unwrap();
-        // The test binary itself is an .exe on Windows; on other platforms give
-        // it one so the extension check is exercised the same way.
-        if p.extension().and_then(|e| e.to_str()) != Some("exe") {
-            p.set_extension("exe");
-            std::fs::write(&p, b"not really an exe").unwrap();
-        }
-        p.to_string_lossy().into_owned()
+        std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
     }
 
     fn input(label: &str) -> CustomTerminalInput {
@@ -277,6 +294,7 @@ mod tests {
         assert!(err.contains("full path"), "got: {err}");
     }
 
+    #[cfg(windows)]
     #[test]
     fn rejects_a_non_exe() {
         let c = conn();
@@ -293,9 +311,29 @@ mod tests {
     fn rejects_a_path_that_does_not_exist() {
         let c = conn();
         let mut i = input("Bad");
-        i.exe_path = r"C:\definitely\not\here\nope.exe".into();
+        i.exe_path = if cfg!(windows) {
+            r"C:\definitely\not\here\nope.exe"
+        } else {
+            "/definitely/not/here/nope"
+        }
+        .into();
         let err = create(&c, &i).unwrap_err().to_string();
         assert!(err.contains("no such program"), "got: {err}");
+    }
+
+    /// A Mac program has no extension to check, so a plain file that cannot be
+    /// executed (a script saved without `chmod +x`) is caught by its mode.
+    #[cfg(unix)]
+    #[test]
+    fn rejects_a_file_that_is_not_executable() {
+        let c = conn();
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("not-a-program");
+        std::fs::write(&p, b"echo hi").unwrap();
+        let mut i = input("Bad");
+        i.exe_path = p.to_string_lossy().into_owned();
+        let err = create(&c, &i).unwrap_err().to_string();
+        assert!(err.contains("not marked executable"), "got: {err}");
     }
 
     #[test]

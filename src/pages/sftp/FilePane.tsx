@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { IS_MAC, MOD_KEY, isModKey } from "@/lib/platform";
 import { useHint } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import { formatMtime, formatSize } from "@/pages/sftp/model";
@@ -44,9 +45,11 @@ export type DragPayload = { side: PaneSide; items: DragItem[] };
 
 const DND_MIME = "application/x-broadside-file";
 
-/** A drive root in the local pane's drive list (`C:\`). */
+/** A drive root in the local pane's drive list (`C:\`), or on a Mac a volume
+ *  in its volume list (`/`, `/Volumes/USB`). */
 function isDrivePath(side: PaneSide, path: string): boolean {
-  return side === "local" && /^[A-Za-z]:\\?$/.test(path);
+  if (side !== "local") return false;
+  return IS_MAC ? /^\/(Volumes\/[^/]+\/?)?$/.test(path) : /^[A-Za-z]:\\?$/.test(path);
 }
 
 /** How long a pause ends a type-to-jump search, so the next key starts a new
@@ -263,14 +266,29 @@ export function FilePane({
     if (hit !== undefined) selectIndex(hit);
   };
 
+  // Every item in the pane, as a Shift-click range from the first row to the
+  // last would select it: drives (in the drive list) are left out.
+  const selectAll = () => {
+    setSelected(
+      new Set(entries.filter((en) => !isDrivePath(side, en.path)).map((en) => en.path)),
+    );
+  };
+
   // Keys act on the pane last clicked, while the Commander is on screen:
   // Backspace goes up, Enter opens the selected folder, F2 renames the selected
-  // entry, the arrows move the selection, and a printable key types to jump.
+  // entry, the arrows move the selection, a printable key types to jump, and
+  // Ctrl+A (⌘A on a Mac) selects everything in the pane.
   // Not while typing in a field, with a button focused (Enter belongs to the
   // button), or while a dialog or menu is open.
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isModKey(e) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "a") {
+        if (keyBelongsElsewhere(e.key)) return;
+        e.preventDefault();
+        selectAll();
+        return;
+      }
       if (e.ctrlKey || e.altKey || e.metaKey) return;
       // A space only counts inside a search that is already going, so it can
       // match "my file" without a lone space doing anything.
@@ -459,7 +477,7 @@ export function FilePane({
                     ? `${entry.name}: double-click to open`
                     : isDir
                       ? `${entry.name}: double-click to open, or drag to the other pane to transfer the folder`
-                      : `${entry.name}: click to select, Ctrl/Shift-click for many, drag to transfer`
+                      : `${entry.name}: click to select, ${MOD_KEY}/Shift-click for many, drag to transfer`
                 }
               >
                 <div

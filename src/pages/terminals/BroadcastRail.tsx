@@ -22,6 +22,7 @@ import { Composer } from "@/components/Composer";
 import { ShellChip } from "@/components/ShellChip";
 import { checkDestructive, type GuardHit } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
+import { IS_MAC } from "@/lib/platform";
 import { useHint } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
@@ -57,7 +58,7 @@ const FAMILY_LABELS: Record<Family, string> = {
   ssh: "SSH hosts",
   powershell: "PowerShell",
   cmd: "Command Prompt",
-  posix: "WSL / POSIX",
+  posix: IS_MAC ? "Local shells" : "WSL / POSIX",
   serial: "Serial consoles",
 };
 

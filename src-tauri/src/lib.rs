@@ -11,8 +11,11 @@ pub mod error;
 pub mod export;
 pub mod guard;
 pub mod import;
+pub mod instances;
 mod licensing;
 pub mod local;
+#[cfg(target_os = "macos")]
+mod macos_menu;
 pub mod omni;
 pub mod probe;
 pub mod serial;
@@ -21,6 +24,7 @@ pub mod skilllog;
 pub mod ssh;
 pub mod toastlog;
 
+use tauri::webview::PageLoadEvent;
 use tauri::Manager;
 use tauri_plugin_window_state::{StateFlags, WindowExt};
 
@@ -70,11 +74,47 @@ fn ensure_window_on_screen(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Closes every session the backend holds, when the main window's page starts
+/// loading. After the first load that is a reload (Restore from backup and
+/// Reset everything in Settings both do one). The new page starts with no tabs
+/// and knows none of the old session ids, so without this its SSH connections,
+/// local shells, serial ports, SFTP sessions and skill runs would carry on
+/// unseen until the app quit. On the first load nothing is open yet.
+///
+/// `try_state`, because the first page may start loading before `setup` has
+/// managed the state.
+fn close_every_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(runs) = app.try_state::<ssh::skill_run::state::SkillRunState>() {
+        runs.cancel_all();
+    }
+    if let Some(ptys) = app.try_state::<ssh::pty::PtyState>() {
+        ptys.close_all();
+    }
+    if let Some(sftp) = app.try_state::<ssh::sftp::SftpState>() {
+        sftp.close_all();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _tier = licensing::entitlement();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // The menu bar (and with it ⌘C/⌘V in text fields, and a ⌘Q that the exit
+    // guard sees), plus the native clipboard read the terminal's right-click
+    // paste uses there. See macos_menu.rs and Cargo.toml.
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .menu(macos_menu::build)
+        .on_menu_event(macos_menu::on_event);
+
+    builder
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main" && payload.event() == PageLoadEvent::Started {
+                close_every_session(webview.app_handle());
+            }
+        })
         .plugin(tauri_plugin_dialog::init())
         // Remember the window size, position and maximized state across restarts
         // (saved on exit, restored on launch). The recenter check in setup below
@@ -99,6 +139,10 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|e| format!("app_data_dir: {e}"))?;
+
+            // Copies already running on this data folder, for the startup
+            // warning. Registers this one too, so the next launch counts it.
+            app.manage(instances::InstanceState::register(&app_data_dir));
 
             // Rolling audit log (D-011): on by default, persisted toggle.
             let audit_enabled = {
@@ -166,6 +210,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             reveal_main_window,
+            instances::other_instance_count,
             commands::hosts::list_hosts,
             commands::hosts::get_host,
             commands::hosts::create_host,
@@ -217,6 +262,7 @@ pub fn run() {
             commands::pty::pty_write_bytes,
             commands::pty::pty_resize,
             commands::pty::pty_close,
+            commands::pty::open_session_count,
             commands::pty::pty_history_add,
             commands::pty::pty_history_list,
             commands::pty::pty_history_clear,
@@ -243,6 +289,7 @@ pub fn run() {
             commands::localfs::local_list_dir,
             commands::localfs::local_list_drives,
             commands::localfs::local_mkdir,
+            commands::localfs::local_new_folder,
             commands::localfs::local_delete,
             commands::localfs::local_rename,
             commands::localfs::local_scan_dir,
@@ -316,6 +363,21 @@ pub fn run() {
             commands::templates::export_template,
             commands::templates::read_template_file,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            // A click on the Dock icon brings the window back, minimized or not
+            // yet shown, as it does for every Mac app; the Windows taskbar does
+            // this on its own.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }

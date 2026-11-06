@@ -2,7 +2,8 @@
  * Copying out of a terminal pane, for both kinds of pane that have one: a
  * Terminals tab (TerminalView) and a skill run's live pane (SkillTerminalPane).
  *
- * The model is Windows Terminal's: **select, then right-click to copy**. It
+ * The model is Windows Terminal's: **select, then right-click to copy** (on a
+ * Mac, ⌘C as well, which is that platform's copy key). It
  * replaced copy-on-select, which copied the moment a mouse drag ended. That
  * made every selection a clipboard write whether or not anyone wanted one, so a
  * drag made only to read a line more carefully threw away whatever was on the
@@ -30,9 +31,32 @@ export function copyTerminalSelection(
   term.clearSelection();
   navigator.clipboard
     ?.writeText(sel)
-    .then(() => toast.success("Copied to clipboard", { duration: 1200 }))
+    .then(copied)
     .catch(() => {});
   return true;
+}
+
+/**
+ * The same, from inside a `copy` event: the Mac's ⌘C, which arrives as Edit →
+ * Copy from the menu bar rather than as a key the terminal handles. The text
+ * goes into the event's own clipboard data, which is what that event is for,
+ * so there is no asynchronous write to wait on. The caller cancels the event
+ * when this returns true, so xterm's own copy handler does not run as well.
+ */
+export function copyTerminalSelectionInto(
+  term: Pick<Terminal, "getSelection" | "clearSelection">,
+  data: DataTransfer,
+): boolean {
+  const sel = term.getSelection();
+  if (!sel) return false;
+  data.setData("text/plain", sel);
+  term.clearSelection();
+  copied();
+  return true;
+}
+
+function copied() {
+  toast.success("Copied to clipboard", { duration: 1200 });
 }
 
 /**

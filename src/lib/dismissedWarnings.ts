@@ -35,6 +35,12 @@ export const DISMISSIBLE_WARNINGS = [
     detail:
       "Shown when a template is exported, because the hosts it names may not exist on the machine that imports it.",
   },
+  {
+    id: "second-instance",
+    label: "Opening Broadside while it is already running",
+    detail:
+      "Shown at launch when another instance is already open, because every instance shares the same hosts, credentials and settings.",
+  },
 ] as const;
 
 export type WarningId = (typeof DISMISSIBLE_WARNINGS)[number]["id"];
@@ -82,6 +88,13 @@ export function dismissWarning(id: WarningId): void {
  * can say how many there are to restore. */
 export function dismissedWarnings(): Set<string> {
   return read();
+}
+
+/** Show one of them again. */
+export function restoreWarning(id: string): void {
+  const ids = read();
+  if (!ids.delete(id)) return;
+  write(ids);
 }
 
 /** Show them all again. */

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { IS_MAC, keyLabel, SHORTCUTS } from "@/lib/platform";
 import { useHint } from "@/lib/status";
 import {
   DEFAULT_IDLE_SECS,
@@ -131,8 +132,9 @@ export function SessionsSection({ id }: { id: string }) {
           <p className="text-xs text-muted-foreground">
             In a program that has turned the mouse on, such as tmux, vim or
             Claude Code, a right-click goes to that program instead of copying
-            or pasting. Use <strong>Shift</strong>+right-click to copy or paste
-            there, or Ctrl+Shift+C and Ctrl+Shift+V. On by default. Turn it off
+            or pasting. Use <strong>{IS_MAC ? "Option" : "Shift"}</strong>+right-click
+            to copy or paste there, or {keyLabel(SHORTCUTS.copy)} and{" "}
+            {keyLabel(SHORTCUTS.paste)}. On by default. Turn it off
             if a right-click in one of those programs should paste.
           </p>
         </div>
@@ -156,8 +158,8 @@ export function SessionsSection({ id }: { id: string }) {
           <p className="text-xs text-muted-foreground">
             The row with Tabs, Grid, View, Sessions and <strong>+</strong> slides
             up out of the way, leaving a small tab at the top centre of the
-            Terminals tab. Point at the tab, or click it, to bring the row down;
-            Ctrl+Shift+T puts the keyboard in it. The row stays put while no
+            Terminals tab. Point at the tab, or click it, to bring the row down;{" "}
+            {keyLabel(SHORTCUTS.focusControls)} puts the keyboard in it. The row stays put while no
             terminal is open. On by default.
           </p>
         </div>

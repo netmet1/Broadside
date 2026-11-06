@@ -48,6 +48,7 @@ import {
   DEFAULT_BAUD,
   listSerialPorts,
   loadBaud,
+  portLabel,
   saveBaud,
   serialAsShell,
   serialPortOf,
@@ -79,6 +80,7 @@ import {
   loadDisabledShells,
   reconcileDisabledShells,
 } from "@/lib/localShellPrefs";
+import { IS_MAC, isModKey, keyLabel, SHORTCUTS } from "@/lib/platform";
 import { isTintable } from "@/lib/terminalColors";
 import { useShellColors } from "@/lib/useShellColors";
 import {
@@ -234,6 +236,8 @@ type Props = {
   onNewWorkspace: () => void;
   onRenameWorkspace: (id: string, name: string) => void;
   onRecolorWorkspace: (id: string, color: string) => void;
+  /** Move a workspace to where another one is in the row. */
+  onReorderWorkspace: (sourceId: string, targetId: string) => void;
   /** Close every tab in a workspace, and the workspace. Asked about here
    * first when it has tabs. */
   onCloseWorkspace: (id: string) => void;
@@ -313,6 +317,7 @@ export function TerminalsPage({
   onNewWorkspace,
   onRenameWorkspace,
   onRecolorWorkspace,
+  onReorderWorkspace,
   onCloseWorkspace,
   onMoveToWorkspace,
   activeId,
@@ -1111,7 +1116,7 @@ export function TerminalsPage({
   useEffect(() => {
     if (!visible || !gridMode) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && !e.altKey && (e.key === "G" || e.key === "g")) {
+      if (isModKey(e) && e.shiftKey && !e.altKey && (e.key === "G" || e.key === "g")) {
         e.preventDefault();
         e.stopPropagation();
         onGridFullscreen(!gridFullscreen);
@@ -1171,7 +1176,7 @@ export function TerminalsPage({
         searchHandles.current.get(activeId ?? "")?.focusTerminal();
         return;
       }
-      if (!e.ctrlKey || !e.shiftKey || e.altKey) return;
+      if (!isModKey(e) || !e.shiftKey || e.altKey) return;
       if (e.key !== "T" && e.key !== "t") return;
       const first = focusablesIn(chromeRef.current)[0];
       if (!first) return;
@@ -1627,7 +1632,7 @@ export function TerminalsPage({
   useEffect(() => {
     if (!visible) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && (e.key === "f" || e.key === "F") && !e.shiftKey) {
+      if (isModKey(e) && (e.key === "f" || e.key === "F") && !e.shiftKey) {
         e.preventDefault();
         setSearchOpen(true);
       }
@@ -1884,8 +1889,8 @@ export function TerminalsPage({
     [visibleSessions, activeId, gridFocus],
   );
 
-  // Alt+Left/Right while the Terminals page is visible but a terminal pane is
-  // NOT focused (e.g. focus on the tab strip/chrome). Presses with a terminal
+  // Alt+Left/Right (⌘⌥←/→ on a Mac) while the Terminals page is visible but a
+  // terminal pane is NOT focused (e.g. focus on the tab strip/chrome). Presses with a terminal
   // focused route through TerminalView's key handler (onTabNav) instead, since
   // xterm swallows window-level keydowns while it has focus.
   useEffect(() => {
@@ -1894,7 +1899,7 @@ export function TerminalsPage({
       if (
         e.altKey &&
         !e.ctrlKey &&
-        !e.metaKey &&
+        e.metaKey === IS_MAC &&
         !e.shiftKey &&
         (e.key === "ArrowLeft" || e.key === "ArrowRight")
       ) {
@@ -2219,7 +2224,11 @@ export function TerminalsPage({
               // rather than a portal, so the mouse never leaves it), but the
               // keyboard did not, and one rule for every menu beats two.
               data-state={shellMenuOpen ? "open" : "closed"}
-              {...hint("Open a local shell (PowerShell, Command Prompt, WSL)")}
+              {...hint(
+                IS_MAC
+                  ? "Open a local shell (zsh, bash and the other shells on this Mac)"
+                  : "Open a local shell (PowerShell, Command Prompt, WSL)",
+              )}
               // Dressed as the outline buttons it now stands next to, rather
               // than as the tab-strip control it used to be: same height, same
               // corner, same border and ground in both themes. It is still a
@@ -2498,8 +2507,8 @@ export function TerminalsPage({
                   </div>
                   {serialPorts.length === 0 ? (
                     <p className="px-2 py-1 text-xs text-muted-foreground">
-                      No COM ports found. Plug in a console cable or USB serial
-                      adapter and open this menu again.
+                      No {IS_MAC ? "serial" : "COM"} ports found. Plug in a console
+                      cable or USB serial adapter and open this menu again.
                     </p>
                   ) : (
                     <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain">
@@ -2517,8 +2526,8 @@ export function TerminalsPage({
                           className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
                           {...hint(
                             alreadyOpen
-                              ? `${p.name} is already open in a tab. A COM port belongs to one program at a time, so close that tab before opening it again.`
-                              : `Open a terminal on ${p.name} at ${
+                              ? `${portLabel(p.name)} is already open in a tab. A ${IS_MAC ? "serial" : "COM"} port belongs to one program at a time, so close that tab before opening it again.`
+                              : `Open a terminal on ${portLabel(p.name)} at ${
                                   serialBauds[p.name] ?? DEFAULT_BAUD
                                 } baud, 8N1. Nothing appears until the device says something, so press Enter if the pane looks empty.`,
                           )}
@@ -2529,7 +2538,7 @@ export function TerminalsPage({
                           />
                           <span className="min-w-0">
                             <span className="block truncate">
-                              {p.name}
+                              {portLabel(p.name)}
                               {alreadyOpen && (
                                 <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
                                   already open
@@ -2589,7 +2598,7 @@ export function TerminalsPage({
             setStripDismissed(false);
           }}
           className="absolute left-1/2 top-full flex h-3 w-48 -translate-x-1/2 cursor-pointer items-center justify-center rounded-b-md border border-t-0 border-border bg-background/50 shadow-md transition-colors hover:bg-accent"
-          title="Hover or click here to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
+          title={`Hover or click here to show the controls, or press ${keyLabel(SHORTCUTS.focusControls)} to put the keyboard in them`}
         >
           <div className="h-1 w-24 rounded-full bg-muted-foreground/70" />
         </div>
@@ -2620,6 +2629,7 @@ export function TerminalsPage({
           onNew={onNewWorkspace}
           onRename={onRenameWorkspace}
           onRecolor={onRecolorWorkspace}
+          onReorder={onReorderWorkspace}
           onClose={requestCloseWorkspace}
           draggingTabId={dragId}
           onDropTab={(tabId, wsId) => {
@@ -2903,7 +2913,7 @@ export function TerminalsPage({
                 onMaximize(s.id);
               }}
               aria-label={`Maximize ${sessionLabel(s)}`}
-              title="Maximize this terminal to fill the window (F11)"
+              title={`Maximize this terminal to fill the window (${keyLabel(SHORTCUTS.maximize)})`}
             >
               <Maximize2Icon className="h-3.5 w-3.5" />
             </button>
@@ -2974,7 +2984,7 @@ export function TerminalsPage({
             <ContextMenuItem onSelect={() => onMaximize(s.id)}>
               <Maximize2Icon />
               Maximize
-              <ContextMenuShortcut>F11</ContextMenuShortcut>
+              <ContextMenuShortcut>{keyLabel(SHORTCUTS.maximize)}</ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuSeparator />
             {workspaces
@@ -3114,7 +3124,7 @@ export function TerminalsPage({
             setStripDismissed(false);
           }}
           className="absolute left-1/2 top-full flex h-5 w-48 -translate-x-1/2 cursor-pointer items-center justify-center rounded-b-md border border-t-0 border-border bg-background/50 shadow-md transition-colors hover:bg-accent"
-          title="Hover or click here to show the controls, or press Ctrl+Shift+T to put the keyboard in them"
+          title={`Hover or click here to show the controls, or press ${keyLabel(SHORTCUTS.focusControls)} to put the keyboard in them`}
         >
           <div className="h-1 w-24 rounded-full bg-muted-foreground/70" />
         </div>
@@ -3380,7 +3390,7 @@ export function TerminalsPage({
                     onMaximize(s.id);
                   }}
                   aria-label={`Maximize ${sessionLabel(s)}`}
-                  title="Maximize this terminal to fill the window (F11)"
+                  title={`Maximize this terminal to fill the window (${keyLabel(SHORTCUTS.maximize)})`}
                 >
                   <Maximize2Icon className="h-3.5 w-3.5" />
                 </button>

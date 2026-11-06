@@ -95,6 +95,9 @@ export function SkillTerminalPane({
       cursorBlink: true,
       theme: readTerminalTheme(),
       scrollback: prefsRef.current.terminalScrollback,
+      // Windows' default, set for the Mac, where xterm's differs: there a
+      // right-click would select the word under it and copy that.
+      rightClickSelectsWord: false,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);

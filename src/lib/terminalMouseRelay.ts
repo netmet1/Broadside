@@ -20,6 +20,8 @@
 
 import type { IDisposable, Terminal } from "@xterm/xterm";
 
+import { isBypassKey } from "@/lib/platform";
+
 /** `binary` is a mouse report in the original encoding, one byte per
  *  character, for the raw-bytes write path; otherwise it is ordinary text. */
 export type MouseReportSink = (data: string, binary: boolean) => void;
@@ -87,9 +89,10 @@ export function relayHeldMouse(
 
   // Capture, so this sees the press before xterm's own handler runs.
   const onDown = (e: MouseEvent) => {
-    // The same test xterm makes: with no protocol, or with Shift forcing a
-    // selection, it sends nothing, and there is nothing to stand in for.
-    if (e.button > 2 || e.shiftKey || term.modes.mouseTrackingMode === "none") return;
+    // The same test xterm makes: with no protocol, or with the modifier that
+    // forces a selection held (Shift; Option on a Mac), it sends nothing, and
+    // there is nothing to stand in for.
+    if (e.button > 2 || isBypassKey(e) || term.modes.mouseTrackingMode === "none") return;
     held = { button: e.button };
     lost = false;
     lastCell = "";

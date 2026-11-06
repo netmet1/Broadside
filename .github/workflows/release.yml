@@ -9,14 +9,26 @@ name: Release
 # the `notes` input at trigger time (see scripts/release.ps1, which reads the
 # local notes file and passes its contents). The notes never enter the repo.
 #
-# What it does on a clean Windows runner:
-#   1. Build the app (npm run tauri build) -> the MSI installer.
-#   2. Title  = vX.X.X, read from src-tauri/tauri.conf.json (single source of truth).
-#   3. Body   = the `notes` input.
-#   4. Assets = the built MSI and its SHA-256 checksum file.
-#   5. A signed GitHub build attestation saying this exact MSI was built here,
-#      by this workflow, from this commit (checked with `gh attestation verify`).
-# The release is created as a DRAFT for review; you publish it by hand.
+# What it does, one installer per platform, both from the same commit:
+#   1. windows (clean Windows runner): build the app (npm run tauri build) ->
+#      the MSI, sign it when Azure is configured, hash it.
+#   2. macos (clean macOS runner): build the app as one universal binary
+#      (Apple silicon + Intel) -> the DMG, signed and notarized when Apple is
+#      configured, ad-hoc signed otherwise, hash it.
+#   3. release, once both have built:
+#      Title  = vX.X.X, read from src-tauri/tauri.conf.json (single source of truth).
+#      Body   = the `notes` input, plus a "Verify your download" block naming
+#               both files and their SHA-256s.
+#      Assets = the MSI, the DMG, and a SHA-256 checksum file for each.
+#      A signed GitHub build attestation for each installer, saying this exact
+#      file was built here, by this workflow, from this commit (checked with
+#      `gh attestation verify`).
+# The release is created as a DRAFT for review; you publish it by hand. If
+# either platform fails to build, nothing is released.
+#
+# `dry_run` stops after the two builds: the installers and their checksums are
+# left as this run's artifacts, and no attestation or release is made. It is
+# for trying a change to the build on a branch; scripts/release.ps1 never sets it.
 #
 # Assumes the target commit already passed validation (local scripts/ci.ps1 and
 # the ci.yml backstop on main). This workflow builds and publishes; it does not
@@ -29,6 +41,11 @@ on:
         description: "Release notes markdown (body of the release). Passed by scripts/release.ps1 from the local gitignored notes file."
         required: true
         type: string
+      dry_run:
+        description: "Build and hash both installers only: no attestation, no release."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -39,8 +56,30 @@ permissions:
   artifact-metadata: write
 
 jobs:
-  release:
-    name: Build MSI and draft release
+  # A release that already exists would only be refused at the very end, after
+  # two full builds. Asked first, it costs seconds.
+  preflight:
+    name: Check the version is free
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse an existing release
+        if: ${{ !inputs.dry_run }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $tag = "v$version"
+          if (gh release view $tag 2>$null) {
+            throw "Release $tag already exists. Delete the existing (draft) release or bump the version, then re-run."
+          }
+          Write-Host "Release $tag is free."
+
+  windows:
+    name: Build MSI
+    needs: preflight
     runs-on: windows-latest
     env:
       # The `secrets` context is not available in a step-level `if`, so the
@@ -67,17 +106,14 @@ jobs:
       - name: Build app (MSI)
         run: npm run tauri build
 
-      - name: Resolve version and locate MSI
+      - name: Locate MSI
         id: pkg
         shell: pwsh
         run: |
-          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
-          $tag = "v$version"
           $msi = Get-ChildItem "src-tauri/target/release/bundle/msi/*.msi" | Select-Object -First 1
           if (-not $msi) { throw "No MSI found under src-tauri/target/release/bundle/msi/" }
-          "tag=$tag"            >> $env:GITHUB_OUTPUT
           "msi=$($msi.FullName)" >> $env:GITHUB_OUTPUT
-          Write-Host "Release $tag  ->  $($msi.Name)"
+          Write-Host "Built $($msi.Name)"
 
       # Authenticode signing via Azure Trusted Signing (now "Azure Artifact
       # Signing"). Windows Defender quarantined an unsigned build as
@@ -114,7 +150,8 @@ jobs:
             "See internal_only/docs/code-signing.md."
 
       # Published in the release notes so anyone can verify a download, and so a
-      # Defender false-positive report can reference an exact artifact.
+      # Defender false-positive report can reference an exact artifact. Runs
+      # after signing, so it is the hash of the file that is published.
       - name: Hash the MSI
         id: hash
         shell: pwsh
@@ -125,39 +162,219 @@ jobs:
           # so a script can fetch the checksum without reading the page.
           $sumFile = "$msi.sha256"
           [IO.File]::WriteAllText($sumFile, "$h  $(Split-Path $msi -Leaf)`n")
-          "sha256=$h"         >> $env:GITHUB_OUTPUT
           "sumfile=$sumFile"  >> $env:GITHUB_OUTPUT
           Write-Host "SHA-256  $h"
 
-      # Proves where the MSI came from, which a checksum cannot: a signed record
-      # (Sigstore, keyless) that this exact file was built by this repository's
-      # release workflow from this commit. Runs after signing, so it covers the
-      # file that is published.
+      - name: Keep the MSI for the release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            ${{ steps.pkg.outputs.msi }}
+            ${{ steps.hash.outputs.sumfile }}
+          if-no-files-found: error
+
+  macos:
+    name: Build DMG
+    needs: preflight
+    runs-on: macos-latest
+    env:
+      # As SIGNING_CONFIGURED above: answered once, where secrets can be read.
+      #
+      # Developer ID signing and notarization, done by the Tauri CLI itself
+      # when these are set (it makes a throwaway keychain, imports the
+      # certificate, signs, notarizes and staples). Repository secrets:
+      #   APPLE_CERTIFICATE           the Developer ID Application .p12, base64
+      #   APPLE_CERTIFICATE_PASSWORD  its export password
+      #   APPLE_SIGNING_IDENTITY      e.g. "Developer ID Application: Name (TEAMID)"
+      #   APPLE_ID                    the Apple Account that notarizes
+      #   APPLE_PASSWORD              an app-specific password for it
+      #   APPLE_TEAM_ID               the 10-character team id
+      # Without them the build is ad-hoc signed (signingIdentity "-" in
+      # src-tauri/tauri.macos.conf.json): it runs, but Gatekeeper asks the user
+      # to allow it, and macOS asks again for Keychain and Local Network access
+      # after every update.
+      MAC_SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # Both architectures, for the one universal binary that runs on every
+      # Mac Broadside supports.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Build app (DMG, signed and notarized)
+        if: env.MAC_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # A secret that is not set arrives as an empty string, and the Tauri
+          # CLI takes an empty variable as a value: an empty identity would
+          # override the config and fail codesign, an empty APPLE_ID would start
+          # a notarization that cannot succeed. So only the ones with a value
+          # are passed on.
+          for v in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then unset "$v"; fi
+          done
+          npm run tauri build -- --target universal-apple-darwin --bundles dmg
+
+      # No APPLE_* variable at all here, for the same reason.
+      - name: Build app (DMG, ad-hoc signed)
+        if: env.MAC_SIGNING_CONFIGURED != 'true'
+        run: npm run tauri build -- --target universal-apple-darwin --bundles dmg
+
+      - name: Warn when the build is not notarized
+        if: env.MAC_SIGNING_CONFIGURED != 'true'
+        run: |
+          echo "::warning::Apple signing secrets are not configured, so this DMG is ad-hoc signed and NOT notarized. macOS will ask users to allow it in Privacy & Security, and asks again for Keychain and Local Network access after each update. See the comment on the macos job in release.yml."
+
+      - name: Locate and hash the DMG
+        id: dmg
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg 2>/dev/null | head -n 1 || true)
+          if [ -z "$dmg" ]; then
+            echo "No DMG found under src-tauri/target/universal-apple-darwin/release/bundle/dmg/" >&2
+            exit 1
+          fi
+          name=$(basename "$dmg")
+          h=$(shasum -a 256 "$dmg" | cut -d ' ' -f 1)
+          # The same "<hash>  <name>" form as the MSI's checksum file.
+          printf '%s  %s\n' "$h" "$name" > "$dmg.sha256"
+          echo "dmg=$dmg" >> "$GITHUB_OUTPUT"
+          echo "sumfile=$dmg.sha256" >> "$GITHUB_OUTPUT"
+          echo "Built $name"
+          echo "SHA-256  $h"
+
+      - name: Keep the DMG for the release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: |
+            ${{ steps.dmg.outputs.dmg }}
+            ${{ steps.dmg.outputs.sumfile }}
+          if-no-files-found: error
+
+  release:
+    name: Draft release
+    needs: [windows, macos]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch both installers
+        uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+
+      # The checksum files were written where each installer was built. They
+      # are checked again here against the bytes that are about to be
+      # published, so a file damaged on its way between jobs cannot go out
+      # under a hash that no longer matches it.
+      - name: Resolve version, files and hashes
+        id: pkg
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $tag = "v$version"
+          $msi = Get-ChildItem "installers/*.msi" | Select-Object -First 1
+          $dmg = Get-ChildItem "installers/*.dmg" | Select-Object -First 1
+          if (-not $msi) { throw "No MSI among the build artifacts." }
+          if (-not $dmg) { throw "No DMG among the build artifacts." }
+          foreach ($pair in @(@("msi", $msi), @("dmg", $dmg))) {
+            $key, $file = $pair
+            $h = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
+            $recorded = ((Get-Content "$($file.FullName).sha256" -Raw).Trim() -split '\s+')[0]
+            if ($h -ne $recorded) {
+              throw "$($file.Name): SHA-256 is $h here but $recorded where it was built."
+            }
+            "$key=$($file.FullName)" >> $env:GITHUB_OUTPUT
+            "${key}_sha256=$h"       >> $env:GITHUB_OUTPUT
+            Write-Host "$($file.Name)  SHA-256  $h"
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          Write-Host "Release $tag"
+
+      # Proves where each installer came from, which a checksum cannot: a signed
+      # record (Sigstore, keyless) that this exact file was built by this
+      # repository's release workflow from this commit. Runs after signing, so
+      # it covers the files that are published.
       - name: Attest build provenance
         uses: actions/attest@v4
         with:
-          subject-path: ${{ steps.pkg.outputs.msi }}
+          subject-path: |
+            ${{ steps.pkg.outputs.msi }}
+            ${{ steps.pkg.outputs.dmg }}
 
       - name: Write notes file
         shell: pwsh
         env:
           RELEASE_NOTES: ${{ inputs.notes }}
-          MSI_NAME: ${{ steps.pkg.outputs.msi }}
-          MSI_SHA256: ${{ steps.hash.outputs.sha256 }}
+          MSI_PATH: ${{ steps.pkg.outputs.msi }}
+          MSI_SHA256: ${{ steps.pkg.outputs.msi_sha256 }}
+          DMG_PATH: ${{ steps.pkg.outputs.dmg }}
+          DMG_SHA256: ${{ steps.pkg.outputs.dmg_sha256 }}
+          REPO: ${{ github.repository }}
         run: |
           # Via env (not string interpolation) so nothing in the notes can inject
           # into the script. UTF-8 without BOM keeps the header emoji intact.
           $env:RELEASE_NOTES | Out-File -FilePath notes.md -Encoding utf8 -NoNewline
-          # Append the checksum so a download can be verified independently.
-          $name = Split-Path $env:MSI_NAME -Leaf
-          $block = "`n`n---`n`n**Verify your download**`n`n" +
-                   "``````text`n$name`nSHA-256  $env:MSI_SHA256`n```````n`n" +
-                   "In PowerShell: ``Get-FileHash .\$name`` (the same hash is in ``$name.sha256``).`n`n" +
-                   "To confirm it was built from this repository by its release workflow, " +
-                   "with the [GitHub CLI](https://cli.github.com/):`n`n" +
-                   "``````text`ngh attestation verify $name --repo ${{ github.repository }}`n```````n`n" +
-                   "These show the file is intact and where it was built. On their own they are not a " +
-                   "Windows code signature."
+          # Append the checksums so a download can be verified independently:
+          # the same block the Windows-only releases carried, with a line per
+          # installer and the command each platform checks it with.
+          $msi = Split-Path $env:MSI_PATH -Leaf
+          $dmg = Split-Path $env:DMG_PATH -Leaf
+          $fence = '```'
+          $block = @"
+
+
+          ---
+
+          **Verify your download**
+
+          ${fence}text
+          $msi
+          SHA-256  $env:MSI_SHA256
+
+          $dmg
+          SHA-256  $env:DMG_SHA256
+          $fence
+
+          On Windows, in PowerShell: ``Get-FileHash .\$msi`` (the same hash is in ``$msi.sha256``).
+
+          On macOS, in Terminal: ``shasum -a 256 $dmg`` (the same hash is in ``$dmg.sha256``).
+
+          To confirm each was built from this repository by its release workflow, with the [GitHub CLI](https://cli.github.com/):
+
+          ${fence}text
+          gh attestation verify $msi --repo $env:REPO
+          gh attestation verify $dmg --repo $env:REPO
+          $fence
+
+          These show the files are intact and where they were built. On their own they are not a Windows or Apple code signature.
+          "@
           Add-Content -Path notes.md -Value $block -Encoding utf8
 
       - name: Create draft release
@@ -175,5 +392,7 @@ jobs:
             --notes-file notes.md `
             --target $env:GITHUB_SHA `
             "${{ steps.pkg.outputs.msi }}" `
-            "${{ steps.hash.outputs.sumfile }}"
+            "${{ steps.pkg.outputs.msi }}.sha256" `
+            "${{ steps.pkg.outputs.dmg }}" `
+            "${{ steps.pkg.outputs.dmg }}.sha256"
           Write-Host "Draft release $tag created. Review it on the Releases page, then Publish."

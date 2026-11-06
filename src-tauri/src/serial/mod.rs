@@ -1,6 +1,7 @@
-//! Serial console sessions: a COM port opened as a terminal tab, so the console
-//! cable into a router, firewall or switch is a pane beside the SSH ones rather
-//! than a reason to go and find PuTTY.
+//! Serial console sessions: a COM port (Windows) or a `/dev/cu.*` device (macOS)
+//! opened as a terminal tab, so the console cable into a router, firewall or
+//! switch is a pane beside the SSH ones rather than a reason to go and find
+//! PuTTY.
 //!
 //! Like `crate::local`, this reuses the SAME session plumbing as the SSH path
 //! (`crate::ssh::pty`): the `PtyState` registry, the `SessionCmd` write/resize/
@@ -21,9 +22,10 @@
 //!    by hand, `terminal width 132` and the like). `Resize` is accepted and
 //!    ignored rather than refused, so the frontend needs no special case.
 //! 3. **The port is exclusive.** Windows hands a COM port to one process at a
-//!    time, so a port already open in another terminal program fails to open,
-//!    and that is the single most likely first-run failure. It gets its own
-//!    message rather than the OS's "Access is denied".
+//!    time, and on macOS `serialport` takes the port exclusively, so a port
+//!    already open in another terminal program fails to open, and that is the
+//!    single most likely first-run failure. It gets its own message rather than
+//!    the OS's "Access is denied" / "Resource busy".
 
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,10 +37,11 @@ use serde::Serialize;
 use crate::error::{AppError, AppResult};
 use crate::ssh::pty::{PtyClosed, PtyData, PtyEvents, PtyState, SessionCmd};
 
-/// A COM port present on this machine.
+/// A serial port present on this machine.
 #[derive(Debug, Clone, Serialize)]
 pub struct SerialPort {
-    /// The port name, always `COM<n>`. This is the id the frontend sends back.
+    /// The port name, always `COM<n>` on Windows and `/dev/cu.<name>` on macOS.
+    /// This is the id the frontend sends back.
     pub name: String,
     /// What the port is, as far as the OS knows: the USB adapter's product
     /// string, or the driver's name for a built-in port. Empty when there is
@@ -53,16 +56,17 @@ pub struct SerialPort {
 /// tab feels immediate, long enough not to spin.
 const READ_TIMEOUT: Duration = Duration::from_millis(50);
 
-/// Lists the COM ports on this machine. Deliberately NOT cached, unlike the
+/// Lists the serial ports on this machine. Deliberately NOT cached, unlike the
 /// local-shell list: the whole point of a USB serial adapter is that it comes
 /// and goes, and a list fixed at startup would mean unplugging and replugging a
 /// dongle needed the app restarting to see it. The enumeration is a registry
-/// read, so re-running it every time the launcher opens costs nothing.
+/// read (an IOKit query on macOS), so re-running it every time the launcher
+/// opens costs nothing.
 pub fn list_ports() -> Vec<SerialPort> {
     let mut ports: Vec<SerialPort> = match serialport::available_ports() {
         Ok(ports) => ports
             .into_iter()
-            .filter(|p| is_com_port(&p.port_name))
+            .filter(|p| is_port_name(&p.port_name))
             .map(|p| SerialPort {
                 description: describe(&p.port_type),
                 name: p.port_name,
@@ -73,7 +77,10 @@ pub fn list_ports() -> Vec<SerialPort> {
         // failing a command over, since the UI says "no ports" either way.
         Err(_) => Vec::new(),
     };
+    #[cfg(windows)]
     ports.sort_by_key(|p| port_number(&p.name));
+    #[cfg(not(windows))]
+    ports.sort_by(|a, b| a.name.cmp(&b.name));
     ports
 }
 
@@ -99,16 +106,26 @@ fn describe(port_type: &serialport::SerialPortType) -> String {
     }
 }
 
-/// Whether a name is a COM port name and nothing else.
+/// Whether a name is a serial port name and nothing else.
 ///
 /// This is a security gate, not a tidiness check, and it is the reason the
-/// frontend is allowed to name a device at all. `serialport` opens a Windows
-/// name by handing it to `CreateFile` under the `\\.\` prefix, which reaches
-/// far more than serial hardware: named pipes and other devices live in the
-/// same namespace. The frontend is the only caller, but the rule this codebase
-/// already follows for `custom:<id>` shells is that an arbitrary path must
-/// never cross the IPC boundary, and the same rule applies here. `COM` followed
-/// by one to three digits can only ever name a serial port.
+/// frontend is allowed to name a device at all. The frontend is the only
+/// caller, but the rule this codebase already follows for `custom:<id>` shells
+/// is that an arbitrary path must never cross the IPC boundary, and the same
+/// rule applies here.
+fn is_port_name(name: &str) -> bool {
+    #[cfg(windows)]
+    return is_com_port(name);
+    #[cfg(not(windows))]
+    return is_callout_device(name);
+}
+
+/// Whether a name is a COM port name and nothing else. `serialport` opens a
+/// Windows name by handing it to `CreateFile` under the `\\.\` prefix, which
+/// reaches far more than serial hardware: named pipes and other devices live in
+/// the same namespace. `COM` followed by one to three digits can only ever name
+/// a serial port.
+#[cfg(any(windows, test))]
 fn is_com_port(name: &str) -> bool {
     let Some(digits) = name.strip_prefix("COM") else {
         return false;
@@ -118,7 +135,33 @@ fn is_com_port(name: &str) -> bool {
         && matches!(digits.parse::<u32>(), Ok(n) if (1..=256).contains(&n))
 }
 
+/// The two callout devices every Mac has that are never a console cable: the
+/// Bluetooth serial service and the kernel debug console.
+#[cfg(any(not(windows), test))]
+const NOT_A_CONSOLE: [&str; 2] = ["/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.debug-console"];
+
+/// Whether a name is a macOS serial callout device, `/dev/cu.<name>`, and
+/// nothing else. A port name is a path on a Mac, so this is what stands between
+/// the frontend and opening any file it likes: one fixed directory, the `cu.`
+/// prefix the kernel gives serial devices, and a name with no `/` in it (so no
+/// `..` either). `cu.` rather than `tty.` because opening the `tty.` side of a
+/// port waits for the far end to raise carrier, which a console cable never
+/// does; every Mac terminal program uses `cu.` for that reason, and listing
+/// both would show each adapter twice.
+#[cfg(any(not(windows), test))]
+fn is_callout_device(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix("/dev/cu.") else {
+        return false;
+    };
+    !rest.is_empty()
+        && rest
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        && !NOT_A_CONSOLE.contains(&name)
+}
+
 /// Sort key: COM10 comes after COM9, which a plain string sort gets wrong.
+#[cfg(any(windows, test))]
 fn port_number(name: &str) -> u32 {
     name.strip_prefix("COM")
         .and_then(|d| d.parse::<u32>().ok())
@@ -137,6 +180,7 @@ fn valid_baud(baud: u32) -> bool {
 /// only through the `\\.\` device namespace, which is what `serialport` builds
 /// internally and what [`refusal_reason`] has to reproduce to ask the same
 /// question. Only ever called with a name [`is_com_port`] has already passed.
+#[cfg(windows)]
 fn device_path(port_name: &str) -> String {
     format!(r"\\.\{port_name}")
 }
@@ -161,6 +205,7 @@ fn device_path(port_name: &str) -> String {
 /// Only ever called *after* the real open has already failed, so the working
 /// path never touches the port twice. By then the port is either busy (this
 /// fails the same way, having opened nothing) or absent.
+#[cfg(windows)]
 fn refusal_reason(port_name: &str) -> std::io::ErrorKind {
     match std::fs::File::open(device_path(port_name)) {
         // It opened this time, so whatever refused a moment ago has let go, or
@@ -169,6 +214,52 @@ fn refusal_reason(port_name: &str) -> std::io::ErrorKind {
         Ok(_) => std::io::ErrorKind::Other,
         Err(e) => e.kind(),
     }
+}
+
+/// The message for a port that would not open. A port already open in another
+/// program is the overwhelmingly likely first-run failure, and the OS phrasing
+/// for it ("Access is denied", "Resource busy") sends people looking for a
+/// permissions problem they do not have.
+#[cfg(windows)]
+fn open_error(port_name: &str, e: serialport::Error) -> AppError {
+    match e.kind() {
+        // Busy or absent, and `serialport` reports both as this. Ask Windows
+        // again to find out which; see `refusal_reason`.
+        serialport::ErrorKind::NoDevice => match refusal_reason(port_name) {
+            std::io::ErrorKind::PermissionDenied => busy(port_name, "PuTTY, Tera Term"),
+            // Enumerated a moment ago and gone by the time we opened it: the
+            // dongle came out between the menu and the click.
+            std::io::ErrorKind::NotFound => gone(port_name),
+            _ => AppError::State(format!("open {port_name}: {e}")),
+        },
+        _ => AppError::State(format!("open {port_name}: {e}")),
+    }
+}
+
+/// The macOS half. Here `serialport` takes the port exclusively (`TIOCEXCL`
+/// and a `flock`), and reports being refused either way, `EBUSY` or a lock
+/// already held, as `NoDevice`; a port that vanished comes back as a plain
+/// `ENOENT`. So unlike Windows the kind alone says which, with no second look.
+#[cfg(not(windows))]
+fn open_error(port_name: &str, e: serialport::Error) -> AppError {
+    match e.kind() {
+        serialport::ErrorKind::NoDevice => busy(port_name, "screen, minicom, CoolTerm"),
+        serialport::ErrorKind::Io(std::io::ErrorKind::NotFound) => gone(port_name),
+        _ => AppError::State(format!("open {port_name}: {e}")),
+    }
+}
+
+fn busy(port_name: &str, usual_suspects: &str) -> AppError {
+    AppError::State(format!(
+        "{port_name} is already open in another program. Close that terminal \
+         ({usual_suspects}, a script, or another Broadside tab) and try again."
+    ))
+}
+
+fn gone(port_name: &str) -> AppError {
+    AppError::State(format!(
+        "{port_name} is no longer connected. Check the cable, then reopen the list."
+    ))
 }
 
 /// What the reader thread sends back: bytes off the wire, or the reason it
@@ -245,7 +336,7 @@ pub fn open_serial<E: PtyEvents>(
     port_name: &str,
     baud: u32,
 ) -> AppResult<()> {
-    if !is_com_port(port_name) {
+    if !is_port_name(port_name) {
         return Err(AppError::InvalidInput(format!(
             "not a serial port name: {port_name}"
         )));
@@ -272,26 +363,7 @@ pub fn open_serial<E: PtyEvents>(
         .flow_control(serialport::FlowControl::None)
         .timeout(READ_TIMEOUT)
         .open()
-        .map_err(|e| match e.kind() {
-            // Busy or absent, and `serialport` reports both as this. Ask
-            // Windows again to find out which; see `refusal_reason`.
-            serialport::ErrorKind::NoDevice => match refusal_reason(port_name) {
-                // The overwhelmingly likely first-run failure, and the OS
-                // phrasing for it ("Access is denied") sends people looking for
-                // a permissions problem they do not have.
-                std::io::ErrorKind::PermissionDenied => AppError::State(format!(
-                    "{port_name} is already open in another program. Close that terminal \
-                     (PuTTY, Tera Term, a script, or another Broadside tab) and try again."
-                )),
-                // Enumerated a moment ago and gone by the time we opened it:
-                // the dongle came out between the menu and the click.
-                std::io::ErrorKind::NotFound => AppError::State(format!(
-                    "{port_name} is no longer connected. Check the cable, then reopen the list."
-                )),
-                _ => AppError::State(format!("open {port_name}: {e}")),
-            },
-            _ => AppError::State(format!("open {port_name}: {e}")),
-        })?;
+        .map_err(|e| open_error(port_name, e))?;
 
     // Assert the modem control lines. Plenty of console cables and USB adapters
     // leave the device mute until they see these, which presents as a tab that
@@ -433,7 +505,9 @@ pub fn open_serial<E: PtyEvents>(
 
 #[cfg(test)]
 mod tests {
-    use super::{device_path, is_com_port, list_ports, port_number, refusal_reason, valid_baud};
+    use super::{is_callout_device, is_com_port, port_number, valid_baud};
+    #[cfg(windows)]
+    use super::{device_path, list_ports, refusal_reason};
 
     #[test]
     fn only_com_names_are_accepted() {
@@ -462,6 +536,7 @@ mod tests {
         assert!(port_number("COM1") < port_number("COM2"));
     }
 
+    #[cfg(windows)]
     #[test]
     fn a_port_name_becomes_a_device_path() {
         // A bare "COM3" handed to CreateFile is a filename in the working
@@ -469,6 +544,7 @@ mod tests {
         assert_eq!(device_path("COM3"), r"\\.\COM3");
     }
 
+    #[cfg(windows)]
     #[test]
     fn an_absent_port_reads_as_not_found() {
         // The point of this one is the plumbing, not the answer. It proves the
@@ -481,6 +557,29 @@ mod tests {
             return; // this machine really does have one
         }
         assert_eq!(refusal_reason(name), std::io::ErrorKind::NotFound);
+    }
+
+    /// On a Mac the port name is a path, so the gate is what keeps the
+    /// frontend from opening an arbitrary file: one directory, one prefix, a
+    /// name with no slash in it.
+    #[test]
+    fn only_callout_devices_are_accepted_on_macos() {
+        assert!(is_callout_device("/dev/cu.usbserial-1420"));
+        assert!(is_callout_device("/dev/cu.usbmodem14101"));
+        assert!(is_callout_device("/dev/cu.SLAB_USBtoUART"));
+        assert!(!is_callout_device("/dev/tty.usbserial-1420"));
+        assert!(!is_callout_device("/dev/cu."));
+        assert!(!is_callout_device("/dev/cu./../disk0"));
+        assert!(!is_callout_device("/dev/cu.x/y"));
+        assert!(!is_callout_device("/dev/disk0"));
+        assert!(!is_callout_device("/etc/passwd"));
+        assert!(!is_callout_device("cu.usbserial-1420"));
+        assert!(!is_callout_device("/dev/cu.usbserial 1420"));
+        assert!(!is_callout_device("COM3"));
+        assert!(!is_callout_device(""));
+        // Present on every Mac and never a console cable.
+        assert!(!is_callout_device("/dev/cu.Bluetooth-Incoming-Port"));
+        assert!(!is_callout_device("/dev/cu.debug-console"));
     }
 
     #[test]

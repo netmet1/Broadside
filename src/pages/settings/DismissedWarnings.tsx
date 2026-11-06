@@ -7,6 +7,7 @@ import {
   DISMISSED_WARNINGS_EVENT,
   DISMISSIBLE_WARNINGS,
   dismissedWarnings,
+  restoreWarning,
   restoreWarnings,
 } from "@/lib/dismissedWarnings";
 import { useHint } from "@/lib/status";
@@ -18,7 +19,7 @@ import { useHint } from "@/lib/status";
  * back is not a preference, it is a one-way door, and the person who walks
  * through it is usually not the person who later inherits the machine. This is
  * the other side of that door: what has been turned off, by name, and one
- * button that turns it all back on.
+ * button that turns it all back on, beside one per warning.
  *
  * In Security rather than Appearance because what these warnings are about is
  * connections opening unattended and host references leaving the machine.
@@ -52,15 +53,30 @@ export function DismissedWarnings() {
       {silenced.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           Every warning that can be turned off is currently on. When one is
-          dismissed with its &ldquo;don&apos;t warn me again&rdquo; box, it is
-          listed here so it can be put back.
+          dismissed with its &ldquo;don&apos;t warn me again&rdquo; or
+          &ldquo;don&apos;t ask me again&rdquo; box, it is listed here so it can
+          be put back.
         </p>
       ) : (
         <ul className="space-y-2">
           {silenced.map((w) => (
-            <li key={w.id} className="text-xs">
-              <span className="font-medium text-foreground">{w.label}</span>
-              <span className="block text-muted-foreground">{w.detail}</span>
+            <li key={w.id} className="flex items-start gap-3 text-xs">
+              <div className="min-w-0 flex-1">
+                <span className="font-medium text-foreground">{w.label}</span>
+                <span className="block text-muted-foreground">{w.detail}</span>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="shrink-0"
+                onClick={() => {
+                  restoreWarning(w.id);
+                  toast.success("Warning turned back on");
+                }}
+                {...hint("Show this warning again.")}
+              >
+                Turn back on
+              </Button>
             </li>
           ))}
         </ul>

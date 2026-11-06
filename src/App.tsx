@@ -22,6 +22,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { isExitGuardEnabled } from "@/lib/exitGuard";
+import { useNoPageSelectAll } from "@/lib/useNoPageSelectAll";
+import { IS_MAC } from "@/lib/platform";
 import {
   KEEPALIVE_SECS,
   SESSION_PREFS_EVENT,
@@ -897,6 +899,9 @@ function App() {
   }, []);
   const restoreTerminal = useCallback(() => setMaxSessionId(null), []);
 
+  // ⌘A / Ctrl+A outside a text box doesn't select the whole window's text.
+  useNoPageSelectAll();
+
   // F11 toggles the maximized terminal, the standard fullscreen key, and
   // (unlike Esc) one the shell and TUI apps like vim/less never use, so it's
   // safe to capture. Capture phase fires before xterm consumes the key.
@@ -910,9 +915,14 @@ function App() {
   // failure than any amount of hunting for the way back out. So the ways out
   // are F11 and the restore button in the banner (Ctrl+Shift+G and the strip's
   // own button, in the grid), and Esc reaches the terminal untouched.
+  //
+  // On a Mac the key is ⇧⌘↩ (F11 there is Show Desktop or the volume, and the
+  // system has ⌃⌘F for its own full screen); F11 is still taken if it arrives.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "F11") return;
+      const macKey =
+        IS_MAC && e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey && e.key === "Enter";
+      if (e.key !== "F11" && !macKey) return;
       e.preventDefault();
       e.stopPropagation();
       if (maximized) {
@@ -1111,6 +1121,7 @@ function App() {
           onNewWorkspace={ws.createAndShow}
           onRenameWorkspace={ws.rename}
           onRecolorWorkspace={ws.recolor}
+          onReorderWorkspace={ws.reorder}
           onCloseWorkspace={closeWorkspace}
           onMoveToWorkspace={moveToWorkspace}
           onOpenTemplate={openTemplate}

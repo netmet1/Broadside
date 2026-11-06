@@ -144,7 +144,16 @@ export function Composer({
           onChange(e.target.value);
         }}
         onScroll={syncCaret}
-        onFocus={() => setFocused(true)}
+        // Measure again on focus and on every selection move. Every page is
+        // mounted hidden, where the mount-time measure reads 0,0, and only a
+        // document selectionchange on the click put it right before the first
+        // keystroke. The Mac's WebKit did not send one there (smoke test 76),
+        // so the caret sat in the top-left corner of the empty box.
+        onSelect={syncCaret}
+        onFocus={() => {
+          setFocused(true);
+          syncCaret();
+        }}
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !disabled) {

@@ -13,8 +13,16 @@ on:
 
 jobs:
   rust:
-    name: Rust (build, test, audit)
-    runs-on: windows-latest
+    # Both platforms build from one tree, and most of what differs between them
+    # is behind #[cfg]: Mac-only code that has stopped compiling is invisible to
+    # a Windows build, and the reverse. So each is built and tested on its own
+    # OS on every push, not for the first time on release day.
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: src-tauri
@@ -31,15 +39,20 @@ jobs:
       - name: cargo test
         run: cargo test --locked --all-targets
 
+      # The dependency graph is the same whichever OS resolves it (cargo-deny
+      # walks every target, not only the host's), so the audit runs once.
       - name: Install cargo-audit & cargo-deny
+        if: matrix.os == 'windows-latest'
         run: |
           cargo install cargo-audit --locked
           cargo install cargo-deny --locked
 
       - name: cargo audit
+        if: matrix.os == 'windows-latest'
         run: cargo audit
 
       - name: cargo deny check
+        if: matrix.os == 'windows-latest'
         run: cargo deny check
 
   frontend:

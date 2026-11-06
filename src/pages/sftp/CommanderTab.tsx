@@ -25,6 +25,7 @@ import {
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { useActivity } from "@/lib/activity";
+import { WORDS } from "@/lib/platform";
 import { useHint } from "@/lib/status";
 import type { Host } from "@/lib/tauri/hosts";
 import { type TransferMode } from "@/lib/tauri/sftp";
@@ -33,8 +34,7 @@ import {
   clashText,
   formatSize,
   isLargeTransfer,
-  winDirname,
-  winJoin,
+  nameProblem,
 } from "@/pages/sftp/model";
 import {
   type DragPayload,
@@ -56,9 +56,9 @@ type DirRequest = {
   direction: "put" | "get";
   path: string;
   name: string;
-  /** The local folder a download creates (the drop folder joined with
-   *  `name`); unused for an upload, which goes to the remote cwd. */
-  localDest: string;
+  /** The local folder a download lands in, as a `name` folder; unused for an
+   *  upload, which goes to the remote cwd. */
+  localDir: string;
   batch: TransferBatch;
 };
 
@@ -76,7 +76,7 @@ const SPLIT_KEY = "sftp-split-pct";
  * connected remote host on the right. A click selects; a double-click or Enter
  * opens a folder. Transfer by **dragging to the other pane** (local→remote =
  * put, remote→local = get). Both panes support New folder, Rename (F2 or the
- * pencil) and (double-click) Delete: local deletes go to the Recycle Bin,
+ * pencil) and (double-click) Delete: local deletes go to the Recycle Bin / Trash,
  * remote deletes are permanent.
  */
 export function CommanderTab({
@@ -171,7 +171,7 @@ export function CommanderTab({
       } else {
         remote.downloadDir(
           { path: req.path, name: req.name },
-          req.localDest,
+          req.localDir,
           req.batch.mode,
           totals,
           req.batch,
@@ -238,7 +238,7 @@ export function CommanderTab({
       }
       const localCwd = local.cwd;
       if (direction === "get" && localCwd === null) {
-        toast.error("Open a local folder first (you're at the drive list)");
+        toast.error(`Open a local folder first (you're at the ${WORDS.driveList})`);
         return;
       }
       // One drop, one success toast once everything in it has settled.
@@ -252,7 +252,7 @@ export function CommanderTab({
         } else {
           remote.download(
             { path: item.path, name: item.name, size: item.size ?? undefined },
-            winJoin(localCwd ?? "", item.name),
+            localCwd ?? "",
             batch,
           );
         }
@@ -263,7 +263,7 @@ export function CommanderTab({
           direction,
           path: item.path,
           name: item.name,
-          localDest: winJoin(localCwd ?? "", item.name),
+          localDir: localCwd ?? "",
           batch,
         });
       }
@@ -316,7 +316,16 @@ export function CommanderTab({
         : `SFTP: ${inFlight} transfers in progress`,
   );
 
+  // Checked as it is typed, like a rename. An empty box only greys out Create.
+  const newFolderTrimmed = newFolderName.trim();
+  const newFolderProblem =
+    newFolderSide === null || newFolderTrimmed === ""
+      ? null
+      : nameProblem(newFolderSide, newFolderTrimmed);
+  const canCreateFolder = newFolderTrimmed !== "" && newFolderProblem === null;
+
   const submitNewFolder = () => {
+    if (!canCreateFolder) return;
     if (newFolderSide === "local") local.mkdir(newFolderName);
     else if (newFolderSide === "remote") remote.mkdir(newFolderName);
     setNewFolderName("");
@@ -351,10 +360,10 @@ export function CommanderTab({
             title={
               <span className="flex items-center gap-1.5 text-sm font-medium">
                 <MonitorIcon className="h-4 w-4 text-muted-foreground" />
-                This PC
+                {WORDS.ThisComputer}
               </span>
             }
-            pathLabel={local.cwd ?? "Drives"}
+            pathLabel={local.cwd ?? WORDS.drives}
             entries={local.entries}
             loading={local.loading}
             busy={local.busy}
@@ -500,18 +509,22 @@ export function CommanderTab({
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && newFolderName.trim()) submitNewFolder();
+                if (e.key === "Enter") submitNewFolder();
               }}
+              aria-invalid={newFolderProblem !== null}
               autoComplete="off"
               spellCheck={false}
               autoFocus
             />
+            {newFolderProblem && (
+              <p className="text-xs break-words text-destructive">{newFolderProblem}</p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewFolderSide(null)}>
               Cancel
             </Button>
-            <Button onClick={submitNewFolder} disabled={!newFolderName.trim()}>
+            <Button onClick={submitNewFolder} disabled={!canCreateFolder}>
               Create
             </Button>
           </DialogFooter>
@@ -524,7 +537,7 @@ export function CommanderTab({
         whereLabel={
           renaming?.side === "remote"
             ? `on ${remote.session?.host.label ?? "the host"}`
-            : "on this PC"
+            : `on ${WORDS.thisComputer}`
         }
         onClose={() => setRenaming(null)}
         onRename={renameEntry}
@@ -545,7 +558,7 @@ export function CommanderTab({
                   <span className="font-mono text-foreground">
                     {deleting?.entry.path}
                   </span>{" "}
-                  to the <span className="font-medium">Recycle Bin</span>.
+                  to the <span className="font-medium">{WORDS.trash}</span>.
                 </>
               ) : (
                 <>
@@ -602,9 +615,9 @@ export function CommanderTab({
                 <>
                   <span className="font-medium">download</span> the folder to{" "}
                   <span className="font-mono text-foreground">
-                    {winDirname(pendingDir?.localDest ?? "")}
+                    {pendingDir?.localDir}
                   </span>{" "}
-                  on this PC
+                  on {WORDS.thisComputer}
                 </>
               )}
               . {clashText(pendingDir?.batch.mode ?? mode)} Continue?

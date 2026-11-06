@@ -2,10 +2,10 @@
 
 **One command. Every machine. At once.**
 
-Broadside is a Windows SSH console for people who run more than one server. Type a
-command once and send it to every host at the same time, then drop into a full,
-interactive terminal on any single machine the moment you need to work directly.
-Your local Windows shells live in the same window, so managing a whole fleet and
+Broadside is an SSH console for Windows and macOS, for people who run more than one
+server. Type a command once and send it to every host at the same time, then drop
+into a full, interactive terminal on any single machine the moment you need to work
+directly. Your local shells live in the same window, so managing a whole fleet and
 fixing one box no longer means juggling a dozen terminal tabs.
 
 It is built for the everyday reality of operations: rolling the same update across a
@@ -20,8 +20,9 @@ Broadside refuses the trade-off:
 
 - **Broadcast and interact.** Fan a command out to a group of hosts, then jump into
   a genuine interactive terminal on any one of them without opening a second app.
-- **Remote and local, together.** SSH hosts and local Windows shells (PowerShell,
-  Command Prompt, WSL) sit side by side in one window.
+- **Remote and local, together.** SSH hosts and local shells (PowerShell, Command
+  Prompt and WSL on Windows; zsh, bash and the rest on a Mac) sit side by side in
+  one window.
 - **Repeat without retyping.** Capture a sequence of commands as a **Skill** and let
   Broadside run it across your machines hands-free.
 
@@ -37,9 +38,10 @@ as many concurrent sessions as you need and switch between them with tabs, or ti
 them all at once in a **Grid** and pin exactly how many sit across and how big each
 one is.
 
-### Local Windows shells
-Open PowerShell, Command Prompt, and WSL right alongside your remote hosts, launch
-several at once, and broadcast a command across them just like your SSH sessions.
+### Local shells
+Open PowerShell, Command Prompt and WSL on Windows, or zsh, bash and any other shell
+on a Mac, right alongside your remote hosts, launch several at once, and broadcast a
+command across them just like your SSH sessions.
 
 ### Skills: automate the routine
 Record a sequence of commands one time, then run it whenever you like. Broadside
@@ -59,9 +61,13 @@ elsewhere.
 
 ## Platform
 
-Built and tested on **Windows 11**. Windows 10 is untested.
+- **Windows:** built and tested on **Windows 11**. Windows 10 is untested.
+- **macOS:** macOS 13.3 (Ventura) or later, as one app for Apple silicon and Intel.
+  Saved passwords go in your login Keychain.
 
 ## Install
+
+### Windows
 
 Download the latest `msi` from the [Releases](../../releases) page and run the
 installer. When Windows shows `Publisher: Unknown`, that is expected for an unsigned
@@ -108,24 +114,70 @@ Adding a Defender exclusion will stop the prompts, but it is a blunt instrument
 that also stops Defender protecting that path. It is a stopgap, not a fix. The
 real fix is code signing, which is being worked on.
 
+### macOS
+
+Download the latest `dmg` from the [Releases](../../releases) page, open it, and
+drag Broadside to Applications.
+
+A build that is not notarized by Apple is stopped the first time you open it, with
+a message that Apple could not verify Broadside is free of malware. That is not a
+detection: it only means the app is not signed with an Apple developer
+certificate. Press `Done`, then open `System Settings` -> `Privacy & Security`,
+scroll down to the line about Broadside and click `Open Anyway`, and confirm with
+your password or Touch ID. (Control-click -> `Open` no longer does this since
+macOS 15.) macOS then asks two things the first time they come up; allow both:
+
+- **Local Network**, the first time Broadside connects to a host on your own
+  network. Without it, every LAN connection fails with `No route to host`.
+- **Keychain**, the first time it saves or reads a password. Choose
+  `Always Allow`.
+
+An unsigned build asks both again after each update, because macOS ties those
+permissions to the exact app they were given to.
+
+The release notes list the disk image's `SHA-256` too, and the same
+`.sha256` file and build attestation are attached:
+
+```sh
+shasum -a 256 Broadside_x.y.z_universal.dmg
+gh attestation verify Broadside_x.y.z_universal.dmg --repo netmet1/Broadside
+```
+
 ## Built with
 
-Tauri 2, Rust, React, and TypeScript, for a small, fast, native Windows app.
+Tauri 2, Rust, React, and TypeScript, for a small, fast, native app on Windows and
+macOS.
 
 ## Local development
 
 Prerequisites:
 
 - Rust (stable, 1.95+)
-- Node.js 20+ and npm
-- Windows SDK (WebView2 is auto-installed by the Tauri bootstrapper)
+- Node.js 20.19+ and npm
+- On Windows: the Windows SDK (WebView2 is auto-installed by the Tauri bootstrapper)
+- On macOS: the Xcode Command Line Tools (`xcode-select --install`)
 
-Install and run:
+Install and run (the same on both):
 
-```powershell
+```sh
 npm install
 npm run tauri dev
 ```
+
+A release build of each installer:
+
+```sh
+# Windows: the MSI, under src-tauri/target/release/bundle/msi
+npm run tauri build
+
+# macOS: one universal DMG, under
+# src-tauri/target/universal-apple-darwin/release/bundle/dmg
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+npm run tauri build -- --target universal-apple-darwin --bundles dmg
+```
+
+`scripts/ci.ps1` (the local CI) and `scripts/release.ps1` are PowerShell. On a Mac,
+`brew install powershell` and run them with `pwsh`.
 
 Scripts:
 

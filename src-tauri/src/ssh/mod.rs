@@ -77,6 +77,42 @@ fn is_connection_reset(message: &str) -> bool {
         || m.contains("10054")
 }
 
+/// macOS 15 and later ask before an app reaches a device on the local network,
+/// and an app that was refused, or whose prompt was dismissed, has every LAN
+/// connection fail with a bare "No route to host" (os error 65), the same words
+/// a switched-off device produces. Nothing in the error says which, and the
+/// setting that fixes the first is three panels deep, so a failure that could
+/// be it says where to look. A public address cannot be it and gets no hint; a
+/// hostname might resolve to either, so it gets one.
+#[cfg(target_os = "macos")]
+fn with_local_network_hint(hostname: &str, message: String) -> String {
+    let no_route = message.contains("os error 65")
+        || message.to_ascii_lowercase().contains("no route to host");
+    let could_be_lan = match hostname.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => v4.is_private() || v4.is_link_local(),
+        // Link-local fe80::/10 and unique-local fc00::/7.
+        Ok(std::net::IpAddr::V6(v6)) => {
+            let first = v6.segments()[0];
+            first & 0xffc0 == 0xfe80 || first & 0xfe00 == 0xfc00
+        }
+        Err(_) => true,
+    };
+    if no_route && could_be_lan {
+        format!(
+            "{message}. If the host is on your local network and is switched on, macOS \
+             may be blocking Broadside: allow it in System Settings > Privacy & Security \
+             > Local Network."
+        )
+    } else {
+        message
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn with_local_network_hint(_hostname: &str, message: String) -> String {
+    message
+}
+
 /// Backoff before retry `attempt` (0-based), spread out so a batch that was
 /// dropped together does not come back in lockstep and get dropped together
 /// again. The spread is derived from the clock rather than a random number
@@ -675,7 +711,7 @@ async fn connect_and_auth_once(
         }
         Ok(Err(e)) => {
             return Ok(Err(ConnectFailure::Unreachable {
-                message: e.to_string(),
+                message: with_local_network_hint(hostname, e.to_string()),
             }))
         }
         Ok(Ok(h)) => h,
@@ -1179,6 +1215,23 @@ mod shell_tests {
             "An existing connection was forcibly closed by the remote host. (os error 10054)"
         ));
         assert!(is_connection_reset("Connection reset by peer (os error 104)"));
+        // And macOS, where the same drop is os error 54.
+        assert!(is_connection_reset("Connection reset by peer (os error 54)"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_blocked_lan_connection_points_at_local_network_privacy() {
+        let refused = "No route to host (os error 65)".to_string();
+        for lan in ["192.168.1.10", "10.0.0.5", "172.16.4.1", "fe80::1", "switch-01.lan"] {
+            let m = with_local_network_hint(lan, refused.clone());
+            assert!(m.contains("Local Network"), "{lan}: {m}");
+        }
+        // A public address cannot be held back by it, and other failures are
+        // left as they were.
+        assert_eq!(with_local_network_hint("8.8.8.8", refused.clone()), refused);
+        let timeout = "connection timed out after 10s".to_string();
+        assert_eq!(with_local_network_hint("192.168.1.10", timeout.clone()), timeout);
     }
 
     #[test]

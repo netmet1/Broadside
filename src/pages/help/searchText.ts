@@ -27,6 +27,20 @@ export type Searchable = { searchText: string };
  * is how a walk of the tree sees those words. */
 export type PropSearchable = { searchProps: readonly string[] };
 
+/** A component whose words depend on something only it knows (which platform
+ * Help is speaking to, see ./platform): it hands back the part of its props that
+ * is on the page right now, and the walk carries on into that. */
+export type NodeSearchable = {
+  searchNode: (props: Record<string, unknown>) => ReactNode;
+};
+
+function hasSearchNode(type: unknown): type is NodeSearchable {
+  return (
+    typeof type === "function" &&
+    typeof (type as Partial<NodeSearchable>).searchNode === "function"
+  );
+}
+
 function hasSearchText(type: unknown): type is Searchable {
   return (
     typeof type === "function" &&
@@ -63,6 +77,7 @@ export function textOf(node: ReactNode): string {
     const props = node.props as Record<string, unknown> & {
       children?: ReactNode;
     };
+    if (hasSearchNode(node.type)) return textOf(node.type.searchNode(props));
     const fromProps = hasSearchProps(node.type)
       ? node.type.searchProps
           .map((p) => (typeof props[p] === "string" ? props[p] : ""))

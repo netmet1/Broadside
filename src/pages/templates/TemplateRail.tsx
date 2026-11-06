@@ -9,6 +9,7 @@ import type { ShellProfile } from "@/lib/localShellProfiles";
 import { isTintable } from "@/lib/terminalColors";
 import { useHint } from "@/lib/status";
 import type { RailFilter } from "@/lib/useRailFilter";
+import { FALLBACK_SHELL_KIND } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import {
@@ -180,7 +181,7 @@ export function TemplateRail({
                 label={p.label}
                 detail={p.cwd || p.shellId}
                 color={isTintable(p.color) ? p.color : null}
-                shellKind="cmd"
+                shellKind={FALLBACK_SHELL_KIND}
                 disabled={disabled}
                 onAdd={() => onAdd(profileItem(p))}
               />

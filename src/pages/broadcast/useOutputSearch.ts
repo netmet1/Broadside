@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { type SearchMode } from "@/components/SearchBar";
+import { isModKey } from "@/lib/platform";
 import {
   buildMatcher,
   isMatcher,
@@ -31,7 +32,7 @@ export function useOutputSearch(runs: RunGroup[], visible: boolean) {
   useEffect(() => {
     if (!visible) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && (e.key === "f" || e.key === "F")) {
+      if (isModKey(e) && (e.key === "f" || e.key === "F")) {
         e.preventDefault();
         setSearchMode(e.shiftKey ? "filter" : "find");
         setActiveHitIdx(0);

@@ -23,7 +23,9 @@
 
 import { type ReactNode } from "react";
 
+import { IS_MAC, SHORTCUTS } from "@/lib/platform";
 import { ShortcutMatrix, WarningMatrix } from "@/pages/help/matrices";
+import { Keys, OnMac, OnWindows, Plat } from "@/pages/help/platform";
 import {
   HELP_HOSTS,
   HELP_SKILLS,
@@ -132,7 +134,7 @@ function Bullets({ children }: { children: ReactNode }) {
 
 /** Glossary terms, in display order. Each gets an anchor that inline term
  * links target. Definitions are written for a non-specialist reader. */
-const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
+const GLOSSARY: { term: string; label: ReactNode; def: ReactNode }[] = [
   {
     term: "SSH",
     label: "SSH (Secure Shell)",
@@ -171,9 +173,19 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     label: "ConPTY (Windows pseudo-console)",
     def: (
       <>
-        Windows' built-in version of a <Term term="PTY" />. Broadside uses it
-        to run local Windows shells (PowerShell, Command Prompt, WSL) inside a
-        Terminals tab, the same way it runs remote shells over <Term term="SSH" />.
+        <OnWindows>
+          Windows' built-in version of a <Term term="PTY" />. Broadside uses
+          it to run local Windows shells (PowerShell, Command Prompt, WSL)
+          inside a Terminals tab, the same way it runs remote shells over{" "}
+          <Term term="SSH" />.
+        </OnWindows>
+        <OnMac>
+          Windows' built-in version of a <Term term="PTY" />, which the
+          Windows build of Broadside runs its local shells on. A Mac needs
+          nothing of the kind: zsh and the other local shells run over the
+          Unix PTY macOS has always had, the same way remote shells run
+          over <Term term="SSH" />.
+        </OnMac>
       </>
     ),
   },
@@ -183,8 +195,8 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     def: (
       <>
         The program that reads the commands you type and runs them, for example
-        bash on Linux or PowerShell on Windows. A terminal tab is a window onto a
-        shell.
+        bash on Linux or <Plat win="PowerShell on Windows" mac="zsh on a Mac" />.
+        A terminal tab is a window onto a shell.
       </>
     ),
   },
@@ -193,11 +205,20 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
     label: "POSIX",
     def: (
       <>
-        The standard that Unix-like systems follow, which is why a command
-        written for Linux usually works on macOS or inside WSL. In Broadside,
-        Bash-like terminals such as Git Bash, MSYS2 and Cygwin count as POSIX:
-        they are tagged <code>posix</code> and join the{" "}
-        <Nav>WSL / POSIX</Nav> tab in <Nav>PTY Broadcast</Nav>.
+        <OnWindows>
+          The standard that Unix-like systems follow, which is why a command
+          written for Linux usually works on macOS or inside WSL. In
+          Broadside, Bash-like terminals such as Git Bash, MSYS2 and Cygwin
+          count as POSIX: they are tagged <code>posix</code> and join the{" "}
+          <Nav>WSL / POSIX</Nav> tab in <Nav>PTY Broadcast</Nav>.
+        </OnWindows>
+        <OnMac>
+          The standard that Unix-like systems follow, which is why a command
+          written for Linux usually works on macOS. In Broadside, the
+          Mac's own shells (zsh, bash) and any Bash-like terminal you add
+          count as POSIX: they are tagged <code>posix</code> and join the{" "}
+          <Nav>Local shells</Nav> tab in <Nav>PTY Broadcast</Nav>.
+        </OnMac>
       </>
     ),
   },
@@ -250,12 +271,22 @@ const GLOSSARY: { term: string; label: string; def: ReactNode }[] = [
   },
   {
     term: "credential-manager",
-    label: "Windows Credential Manager",
+    label: <Plat win="Windows Credential Manager" mac="macOS Keychain" />,
     def: (
       <>
-        A secrets vault built into Windows, tied to your Windows user account.
-        Broadside stores passwords and passphrases here first so they are
-        protected by your Windows login and never kept in plain text.
+        <OnWindows>
+          A secrets vault built into Windows, tied to your Windows user
+          account. Broadside stores passwords and passphrases here first so
+          they are protected by your Windows login and never kept in plain
+          text.
+        </OnWindows>
+        <OnMac>
+          The secrets vault built into macOS, tied to your Mac user account.
+          Broadside stores passwords and passphrases in your login keychain
+          first, so they are protected by your Mac login and never kept in
+          plain text. Keychain Access lists them under the name{" "}
+          <code>broadside</code>.
+        </OnMac>
       </>
     ),
   },
@@ -311,6 +342,11 @@ export type HelpSection = {
   body: ReactNode;
 };
 
+/** Words a Mac reader searches with that the Windows-first keyword lists do
+ * not have. Added, not swapped in, so a search that works on Windows still
+ * works on a Mac; empty on Windows, where nothing changes. */
+const onMac = (words: string): string => (IS_MAC ? ` ${words}` : "");
+
 export const SECTIONS: HelpSection[] = [
   {
     id: "help-sec-overview",
@@ -322,8 +358,14 @@ export const SECTIONS: HelpSection[] = [
         <Lead>
           Broadside is an SSH console built around one idea: send one command
           to many machines at once, while still giving each machine its own full
-          interactive terminal when you need it. It also opens local Windows
-          shells in the same window.
+          interactive terminal when you need it. It also opens local{" "}
+          <Plat
+            win="Windows shells"
+            mac="shells (zsh, bash)"
+            both="shells (Windows shells, or zsh and bash on a Mac)"
+          />{" "}
+          in the same
+          window.
         </Lead>
         <Detail>
           <H3>The left rail</H3>
@@ -374,12 +416,12 @@ export const SECTIONS: HelpSection[] = [
               under <Nav>Appearance</Nav>.
             </li>
             <li>
-              Press <Nav>F11</Nav> (or the maximize button on a terminal tab) to
-              fill the whole window with a single terminal, and <Nav>F11</Nav>{" "}
+              Press <Nav><Keys k={SHORTCUTS.maximize} /></Nav> (or the maximize button on a terminal tab) to
+              fill the whole window with a single terminal, and <Nav><Keys k={SHORTCUTS.maximize} /></Nav>{" "}
               again to return. <Nav>Esc</Nav> does not come back out: it goes to
               the program in the terminal, because editors such as{" "}
-              <code>vi</code> depend on it. <Nav>Alt+Left</Nav> /{" "}
-              <Nav>Alt+Right</Nav> still change sessions while you are
+              <code>vi</code> depend on it. <Nav><Keys k={SHORTCUTS.prevTab} /></Nav> /{" "}
+              <Nav><Keys k={SHORTCUTS.nextTab} /></Nav> still change sessions while you are
               maximized.
             </li>
           </Bullets>
@@ -600,7 +642,7 @@ export const SECTIONS: HelpSection[] = [
             <li>
               The rail on the left of the editor has four groups: your saved{" "}
               <Nav>hosts</Nav>, the <Nav>local shells</Nav> this machine has,
-              your <Nav>custom terminals</Nav> (Git Bash and the like) and your
+              your <Nav>custom terminals</Nav> (<Plat win="Git Bash and the like" mac="a Homebrew fish and the like" />) and your
               saved <Nav>shell profiles</Nav>. Drag a row into a box, or click
               it to add it at the end.
             </li>
@@ -707,7 +749,7 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               Anything the template names that this machine does not have (a
-              deleted host, a removed WSL distro) is listed in that dialog and
+              deleted host, <Plat win="a removed WSL distro" mac="a shell that is no longer installed" />) is listed in that dialog and
               skipped. The rest still opens.
             </li>
           </Bullets>
@@ -739,15 +781,15 @@ export const SECTIONS: HelpSection[] = [
               name. It never contains credentials.
             </li>
             <li>
-              Importing matches those against this PC's hosts. Anything that
+              Importing matches those against <Plat win="this PC's" mac="this Mac's" /> hosts. Anything that
               does not match arrives as a named box for you to point at a real
               host. Importing never creates or changes a host, and never sets a
               template to open at startup.
             </li>
             <li>
-              Local shells and profiles belong to one PC. They travel by name,
-              so a template made elsewhere still tells you what it wanted when
-              this PC does not have it.
+              Local shells and profiles belong to one <Plat win="PC" mac="Mac" />. They travel by name,
+              so a template made elsewhere still tells you what it wanted when{" "}
+              <Plat win="this PC" mac="this Mac" /> does not have it.
             </li>
           </Bullets>
         </Detail>
@@ -758,7 +800,10 @@ export const SECTIONS: HelpSection[] = [
     id: HELP_TERMINALS,
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell profile profiles import export reorder grip survive reset backup restore startup command local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved resize one tile only independent tile sizes resize tiles together lock unlock different sized tiles ragged single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes advanced grid settings collapsed section starting number seed default unchecking auto lands on your own numbers 80x24 classic terminal size reset defaults just the advanced section session timeout idle close automatically inactivity why did my terminal close by itself left it overnight closed while i was away keep alive keepalive nat firewall state table connection dropped silently hangs after a while disable the timeout never close sleep 120 long running command was closed while it was running foreground background job ampersand tmux screen vim editor full screen program never times out how does it know paste mode plain sh dash device cli no shell integration falls back spinner connecting forever stuck on connecting nothing happening is it frozen hung blank pane black screen after connecting no prompt taking ages slow to open which half is slow signed in waiting for the login screen wireless vpn latency why does it take ten seconds duplicate a profile copy clone make another one like this second profile same shell different folder profile copy numbered delete profile double click doubleclick two clicks confirm dialog ok cancel are you sure guard accidental deletion undo a deleted profile single click does nothing bin trash icon copy of a copy nested copy copy numbering collapses close others close other tabs keep only this one close everything except this tab close other ssh close other command prompts close other powershell right click a tab menu filter by kind show only ssh hide powershell hide local shells view filter all none tabs missing where did my tabs go hidden by filter select then right click to copy right click copies highlight does not copy any more clipboard overwritten by selecting import profile import profiles export profile export profiles importing profiles exporting profiles profile file profiles file json file of profiles share profiles copy profiles to another pc move profiles another machine carry my profiles back up profiles restore profiles profile import preview startup command shown before importing profile already taken numbered copy on import custom terminal matched by name struck through after import which shell did this profile use remembers the name of the missing shell hover a struck through profile tells you which terminal to re-add edit pre-picks the shell after you add it back profiles on the hosts tab third switch position profiles list table manage profiles somewhere bigger export a single profile export one profile export just this one tick boxes export selected profiles per profile export where do i see the folder and startup command without hovering launch a profile from the hosts tab open profiles from the profiles list multi-profile multi profile open several profiles at once open four shells in one go greyed multi-profile button nothing ticked opening the same profile twice does not ask second shell same folder ticked profile missing shell skipped hosts in the plus menu open a host from the terminals tab launcher hosts section saved hosts list in the launcher without leaving terminals collapse section roll up sections expand collapse twisty chevron fold sections away remembered across restarts persisted collapsed menu too long scrolling past hosts to reach profiles how many applies to hosts open three sessions to one host already open host second session to the same host does not ask why does the hosts tab ask and the plus menu not menu cut off at the bottom serial console cut off profiles cut off have to scroll the window to reach it menu taller than the window fits the window resize add a host from the plus menu new host from the terminals tab reorder profiles on the hosts tab drag a profile row grip move profile columns resize profile columns hide profile columns paste double spaced blank line between every line extra empty lines crlf windows line endings vs code notepad multi-line paste runs each line bracketed paste waits for enter right click goes to tmux menu claude code pasted twice double paste shift right click mouse program save as template save the grid as a template keep this layout as a template template button next to the eye workspace workspaces group tabs groups of tabs switch between sets of tabs hide these tabs show only these tabs new workspace move tab to workspace rename workspace close workspace workspace row strip saved workspaces gone after restart close all workspaces close every workspace which workspace does the template go into controls row toolbar hidden tucked away where did the toolbar go buttons gone top of the terminals tab tab at the top centre hover to show the controls keep the toolbar on screen reorder the sections of the plus menu move sections drag section heading put templates first change the order of the launcher templates in the plus menu open a template from the terminals tab launcher templates section edit a template duplicate a template copy a template delete a template reorder templates apt progress bar left behind twice duplicate progress line after closing a tile stale status line resize leftovers",
+      "terminal tab interactive shell profile profiles import export reorder grip survive reset backup restore startup command local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved resize one tile only independent tile sizes resize tiles together lock unlock different sized tiles ragged single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes advanced grid settings collapsed section starting number seed default unchecking auto lands on your own numbers 80x24 classic terminal size reset defaults just the advanced section session timeout idle close automatically inactivity why did my terminal close by itself left it overnight closed while i was away keep alive keepalive nat firewall state table connection dropped silently hangs after a while disable the timeout never close sleep 120 long running command was closed while it was running foreground background job ampersand tmux screen vim editor full screen program never times out how does it know paste mode plain sh dash device cli no shell integration falls back spinner connecting forever stuck on connecting nothing happening is it frozen hung blank pane black screen after connecting no prompt taking ages slow to open which half is slow signed in waiting for the login screen wireless vpn latency why does it take ten seconds duplicate a profile copy clone make another one like this second profile same shell different folder profile copy numbered delete profile double click doubleclick two clicks confirm dialog ok cancel are you sure guard accidental deletion undo a deleted profile single click does nothing bin trash icon copy of a copy nested copy copy numbering collapses close others close other tabs keep only this one close everything except this tab close other ssh close other command prompts close other powershell right click a tab menu filter by kind show only ssh hide powershell hide local shells view filter all none tabs missing where did my tabs go hidden by filter select then right click to copy right click copies highlight does not copy any more clipboard overwritten by selecting import profile import profiles export profile export profiles importing profiles exporting profiles profile file profiles file json file of profiles share profiles copy profiles to another pc move profiles another machine carry my profiles back up profiles restore profiles profile import preview startup command shown before importing profile already taken numbered copy on import custom terminal matched by name struck through after import which shell did this profile use remembers the name of the missing shell hover a struck through profile tells you which terminal to re-add edit pre-picks the shell after you add it back profiles on the hosts tab third switch position profiles list table manage profiles somewhere bigger export a single profile export one profile export just this one tick boxes export selected profiles per profile export where do i see the folder and startup command without hovering launch a profile from the hosts tab open profiles from the profiles list multi-profile multi profile open several profiles at once open four shells in one go greyed multi-profile button nothing ticked opening the same profile twice does not ask second shell same folder ticked profile missing shell skipped hosts in the plus menu open a host from the terminals tab launcher hosts section saved hosts list in the launcher without leaving terminals collapse section roll up sections expand collapse twisty chevron fold sections away remembered across restarts persisted collapsed menu too long scrolling past hosts to reach profiles how many applies to hosts open three sessions to one host already open host second session to the same host does not ask why does the hosts tab ask and the plus menu not menu cut off at the bottom serial console cut off profiles cut off have to scroll the window to reach it menu taller than the window fits the window resize add a host from the plus menu new host from the terminals tab reorder profiles on the hosts tab drag a profile row grip move profile columns resize profile columns hide profile columns paste double spaced blank line between every line extra empty lines crlf windows line endings vs code notepad multi-line paste runs each line bracketed paste waits for enter right click goes to tmux menu claude code pasted twice double paste shift right click mouse program save as template save the grid as a template keep this layout as a template template button next to the eye workspace workspaces group tabs groups of tabs switch between sets of tabs hide these tabs show only these tabs new workspace move tab to workspace rename workspace close workspace workspace row strip reorder workspaces drag a workspace change the order of workspaces too many workspaces scroll the workspace row off the end saved workspaces gone after restart close all workspaces close every workspace which workspace does the template go into controls row toolbar hidden tucked away where did the toolbar go buttons gone top of the terminals tab tab at the top centre hover to show the controls keep the toolbar on screen auto-hide controls view menu reorder the sections of the plus menu move sections drag section heading put templates first change the order of the launcher templates in the plus menu open a template from the terminals tab launcher templates section edit a template duplicate a template copy a template delete a template reorder templates apt progress bar left behind twice duplicate progress line after closing a tile stale status line resize leftovers" +
+      onMac(
+        "zsh bash fish login shell etc shells homebrew command key cmd c cmd v option arrow word jump alt drag cu.usbserial usbmodem dev cu screen minicom coolterm mac",
+      ),
     body: (
       <>
         <Lead>
@@ -777,9 +822,18 @@ export const SECTIONS: HelpSection[] = [
               <Term term="SSH" />.
             </li>
             <li>
-              The same <Nav>plus button</Nav> opens local Windows shells: Windows
-              PowerShell, PowerShell 7 (pwsh), Command Prompt and any installed
-              WSL distributions.
+              <OnWindows>
+                The same <Nav>plus button</Nav> opens local Windows shells:
+                Windows PowerShell, PowerShell 7 (pwsh), Command Prompt and any
+                installed WSL distributions.
+              </OnWindows>
+              <OnMac>
+                The same <Nav>plus button</Nav> opens the Mac's own shells:
+                your login shell (zsh, unless you changed it) first, then bash
+                and the others macOS lists as shells. Each starts as a login
+                shell in your home folder, so your profile, your PATH and the
+                Homebrew tools on it are all there.
+              </OnMac>
             </li>
             <li>
               While terminals are open, the row of controls at the top (
@@ -787,9 +841,11 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Sessions</Nav> and the <Nav>plus button</Nav>) is tucked away
               behind a small tab at the top centre. Hover or click the tab to
               bring the row down; it goes back up once you have used it, and{" "}
-              <Nav>Ctrl+Shift+T</Nav> brings it down with the keyboard in it. To
-              keep it on screen, untick{" "}
-              <Nav>Settings → Sessions → Controls row</Nav>.
+              <Nav><Keys k={SHORTCUTS.focusControls} /></Nav> brings it down with the keyboard in it. To
+              keep it on screen, untick <Nav>View</Nav> &gt;{" "}
+              <Nav>Auto-hide controls</Nav>, or{" "}
+              <Nav>Settings → Sessions → Controls row</Nav>: they are the same
+              switch.
             </li>
             <li>
               Under the <Nav>How many</Nav> box the menu has five sections:{" "}
@@ -828,9 +884,20 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               A second tab on the same shell or host is numbered:{" "}
-              <Nav>PowerShell</Nav>, then <Nav>PowerShell 02</Nav>,{" "}
-              <Nav>PowerShell 03</Nav>. Moving tabs around never changes the
-              numbers.
+              <Plat
+                win={
+                  <>
+                    <Nav>PowerShell</Nav>, then <Nav>PowerShell 02</Nav>,{" "}
+                    <Nav>PowerShell 03</Nav>
+                  </>
+                }
+                mac={
+                  <>
+                    <Nav>zsh</Nav>, then <Nav>zsh 02</Nav>, <Nav>zsh 03</Nav>
+                  </>
+                }
+              />
+              . Moving tabs around never changes the numbers.
             </li>
           </Bullets>
           <H3>Workspaces</H3>
@@ -846,6 +913,11 @@ export const SECTIONS: HelpSection[] = [
               on a tab's right-click menu. Once there are two, a row of
               workspaces appears above the tabs: click one to show it, and its
               <Nav>+</Nav> starts another.
+            </li>
+            <li>
+              Drag a workspace along the row to change the order. When there
+              are more than fit, the row scrolls sideways with the mouse wheel
+              or its scrollbar.
             </li>
             <li>
               Anything you open lands in the workspace on screen. Move a tab to
@@ -878,13 +950,30 @@ export const SECTIONS: HelpSection[] = [
               template into a new workspace next time.
             </li>
           </Bullets>
-          <H3>Serial consoles (COM ports)</H3>
+          <H3>
+            <Plat
+              win="Serial consoles (COM ports)"
+              mac="Serial consoles"
+              both="Serial consoles (COM ports on Windows)"
+            />
+          </H3>
           <Bullets>
             <li>
-              The <Nav>plus button</Nav> menu lists this PC's COM ports under{" "}
-              <Nav>Serial console</Nav>. Picking one opens the console cable as
-              an ordinary terminal tab, beside your SSH sessions. Where Windows
-              knows the adapter's product name, it is shown under the port.
+              <OnWindows>
+                The <Nav>plus button</Nav> menu lists this PC's COM ports under{" "}
+                <Nav>Serial console</Nav>. Picking one opens the console cable
+                as an ordinary terminal tab, beside your SSH sessions. Where
+                Windows knows the adapter's product name, it is shown under the
+                port.
+              </OnWindows>
+              <OnMac>
+                The <Nav>plus button</Nav> menu lists this Mac's serial ports
+                under <Nav>Serial console</Nav>, by their device names (a USB
+                adapter is usually <Nav>cu.usbserial-…</Nav> or{" "}
+                <Nav>cu.usbmodem…</Nav>). Picking one opens the console cable as
+                an ordinary terminal tab, beside your SSH sessions. Where macOS
+                knows the adapter's product name, it is shown under the port.
+              </OnMac>
             </li>
             <li>
               The box beside each port is the <Nav>line speed</Nav> (baud). It
@@ -896,12 +985,23 @@ export const SECTIONS: HelpSection[] = [
               A new serial tab stays empty until the device says something.
               Press <Nav>Enter</Nav> to bring up its prompt. If you get garbage
               instead of text, the speed is probably wrong; it is shown on the
-              tab (<Nav>COM3 @ 9600</Nav>).
+              tab (
+              <Nav>
+                <Plat win="COM3 @ 9600" mac="cu.usbserial-1420 @ 9600" />
+              </Nav>
+              ).
             </li>
             <li>
-              A COM port can be open in only one program at a time. If another
-              program (PuTTY, Tera Term) has it, close that one and press{" "}
-              <Nav>Try again</Nav>.
+              <OnWindows>
+                A COM port can be open in only one program at a time. If another
+                program (PuTTY, Tera Term) has it, close that one and press{" "}
+                <Nav>Try again</Nav>.
+              </OnWindows>
+              <OnMac>
+                A serial port can be open in only one program at a time. If
+                another program (screen, minicom, CoolTerm) has it, close that
+                one and press <Nav>Try again</Nav>.
+              </OnMac>
             </li>
             <li>
               <Nav>How many</Nav> does not apply to serial ports, and resizing
@@ -919,15 +1019,25 @@ export const SECTIONS: HelpSection[] = [
           <H3>How local shells are detected (important)</H3>
           <Bullets>
             <li>
-              Broadside finds shells through your Windows PATH, so it does not
-              matter where they are installed as long as the installer added them
-              to PATH. A shell that is not on PATH (an unzipped portable copy, for
-              example) will not appear in the list.
+              <OnWindows>
+                Broadside finds shells through your Windows PATH, so it does not
+                matter where they are installed as long as the installer added
+                them to PATH. A shell that is not on PATH (an unzipped portable
+                copy, for example) will not appear in the list.
+              </OnWindows>
+              <OnMac>
+                Broadside finds shells in <code>/etc/shells</code>, the Mac's own
+                list of login shells. The ones macOS comes with are always there;
+                a shell you install yourself (fish from Homebrew, for example)
+                appears once it is added to that file, which is the same step
+                that lets you make it your login shell. Your login shell is
+                listed first.
+              </OnMac>
             </li>
             <li>
-              Broadside reads PATH when it starts. If you install a new shell
-              while the app is already running, restart Broadside for it to
-              show up in the launcher.
+              Broadside reads <Plat win="PATH" mac="the list" /> when it starts.
+              If you install a new shell while the app is already running,
+              restart Broadside for it to show up in the launcher.
             </li>
             <li>
               Hide shells you do not use in <Nav>Settings</Nav> under{" "}
@@ -937,28 +1047,50 @@ export const SECTIONS: HelpSection[] = [
           <H3>Your own terminal applications</H3>
           <Bullets>
             <li>
-              Detection only finds the shells Broadside knows how to look for.
-              For anything else, such as <Nav>Git Bash</Nav>, MSYS2 or Cygwin,
-              open <Nav>Settings</Nav> and the <Nav>Custom terminals</Nav>{" "}
-              section and add it yourself. <Nav>Add Git Bash</Nav> fills in the
-              usual path and options for you.
+              <OnWindows>
+                Detection only finds the shells Broadside knows how to look for.
+                For anything else, such as <Nav>Git Bash</Nav>, MSYS2 or Cygwin,
+                open <Nav>Settings</Nav> and the <Nav>Custom terminals</Nav>{" "}
+                section and add it yourself. <Nav>Add Git Bash</Nav> fills in
+                the usual path and options for you.
+              </OnWindows>
+              <OnMac>
+                Detection only finds the shells in <code>/etc/shells</code>. For
+                anything else, such as a shell you have not registered there or
+                PowerShell (<code>pwsh</code>), open <Nav>Settings</Nav> and the{" "}
+                <Nav>Custom terminals</Nav> section and add it yourself.
+              </OnMac>
             </li>
             <li>
               Give it a name (used in the launcher and as the tab title), the
               full path to the program (<Nav>Browse</Nav> finds it), any
-              arguments it needs, and which command language it speaks. For Git
-              Bash, the arguments <code>--login -i</code> give you its familiar
-              coloured prompt and the full set of Unix tools.
+              arguments it needs, and which command language it speaks.{" "}
+              <OnWindows>
+                For Git Bash, the arguments <code>--login -i</code> give you its
+                familiar coloured prompt and the full set of Unix tools.
+              </OnWindows>
+              <OnMac>
+                For a shell, <code>--login</code> loads your profile, and with
+                it the tools on your PATH.
+              </OnMac>
             </li>
             <li>
-              The program must be a full path to a real <code>.exe</code>;
-              Broadside checks this when you save.
+              The program must be a full path to{" "}
+              <Plat
+                win={
+                  <>
+                    a real <code>.exe</code>
+                  </>
+                }
+                mac="a file that exists and is marked executable"
+              />
+              ; Broadside checks this when you save.
             </li>
             <li>
               The command language decides which <Nav>PTY Broadcast</Nav> tab
               the terminal joins, so a broadcast command always suits every
               shell it reaches. A Bash-like (<Term term="posix" />) terminal
-              joins the <Nav>WSL / POSIX</Nav> tab.
+              joins the <Nav><Plat win="WSL / POSIX" mac="Local shells" /></Nav> tab.
             </li>
             <li>
               A terminal you add appears in the <Nav>+</Nav> menu straight away,
@@ -971,8 +1103,12 @@ export const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               A host's tabs and grid tiles wear the host's colour. Local tabs are
-              coloured by the kind of shell (one colour each for PowerShell,
-              Command Prompt, WSL, Bash-like terminals and serial), so you can
+              coloured by the kind of shell (one colour each for{" "}
+              <Plat
+                win="PowerShell, Command Prompt, WSL, Bash-like terminals and serial"
+                mac="Bash-like shells such as zsh, PowerShell and serial"
+              />
+              ), so you can
               see at a glance which command language you are about to type in.
               Change them, or set any to <Nav>None</Nav>, in{" "}
               <Nav>Settings</Nav> under <Nav>Custom terminals</Nav>;{" "}
@@ -1003,8 +1139,9 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Launching a profile opens the shell in that folder and, once the
               prompt appears, types the startup command and presses Enter for
-              you. For example, a profile can open PowerShell 7 in a project
-              folder and start a command-line tool there in one click.
+              you. For example, a profile can open{" "}
+              <Plat win="PowerShell 7" mac="zsh" /> in a project folder and
+              start a command-line tool there in one click.
             </li>
             <li>
               Profiles honour the <Nav>How many</Nav> count. A profile with a
@@ -1040,15 +1177,16 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               <Nav>Export</Nav> saves all your profiles to a file, to carry them
-              to another PC. <Nav>Import</Nav> shows every profile in a file,
+              to another <Plat win="PC" mac="Mac" />. <Nav>Import</Nav> shows every profile in a file,
               including its startup command in full, before anything is saved.{" "}
               <b>Read those commands</b>: a startup command runs every time the
               profile opens, so only import a file you trust. A profile whose
               name you already use comes in as a numbered copy.
             </li>
             <li>
-              A profile whose shell is not on this PC (a removed WSL
-              distribution, or a custom terminal you do not have) is shown struck
+              A profile whose shell is not on <Plat win="this PC" mac="this Mac" />{" "}
+              (<Plat win="a removed WSL distribution" mac="a shell that is no longer installed, one saved on Windows" />, or a
+              custom terminal you do not have) is shown struck
               through and will not launch. Hover it to see which shell it wants.
               Once you add that shell, <Nav>Edit</Nav> on the profile has it
               already picked, and you just save.
@@ -1099,15 +1237,21 @@ export const SECTIONS: HelpSection[] = [
               the network or on the host.
             </li>
             <li>
-              <Nav>Alt+Right</Nav> and <Nav>Alt+Left</Nav> switch to the next
+              <Nav><Keys k={SHORTCUTS.nextTab} /></Nav> and <Nav><Keys k={SHORTCUTS.prevTab} /></Nav> switch to the next
               and previous tab, even while you are typing in a terminal. To reach
               the tabs without a mouse, <Nav>Tab</Nav> into the tab strip, move
               along it with <Nav>Left</Nav> and <Nav>Right</Nav>, and press{" "}
               <Nav>Enter</Nav> to choose one.
+              <OnMac>
+                {" "}
+                <Nav>⌥←</Nav> and <Nav>⌥→</Nav> on their own stay with the
+                shell, where they move the cursor a word at a time, as they do in
+                Terminal.
+              </OnMac>
             </li>
             <li>
               Maximize a single terminal to fill the window (also{" "}
-              <Nav>F11</Nav>). Close one tab with its <Nav>x</Nav>, or all of
+              <Nav><Keys k={SHORTCUTS.maximize} /></Nav>). Close one tab with its <Nav>x</Nav>, or all of
               them with <Nav>Close all</Nav> in the <Nav>Sessions</Nav> menu.
             </li>
           </Bullets>
@@ -1127,18 +1271,18 @@ export const SECTIONS: HelpSection[] = [
               paste, search for or run from the shortcut menu. Passing over a
               tile does not select it; the pointer has to rest there for a
               moment (a click selects it straight away). Choosing a tab, using{" "}
-              <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav> or picking from{" "}
+              <Nav><Keys k={SHORTCUTS.prevTab} /></Nav> / <Nav><Keys k={SHORTCUTS.nextTab} /></Nav> or picking from{" "}
               <Nav>Sessions</Nav> selects a tile until you move the mouse onto a
               different one. While another app is in front, the mouse does not
               change the active tile; click a tile to come back to Broadside.
             </li>
             <li>
-              <b>Short of room?</b> <Nav>Ctrl+Shift+G</Nav> gives the grid the
+              <b>Short of room?</b> <Nav><Keys k={SHORTCUTS.gridFullscreen} /></Nav> gives the grid the
               whole screen (see below). <Nav>Grid Titles</Nav> (the eye) hides
               every tile's title bar. The grid button on a tab takes that
               terminal out of the grid without closing it (the button turns
               amber; click it again, or <Nav>Unhide all</Nav> in the{" "}
-              <Nav>Sessions</Nav> menu, to bring it back). <Nav>F11</Nav> gives
+              <Nav>Sessions</Nav> menu, to bring it back). <Nav><Keys k={SHORTCUTS.maximize} /></Nav> gives
               one terminal the whole window.
             </li>
             <li>
@@ -1148,14 +1292,14 @@ export const SECTIONS: HelpSection[] = [
               template you already saved.
             </li>
             <li>
-              <Nav>Fullscreen</Nav> (<Nav>Ctrl+Shift+G</Nav>) gives the grid the
+              <Nav>Fullscreen</Nav> (<Nav><Keys k={SHORTCUTS.gridFullscreen} /></Nav>) gives the grid the
               whole screen. The toolbar, tabs, sidebar and status bar slide away
               behind a small tab in the middle of the top edge; hover or click
               that tab to bring them back, and they hide again once you have used
-              one. <Nav>Ctrl+Shift+T</Nav> also brings them down and moves the
+              one. <Nav><Keys k={SHORTCUTS.focusControls} /></Nav> also brings them down and moves the
               keyboard into them: <Nav>Tab</Nav> moves between controls and{" "}
               <Nav>Esc</Nav> goes back to the terminal. Press{" "}
-              <Nav>Ctrl+Shift+G</Nav> again to leave (closing the last terminal
+              <Nav><Keys k={SHORTCUTS.gridFullscreen} /></Nav> again to leave (closing the last terminal
               also leaves). <Nav>Esc</Nav> does not leave fullscreen, so it
               still reaches programs such as <code>vi</code>.
             </li>
@@ -1237,29 +1381,50 @@ export const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               <strong className="font-semibold">Copy</strong> by selecting text
-              and right-clicking, or with <Nav>Ctrl+Shift+C</Nav>. Selecting on
+              and right-clicking, or with <Nav><Keys k={SHORTCUTS.copy} /></Nav>. Selecting on
               its own copies nothing. Double-click selects a word and
               triple-click a line. In a program that uses the mouse itself (tmux
-              or vim with the mouse on), hold <Nav>Shift</Nav> while you drag.
+              or vim with the mouse on), hold{" "}
+              <Nav>
+                <Plat win="Shift" mac="Option (⌥)" />
+              </Nav>{" "}
+              while you drag.
             </li>
             <li>
               <strong className="font-semibold">Paste</strong> with a{" "}
               <Nav>right-click</Nav> when nothing is selected, or with{" "}
-              <Nav>Ctrl+Shift+V</Nav>. Plain <Nav>Ctrl+C</Nav> and{" "}
-              <Nav>Ctrl+V</Nav> go to the shell as usual, so Ctrl+C still stops a
-              running command. In Grid, a paste goes to the outlined tile. A
+              <Nav><Keys k={SHORTCUTS.paste} /></Nav>.{" "}
+              <Plat
+                win={
+                  <>
+                    Plain <Nav>Ctrl+C</Nav> and <Nav>Ctrl+V</Nav> go to the
+                    shell as usual
+                  </>
+                }
+                mac={
+                  <>
+                    <Nav>Ctrl+C</Nav> and the other Ctrl keys go to the shell as
+                    usual
+                  </>
+                }
+              />
+              , so Ctrl+C still stops a running command. In Grid, a paste goes to the outlined tile. A
               toast confirms each copy and paste, and says how many lines a
               multi-line paste contained.
             </li>
             <li>
               In a program that uses the mouse itself (tmux, vim, Claude Code), a
-              right-click goes to the program instead. Hold <Nav>Shift</Nav> and
-              right-click to copy or paste there. To make a right-click always
+              right-click goes to the program instead. Hold{" "}
+              <Nav>
+                <Plat win="Shift" mac="Option (⌥)" />
+              </Nav>{" "}
+              and right-click to copy or paste there. To make a right-click always
               copy or paste, turn off{" "}
               <Nav>Settings → Sessions → Right-click</Nav>.
             </li>
             <li>
-              Text copied from Windows programs pastes with single line breaks,
+              Text copied from <Plat win="Windows programs" mac="other apps" />{" "}
+              pastes with single line breaks,
               not double-spaced. In bash, zsh and most editors a multi-line
               paste arrives as one block and waits for you to press{" "}
               <Nav>Enter</Nav>; a shell without that support runs each line as it
@@ -1267,7 +1432,7 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               <strong className="font-semibold">Find</strong> with{" "}
-              <Nav>Ctrl+F</Nav>. Matches are highlighted and counted (
+              <Nav><Keys k={SHORTCUTS.find} /></Nav>. Matches are highlighted and counted (
               <Nav>3 of 17</Nav>); the arrows, or <Nav>Enter</Nav> and{" "}
               <Nav>Shift+Enter</Nav>, move between them. The toggles beside the
               box are regular expression, match case and whole word.{" "}
@@ -1275,10 +1440,14 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               <strong className="font-semibold">Text too small?</strong> Hold{" "}
-              <Nav>Ctrl</Nav> and turn the mouse wheel over a terminal to zoom
+              <Nav>
+                <Plat win="Ctrl" mac="⌘" />
+              </Nav>{" "}
+              and turn the mouse wheel over a terminal to zoom
               every terminal in or out. The size is saved in{" "}
               <Nav>Settings</Nav> under <Nav>Appearance</Nav>. If a program you
-              use needs Ctrl and the wheel for itself, tick <Nav>Strict</Nav>{" "}
+              use needs <Plat win="Ctrl" mac="⌘" /> and the wheel for itself, tick{" "}
+              <Nav>Strict</Nav>{" "}
               beside the terminal font size there to turn the zoom off.
             </li>
             <li>
@@ -1320,7 +1489,10 @@ export const SECTIONS: HelpSection[] = [
               shell, placed next to it) and <Nav>Close others</Nav>. When the
               other tabs are of mixed kinds you also get entries such as{" "}
               <Nav>Close other SSH</Nav> or{" "}
-              <Nav>Close other Command Prompts</Nav>. Tabs hidden by the{" "}
+              <Nav>
+                <Plat win="Close other Command Prompts" mac="Close other serial consoles" />
+              </Nav>
+              . Tabs hidden by the{" "}
               <Nav>Filter</Nav> are never closed this way.
             </li>
             <li>
@@ -1339,7 +1511,8 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               The <Nav>View</Nav> menu holds the display options: fullscreen,{" "}
-              <Nav>Full tab labels</Nav>, <Nav>Tab bar</Nav>, <Nav>Filter</Nav>,
+              <Nav>Full tab labels</Nav>, <Nav>Tab bar</Nav>,{" "}
+              <Nav>Auto-hide controls</Nav>, <Nav>Filter</Nav>,
               flipping two terminals between side by side and stacked,{" "}
               <Nav>Reset grid</Nav> and <Nav>Reset display</Nav>. An entry that
               cannot be used right now is greyed; hover it and the status bar
@@ -1348,7 +1521,7 @@ export const SECTIONS: HelpSection[] = [
             <li>
               <Nav>View</Nav> &gt; <Nav>Filter</Nav> shows or hides whole kinds
               of session (SSH, each local shell, serial consoles). Hidden
-              sessions keep running, <Nav>Alt+Left</Nav> / <Nav>Alt+Right</Nav>{" "}
+              sessions keep running, <Nav><Keys k={SHORTCUTS.prevTab} /></Nav> / <Nav><Keys k={SHORTCUTS.nextTab} /></Nav>{" "}
               skip them, and the <Nav>View</Nav> button is marked while anything
               is hidden. A kind comes back by itself when you open or jump to one
               of its sessions, and every kind is shown again when Broadside
@@ -1379,22 +1552,44 @@ export const SECTIONS: HelpSection[] = [
             <Nav>Reset display</Nav>, in the <Nav>View</Nav> menu, clears a
             garbled pane (including its scrollback) and redraws the prompt. It
             never interrupts a running command; if one is still going, the pane
-            stays blank until it finishes. In a <Nav>Command Prompt</Nav> tab,
-            press <Nav>Enter</Nav> afterwards for a fresh prompt.
+            stays blank until it finishes.
+            <OnWindows>
+              {" "}
+              In a <Nav>Command Prompt</Nav> tab, press <Nav>Enter</Nav>{" "}
+              afterwards for a fresh prompt.
+            </OnWindows>
           </p>
           <H3>Shortcut commands</H3>
           <Bullets>
             <li>
               The <Nav>Shortcut command</Nav> dropdown runs a saved command in the
               active tab. Each shortcut has a scope:{" "}
-              <Nav>SSH / WSL (Linux)</Nav>, <Nav>Command Prompt / PowerShell</Nav>,{" "}
-              <Nav>Both</Nav> for commands that work in either (for example
-              whoami), or <Nav>Serial console (COM port)</Nav>.
+              <Nav>
+                <Plat win="SSH / WSL (Linux)" mac="SSH / local shells (Unix)" />
+              </Nav>
+              ,{" "}
+              <Nav>
+                <Plat win="Command Prompt / PowerShell" mac="PowerShell" />
+              </Nav>
+              , <Nav>Both</Nav> for commands that work in either (for example
+              whoami), or{" "}
+              <Nav>
+                <Plat win="Serial console (COM port)" mac="Serial console" />
+              </Nav>
+              .
             </li>
             <li>
-              The dropdown only offers shortcuts that suit the current tab, so a
-              Linux command is never offered in a Windows shell. WSL tabs use the
-              Linux ones.
+              <OnWindows>
+                The dropdown only offers shortcuts that suit the current tab, so
+                a Linux command is never offered in a Windows shell. WSL tabs use
+                the Linux ones.
+              </OnWindows>
+              <OnMac>
+                The dropdown only offers shortcuts that suit the current tab. A
+                Mac's own shells (zsh, bash) speak the same language as an SSH
+                host, so they use the SSH ones; the PowerShell scope is for a
+                PowerShell custom terminal.
+              </OnMac>
             </li>
             <li>
               Serial tabs only get <Nav>Serial console</Nav> shortcuts (
@@ -1512,7 +1707,19 @@ export const SECTIONS: HelpSection[] = [
           <Bullets>
             <li>
               The page is split into fixed tabs: <Nav>SSH</Nav>,{" "}
-              <Nav>PowerShell</Nav>, <Nav>Command Prompt</Nav>, <Nav>WSL</Nav>{" "}
+              <Plat
+                win={
+                  <>
+                    <Nav>PowerShell</Nav>, <Nav>Command Prompt</Nav>,{" "}
+                    <Nav>WSL</Nav>
+                  </>
+                }
+                mac={
+                  <>
+                    <Nav>PowerShell</Nav>, <Nav>Local shells</Nav>
+                  </>
+                }
+              />{" "}
               and <Nav>Serial consoles</Nav>. Each open terminal shows up under
               its own tab, so a single command is always valid for the shells it
               reaches. A small count on each tab shows how many of that kind are
@@ -1546,10 +1753,16 @@ export const SECTIONS: HelpSection[] = [
               as it was.
             </li>
           </Bullets>
-          <H3>Local shells (PowerShell, Command Prompt, WSL)</H3>
+          <H3>
+            <Plat
+              win="Local shells (PowerShell, Command Prompt, WSL)"
+              mac="Local shells (PowerShell, zsh, bash)"
+              both="Local shells (PowerShell, Command Prompt, WSL; zsh and bash on a Mac)"
+            />
+          </H3>
           <Bullets>
             <li>
-              The three local tabs fan a command out to the shells running on{" "}
+              The <Plat win="three" mac="two" /> local tabs fan a command out to the shells running on{" "}
               <em>this machine</em>. A persistent yellow banner marks the danger:
               the command runs in every checked shell immediately, with no undo.
             </li>
@@ -1963,7 +2176,8 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-sftp",
     title: "SFTP",
     keywords:
-      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files rename f2 pencil double click open enter backspace up arrow keys single click select skipped single file still uploaded overwrote anyway skip existing ignored slow even though it exists already there not newer open terminal from sftp go to terminal ssh into this host shell button type to jump type ahead first letter find file by name quick search keyboard",
+      "sftp file transfer browse upload download put get commander dual two pane local remote folder directory navigate drag drop delete recycle bin make folder clash mode overwrite all newer only skip existing broadcast multi-host per-host progress bar create path confirm host key tofu concurrency queue tab remember multi-select ctrl shift click range select many files group wildcard glob star pattern match asterisk parallel several at once simultaneous four cancel one cancel all stacked bars stack how many waiting queued slow download speed up faster distant host latency round trip partial file part written stopped mid transfer deleted removed cleaned up half file truncated corrupt incomplete leftover status bar still going other tab in progress spinner scanning scan cancel scan large transfer dialog 100 files 100 mb asks before summary one message toast covering cancel button empty folder left behind kept finished files rename f2 pencil double click open enter backspace up arrow keys single click select skipped single file still uploaded overwrote anyway skip existing ignored slow even though it exists already there not newer open terminal from sftp go to terminal ssh into this host shell button type to jump type ahead first letter find select all files ctrl a cmd a command a whole window highlighted file by name quick search keyboard" +
+      onMac("trash finder cmd click volumes mac"),
     body: (
       <>
         <Lead>
@@ -1977,7 +2191,8 @@ export const SECTIONS: HelpSection[] = [
           <H3>Commander (one host)</H3>
           <Bullets>
             <li>
-              A two-pane view: your PC on the left, the remote host on the right.
+              A two-pane view: your <Plat win="PC" mac="Mac" /> on the left, the
+              remote host on the right.
               Click an item to select it; double-click a folder, or press{" "}
               <Nav>Enter</Nav>, to open it. <Nav>Backspace</Nav> goes up a folder
               and the arrow keys move the selection.
@@ -1987,14 +2202,19 @@ export const SECTIONS: HelpSection[] = [
               first item starting with h, and <Nav>he</Nav> typed quickly the first
               starting with he. If nothing starts with it, the first name that
               contains it is picked. Pressing the same letter again moves to the
-              next match.
+              next match. <Nav><Keys k="mod+a" /></Nav> selects everything in the
+              pane.
             </li>
             <li>
               Transfer by dragging an item from one side to the other. Folders copy
               recursively, with a progress bar and a running byte count.
             </li>
             <li>
-              Select several items as in Windows Explorer (<Nav>Ctrl+click</Nav>{" "}
+              Select several items as in{" "}
+              <Plat win="Windows Explorer" mac="the Finder" /> (
+              <Nav>
+                <Plat win="Ctrl+click" mac="⌘-click" />
+              </Nav>{" "}
               for individual files, <Nav>Shift+click</Nav> for a range), then drag
               any of them to transfer the whole selection.
             </li>
@@ -2027,8 +2247,16 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               You can make a new folder on either side, and rename or delete
-              items. Local deletes go to the Windows <Nav>Recycle Bin</Nav> so
-              they are recoverable. A remote folder must be empty before it can be
+              items. Local deletes go to the{" "}
+              <Plat
+                win={
+                  <>
+                    Windows <Nav>Recycle Bin</Nav>
+                  </>
+                }
+                mac={<Nav>Trash</Nav>}
+              />{" "}
+              so they are recoverable. A remote folder must be empty before it can be
               deleted.
             </li>
             <li>
@@ -2036,6 +2264,11 @@ export const SECTIONS: HelpSection[] = [
               <Nav>F2</Nav>. A rename never replaces an item that already has the
               new name. On the host side, rename and delete are unavailable while
               a transfer is running.
+              <OnMac>
+                {" "}
+                F2 may need <Nav>fn</Nav> held down, as the top row of a Mac
+                keyboard is media keys first.
+              </OnMac>
             </li>
             <li>
               The terminal button beside <Nav>Disconnect</Nav> opens a new
@@ -2049,7 +2282,7 @@ export const SECTIONS: HelpSection[] = [
               The <Nav>PUT / GET</Nav> toggle sets the direction: <Nav>PUT</Nav>{" "}
               sends one local file or folder to every selected host;{" "}
               <Nav>GET</Nav> pulls one remote path from every host into its own
-              subfolder on your PC (one folder per host label, so files from
+              subfolder on your <Plat win="PC" mac="Mac" /> (one folder per host label, so files from
               different hosts never collide). Each host gets its own progress
               bar, and a few hosts transfer at a time while the rest wait their
               turn.
@@ -2149,7 +2382,8 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored profile struck through after a restore profile lost its custom shell profile points at nothing which custom shell did it use name of the wanted shell remembered re-add the shell then edit has it chosen already backup from someone else untrusted backup file restore removed my saved passwords host changed in the backup restore locked admin passcode startup start page open on which tab first tab home greyed template holds startup panel table of contents left side section list highlight follows scroll jump to hidden narrow window profile table columns profiles columns hide shell folder startup command column restore warning disappeared too fast right-click right click mouse programs tmux claude code paste twice",
+      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored profile struck through after a restore profile lost its custom shell profile points at nothing which custom shell did it use name of the wanted shell remembered re-add the shell then edit has it chosen already backup from someone else untrusted backup file restore removed my saved passwords host changed in the backup restore locked admin passcode startup start page open on which tab first tab home greyed template holds startup panel table of contents left side section list highlight follows scroll jump to hidden narrow window profile table columns profiles columns hide shell folder startup command column restore warning disappeared too fast restore closed my terminals tabs gone after restore reset closed my sessions right-click right click mouse programs tmux claude code paste twice" +
+      onMac("keychain cmd command key menlo sf mono zsh fish"),
     body: (
       <>
         <Lead>
@@ -2178,7 +2412,8 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               <Nav>Shortcut commands</Nav>: reusable commands for the dropdown on
-              the Terminals and Broadcast pages, each for Linux, Windows, both,
+              the Terminals and Broadcast pages, each for{" "}
+              <Plat win="Linux, Windows" mac="Unix shells, PowerShell" />, both,
               or serial consoles. See{" "}
               <SectionLink id="help-sec-terminals">Terminals</SectionLink>.
             </li>
@@ -2242,8 +2477,9 @@ export const SECTIONS: HelpSection[] = [
               open <Nav>Edit</Nav> on the profile and save it. A host the backup
               leaves out, or gives a different address, port or user, loses its
               saved passwords, so enter them again. With an admin passcode set,
-              unlock first. A list of what changed is shown once the app
-              reloads, and kept in{" "}
+              unlock first. The reload closes every open terminal and SFTP
+              connection, on every tab; the confirm says how many. A list of
+              what changed is shown once the app reloads, and kept in{" "}
               <Nav>Logs</Nav> &rarr; <Nav>Toasts History</Nav>.
             </li>
             <li>
@@ -2273,7 +2509,8 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-security",
     title: "Security",
     keywords:
-      "security credentials storage credential manager age encrypted file sqlite transmitted telemetry tofu host key sudo auto-fill admin lock argon2 recovery code isolation separate logins privacy why was my password not typed nothing filled in did not fill shell history bash_history history -d delete entry up arrow long line setup line keep my history clean stop broadside writing to my host histcontrol ignorespace ignoreboth ignoredups hist_ignore_space echo $histcontrol how do i tell if my host records it switch does nothing no difference on or off cannot tell what it does audit record of what happened on the box show passcode eye recovery code coloured colored digits blue symbols red",
+      "security credentials storage credential manager age encrypted file sqlite transmitted telemetry tofu host key sudo auto-fill admin lock argon2 recovery code isolation separate logins privacy why was my password not typed nothing filled in did not fill shell history bash_history history -d delete entry up arrow long line setup line keep my history clean stop broadside writing to my host histcontrol ignorespace ignoreboth ignoredups hist_ignore_space echo $histcontrol how do i tell if my host records it switch does nothing no difference on or off cannot tell what it does audit record of what happened on the box show passcode eye recovery code coloured colored digits blue symbols red" +
+      onMac("keychain keychain access login keychain allow always allow prompt"),
     body: (
       <>
         <Lead>
@@ -2290,9 +2527,22 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Secrets (SSH passwords, key <Term term="passphrase">passphrases</Term>{" "}
               and <Term term="sudo" /> passwords) are stored in the{" "}
-              <Term term="credential-manager" /> first, which ties them to your
-              Windows login. If that is unavailable, the app falls back to a file
-              named credentials.age that is encrypted at rest.
+              <Plat
+                win={
+                  <>
+                    <Term term="credential-manager" /> first, which ties them to
+                    your Windows login
+                  </>
+                }
+                mac={
+                  <>
+                    <Term term="credential-manager">Keychain</Term> first (your
+                    login keychain), which ties them to your Mac login
+                  </>
+                }
+              />
+              . If that is unavailable, the app falls back to a file named
+              credentials.age that is encrypted at rest.
             </li>
             <li>
               Each secret is keyed to its host, so removing a host removes its
@@ -2357,9 +2607,10 @@ export const SECTIONS: HelpSection[] = [
               regain access if you forget the passcode.
             </li>
             <li>
-              The admin lock does not keep people who share one Windows account
-              apart. To limit a less-trusted colleague, give them their own
-              Windows login and a <Term term="csv" /> of hosts (which never
+              The admin lock does not keep people who share one{" "}
+              <Plat win="Windows account" mac="Mac user account" /> apart. To
+              limit a less-trusted colleague, give them their own{" "}
+              <Plat win="Windows login" mac="Mac login" /> and a <Term term="csv" /> of hosts (which never
               contains passwords), so they never receive your stored secrets.
             </li>
           </Bullets>
@@ -2371,12 +2622,18 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-system",
     title: "System requirements",
     keywords:
-      "system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install antivirus defender windows security false positive quarantine flagged virus trojan bearfoos ml detection code signing unsigned publisher unknown smartscreen sha256 checksum verify protection history restore exclusion",
+      "already running another instance second copy open twice multiple instances warning dont ask me again turn back on dismissed warnings system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install antivirus defender windows security false positive quarantine flagged virus trojan bearfoos ml detection code signing unsigned publisher unknown smartscreen sha256 checksum verify protection history restore exclusion" +
+      onMac(
+        "macos mac ventura sonoma sequoia apple silicon m1 m2 m3 m4 intel universal webkit gatekeeper cannot be opened unidentified developer open anyway control click notarized notarization damaged local network privacy no route to host keychain always allow asks again after update dmg applications shasum",
+      ),
     body: (
       <>
         <Lead>
-          Broadside is a Windows desktop app and runs comfortably on modest
-          hardware.
+          <Plat
+            win="Broadside is a Windows desktop app and runs comfortably on modest hardware."
+            mac="Broadside is a Mac desktop app and runs comfortably on modest hardware."
+            both="Broadside is a desktop app for Windows and macOS, and runs comfortably on modest hardware."
+          />
         </Lead>
         <Detail>
           <H3>Minimum and recommended</H3>
@@ -2401,31 +2658,48 @@ export const SECTIONS: HelpSection[] = [
                     Operating system
                   </td>
                   <td className="text-foreground/90">
-                    Windows 10 (64-bit), version 1809 or later
+                    <Plat
+                      win="Windows 10 (64-bit), version 1809 or later"
+                      mac="macOS 13.3 Ventura or later"
+                    />
                   </td>
                   <td className="text-foreground/90">
-                    Windows 11 (64-bit), kept up to date
+                    <Plat
+                      win="Windows 11 (64-bit), kept up to date"
+                      mac="The current macOS, kept up to date"
+                    />
                   </td>
                 </tr>
                 <tr>
                   <td className="font-medium text-foreground">
-                    WebView2 runtime
+                    <Plat win="WebView2 runtime" mac="WebKit" />
                   </td>
                   <td className="text-foreground/90">
-                    Microsoft Edge WebView2 installed (the installer adds it if
-                    missing)
+                    <Plat
+                      win="Microsoft Edge WebView2 installed (the installer adds it if missing)"
+                      mac="Built into macOS; there is nothing to install"
+                    />
                   </td>
                   <td className="text-foreground/90">
-                    WebView2 kept current through Windows Update
+                    <Plat
+                      win="WebView2 kept current through Windows Update"
+                      mac="Kept current with macOS updates"
+                    />
                   </td>
                 </tr>
                 <tr>
                   <td className="font-medium text-foreground">Processor</td>
                   <td className="text-foreground/90">
-                    64-bit dual-core (x64 or ARM64)
+                    <Plat
+                      win="64-bit dual-core (x64 or ARM64)"
+                      mac="Apple silicon or Intel (one app runs on both)"
+                    />
                   </td>
                   <td className="text-foreground/90">
-                    Quad-core or better, 2.5 GHz and up
+                    <Plat
+                      win="Quad-core or better, 2.5 GHz and up"
+                      mac="Any Apple silicon Mac"
+                    />
                   </td>
                 </tr>
                 <tr>
@@ -2464,14 +2738,64 @@ export const SECTIONS: HelpSection[] = [
           <H3>Worth knowing</H3>
           <Bullets>
             <li>
-              Broadside is Windows only: it uses <Term term="ConPTY" /> for local
-              shells and the <Term term="credential-manager" /> for your secrets,
-              neither of which exists on macOS or Linux.
+              Broadside runs on Windows and macOS. On Windows it uses{" "}
+              <Term term="ConPTY" /> for local shells and the Windows Credential
+              Manager for your secrets; on a Mac, the system's own{" "}
+              <Term term="PTY" /> and the Keychain (see the{" "}
+              <Term term="credential-manager">glossary</Term>). There is no
+              Linux version.
             </li>
             <li>
-              No administrator rights are needed to run it. WebView2 comes with
-              Windows 11 and recent Windows 10; on an older system the installer
-              adds it.
+              <OnWindows>
+                No administrator rights are needed to run it. WebView2 comes with
+                Windows 11 and recent Windows 10; on an older system the
+                installer adds it.
+              </OnWindows>
+              <OnMac>
+                No administrator rights are needed to run it. Open the{" "}
+                <code>.dmg</code> and drag Broadside to Applications.
+              </OnMac>
+            </li>
+            <OnMac>
+              <li>
+                The first time Broadside reaches a host on your local network,
+                macOS asks whether to allow it. Choose <Nav>Allow</Nav>: without
+                it every connection to your own network fails with{" "}
+                <code>No route to host</code>. You can change your answer in{" "}
+                <Nav>System Settings</Nav> &rarr;{" "}
+                <Nav>Privacy &amp; Security</Nav> &rarr;{" "}
+                <Nav>Local Network</Nav>.
+              </li>
+              <li>
+                The first time Broadside saves or reads a password, macOS may ask
+                to let it use your keychain. Choose <Nav>Always Allow</Nav>. A
+                build that is not signed by Apple asks again after each update,
+                because macOS ties that permission (and the Local Network one)
+                to the exact app it was given to.
+              </li>
+              <li>
+                <Nav>Quit</Nav> from the Broadside menu (<Nav>⌘Q</Nav>) and
+                closing the window both go through the exit guard. Quitting from
+                the Dock, or logging out, does not: macOS ends the app without
+                asking it first.
+              </li>
+            </OnMac>
+            <li>
+              Opening Broadside while it is already running asks first, saying
+              how many instances are open. <Nav>Open another instance</Nav> goes
+              ahead; <Nav>Quit</Nav> (or <Nav>Esc</Nav>) closes the new one. It
+              asks on every launch, because all instances share the same hosts,
+              credentials and settings. Tick <Nav>Don&apos;t ask me again</Nav>{" "}
+              before opening another instance to stop it; <Nav>Turn back on</Nav>{" "}
+              beside it in <Nav>Settings</Nav> &rarr; <Nav>Security</Nav> &rarr;{" "}
+              <Nav>Dismissed warnings</Nav> brings it back.
+              <OnMac>
+                {" "}
+                Opening the running copy again from the Dock or Finder only
+                brings its window forward. A different copy of the app, such as
+                the one in the disk image you installed from, starts a second
+                instance and asks.
+              </OnMac>
             </li>
             <li>
               Memory use grows with the number of open terminals and how much
@@ -2485,33 +2809,59 @@ export const SECTIONS: HelpSection[] = [
               <SectionLink id="help-sec-settings">Settings</SectionLink> tabs.
             </li>
           </Bullets>
-          <H3>If Windows Security flags Broadside</H3>
-          <Bullets>
-            <li>
-              It can happen, and it is a false alarm: a new, unsigned app that
-              starts shell processes is exactly what Windows Defender's automatic
-              checks are wary of.
-            </li>
-            <li>
-              A detection name ending in <code>!ml</code> (Broadside has been
-              flagged once as <code>Trojan:Win32/Bearfoos.A!ml</code>) means no
-              known malware was found; the file just looked unusual.
-            </li>
-            <li>
-              If the app disappears, restore it from{" "}
-              <Nav>Windows Security</Nav> under{" "}
-              <Nav>Virus &amp; threat protection</Nav> and{" "}
-              <Nav>Protection history</Nav>. Before you do, check the installer's
-              SHA-256 against the one published with the release, so you know you
-              are restoring the file that was actually built.
-            </li>
-            <li>
-              Please report it, with the detection name and version, so it can
-              be sent to Microsoft as a false positive. A Defender exclusion
-              stops the warnings but also stops Defender checking that folder,
-              so use one only as a stopgap.
-            </li>
-          </Bullets>
+          <OnWindows>
+            <H3>If Windows Security flags Broadside</H3>
+            <Bullets>
+              <li>
+                It can happen, and it is a false alarm: a new, unsigned app that
+                starts shell processes is exactly what Windows Defender's
+                automatic checks are wary of.
+              </li>
+              <li>
+                A detection name ending in <code>!ml</code> (Broadside has been
+                flagged once as <code>Trojan:Win32/Bearfoos.A!ml</code>) means
+                no known malware was found; the file just looked unusual.
+              </li>
+              <li>
+                If the app disappears, restore it from{" "}
+                <Nav>Windows Security</Nav> under{" "}
+                <Nav>Virus &amp; threat protection</Nav> and{" "}
+                <Nav>Protection history</Nav>. Before you do, check the
+                installer's SHA-256 against the one published with the release,
+                so you know you are restoring the file that was actually built.
+              </li>
+              <li>
+                Please report it, with the detection name and version, so it can
+                be sent to Microsoft as a false positive. A Defender exclusion
+                stops the warnings but also stops Defender checking that folder,
+                so use one only as a stopgap.
+              </li>
+            </Bullets>
+          </OnWindows>
+          <OnMac>
+            <H3>If macOS will not open Broadside</H3>
+            <Bullets>
+              <li>
+                A build that Apple has not notarized is stopped the first time
+                you open it, with a message that Apple could not verify
+                Broadside is free of malware. That is not a detection: it only
+                means the app is not signed with an Apple developer certificate.
+              </li>
+              <li>
+                Press <Nav>Done</Nav>, then open <Nav>System Settings</Nav>{" "}
+                &rarr; <Nav>Privacy &amp; Security</Nav>, scroll down to the
+                line about Broadside and click <Nav>Open Anyway</Nav>. Confirm
+                with your password or Touch ID. macOS remembers the answer for
+                that version. (Control-click &rarr; <Nav>Open</Nav> no longer
+                does this since macOS 15.)
+              </li>
+              <li>
+                Before you do, check the disk image's SHA-256 against the one
+                published with the release: in Terminal,{" "}
+                <code>shasum -a 256</code> followed by the file.
+              </li>
+            </Bullets>
+          </OnMac>
         </Detail>
       </>
     ),
@@ -2520,7 +2870,8 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-shortcuts",
     title: "Keyboard shortcuts",
     keywords:
-      "keyboard shortcuts keys shortcut matrix table list all hotkeys key bindings chord ctrl shift alt f11 f10 esc escape tab enter arrow alt left right ctrl shift g fullscreen ctrl shift t controls strip ctrl shift c copy ctrl shift v paste ctrl f find search right click copy paste select then right click highlight mouse copy on select gone composer history up down shift enter newline sftp commander ctrl click shift click multi select rename commit cancel what does key do reference",
+      "keyboard shortcuts keys shortcut matrix table list all hotkeys key bindings chord ctrl shift alt f11 f10 esc escape tab enter arrow alt left right ctrl shift g fullscreen ctrl shift t controls strip ctrl shift c copy ctrl shift v paste ctrl f find search right click copy paste select then right click highlight mouse copy on select gone composer history up down shift enter newline sftp commander ctrl click shift click multi select rename commit cancel what does key do reference" +
+      onMac("cmd command option opt return enter word jump"),
     body: (
       <>
         <Lead>
@@ -2556,7 +2907,8 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-glossary",
     title: "Glossary",
     keywords:
-      "glossary definitions terms ssh sftp file transfer pty conptr conpty sudo tofu host key passphrase credential manager argon2 csv exec ansi xterm shell meaning",
+      "glossary definitions terms ssh sftp file transfer pty conptr conpty sudo tofu host key passphrase credential manager argon2 csv exec ansi xterm shell meaning" +
+      onMac("keychain keychain access unix pty"),
     body: (
       <>
         <Lead>

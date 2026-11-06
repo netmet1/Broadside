@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SectionHeading } from "@/pages/settings/shared";
 import { TerminalColorsBlock } from "@/pages/settings/TerminalColorsBlock";
+import { IS_MAC } from "@/lib/platform";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
   createCustomTerminal,
@@ -20,18 +21,30 @@ import {
 } from "@/lib/tauri/local";
 
 /** What each family means for the operator, in the words the rest of the app
- * uses. `posix` covers Git Bash, MSYS2 and Cygwin. */
-const FAMILY_LABELS: Record<TerminalFamily, string> = {
-  posix: "Bash-like (Git Bash, MSYS2, Cygwin)",
-  powershell: "PowerShell",
-  cmd: "Command Prompt",
-};
+ * uses. `posix` covers Git Bash, MSYS2 and Cygwin on Windows, and every Unix
+ * shell on a Mac. A Mac has no Command Prompt, so it offers no such family. */
+const FAMILY_LABELS: Partial<Record<TerminalFamily, string>> = IS_MAC
+  ? {
+      posix: "Bash-like (zsh, bash, fish)",
+      powershell: "PowerShell",
+    }
+  : {
+      posix: "Bash-like (Git Bash, MSYS2, Cygwin)",
+      powershell: "PowerShell",
+      cmd: "Command Prompt",
+    };
 
 /** Where Git Bash usually lives, offered as the starting point for the most
  * common case so the operator rarely has to go hunting. */
 const GIT_BASH_GUESS = "C:\\Program Files\\Git\\bin\\bash.exe";
 /** Git Bash wants a login, interactive shell or it starts without a prompt. */
 const GIT_BASH_ARGS = "--login -i";
+
+/** The examples in the empty form. On a Mac there is no Git Bash to suggest;
+ * the usual reason to add a shell there is one Homebrew installed. */
+const EXAMPLE_PROGRAM = IS_MAC ? "/opt/homebrew/bin/fish" : GIT_BASH_GUESS;
+const EXAMPLE_NAME = IS_MAC ? "fish" : "Git Bash";
+const EXAMPLE_ARGS = IS_MAC ? "--login" : GIT_BASH_ARGS;
 
 type Draft = {
   /** null while adding, the row id while editing. */
@@ -59,7 +72,8 @@ const EMPTY: Draft = {
  * localStorage: a row names an executable the backend will spawn, so keeping it
  * server-side means the frontend only ever sends an id and an arbitrary program
  * path can never cross the IPC boundary. The backend validates the path (must
- * be a full path to an existing .exe) at save time and rejects anything else.
+ * be a full path to an existing .exe on Windows, an executable file on a Mac)
+ * at save time and rejects anything else.
  */
 export function CustomTerminalsSection({ id }: { id: string }) {
   const [rows, setRows] = useState<CustomTerminal[]>([]);
@@ -80,7 +94,8 @@ export function CustomTerminalsSection({ id }: { id: string }) {
       const picked = await openDialog({
         multiple: false,
         directory: false,
-        filters: [{ name: "Programs", extensions: ["exe"] }],
+        // A Mac program has no extension to filter on.
+        filters: IS_MAC ? undefined : [{ name: "Programs", extensions: ["exe"] }],
       });
       if (typeof picked === "string") {
         setDraft((d) => (d ? { ...d, exePath: picked } : d));
@@ -132,7 +147,7 @@ export function CustomTerminalsSection({ id }: { id: string }) {
     <section id={id} className="space-y-4">
       <SectionHeading
         title="Custom terminals"
-        hint="Add your own terminal application (Git Bash, MSYS2, Cygwin) to the Terminals + launcher, alongside the shells Broadside detects, and choose the colour each kind of local tab wears."
+        hint={`Add your own terminal application (${IS_MAC ? "fish, PowerShell, or any other shell" : "Git Bash, MSYS2, Cygwin"}) to the Terminals + launcher, alongside the shells Broadside detects, and choose the colour each kind of local tab wears.`}
       />
 
       <div className="max-w-2xl space-y-3">
@@ -140,7 +155,14 @@ export function CustomTerminalsSection({ id }: { id: string }) {
           Anything you add here appears in the Terminals <strong>+</strong> menu
           straight away, can be used by a saved shell profile, and can be
           broadcast to like any other local shell. The program must be a full
-          path to an <code>.exe</code> that exists.
+          path to{" "}
+          {IS_MAC ? (
+            "a program that exists and is marked executable."
+          ) : (
+            <>
+              an <code>.exe</code> that exists.
+            </>
+          )}
         </p>
 
         <TerminalColorsBlock />
@@ -202,22 +224,25 @@ export function CustomTerminalsSection({ id }: { id: string }) {
               Add a terminal
             </Button>
             {/* The overwhelmingly common case, pre-filled so it is one click
-                plus a Save rather than remembering a path and two flags. */}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                setDraft({
-                  id: null,
-                  label: "Git Bash",
-                  exePath: GIT_BASH_GUESS,
-                  args: GIT_BASH_ARGS,
-                  family: "posix",
-                })
-              }
-            >
-              Add Git Bash
-            </Button>
+                plus a Save rather than remembering a path and two flags.
+                Windows only: there is no Git Bash on a Mac. */}
+            {!IS_MAC && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  setDraft({
+                    id: null,
+                    label: "Git Bash",
+                    exePath: GIT_BASH_GUESS,
+                    args: GIT_BASH_ARGS,
+                    family: "posix",
+                  })
+                }
+              >
+                Add Git Bash
+              </Button>
+            )}
           </div>
         ) : (
           <div className="space-y-3 rounded-md border border-border/60 p-3">
@@ -226,7 +251,7 @@ export function CustomTerminalsSection({ id }: { id: string }) {
               <Input
                 value={draft.label}
                 onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-                placeholder="Git Bash"
+                placeholder={EXAMPLE_NAME}
                 className="text-sm"
               />
               <p className="text-[10px] text-muted-foreground">
@@ -242,7 +267,7 @@ export function CustomTerminalsSection({ id }: { id: string }) {
                   onChange={(e) =>
                     setDraft({ ...draft, exePath: e.target.value })
                   }
-                  placeholder={GIT_BASH_GUESS}
+                  placeholder={EXAMPLE_PROGRAM}
                   spellCheck={false}
                   autoComplete="off"
                   className="font-mono text-xs"
@@ -259,7 +284,7 @@ export function CustomTerminalsSection({ id }: { id: string }) {
               <Input
                 value={draft.args}
                 onChange={(e) => setDraft({ ...draft, args: e.target.value })}
-                placeholder={GIT_BASH_ARGS}
+                placeholder={EXAMPLE_ARGS}
                 spellCheck={false}
                 autoComplete="off"
                 className="font-mono text-xs"
@@ -271,10 +296,21 @@ export function CustomTerminalsSection({ id }: { id: string }) {
                   that was never missing. Help's Terminals section agrees. */}
               <p className="text-[10px] text-muted-foreground">
                 Separated by spaces. Passed to the program directly, so there is
-                no shell to quote for. Git Bash runs without them;{" "}
-                <code>{GIT_BASH_ARGS}</code> is what loads the Git for Windows
-                profile, with its coloured <code>MINGW64</code> prompt and the
-                Unix tools on the path.
+                no shell to quote for.{" "}
+                {IS_MAC ? (
+                  <>
+                    A shell runs without them; <code>--login</code> (or{" "}
+                    <code>-l</code>) is what loads your profile, and with it
+                    the Homebrew tools on the path, as Broadside's own shells
+                    do.
+                  </>
+                ) : (
+                  <>
+                    Git Bash runs without them; <code>{GIT_BASH_ARGS}</code> is
+                    what loads the Git for Windows profile, with its coloured{" "}
+                    <code>MINGW64</code> prompt and the Unix tools on the path.
+                  </>
+                )}
               </p>
             </div>
 

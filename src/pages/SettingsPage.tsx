@@ -46,6 +46,7 @@ import { errorMessage } from "@/lib/tauri/hosts";
 import { GENERIC_MONOSPACE, cssFontFamily } from "@/lib/monospaceFonts";
 import { DEFAULT_UI_PREFS, MAX_TERMINAL_SCROLLBACK } from "@/lib/uiPrefs";
 import { auditInfo, setAuditEnabled } from "@/lib/tauri/logs";
+import { IS_MAC, MOD_KEY, WORDS } from "@/lib/platform";
 import { useHint, useStatus } from "@/lib/status";
 import { useTheme } from "next-themes";
 
@@ -90,6 +91,7 @@ import {
   PROFILE_ORDERABLE_COLUMNS,
 } from "@/lib/profileColumns";
 import { SessionsSection } from "@/pages/settings/SessionsSection";
+import { ReloadClosesSessions } from "@/pages/settings/ReloadClosesSessions";
 import { CustomTerminalsSection } from "@/pages/settings/CustomTerminalsSection";
 import { DismissedWarnings } from "@/pages/settings/DismissedWarnings";
 import { SkillsSection } from "@/pages/settings/SkillsSection";
@@ -988,7 +990,11 @@ export function SettingsPage({
       >
         <SectionHeading
           title="Shortcut commands"
-          hint="One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / WSL (Linux) commands run on SSH hosts and WSL tabs; Command Prompt / PowerShell commands run on local Windows shells. Core shortcuts are built in; add, edit or delete your own."
+          hint={
+            IS_MAC
+              ? "One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / local shell (Unix) commands run on SSH hosts and local zsh or bash tabs; PowerShell commands run in a PowerShell custom terminal. Core shortcuts are built in; add, edit or delete your own."
+              : "One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / WSL (Linux) commands run on SSH hosts and WSL tabs; Command Prompt / PowerShell commands run on local Windows shells. Core shortcuts are built in; add, edit or delete your own."
+          }
         />
 
         {settings && settings.user_shortcuts.length > 0 && (
@@ -1108,9 +1114,10 @@ export function SettingsPage({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                SSH / WSL commands run on SSH hosts and WSL tabs; Command Prompt /
-                PowerShell commands run on local Windows shells; Both runs in
-                either of those (for example whoami). Serial console stands on
+                {IS_MAC
+                  ? "SSH / local shell commands run on SSH hosts and local zsh or bash tabs; PowerShell commands run in a PowerShell custom terminal;"
+                  : "SSH / WSL commands run on SSH hosts and WSL tabs; Command Prompt / PowerShell commands run on local Windows shells;"}{" "}
+                Both runs in either of those (for example whoami). Serial console stands on
                 its own, and Both does not reach it: the far end of a console
                 cable is a switch or a firewall rather than a shell, so
                 Broadside ships no commands for it and the picker on a serial
@@ -1237,7 +1244,7 @@ export function SettingsPage({
             <p className="text-xs text-muted-foreground">
               {unknownFont !== null
                 ? "Your saved font isn't installed on this machine, so it is listed as it was stored and left alone until you pick another."
-                : "Fixed-width fonts installed on this machine only. A proportional font (Inter, Segoe UI, Arial) is not offered even when installed, because a terminal needs every character the same width. A font installed while Broadside is running appears after a restart."}{" "}
+                : `Fixed-width fonts installed on this machine only. A proportional font (Inter, ${IS_MAC ? "Helvetica" : "Segoe UI"}, Arial) is not offered even when installed, because a terminal needs every character the same width. A font installed while Broadside is running appears after a restart.`}{" "}
               Applies as you pick it; no Save needed.
             </p>
           </div>
@@ -1272,8 +1279,8 @@ export function SettingsPage({
                   className="flex cursor-pointer items-center gap-1.5 text-sm"
                   {...hint(
                     termFontStrict
-                      ? "Strict: only this field changes the size. Ctrl and the wheel are left to the terminal, so mouse reporting works as before."
-                      : "Not strict: Ctrl and the mouse wheel over a terminal resize the text, and the new size is saved here as you go.",
+                      ? `Strict: only this field changes the size. ${MOD_KEY} and the wheel are left to the terminal, so mouse reporting works as before.`
+                      : `Not strict: ${MOD_KEY} and the mouse wheel over a terminal resize the text, and the new size is saved here as you go.`,
                   )}
                 >
                   <input
@@ -1286,11 +1293,11 @@ export function SettingsPage({
                 </label>
               </div>
               <p className="text-xs text-muted-foreground">
-                8-32 px. Hold <span className="font-medium">Ctrl</span> and turn
+                8-32 px. Hold <span className="font-medium">{MOD_KEY}</span> and turn
                 the mouse wheel over a terminal to change it from there; the size
                 you land on is saved, no Save needed. Tick{" "}
                 <span className="font-medium">Strict</span> to make this field
-                the only way to set it, which also hands Ctrl and the wheel back
+                the only way to set it, which also hands {MOD_KEY} and the wheel back
                 to the terminal for anything that wants them itself.
               </p>
             </div>
@@ -1437,7 +1444,7 @@ export function SettingsPage({
       <section id={sectionDomId("Backup & Restore")} className="space-y-3">
         <SectionHeading
           title="Backup & Restore"
-          hint="Back up a copy of your hosts, settings, trusted host keys and command history to a folder you pick, or restore an earlier backup. Saved passwords are never included; they stay in Windows Credential Manager."
+          hint={`Back up a copy of your hosts, settings, trusted host keys and command history to a folder you pick, or restore an earlier backup. Saved passwords are never included; they stay in ${WORDS.credentialStore}.`}
         />
         <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
           <input
@@ -1508,7 +1515,8 @@ export function SettingsPage({
               <span className="font-mono">{restoreFileName}</span>. Your current
               data will be lost. Saved passwords aren't included in a backup, so
               restored hosts may need their password re-entered. Broadside will
-              reload when the restore finishes.
+              reload when the restore finishes.{" "}
+              <ReloadClosesSessions />
               <br />
               <br />
               <strong>Only restore a backup you made yourself.</strong> A backup
@@ -1845,7 +1853,7 @@ export function SettingsPage({
           {...hint(
             adminLocked
               ? "Locked by the admin passcode; unlock in the Security section first"
-              : "Delete every host and remove its saved passwords from Windows Credential Manager",
+              : `Delete every host and remove its saved passwords from ${WORDS.credentialStore}`,
           )}
         >
           Delete all hosts &amp; credentials
@@ -1857,8 +1865,8 @@ export function SettingsPage({
         )}
         <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           This <strong>permanently deletes every host</strong> and removes each
-          host's saved SSH password, key passphrase and sudo password from
-          Windows Credential Manager. It only touches Broadside's own
+          host's saved SSH password, key passphrase and sudo password from{" "}
+          {WORDS.credentialStore}. It only touches Broadside's own
           credentials. Your <strong>preferences, guard rules, shortcuts, command
           history and the admin lock are kept</strong>. This can't be undone, so
           back up first.
@@ -1874,8 +1882,8 @@ export function SettingsPage({
             </AlertDialogTitle>
             <AlertDialogDescription>
               Every host is permanently removed, along with its saved SSH
-              password, key passphrase and sudo password in Windows Credential
-              Manager. Preferences, guard rules, shortcuts, command history and
+              password, key passphrase and sudo password in{" "}
+              {WORDS.credentialStore}. Preferences, guard rules, shortcuts, command history and
               the admin lock are <strong>not</strong> affected. This can't be
               undone.
             </AlertDialogDescription>
@@ -1958,7 +1966,7 @@ export function SettingsPage({
               the tab Broadside opens on, and the warnings you dismissed. Hosts,
               credentials, saved shell profiles, templates, skills, guard rules,
               shortcuts, command history and logs are <strong>not</strong>{" "}
-              affected. This can&apos;t be undone.
+              affected. This can&apos;t be undone. <ReloadClosesSessions />
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

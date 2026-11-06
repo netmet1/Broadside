@@ -27,14 +27,16 @@ import { pathToFileURL } from "node:url";
 
 import { PAGE } from "./page.mjs";
 
-/** Where a Chromium lives on Windows, best first. `BROADSIDE_CHROME` overrides
- * the lot, for a machine that keeps one somewhere else. */
+/** Where a Chromium lives on Windows and on a Mac, best first. `BROADSIDE_CHROME`
+ * overrides the lot, for a machine that keeps one somewhere else. */
 const BROWSERS = [
   process.env.BROADSIDE_CHROME,
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 ].filter(Boolean);
 
 const PORT_FILE_TIMEOUT_MS = 25_000;
@@ -44,8 +46,8 @@ function findBrowser() {
   const found = BROWSERS.find((p) => existsSync(p));
   if (found) return found;
   throw new Error(
-    "No Edge or Chrome found to print with. Install Microsoft Edge, or set " +
-      "BROADSIDE_CHROME to a Chromium executable.",
+    "No Edge or Chrome found to print with. Install Microsoft Edge or Google " +
+      "Chrome, or set BROADSIDE_CHROME to a Chromium executable.",
   );
 }
 
@@ -126,7 +128,7 @@ class Cdp {
  * "not the first one". The cover is laid out around it, with its own version
  * line well clear of the bottom edge. */
 const footerTemplate = (version) => `
-<div style="width:100%;padding:0 ${PAGE.sideMm}mm;font-family:'Segoe UI',Arial,sans-serif;
+<div style="width:100%;padding:0 ${PAGE.sideMm}mm;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;
             font-size:7pt;color:#8a94a0;display:flex;justify-content:space-between;">
   <span>Broadside ${version} &middot; Help and reference</span>
   <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>

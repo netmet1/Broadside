@@ -47,6 +47,8 @@
   powershell -ExecutionPolicy Bypass -File scripts\ci.ps1 -Quick
   # force a clean npm install too:
   powershell -ExecutionPolicy Bypass -File scripts\ci.ps1 -CleanInstall
+  # On a Mac, PowerShell 7 (brew install powershell) runs the same script:
+  pwsh scripts/ci.ps1
 #>
 param(
   [switch]$Quick,

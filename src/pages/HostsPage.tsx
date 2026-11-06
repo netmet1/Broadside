@@ -77,6 +77,7 @@ import {
 } from "@/lib/hostColumns";
 import { useColumnDrag } from "@/lib/columnDrag";
 import { parseTags } from "@/lib/hostTags";
+import { IS_MAC } from "@/lib/platform";
 import { ShellChip } from "@/components/ShellChip";
 import { HOSTS_NAV_HINT } from "@/components/AppShell";
 import type { ShellCapability } from "@/lib/shells";
@@ -1176,7 +1177,7 @@ export function HostsPage({
                   onSelect={() => void exportProfiles()}
                   disabled={profilesLoading || profiles.length === 0}
                   {...hint(
-                    "Write every profile to a file, in launcher order, re-importable here or on another PC",
+                    `Write every profile to a file, in launcher order, re-importable here or on another ${IS_MAC ? "Mac" : "PC"}`,
                   )}
                 >
                   <DownloadIcon />

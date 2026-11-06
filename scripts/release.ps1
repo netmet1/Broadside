@@ -9,8 +9,9 @@
   it reads the version from src-tauri/tauri.conf.json, finds the matching local
   notes file, and triggers the Release workflow (.github/workflows/release.yml),
   passing the notes contents as the `notes` input. The workflow then builds a
-  clean-room MSI and assembles a DRAFT release (title vX.X.X, your notes as the
-  body, the MSI as the asset) for you to review and publish.
+  clean-room MSI on Windows and DMG on macOS, and assembles a DRAFT release
+  (title vX.X.X, your notes as the body, both installers as the assets) for you
+  to review and publish.
 
   The notes are sent as a workflow input only; they are never committed or pushed.
 
@@ -30,6 +31,10 @@
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\release.ps1
+
+.EXAMPLE
+  # On a Mac, with PowerShell 7 (brew install powershell):
+  pwsh scripts/release.ps1
 #>
 param(
   [string]$Ref = "main",
@@ -120,7 +125,7 @@ Write-Host "Notes file: $notesPath" -ForegroundColor Cyan
 Write-Host "------ notes preview ------" -ForegroundColor DarkGray
 Write-Host $notes
 Write-Host "---------------------------" -ForegroundColor DarkGray
-Write-Host "This triggers the Release workflow: it builds the MSI and creates a DRAFT release." -ForegroundColor Yellow
+Write-Host "This triggers the Release workflow: it builds the MSI and the DMG and creates a DRAFT release." -ForegroundColor Yellow
 
 if (-not $Force) {
   $answer = Read-Host "Proceed? (y/N)"

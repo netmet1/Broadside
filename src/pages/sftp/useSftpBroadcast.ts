@@ -19,7 +19,7 @@ import {
   sftpUpload,
   sftpUploadDir,
 } from "@/lib/tauri/sftp";
-import { baseName, posixDirname, posixJoin, winDirname, winJoin } from "@/pages/sftp/model";
+import { baseName, posixDirname, posixJoin, localDirname, localJoin } from "@/pages/sftp/model";
 
 /** How many hosts transfer at once. Single-file transfers stream (bounded RAM),
  *  but a small cap still keeps concurrent connections + memory reasonable. */
@@ -268,7 +268,7 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
 
   /** Size of a single local file (from listing its parent), 0 if unknown. */
   const localFileSize = useCallback(async (path: string): Promise<number> => {
-    const parent = winDirname(path);
+    const parent = localDirname(path);
     if (!parent) return 0;
     try {
       const items = await localListDir(parent);
@@ -367,7 +367,7 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
             `refusing unsafe remote entry name "${unsafe.name}" (possible path traversal)`,
           );
         }
-        const destFolder = winJoin(cfg.localPath, host.label);
+        const destFolder = localJoin(cfg.localPath, host.label);
         await localMkdir(destFolder).catch(() => {});
         const bytesTotal = matches.reduce(
           (n, e) => n + (e.kind === "file" ? e.size ?? 0 : 0),
@@ -382,7 +382,6 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
         let skipped = 0;
         for (const e of matches) {
           const remoteItem = posixJoin(dir, e.name);
-          const localTarget = winJoin(destFolder, e.name);
           // Each file gets its own transfer id, but it's deliberately NOT mapped
           // in xferIdToHost: live progress events would overwrite the cumulative
           // filesDone/bytesDone we patch after each file with per-file values and
@@ -393,7 +392,8 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
               hostId: host.id,
               sessionId,
               remotePath: remoteItem,
-              localPath: localTarget,
+              localDir: destFolder,
+              localName: e.name,
               transferId,
               mode: cfg.mode,
             });
@@ -405,7 +405,8 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
               hostId: host.id,
               sessionId,
               remotePath: remoteItem,
-              localPath: localTarget,
+              localDir: destFolder,
+              localName: e.name,
               transferId,
               mode: cfg.mode,
             });
@@ -438,13 +439,12 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
       }
       if (!entry) throw new Error(`path not found: ${src}`);
       // Auto-create a per-host-label folder under the chosen local destination.
-      const destFolder = winJoin(cfg.localPath, host.label);
+      const destFolder = localJoin(cfg.localPath, host.label);
       await localMkdir(destFolder).catch(() => {
         // Ignore "already exists"; a real failure surfaces on the write below.
       });
       const transferId = crypto.randomUUID();
       xferIdToHost.current.set(transferId, host.id);
-      const localTarget = winJoin(destFolder, baseName(src));
       if (entry.kind === "dir") {
         const totals = await sftpScanDir(sessionId, src);
         patch(host.id, { status: "running", filesTotal: totals.files, bytesTotal: totals.bytes });
@@ -452,7 +452,8 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
           hostId: host.id,
           sessionId,
           remotePath: src,
-          localPath: localTarget,
+          localDir: destFolder,
+          localName: baseName(src),
           transferId,
           mode: cfg.mode,
         });
@@ -469,7 +470,8 @@ export function useSftpBroadcast(visible: boolean, mode: TransferMode) {
           hostId: host.id,
           sessionId,
           remotePath: src,
-          localPath: localTarget,
+          localDir: destFolder,
+          localName: baseName(src),
           transferId,
           mode: cfg.mode,
         });

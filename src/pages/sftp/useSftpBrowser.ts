@@ -568,12 +568,12 @@ export function useSftpBrowser(visible: boolean) {
     [session, enqueue, settle],
   );
 
-  /** Queues one remote file for download. See `upload` for why the size is
-   *  optional and what it buys. */
+  /** Queues one remote file for download into the folder `localDir`, under its
+   *  own name. See `upload` for why the size is optional and what it buys. */
   const download = useCallback(
     (
       entry: { path: string; name: string; size?: number },
-      localPath: string,
+      localDir: string,
       batch: TransferBatch,
     ) => {
       if (!session) {
@@ -595,7 +595,8 @@ export function useSftpBrowser(visible: boolean) {
             hostId: session.host.id,
             sessionId: session.sessionId,
             remotePath: entry.path,
-            localPath,
+            localDir,
+            localName: entry.name,
             transferId,
             mode: batch.mode,
           });
@@ -669,12 +670,12 @@ export function useSftpBrowser(visible: boolean) {
     [session, enqueue, settle],
   );
 
-  /** Queues a recursive folder download to `localPath` (a `<name>` dir),
-   *  publishing live progress. */
+  /** Queues a recursive folder download into the folder `localDir` (as a
+   *  `<name>` dir), publishing live progress. */
   const downloadDir = useCallback(
     (
       entry: { path: string; name: string },
-      localPath: string,
+      localDir: string,
       mode: TransferMode,
       totals: { files: number; bytes: number },
       batch: TransferBatch,
@@ -698,7 +699,8 @@ export function useSftpBrowser(visible: boolean) {
             hostId: session.host.id,
             sessionId: session.sessionId,
             remotePath: entry.path,
-            localPath,
+            localDir,
+            localName: entry.name,
             transferId,
             mode,
           });
