@@ -9,7 +9,6 @@ import {
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
-import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { readText as readNativeClipboard } from "@tauri-apps/plugin-clipboard-manager";
 import { ArrowDownIcon, Loader2Icon } from "lucide-react";
@@ -48,6 +47,7 @@ import {
   pasteBytes,
 } from "@/lib/terminalClipboard";
 import { watchStatusFooter } from "@/lib/terminalFooter";
+import { attachGpuRenderer } from "@/lib/terminalWebgl";
 import { relayHeldMouse } from "@/lib/terminalMouseRelay";
 import { useReachability } from "@/lib/useReachability";
 import { useHint } from "@/lib/status";
@@ -575,34 +575,28 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const search = new SearchAddon();
     term.loadAddon(search);
     if (containerRef.current) term.open(containerRef.current);
-    // GPU renderer, on both platforms. xterm 6's only other renderer is the DOM
-    // one, which turns every visible cell into a span and makes long, dense
-    // scrollback slow to wheel through, worst in a grid of tiles. Must load
-    // after open(). Any failure (no GPU, WebGL blocked, a Remote Desktop
-    // session without acceleration) leaves this pane on the DOM renderer, as
-    // every pane was before. So does a lost context: WebKit and Chromium both
-    // cap live WebGL contexts at around 16 and take the oldest when a new one
-    // goes past that, and every open tab holds one, hidden or not, since a
-    // hidden pane stays mounted. The localStorage switch exists to A/B the two:
-    // set "broadside.renderer" to "dom" and reopen the pane.
-    let webgl: WebglAddon | null = null;
-    try {
-      if (localStorage.getItem("broadside.renderer") !== "dom") {
-        webgl = new WebglAddon();
-        webgl.onContextLoss(() => {
-          webgl?.dispose();
-          webgl = null;
-        });
-        term.loadAddon(webgl);
-      }
-    } catch {
-      webgl?.dispose();
-      webgl = null;
-    }
     termRef.current = term;
     fitRef.current = fit;
     const footer = watchStatusFooter(term);
     footerRef.current = footer;
+    // Refit a pane that has pixels on screen, keeping a viewport that was
+    // pinned to the bottom there. Only ever called while it is on screen: see
+    // the IntersectionObserver below for why a hidden pane is never fitted.
+    const refitOnScreen = () =>
+      footer.fit(fit, () => {
+        const buf = term.buffer.active;
+        const pinned = buf.viewportY >= buf.baseY;
+        fit.fit();
+        if (pinned) term.scrollToBottom();
+      });
+    // The GPU renderer, when the budget of WebGL contexts allows it, and the
+    // DOM renderer until then (see `terminalWebgl.ts`). A change of renderer
+    // can change the cell size, so a pane on screen is refitted after one.
+    const gpu = attachGpuRenderer(
+      term,
+      () => intersectingRef.current,
+      refitOnScreen,
+    );
     searchRef.current = search;
 
     const resultsSub = search.onDidChangeResults(({ resultIndex, resultCount }) => {
@@ -857,12 +851,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       const entry = entries[entries.length - 1];
       intersectingRef.current = entry.isIntersecting;
       if (!entry.isIntersecting) return;
-      footer.fit(fit, () => {
-        const buf = term.buffer.active;
-        const pinned = buf.viewportY >= buf.baseY;
-        fit.fit();
-        if (pinned) term.scrollToBottom();
-      });
+      // A pane waiting for a WebGL slot takes one here, on its way back on
+      // screen and before the refit, never while hidden.
+      gpu.retry();
+      refitOnScreen();
     });
     if (containerRef.current) io.observe(containerRef.current);
 
@@ -1048,7 +1040,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       contextMenuEl?.removeEventListener("paste", onPaste, true);
       unlistenData.then((fn) => fn());
       unlistenClosed.then((fn) => fn());
-      webgl?.dispose();
+      gpu.dispose();
       term.dispose();
       ptyClose(sessionId).catch(() => {});
       onConnectionChangeRef.current?.(sessionId, false);
