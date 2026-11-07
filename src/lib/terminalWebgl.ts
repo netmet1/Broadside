@@ -57,6 +57,31 @@ const waiting = new Set<() => boolean>();
  * screen; a hidden one lets go when it next comes on screen. */
 const holding = new Set<() => void>();
 
+/** How many open terminals are drawn each way right now, for the line under
+ * the setting (and so a tester can see the budget at work). */
+export type GpuStatus = { gpu: number; standard: number };
+let status: GpuStatus = { gpu: 0, standard: 0 };
+const statusListeners = new Set<() => void>();
+
+/** For `useSyncExternalStore`: the snapshot keeps its identity until a count
+ * changes. */
+export function getGpuStatus(): GpuStatus {
+  return status;
+}
+
+export function subscribeGpuStatus(onChange: () => void): () => void {
+  statusListeners.add(onChange);
+  return () => statusListeners.delete(onChange);
+}
+
+/** Called at the end of everything that can move a pane between renderers. */
+function statusChanged() {
+  const standard = waiting.size;
+  if (status.gpu === live && status.standard === standard) return;
+  status = { gpu: live, standard };
+  for (const l of statusListeners) l();
+}
+
 /** Whether the setting is on. Reads localStorage live. */
 export function isGpuRenderingEnabled(): boolean {
   try {
@@ -82,6 +107,7 @@ export function setGpuRenderingEnabled(enabled: boolean): void {
   }
   if (enabled) offerSlot();
   else for (const letGo of holding) letGo();
+  statusChanged();
 }
 
 function gpuWanted(): boolean {
@@ -155,9 +181,13 @@ export function attachGpuRenderer(
       coolUntil = performance.now() + RETRY_AFTER_LOSS_MS;
       waiting.add(takeSlot);
       clearTimeout(retryTimer);
-      retryTimer = setTimeout(takeSlot, RETRY_AFTER_LOSS_MS);
+      retryTimer = setTimeout(() => {
+        takeSlot();
+        statusChanged();
+      }, RETRY_AFTER_LOSS_MS);
       if (onScreen()) onRendererChange();
       offerSlot();
+      statusChanged();
     });
     return true;
   };
@@ -190,23 +220,30 @@ export function attachGpuRenderer(
   }
 
   if (!attach() && !unsupported) waiting.add(takeSlot);
+  statusChanged();
 
   return {
     sync() {
+      let changed: boolean;
       if (addon && !gpuWanted()) {
         detach();
         waiting.add(takeSlot);
-        return true;
+        changed = true;
+      } else {
+        changed = attach();
       }
-      return attach();
+      statusChanged();
+      return changed;
     },
     dispose() {
       disposed = true;
       waiting.delete(takeSlot);
       clearTimeout(retryTimer);
-      if (!addon) return;
-      detach();
-      offerSlot();
+      if (addon) {
+        detach();
+        offerSlot();
+      }
+      statusChanged();
     },
   };
 }

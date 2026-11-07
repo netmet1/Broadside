@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   ArchiveIcon,
   CableIcon,
@@ -62,10 +68,12 @@ import {
 import { isExitGuardEnabled, setExitGuardEnabled } from "@/lib/exitGuard";
 import { refreshPowershell, usePowershellInstalled } from "@/lib/powershell";
 import {
+  getGpuStatus,
   isGpuRenderingEnabled,
   isGpuRenderingSupported,
   MAX_GPU_PANES,
   setGpuRenderingEnabled,
+  subscribeGpuStatus,
 } from "@/lib/terminalWebgl";
 import { migrateLegacyProfiles } from "@/lib/useShellProfiles";
 import { AdminUnlockDialog } from "@/components/AdminUnlockDialog";
@@ -195,6 +203,7 @@ export function SettingsPage({
   // Warn-before-quit-with-connected-terminals guard (UI-only pref, default on).
   const [exitGuard, setExitGuard] = useState(isExitGuardEnabled);
   const [gpuRendering, setGpuRendering] = useState(isGpuRenderingEnabled);
+  const gpuStatus = useSyncExternalStore(subscribeGpuStatus, getGpuStatus);
 
   // Reset-everything-to-defaults (with a guard rail).
   const [resetOpen, setResetOpen] = useState(false);
@@ -747,11 +756,19 @@ export function SettingsPage({
             Terminals on screen switch at once, the others when you next look at
             them.
           </p>
-          {gpuRendering && !isGpuRenderingSupported() && (
+          {gpuRendering && !isGpuRenderingSupported() ? (
             <p className="text-xs text-muted-foreground">
               This computer&apos;s graphics can&apos;t do WebGL 2, so every
               terminal uses the standard drawing.
             </p>
+          ) : (
+            gpuStatus.gpu + gpuStatus.standard > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Now: {gpuStatus.gpu} open{" "}
+                {gpuStatus.gpu === 1 ? "terminal" : "terminals"} drawn with the
+                GPU, {gpuStatus.standard} the standard way.
+              </p>
+            )
           )}
         </div>
       </section>
