@@ -9,6 +9,7 @@ import {
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
+import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { readText as readNativeClipboard } from "@tauri-apps/plugin-clipboard-manager";
 import { ArrowDownIcon, Loader2Icon } from "lucide-react";
@@ -574,6 +575,30 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const search = new SearchAddon();
     term.loadAddon(search);
     if (containerRef.current) term.open(containerRef.current);
+    // GPU renderer, on both platforms. xterm 6's only other renderer is the DOM
+    // one, which turns every visible cell into a span and makes long, dense
+    // scrollback slow to wheel through, worst in a grid of tiles. Must load
+    // after open(). Any failure (no GPU, WebGL blocked, a Remote Desktop
+    // session without acceleration) leaves this pane on the DOM renderer, as
+    // every pane was before. So does a lost context: WebKit and Chromium both
+    // cap live WebGL contexts at around 16 and take the oldest when a new one
+    // goes past that, and every open tab holds one, hidden or not, since a
+    // hidden pane stays mounted. The localStorage switch exists to A/B the two:
+    // set "broadside.renderer" to "dom" and reopen the pane.
+    let webgl: WebglAddon | null = null;
+    try {
+      if (localStorage.getItem("broadside.renderer") !== "dom") {
+        webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          webgl?.dispose();
+          webgl = null;
+        });
+        term.loadAddon(webgl);
+      }
+    } catch {
+      webgl?.dispose();
+      webgl = null;
+    }
     termRef.current = term;
     fitRef.current = fit;
     const footer = watchStatusFooter(term);
@@ -1023,6 +1048,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       contextMenuEl?.removeEventListener("paste", onPaste, true);
       unlistenData.then((fn) => fn());
       unlistenClosed.then((fn) => fn());
+      webgl?.dispose();
       term.dispose();
       ptyClose(sessionId).catch(() => {});
       onConnectionChangeRef.current?.(sessionId, false);
