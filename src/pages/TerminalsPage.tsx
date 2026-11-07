@@ -64,6 +64,7 @@ import {
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { SearchBar } from "@/components/SearchBar";
+import { SerialLeftOutConfirm } from "@/components/SerialLeftOutNote";
 import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
@@ -973,6 +974,12 @@ export function TerminalsPage({
     isLaidOut,
     sizes: hasSizes ? shownSizes : null,
   });
+  // Serial tiles on the grid are left out of a new template, so the button
+  // asks first when there are any: this is how many, while it is asking.
+  const [serialConfirm, setSerialConfirm] = useState<number | null>(null);
+  const saveGridAsTemplate = () =>
+    onSaveAsTemplate(gridTemplate.items, gridTemplate.layout);
+
   // The grid is a saved template's sessions with new sizes: the same button
   // writes the sizes to that template, there and then, and says so.
   const saveSizesTo = useCallback(
@@ -2265,8 +2272,13 @@ export function TerminalsPage({
             ? {
                 count: gridTemplate.items.length,
                 sizesTo: null,
-                onSave: () =>
-                  onSaveAsTemplate(gridTemplate.items, gridTemplate.layout),
+                onSave: () => {
+                  if (gridTemplate.serialLeftOut > 0) {
+                    setSerialConfirm(gridTemplate.serialLeftOut);
+                  } else {
+                    saveGridAsTemplate();
+                  }
+                },
               }
             : gridTemplate.sizesTo
               ? {
@@ -3710,6 +3722,15 @@ export function TerminalsPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <SerialLeftOutConfirm
+        count={serialConfirm}
+        onCancel={() => setSerialConfirm(null)}
+        onContinue={() => {
+          setSerialConfirm(null);
+          saveGridAsTemplate();
+        }}
+      />
 
       <AlertDialog
         open={!!workspaceClosing}

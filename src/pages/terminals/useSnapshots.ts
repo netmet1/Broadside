@@ -250,5 +250,22 @@ export function useSnapshots({
     [pending, launch],
   );
 
-  return { saveNew, retake, open, pending, resolvePending, canSave: fromOpen() !== null };
+  // What a save would hold right now, for the menu, the save dialog and the
+  // Library's Update question: the last two warn about serial consoles before
+  // anything is written, since a toast after the fact is easy to miss (87-1).
+  const now = fromOpen();
+  const serialOpen = sessions.filter((s) => sessionTemplateItem(s) === null).length;
+  return {
+    saveNew,
+    retake,
+    open,
+    pending,
+    resolvePending,
+    canSave: now !== null,
+    savable: {
+      workspaces: now?.data.workspaces.length ?? 0,
+      tabs: now?.data.workspaces.reduce((n, w) => n + w.items.length, 0) ?? 0,
+      serialLeftOut: serialOpen,
+    },
+  };
 }

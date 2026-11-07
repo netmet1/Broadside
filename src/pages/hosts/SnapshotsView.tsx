@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SerialLeftOutNote } from "@/components/SerialLeftOutNote";
 import { useHint } from "@/lib/status";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
@@ -55,6 +56,7 @@ export function SnapshotsView({
   snapshots,
   loading,
   canRetake,
+  serialLeftOut,
   onOpen,
   onRetake,
   onChanged,
@@ -63,6 +65,8 @@ export function SnapshotsView({
   loading: boolean;
   /** Something is open to take the snapshot from. */
   canRetake: boolean;
+  /** Serial consoles open, which an update leaves out. */
+  serialLeftOut: number;
   onOpen: (s: Snapshot) => void;
   /** Resolves true once the snapshot was taken again. */
   onRetake: (s: Snapshot) => Promise<boolean>;
@@ -240,6 +244,7 @@ export function SnapshotsView({
               replaced with the workspaces open on the Terminals tab. It keeps its
               name.
             </AlertDialogDescription>
+            <SerialLeftOutNote count={serialLeftOut} into="snapshot" />
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

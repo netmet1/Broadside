@@ -20,24 +20,30 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SerialLeftOutNote } from "@/components/SerialLeftOutNote";
 import { snapshotHolds } from "@/lib/sessionPrefs";
 import type { PendingSnapshot } from "@/pages/terminals/useSnapshots";
 
 /**
  * Name a new snapshot of the open workspaces. `workspaces` and `tabs` say
- * what it will hold, so nobody saves one expecting something else.
+ * what it will hold, so nobody saves one expecting something else, and a
+ * warning says when serial consoles are left out.
  */
 export function SaveSnapshotDialog({
   open,
   onOpenChange,
   workspaces,
   tabs,
+  serialLeftOut,
   onSave,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaces: number;
+  /** The tabs it will hold: every open tab but the serial consoles. */
   tabs: number;
+  /** Serial consoles open, which it cannot hold. */
+  serialLeftOut: number;
   /** Resolves true once saved, which closes the dialog. */
   onSave: (name: string) => Promise<boolean>;
 }) {
@@ -64,6 +70,7 @@ export function SaveSnapshotDialog({
             grid sizes, to open again from Library &gt; Snapshots.
           </DialogDescription>
         </DialogHeader>
+        <SerialLeftOutNote count={serialLeftOut} into="snapshot" />
         <form
           onSubmit={(e) => {
             e.preventDefault();

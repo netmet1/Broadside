@@ -618,9 +618,6 @@ function App() {
     },
     [saveSnapshotNow],
   );
-  const snapshotWorkspaceCount = ws.workspaces.filter((w) =>
-    sessions.some((s) => s.workspaceId === w.id),
-  ).length;
 
   /**
    * Open saved profiles as local shell tabs: one from its row on the Hosts
@@ -1098,6 +1095,7 @@ function App() {
           onBrowseTemplates={browseTemplates}
           onOpenProfiles={openProfiles}
           canSaveSnapshot={snaps.canSave}
+          snapshotSerialLeftOut={snaps.savable.serialLeftOut}
           onSaveSnapshot={openSaveSnapshot}
           onOpenSnapshot={snaps.open}
           onRetakeSnapshot={snaps.retake}
@@ -1451,8 +1449,9 @@ function App() {
         <SaveSnapshotDialog
           open={savingSnapshot}
           onOpenChange={setSavingSnapshot}
-          workspaces={snapshotWorkspaceCount}
-          tabs={sessions.length}
+          workspaces={snaps.savable.workspaces}
+          tabs={snaps.savable.tabs}
+          serialLeftOut={snaps.savable.serialLeftOut}
           onSave={saveSnapshot}
         />
         <OpenSnapshotDialog

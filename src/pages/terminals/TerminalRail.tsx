@@ -1010,11 +1010,13 @@ export function TerminalRail({
                 onSelect={onSaveSnapshot}
                 disabled={!canSaveSnapshot}
                 {...hint(
-                  "Save every open workspace, with its tabs, names and grid sizes, under one name. Open it again from Library > Snapshots",
+                  canSaveSnapshot
+                    ? "Save every open workspace, with its tabs, names, colours and grid sizes, as one snapshot. Open them all again from Library > Snapshots. Serial consoles are left out"
+                    : "Nothing open that a snapshot can hold. Serial consoles are left out of snapshots",
                 )}
               >
                 <CameraIcon />
-                Save workspaces as snapshot…
+                Snapshot workspaces…
               </DropdownMenuItem>
 
               {/* The bulk repairs, above the bulk destruction. Each is the way
