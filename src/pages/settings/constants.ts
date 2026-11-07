@@ -75,7 +75,7 @@ export const SECTION_TITLES = [
 export const SECTION_KEYWORDS: Record<string, string> = {
   Startup:
     "start startup launch open on opens on first tab home default page landing which tab when broadside starts begin boot initial terminals instead of hosts template startup greyed disabled",
-  Performance: "sessions limit concurrent max how many cpu cores memory ram probe suggested capacity timeout slow confirm ask first guard threshold bulk are you sure reconnect all disconnect all close failed close all too many stop asking me",
+  Performance: "sessions limit concurrent max how many cpu cores memory ram probe suggested capacity timeout slow confirm ask first guard threshold bulk are you sure reconnect all disconnect all close failed close all too many stop asking me gpu webgl graphics card renderer rendering drawing hardware acceleration slow scrolling laggy scroll text looks wrong blurry fuzzy",
   "Network probe": "ping latency reachable test hosts responds round trip ms speed check offline",
   "Destructive command guard": "rm dangerous confirm warning block rules pattern regex mkfs dd shutdown reboot guard rails safety typed confirmation",
   "Shortcut commands": "commands dropdown one click quick canned saved snippets scope linux windows both broadcast terminals go button",

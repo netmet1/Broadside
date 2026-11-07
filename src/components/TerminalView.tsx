@@ -851,9 +851,10 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       const entry = entries[entries.length - 1];
       intersectingRef.current = entry.isIntersecting;
       if (!entry.isIntersecting) return;
-      // A pane waiting for a WebGL slot takes one here, on its way back on
-      // screen and before the refit, never while hidden.
-      gpu.retry();
+      // A pane waiting for a WebGL slot takes one here, and a pane the
+      // setting was turned off under lets its go, on the way back on screen
+      // and before the refit, never while hidden.
+      gpu.sync();
       refitOnScreen();
     });
     if (containerRef.current) io.observe(containerRef.current);

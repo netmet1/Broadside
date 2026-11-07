@@ -1,6 +1,6 @@
 /**
- * The terminal panes' GPU renderer, and the budget of WebGL contexts it runs
- * on.
+ * The terminal panes' GPU renderer, the setting that turns it off, and the
+ * budget of WebGL contexts it runs on.
  *
  * xterm 6's only other renderer is the DOM one, which turns every visible cell
  * into a span and makes long, dense scrollback slow to wheel through, worst in
@@ -31,35 +31,66 @@
  *   - A load that throws means WebGL 2 isn't there at all (no GPU, blocked, a
  *     Remote Desktop session without acceleration). No pane tries again.
  *
- * Setting localStorage "broadside.renderer" to "dom" keeps new and waiting
- * panes on the DOM renderer, to compare the two. Reopen a pane to switch it.
+ * The setting (Settings > Performance, on by default) follows the same rule:
+ * turned off, the panes on screen move to the DOM renderer at once and hidden
+ * ones as they come on screen; turned back on, panes take slots as above. It is
+ * a preference of this computer, kept in localStorage like the exit guard,
+ * since it is about this machine's graphics.
  */
 
 import { WebglAddon } from "@xterm/addon-webgl";
 import type { Terminal } from "@xterm/xterm";
 
 /** Under the browsers' 16, with room for a context they have not let go of. */
-const MAX_LIVE = 14;
+export const MAX_GPU_PANES = 14;
 const RETRY_AFTER_LOSS_MS = 30_000;
+/** Absent until the setting is first turned off; absence reads as on. */
+const GPU_KEY = "terminal-gpu-renderer";
 
 let live = 0;
 let unsupported = false;
-/** Panes waiting for a slot, in the order they started waiting. Each one's
- * callback takes the slot if it can and says whether it did. */
+/** Panes on the DOM renderer, in the order they got there. Each one's
+ * callback takes a slot if it can (on screen, setting on, slot free) and says
+ * whether it did. */
 const waiting = new Set<() => boolean>();
+/** Panes holding a context. Each one's callback lets it go if the pane is on
+ * screen; a hidden one lets go when it next comes on screen. */
+const holding = new Set<() => void>();
 
-function domOnly(): boolean {
-  if (unsupported) return true;
+/** Whether the setting is on. Reads localStorage live. */
+export function isGpuRenderingEnabled(): boolean {
   try {
-    return localStorage.getItem("broadside.renderer") === "dom";
+    return localStorage.getItem(GPU_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
+}
+
+/** Whether this computer can do it at all, as far as the panes have found so
+ * far: false once a pane failed to load WebGL 2. */
+export function isGpuRenderingSupported(): boolean {
+  return !unsupported;
+}
+
+/** Turn the setting on or off, and move the panes on screen over now. */
+export function setGpuRenderingEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(GPU_KEY, enabled ? "1" : "0");
+  } catch {
+    // Without storage it lasts until the app restarts, which is the best
+    // there is.
+  }
+  if (enabled) offerSlot();
+  else for (const letGo of holding) letGo();
+}
+
+function gpuWanted(): boolean {
+  return !unsupported && isGpuRenderingEnabled();
 }
 
 function offerSlot() {
   for (const take of waiting) {
-    if (live >= MAX_LIVE) return;
+    if (live >= MAX_GPU_PANES || !gpuWanted()) return;
     take();
   }
 }
@@ -72,20 +103,22 @@ function contextOf(addon: WebglAddon): WebGL2RenderingContext | undefined {
 }
 
 export interface GpuRenderer {
-  /** Take a slot now if this pane is waiting and one is free. For the moment a
-   * pane comes on screen, before it is refitted. Returns whether it did. */
-  retry(): boolean;
+  /** Bring the renderer in line with the setting and the budget: take a slot
+   * if one is free and the setting is on, let it go if the setting is off. For
+   * the moment a pane comes on screen, before it is refitted. Returns whether
+   * the renderer changed. */
+  sync(): boolean;
   /** Before `term.dispose()`. Gives the context back and offers the slot on. */
   dispose(): void;
 }
 
 /**
- * Put `term` on the WebGL renderer, now if the budget allows it, otherwise
- * when a slot comes free. Call after `term.open()`.
+ * Put `term` on the WebGL renderer, now if the setting and the budget allow
+ * it, otherwise when they do. Call after `term.open()`.
  *
  * `onScreen` says whether the pane has pixels on screen now. `onRendererChange`
  * runs after the renderer changed under a pane that is on screen, outside
- * `retry()`: its cell size may have changed with it, so the pane wants a refit.
+ * `sync()`: its cell size may have changed with it, so the pane wants a refit.
  */
 export function attachGpuRenderer(
   term: Terminal,
@@ -98,8 +131,8 @@ export function attachGpuRenderer(
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
   const attach = (): boolean => {
-    if (disposed || addon || !term.element || domOnly()) return false;
-    if (live >= MAX_LIVE || performance.now() < coolUntil) return false;
+    if (disposed || addon || !term.element || !gpuWanted()) return false;
+    if (live >= MAX_GPU_PANES || performance.now() < coolUntil) return false;
     const next = new WebglAddon();
     try {
       term.loadAddon(next);
@@ -112,10 +145,12 @@ export function attachGpuRenderer(
     addon = next;
     live++;
     waiting.delete(takeSlot);
+    holding.add(letGo);
     next.onContextLoss(() => {
       if (addon !== next) return;
       addon = null;
       live--;
+      holding.delete(letGo);
       next.dispose();
       coolUntil = performance.now() + RETRY_AFTER_LOSS_MS;
       waiting.add(takeSlot);
@@ -127,27 +162,50 @@ export function attachGpuRenderer(
     return true;
   };
 
+  /** Back to the DOM renderer, giving the context back. */
+  const detach = () => {
+    if (!addon) return;
+    const gone = addon;
+    addon = null;
+    live--;
+    holding.delete(letGo);
+    const gl = contextOf(gone);
+    gone.dispose();
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+  };
+
   // A slot offered from outside the pane's own refit: only taken on screen.
-  const takeSlot = (): boolean => {
+  function takeSlot(): boolean {
     if (!onScreen() || !attach()) return false;
     onRendererChange();
     return true;
-  };
+  }
 
-  if (!attach() && !domOnly()) waiting.add(takeSlot);
+  // The setting was turned off: only let go on screen.
+  function letGo() {
+    if (!onScreen()) return;
+    detach();
+    waiting.add(takeSlot);
+    onRendererChange();
+  }
+
+  if (!attach() && !unsupported) waiting.add(takeSlot);
 
   return {
-    retry: attach,
+    sync() {
+      if (addon && !gpuWanted()) {
+        detach();
+        waiting.add(takeSlot);
+        return true;
+      }
+      return attach();
+    },
     dispose() {
       disposed = true;
       waiting.delete(takeSlot);
       clearTimeout(retryTimer);
       if (!addon) return;
-      const gl = contextOf(addon);
-      addon.dispose();
-      addon = null;
-      live--;
-      gl?.getExtension("WEBGL_lose_context")?.loseContext();
+      detach();
       offerSlot();
     },
   };

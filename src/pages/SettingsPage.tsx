@@ -61,6 +61,12 @@ import {
 } from "@/lib/tauri/settings";
 import { isExitGuardEnabled, setExitGuardEnabled } from "@/lib/exitGuard";
 import { refreshPowershell, usePowershellInstalled } from "@/lib/powershell";
+import {
+  isGpuRenderingEnabled,
+  isGpuRenderingSupported,
+  MAX_GPU_PANES,
+  setGpuRenderingEnabled,
+} from "@/lib/terminalWebgl";
 import { migrateLegacyProfiles } from "@/lib/useShellProfiles";
 import { AdminUnlockDialog } from "@/components/AdminUnlockDialog";
 import {
@@ -188,6 +194,7 @@ export function SettingsPage({
 
   // Warn-before-quit-with-connected-terminals guard (UI-only pref, default on).
   const [exitGuard, setExitGuard] = useState(isExitGuardEnabled);
+  const [gpuRendering, setGpuRendering] = useState(isGpuRenderingEnabled);
 
   // Reset-everything-to-defaults (with a guard rail).
   const [resetOpen, setResetOpen] = useState(false);
@@ -712,6 +719,40 @@ export function SettingsPage({
             When on, closing the app while any terminal is still connected asks
             for confirmation first, so a stray close never drops a live session.
           </p>
+        </div>
+
+        {/* GPU drawing of terminal panes (WebGL). A preference of this
+            computer, saved immediately, like the exit guard above. Panes on
+            screen switch at once and hidden ones as they come on screen (see
+            terminalWebgl.ts for why never sooner). */}
+        <div className="max-w-xl space-y-1 border-t border-border/40 pt-4">
+          <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="accent-primary"
+              checked={gpuRendering}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setGpuRenderingEnabled(next);
+                setGpuRendering(next);
+              }}
+            />
+            Draw terminals with the GPU (WebGL)
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Makes scrolling through long output much faster, most of all with
+            several terminals in a grid. Up to {MAX_GPU_PANES} terminals use it
+            at a time; any more use the standard drawing until one closes.
+            Untick it if terminal text looks wrong or the graphics misbehave.
+            Terminals on screen switch at once, the others when you next look at
+            them.
+          </p>
+          {gpuRendering && !isGpuRenderingSupported() && (
+            <p className="text-xs text-muted-foreground">
+              This computer&apos;s graphics can&apos;t do WebGL 2, so every
+              terminal uses the standard drawing.
+            </p>
+          )}
         </div>
       </section>
       )}
