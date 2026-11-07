@@ -12,12 +12,16 @@
  * is exactly as it shipped; the moment any value is set, the grid switches to a
  * uniform settings-driven layout. */
 
+import { GRID_MIN_TILE_ROWS } from "@/lib/gridShape";
+
 const COLS_KEY = "terminal-grid-cols";
 const ITEM_COLS_KEY = "terminal-grid-item-cols";
 const ITEM_ROWS_KEY = "terminal-grid-item-rows";
 const STRICT_KEY = "terminal-grid-strict";
 const ROW_FILL_KEY = "terminal-grid-row-fill";
 const MIN_WIDTH_KEY = "terminal-grid-min-width";
+const MIN_HEIGHT_KEY = "terminal-grid-min-height";
+const FIT_ROWS_KEY = "terminal-grid-fit-rows";
 const SEED_COLS_KEY = "terminal-grid-seed-cols";
 const SEED_ITEM_COLS_KEY = "terminal-grid-seed-item-cols";
 const SEED_ITEM_ROWS_KEY = "terminal-grid-seed-item-rows";
@@ -167,6 +171,44 @@ export function loadGridMinWidth(): number {
 
 export function saveGridMinWidth(v: number): void {
   writeSeed(MIN_WIDTH_KEY, v, GRID_MIN_WIDTH_MIN, GRID_MIN_WIDTH_MAX);
+}
+
+/** The shortest the grid makes a row on its own, in lines of the terminal
+ * font. Rows share the pane's height while they fit; once that would make
+ * them shorter than this, they stay this tall and the grid scrolls. A row you
+ * drag can go shorter (see GRID_SPLIT_MIN_ROWS). */
+export const GRID_MIN_HEIGHT_MIN = 6;
+export const GRID_MIN_HEIGHT_MAX = 60;
+export const DEFAULT_GRID_MIN_HEIGHT = GRID_MIN_TILE_ROWS;
+
+export function loadGridMinHeight(): number {
+  return clampInt(
+    localStorage.getItem(MIN_HEIGHT_KEY),
+    DEFAULT_GRID_MIN_HEIGHT,
+    GRID_MIN_HEIGHT_MIN,
+    GRID_MIN_HEIGHT_MAX,
+  );
+}
+
+export function saveGridMinHeight(v: number): void {
+  writeSeed(MIN_HEIGHT_KEY, v, GRID_MIN_HEIGHT_MIN, GRID_MIN_HEIGHT_MAX);
+}
+
+/** What dragging the line between two rows does, with the tiles unlocked.
+ *
+ * Off (the default): each row keeps its own height. Dragging a row's edge
+ * makes that row taller or shorter and moves the rows below it, and when the
+ * rows no longer fit the pane the grid scrolls. Nothing else gets shorter.
+ *
+ * On: the rows always fit the pane. Dragging the line between two rows gives
+ * one the height the other loses. */
+export function loadGridFitRows(): boolean {
+  return localStorage.getItem(FIT_ROWS_KEY) === "1";
+}
+
+export function saveGridFitRows(v: boolean): void {
+  localStorage.setItem(FIT_ROWS_KEY, v ? "1" : "0");
+  announce();
 }
 
 /**

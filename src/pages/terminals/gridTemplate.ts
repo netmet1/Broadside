@@ -114,20 +114,76 @@ export function sizesFromLayout(
       if (w != null) widths[ids[i]!] = w;
     });
   }
-  return { rows: layout.rows ?? [], widths };
+  const heights = layout.heights ?? [];
+  return heights.length > 0
+    ? { heights, widths }
+    : { heights: [], widths, rows: layout.rows ?? [] };
 }
 
 /** A workspace's sizes as a template or snapshot saves them, for its tiles in
- * order (`ids`): a width per tile, 0 for one that shares its row. Null when
- * there is nothing but an even split to save. */
+ * order (`ids`): a width per tile, 0 for one that shares its row, and the row
+ * heights in lines. Null when there is nothing but an even split to save. */
 export function layoutFromSizes(
   sizes: GridSizes | null | undefined,
   ids: string[],
 ): TemplateLayout | null {
   if (!sizes) return null;
   const widths = ids.map((id) => sizes.widths[id] ?? 0);
-  if (sizes.rows.length === 0 && widths.every((w) => w === 0)) return null;
-  return { rows: sizes.rows, cols: [], widths };
+  const rows = sizes.heights.length > 0 ? [] : (sizes.rows ?? []);
+  if (
+    sizes.heights.length === 0 &&
+    rows.length === 0 &&
+    widths.every((w) => w === 0)
+  ) {
+    return null;
+  }
+  return { rows, cols: [], widths, heights: sizes.heights };
+}
+
+/** `layout` with new widths for some of its `count` sessions (null: shares its
+ * row), as the Templates editor's preview is dragged. */
+export function layoutWithWidths(
+  layout: TemplateLayout | null,
+  count: number,
+  changes: Map<number, number | null>,
+): TemplateLayout {
+  const widths = layoutWidths(layout, count).map((w) => w ?? 0);
+  for (const [i, w] of changes) {
+    if (i >= 0 && i < count) widths[i] = w ?? 0;
+  }
+  return {
+    rows: layout?.rows ?? [],
+    cols: [],
+    widths,
+    heights: layout?.heights ?? [],
+  };
+}
+
+/** `layout` with every row's height in lines, as the editor's preview is
+ * dragged. Relative heights from an older layout are replaced. */
+export function layoutWithHeights(
+  layout: TemplateLayout | null,
+  count: number,
+  heights: number[],
+): TemplateLayout {
+  return {
+    rows: [],
+    cols: [],
+    widths: layoutWidths(layout, count).map((w) => w ?? 0),
+    heights,
+  };
+}
+
+/** `layout` after the editor's sessions changed: `edit` does to the widths
+ * what was done to the sessions, so each width stays with its session. */
+export function layoutAfterItems(
+  layout: TemplateLayout | null,
+  count: number,
+  edit: (widths: number[]) => number[],
+): TemplateLayout | null {
+  if (!layout?.widths || layout.widths.length === 0) return layout;
+  const widths = layoutWidths(layout, count).map((w) => w ?? 0);
+  return { ...layout, widths: edit(widths) };
 }
 
 /** The same sizes, near enough that nobody could see the difference. Two
@@ -142,10 +198,21 @@ export function sameLayout(
   const close = (x: (number | null)[], y: (number | null)[]) =>
     x.length === y.length &&
     x.every((v, i) => Math.abs((v ?? 0) - (y[i] ?? 0)) < 0.01);
-  const rows = Math.max(a.rows.length, b.rows.length);
-  const pad = (r: number[]) => Array.from({ length: rows }, (_, i) => r[i] ?? 1);
+  const pad = (x: number[], y: number[], fill: number) => {
+    const n = Math.max(x.length, y.length);
+    return [
+      Array.from({ length: n }, (_, i) => x[i] ?? fill),
+      Array.from({ length: n }, (_, i) => y[i] ?? fill),
+    ] as const;
+  };
+  const [ar, br] = pad(a.rows, b.rows, 1);
+  const ah = a.heights ?? [];
+  const bh = b.heights ?? [];
+  const sameHeights =
+    ah.length === bh.length && ah.every((v, i) => Math.abs(v - bh[i]!) < 0.1);
   return (
-    close(pad(a.rows), pad(b.rows)) &&
+    close(ar, br) &&
+    sameHeights &&
     close(layoutWidths(a, count), layoutWidths(b, count))
   );
 }

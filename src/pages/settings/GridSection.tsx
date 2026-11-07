@@ -15,13 +15,19 @@ import {
   GRID_ITEM_COLS_MIN,
   GRID_ITEM_ROWS_MAX,
   GRID_ITEM_ROWS_MIN,
+  GRID_MIN_HEIGHT_MAX,
+  GRID_MIN_HEIGHT_MIN,
   GRID_MIN_WIDTH_MAX,
   GRID_MIN_WIDTH_MIN,
+  loadGridFitRows,
+  loadGridMinHeight,
   loadGridMinWidth,
   loadGridSeeds,
   resetGridSeeds,
   saveGridSeedCols,
   saveGridSeedItemCols,
+  saveGridFitRows,
+  saveGridMinHeight,
   saveGridMinWidth,
   saveGridSeedItemRows,
   saveGridStrict,
@@ -43,6 +49,8 @@ export function GridSection({ id }: { id: string }) {
   const f = useGridFields();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [minWidth, setMinWidth] = useState(loadGridMinWidth);
+  const [minHeight, setMinHeight] = useState(loadGridMinHeight);
+  const [fitRows, setFitRows] = useState(loadGridFitRows);
   const hint = useHint();
 
   return (
@@ -116,6 +124,57 @@ export function GridSection({ id }: { id: string }) {
             gave it. Default 15.
           </p>
         </div>
+        <div
+          {...hint(
+            "The shortest the grid makes a tile before it scrolls instead of squeezing more tiles in",
+          )}
+        >
+          <SeedField
+            label="Minimum tile height"
+            unit="lines"
+            min={GRID_MIN_HEIGHT_MIN}
+            max={GRID_MIN_HEIGHT_MAX}
+            value={minHeight}
+            onCommit={(v) => {
+              setMinHeight(v);
+              saveGridMinHeight(v);
+            }}
+          />
+          <p className="mt-1 max-w-md text-xs text-muted-foreground">
+            Tiles share the window's height while they fit. Once that would
+            make them shorter than this, they stay this tall and the grid
+            scrolls. Raise it if many terminals get too small to use. Default
+            13.
+          </p>
+        </div>
+        <label
+          className="flex max-w-md cursor-pointer items-start gap-2 text-sm"
+          {...hint(
+            fitRows
+              ? "On: dragging the line between two rows gives one the height the other loses, and the grid always fits the window"
+              : "Off: dragging a row's edge sets that row's height, the rows below move, and the grid scrolls when they do not fit",
+          )}
+        >
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-primary"
+            checked={fitRows}
+            onChange={(e) => {
+              setFitRows(e.target.checked);
+              saveGridFitRows(e.target.checked);
+            }}
+          />
+          <span>
+            <span className="font-medium">Fit rows to the window</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              With Resize tiles together off. Off (the default), dragging a
+              row's edge makes that row taller or shorter and moves the rows
+              below it; when they no longer fit, the grid scrolls and no other
+              tile gets shorter. On, the rows always fit the window: dragging
+              the line between two rows gives one the height the other loses.
+            </span>
+          </span>
+        </label>
         <div className="border-t border-border/50 pt-3">
           <button
             type="button"

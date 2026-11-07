@@ -13,15 +13,17 @@ import { invoke } from "@tauri-apps/api/core";
 /** The sizes saved from a grid whose lines were dragged with the tiles
  * unlocked (see GridSizes, which is how a workspace keeps them).
  *
- * `rows`: each row's height relative to the others, top to bottom.
+ * `heights`: each row's height in lines of the terminal font, top to bottom.
  * `widths`: one per session, in order, as a fraction of the grid's width; 0
  * for a session that shares what its row has left.
- * `cols`: two column sizes, from a layout saved before tiles had widths of
- * their own. Read for those (see layoutWidths); written empty. */
+ * `rows` and `cols`: relative row heights and two column sizes, from a layout
+ * saved before rows and tiles had sizes of their own. Read for those (see
+ * layoutWidths and sizesFromLayout); written empty. */
 export type TemplateLayout = {
   rows: number[];
   cols: number[];
   widths?: number[];
+  heights?: number[];
 };
 
 /** How a template refers to a host it cannot carry across machines. Not the id,

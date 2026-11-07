@@ -11,18 +11,26 @@ import {
 import {
   GRID_PREFS_EVENT,
   isAutoGrid,
+  loadGridFitRows,
   loadGridMinWidth,
   loadGridPrefs,
   loadRowFill,
   type RowFill,
 } from "@/lib/gridPrefs";
 import {
+  GRID_FLOOR_COLS,
+  GRID_SPLIT_MIN_ROWS,
   TILE_BORDER_X,
+  TILE_BORDER_Y,
   defaultGridStyle,
   fitsTwoUp,
   flowGridStyle,
   flowLayout,
   flowPlace,
+  flowRowTracks,
+  gridHeaderH,
+  linesToPx,
+  pxToLines,
   tileSpan,
   twoUpThresholdPx,
 } from "@/lib/gridShape";
@@ -34,7 +42,13 @@ import { MAX_TEMPLATE_ITEMS } from "@/lib/tauri/templates";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
-import { layoutWidths } from "@/pages/terminals/gridTemplate";
+import {
+  layoutWidths,
+  layoutWithHeights,
+  layoutWithWidths,
+} from "@/pages/terminals/gridTemplate";
+import { SplitHandles } from "@/pages/terminals/SplitHandles";
+import { useGridSplitters } from "@/pages/terminals/useGridSplitters";
 import { DRAG_BOX_PREFIX, parseDrag } from "@/pages/templates/drag";
 import { itemKey, resolveItem, type ItemSources } from "@/pages/templates/items";
 
@@ -89,6 +103,7 @@ export function TemplateCanvas({
   onOpenGridSettings,
   visible,
   layout,
+  onLayout,
   onForgetLayout,
 }: {
   items: TemplateItem[];
@@ -104,6 +119,8 @@ export function TemplateCanvas({
   visible: boolean;
   /** Grid sizes saved with this template, or null for an even split. */
   layout: TemplateLayout | null;
+  /** New sizes, dragged on the preview. */
+  onLayout: (layout: TemplateLayout) => void;
   /** Drop the saved sizes, so it opens evenly. */
   onForgetLayout: () => void;
 }) {
@@ -127,11 +144,13 @@ export function TemplateCanvas({
   const [gridPrefs, setGridPrefs] = useState(loadGridPrefs);
   const [rowFill, setRowFill] = useState<RowFill>(loadRowFill);
   const [minWidthPct, setMinWidthPct] = useState<number>(loadGridMinWidth);
+  const [fitRows, setFitRows] = useState<boolean>(loadGridFitRows);
   useEffect(() => {
     const reload = () => {
       setGridPrefs(loadGridPrefs());
       setRowFill(loadRowFill());
       setMinWidthPct(loadGridMinWidth());
+      setFitRows(loadGridFitRows());
     };
     window.addEventListener(GRID_PREFS_EVENT, reload);
     window.addEventListener("storage", reload);
@@ -146,13 +165,16 @@ export function TemplateCanvas({
   // on the window. This canvas sits in the same place that grid does (the main
   // area, less a rail of its own), so the measurement means the same thing.
   const paneRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const [paneW, setPaneW] = useState(0);
+  const [paneH, setPaneH] = useState(0);
   useEffect(() => {
     const el = paneRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) =>
-      setPaneW(entry.contentRect.width),
-    );
+    const ro = new ResizeObserver(([entry]) => {
+      setPaneW(entry.contentRect.width);
+      setPaneH(entry.contentRect.height);
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -220,11 +242,28 @@ export function TemplateCanvas({
       })
     : null;
 
+  // Row heights are lines of the terminal font, drawn at the size a terminal
+  // tile would be, so a tall row here is a tall row there. A row nobody sized
+  // keeps the preview's own, smaller floor.
+  const chrome = gridHeaderH(uiPrefs.appFontSize, false) + TILE_BORDER_Y;
+  const heights = layout?.heights ?? [];
+  const splitMinPx = linesToPx(GRID_SPLIT_MIN_ROWS, cell.cellH, chrome);
+  const rowMinPx =
+    count <= 2 ? 0 : heights.length > 0 ? splitMinPx : PREVIEW_TILE_MIN_H;
   const gridStyle = flow
     ? flowGridStyle(
         flow,
-        layout?.rows,
-        count <= 2 ? "0" : `${PREVIEW_TILE_MIN_H}px`,
+        flowRowTracks({
+          n: flow.rows,
+          heightsPx: heights.map((l) => linesToPx(l, cell.cellH, chrome)),
+          rows: layout?.rows,
+          fit: fitRows,
+          minPx: rowMinPx,
+          evenPx: Math.max(
+            (paneH - (flow.rows - 1) * gapPx) / Math.max(flow.rows, 1),
+            rowMinPx,
+          ),
+        }),
       )
     : defaultGridStyle({
         count,
@@ -233,6 +272,25 @@ export function TemplateCanvas({
         twoUpFits,
         tileMinH: PREVIEW_TILE_MIN_H,
       });
+
+  // The lines between the boxes drag the same way the Terminals grid's do
+  // with its tiles unlocked (see useGridSplitters), and what they set is the
+  // template's own sizes.
+  const { dragging: sizing, begin: beginSplit } = useGridSplitters({
+    gridRef,
+    flow,
+    cell,
+    minRowPx: splitMinPx,
+    minColPx: Math.round(GRID_FLOOR_COLS * cell.cellW) + TILE_BORDER_X,
+    minWidth: minWidthPct / 100,
+    fitRows,
+    toLines: (px) => pxToLines(px, cell.cellH, chrome),
+    onRows: (h) => onLayout(layoutWithHeights(layout, count, h)),
+    onWidths: (w) => onLayout(layoutWithWidths(layout, count, w)),
+  });
+  // A box is also something to drag somewhere else, so a mousedown on one of
+  // its lines must not turn into moving the box.
+  const splitDown = useRef(false);
 
   // Which box the pointer is currently over, so a drop has somewhere visible
   // to land. Null when the drag is elsewhere or there is none.
@@ -287,7 +345,7 @@ export function TemplateCanvas({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div ref={paneRef} className="min-h-0 flex-1 overflow-auto p-2">
-        <div className="grid h-full min-h-0 gap-2" style={gridStyle}>
+        <div ref={gridRef} className="grid h-full min-h-0 gap-2" style={gridStyle}>
           {items.map((item, i) => {
             const r = resolveItem(item, sources);
             const span = flow
@@ -303,8 +361,12 @@ export function TemplateCanvas({
             return (
               <div
                 key={itemKey(item, i)}
-                draggable
+                draggable={!sizing}
                 onDragStart={(e) => {
+                  if (splitDown.current) {
+                    e.preventDefault();
+                    return;
+                  }
                   e.dataTransfer.effectAllowed = "move";
                   e.dataTransfer.setData("text/plain", `${DRAG_BOX_PREFIX}${i}`);
                   setDragIndex(i);
@@ -378,6 +440,26 @@ export function TemplateCanvas({
                     <TriangleAlertIcon className="mt-px h-3 w-3 shrink-0" />
                     <span>{r.missing}</span>
                   </span>
+                )}
+                {flow && count >= 2 && flow.tiles[i] && (
+                  <SplitHandles
+                    tile={flow.tiles[i]}
+                    rows={flow.rows}
+                    left={flow.leftLine[i] ?? null}
+                    right={flow.rightLine[i] ?? null}
+                    fitRows={fitRows}
+                    onBegin={(e, line) => {
+                      splitDown.current = true;
+                      window.addEventListener(
+                        "mouseup",
+                        () => {
+                          splitDown.current = false;
+                        },
+                        { once: true },
+                      );
+                      beginSplit(e, line);
+                    }}
+                  />
                 )}
               </div>
             );
@@ -465,8 +547,8 @@ export function TemplateCanvas({
           <>
             {" "}
             {autoGrid
-              ? "Keeps the tile widths and row heights saved from the Terminals grid."
-              : "Has sizes saved from the Terminals grid; a size pinned in Settings > Grid is used instead."}{" "}
+              ? "Keeps the tile widths and row heights set here or on the Terminals grid."
+              : "Has sizes of its own; a size pinned in Settings > Grid is used instead."}{" "}
             <button
               type="button"
               onClick={onForgetLayout}

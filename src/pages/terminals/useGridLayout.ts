@@ -13,6 +13,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   GRID_PREFS_EVENT,
   isAutoGrid,
+  loadGridFitRows,
+  loadGridMinHeight,
   loadGridMinWidth,
   loadGridPrefs,
   loadGridStrict,
@@ -24,7 +26,6 @@ import {
 } from "@/lib/gridPrefs";
 import {
   GRID_FLOOR_COLS,
-  GRID_MIN_TILE_ROWS,
   GRID_SPLIT_MIN_ROWS,
   TILE_BORDER_X,
   TILE_BORDER_Y,
@@ -32,6 +33,9 @@ import {
   flowGridStyle,
   flowLayout,
   flowPlace,
+  flowRowTracks,
+  gridHeaderH,
+  linesToPx,
   tileSpan as tileSpanFor,
   twoUpThresholdPx,
   type Flow,
@@ -57,14 +61,7 @@ const GRID_LOCKED_KEY = "terminal-grid-locked";
  * not had to learn a new import. */
 export { TILE_BORDER_X, TILE_BORDER_Y };
 
-/** The real height of a tile's title bar. Also not a constant: the header is
- * `py-1` plus a `text-sm` line box plus 3px of border, all of which scale with
- * the app font, so a hard-coded 30 was only ever right at a 16px app font (this
- * returns 31 there, and 38 at 20px). Zero when the titles are hidden, because
- * then there is no header to make room for. */
-function gridHeaderH(appFontSize: number, hidden: boolean): number {
-  return hidden ? 0 : Math.round(1.75 * appFontSize) + 3;
-}
+
 /** How the open terminals are laid out below the tab strip: one pane at a time
  * (the default) or every pane tiled at once, mirroring the skill run panel. */
 export type TermLayout = "tabs" | "grid";
@@ -126,6 +123,10 @@ export type GridLayout = {
   slotIds: string[];
   /** Settings -> Grid's minimum tile width, as a fraction of the grid. */
   minWidth: number;
+  /** Settings -> Grid's "Fit rows to the window": a row line trades height
+   * between two rows (true) rather than setting one row's height and letting
+   * the grid scroll (false, the default). */
+  fitRows: boolean;
   /** Measured cell size for the current terminal font, for char <-> px maths. */
   cell: { cellW: number; cellH: number };
   /** A tile's title bar in px, for the char <-> px maths that has to allow for
@@ -295,11 +296,15 @@ export function useGridLayout({
   const [strictGrid, setStrictGrid] = useState<boolean>(loadGridStrict);
   const [rowFill, setRowFill] = useState<RowFill>(loadRowFill);
   const [minWidthPct, setMinWidthPct] = useState<number>(loadGridMinWidth);
+  const [minHeightLines, setMinHeightLines] = useState<number>(loadGridMinHeight);
+  const [fitRows, setFitRows] = useState<boolean>(loadGridFitRows);
   const reloadPrefs = useCallback(() => {
     setSavedPrefs(loadGridPrefs());
     setStrictGrid(loadGridStrict());
     setRowFill(loadRowFill());
     setMinWidthPct(loadGridMinWidth());
+    setMinHeightLines(loadGridMinHeight());
+    setFitRows(loadGridFitRows());
   }, []);
   // Adjusted on the visibility transition during render rather than in an
   // effect. `reloadPrefs` is synchronous (it reads localStorage), so in an
@@ -328,10 +333,16 @@ export function useGridLayout({
   // legible floor and a scroll to overflow into since the start; this is the
   // other half of that, on the axis that was missing it.
   const [paneW, setPaneW] = useState(0);
+  // And how tall, for the even share a new row gets once the rows have
+  // heights of their own (see flowRowTracks).
+  const [paneH, setPaneH] = useState(0);
   useEffect(() => {
     const el = paneRef.current;
     if (!el) return;
-    const measure = () => setPaneW(el.clientWidth);
+    const measure = () => {
+      setPaneW(el.clientWidth);
+      setPaneH(el.clientHeight);
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -425,7 +436,7 @@ export function useGridLayout({
   // always the same number and a tile can never outgrow the row holding it.
   const headerH = gridHeaderH(uiPrefs.appFontSize, hideGridHeaders);
   const tileMinH =
-    Math.round(GRID_MIN_TILE_ROWS * cell.cellH) + headerH + TILE_BORDER_Y;
+    Math.round(minHeightLines * cell.cellH) + headerH + TILE_BORDER_Y;
   const splitMinH =
     Math.round(GRID_SPLIT_MIN_ROWS * cell.cellH) + headerH + TILE_BORDER_Y;
   /** The pane's `gap-2` in pixels. Another rem, so another thing that is not a
@@ -533,7 +544,9 @@ export function useGridLayout({
   const hasSizes =
     flow !== null &&
     sizes !== null &&
-    (sizes.rows.length > 0 || slotIds.some((id) => id in sizes.widths));
+    (sizes.heights.length > 0 ||
+      (sizes.rows?.length ?? 0) > 0 ||
+      slotIds.some((id) => id in sizes.widths));
   const tileFloorH = hasSizes ? splitMinH : tileMinH;
   const splitGrid = gridMode && !lockedTiles && !customGrid && gridCount >= 2;
 
@@ -549,10 +562,23 @@ export function useGridLayout({
     // same arithmetic as the launch.
     if (!customGrid) {
       if (!flow) return undefined;
+      const chrome = headerH + TILE_BORDER_Y;
+      const minPx = gridCount <= 2 ? 0 : tileFloorH;
+      // The pane less its padding (`p-2`, the same rem as the gap) and the
+      // gaps between the rows.
+      const inner = paneH - 2 * gapPx - (flow.rows - 1) * gapPx;
       return flowGridStyle(
         flow,
-        sizes?.rows,
-        gridCount <= 2 ? "0" : `${tileFloorH}px`,
+        flowRowTracks({
+          n: flow.rows,
+          heightsPx: (sizes?.heights ?? []).map((l) =>
+            linesToPx(l, cell.cellH, chrome),
+          ),
+          rows: sizes?.rows,
+          fit: fitRows,
+          minPx,
+          evenPx: Math.max(inner / Math.max(flow.rows, 1), minPx),
+        }),
       );
     }
     const style: React.CSSProperties = {};
@@ -586,6 +612,9 @@ export function useGridLayout({
   }, [
     flow,
     sizes,
+    fitRows,
+    paneH,
+    gapPx,
     customGrid,
     gridCount,
     gridPrefs,
@@ -644,6 +673,7 @@ export function useGridLayout({
     flow,
     slotIds,
     minWidth,
+    fitRows,
     cell,
     headerH,
     tileMinH,

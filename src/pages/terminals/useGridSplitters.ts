@@ -1,11 +1,15 @@
 /**
  * Drag the lines between grid tiles, with the tiles unlocked.
  *
- * **Rows:** the line between two rows. One grows by what the other gives up,
- * and the grid still fills the pane. A drag starts from the heights the
- * browser has actually laid out (read back from the computed style, so a row
- * held at its legible floor is measured as it is, not as its `fr` says), and
- * hands the new heights back as fractions.
+ * **Rows:** by default the line under a row sets that row's height and
+ * nothing else's: the rows below move down, and once the rows are taller than
+ * the pane it scrolls. The last row's bottom edge is a line too. With
+ * Settings -> Grid's "Fit rows to the window" the line between two rows
+ * trades height between them instead, and the grid still fills the pane.
+ * Either way a drag starts from the heights the browser has actually laid
+ * out (read back from the computed style, so a row held at its floor is
+ * measured as it is), and every row's height comes back in lines, so the rows
+ * nobody touched keep the height they had.
  *
  * **Tiles side by side:** each row has its own widths (see lib/gridShape's
  * flowLayout), so a drag moves one row's line and no other. Between two tiles,
@@ -22,7 +26,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { normalizeTracks, type Flow, type FlowLine } from "@/lib/gridShape";
+import type { Flow, FlowLine } from "@/lib/gridShape";
 
 /** Which line: between row `index` and the next, or a line between tiles. */
 export type SplitLine =
@@ -65,6 +69,8 @@ export function useGridSplitters({
   minRowPx,
   minColPx,
   minWidth,
+  fitRows,
+  toLines,
   onRows,
   onWidths,
 }: {
@@ -78,8 +84,12 @@ export function useGridSplitters({
   minColPx: number;
   /** Settings -> Grid's minimum tile width, as a fraction of the grid. */
   minWidth: number;
-  /** The new row heights, as the drag crosses each cell. */
-  onRows: (rows: number[]) => void;
+  /** Rows always fill the pane: a line trades height between two rows. */
+  fitRows: boolean;
+  /** A row's height in px as lines of the terminal font. */
+  toLines: (px: number) => number;
+  /** Every row's height in lines, as the drag crosses each cell. */
+  onRows: (heights: number[]) => void;
   /** The new tile widths, as the drag crosses each cell. */
   onWidths: (widths: SlotWidths) => void;
 }) {
@@ -95,7 +105,8 @@ export function useGridSplitters({
       let d: Drag;
       if (line.axis === "rows") {
         const rows = trackPx(cs.gridTemplateRows);
-        if (line.index < 0 || line.index + 1 >= rows.length) return;
+        const last = fitRows ? rows.length - 2 : rows.length - 1;
+        if (line.index < 0 || line.index > last) return;
         d = { axis: "rows", index: line.index, rows, start: e.clientY };
       } else {
         const total = trackPx(cs.gridTemplateColumns).reduce((a, b) => a + b, 0);
@@ -114,7 +125,7 @@ export function useGridSplitters({
       lastStep.current = null;
       setDragging(true);
     },
-    [gridRef, flow],
+    [gridRef, flow, fitRows],
   );
 
   useEffect(() => {
@@ -125,18 +136,22 @@ export function useGridSplitters({
       if (!d) return;
       if (d.axis === "rows") {
         const a = d.rows[d.index]!;
-        const b = d.rows[d.index + 1]!;
-        // Whole cells, and never past either neighbour's floor. A pair that is
-        // already under the floor (a pane too small for both) stays as it is.
         let step = Math.round((e.clientY - d.start) / cell.cellH) * cell.cellH;
-        step = Math.max(Math.min(step, b - minRowPx), minRowPx - a);
-        if (a + b < 2 * minRowPx) step = 0;
+        const next = [...d.rows];
+        if (fitRows) {
+          // Whole cells, and never past either neighbour's floor. A pair that
+          // is already under the floor (a pane too small for both) stays.
+          const b = d.rows[d.index + 1]!;
+          step = Math.max(Math.min(step, b - minRowPx), minRowPx - a);
+          if (a + b < 2 * minRowPx) step = 0;
+          next[d.index + 1] = b - step;
+        } else {
+          step = Math.max(step, Math.min(minRowPx - a, 0));
+        }
         if (step === lastStep.current) return;
         lastStep.current = step;
-        const next = [...d.rows];
         next[d.index] = a + step;
-        next[d.index + 1] = b - step;
-        onRows(normalizeTracks(next));
+        onRows(next.map(toLines));
         return;
       }
 
@@ -180,7 +195,17 @@ export function useGridSplitters({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [dragging, cell, minRowPx, minColPx, minWidth, onRows, onWidths]);
+  }, [
+    dragging,
+    cell,
+    minRowPx,
+    minColPx,
+    minWidth,
+    fitRows,
+    toLines,
+    onRows,
+    onWidths,
+  ]);
 
   return { dragging, begin };
 }

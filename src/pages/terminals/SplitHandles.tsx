@@ -3,7 +3,8 @@ import type { SplitLine } from "@/pages/terminals/useGridSplitters";
 
 /**
  * The drag strips on a grid tile's edges while the tiles are unlocked. The top
- * and bottom strips move the line between this tile's rows and the next; the
+ * and bottom strips move the line above or below this tile's rows (and the
+ * bottom of the last row is a line too, unless the rows fit the window); the
  * left and right ones move the line beside it in its own row (see
  * useGridSplitters). The right edge of a tile with blank space beside it, or
  * alone in its row, has a strip too, which sets its width. Every other edge
@@ -17,6 +18,7 @@ export function SplitHandles({
   rows,
   left,
   right,
+  fitRows,
   onBegin,
 }: {
   tile: FlowTile;
@@ -24,10 +26,18 @@ export function SplitHandles({
   rows: number;
   left: FlowLine | null;
   right: FlowLine | null;
+  /** Rows always fill the pane (Settings -> Grid), so the grid's bottom edge
+   * is not a line. */
+  fitRows: boolean;
   onBegin: (e: React.MouseEvent, line: SplitLine) => void;
 }) {
   const lastRow = tile.row + tile.rowSpan - 1;
-  const rowsHint = "Drag to move the line between these rows";
+  const rowsHint = fitRows
+    ? "Drag to move the line between these rows"
+    : "Drag to set the height of the row above this line. The rows below move, and the grid scrolls when they do not fit";
+  const bottomHint = fitRows
+    ? rowsHint
+    : "Drag to set this row's height. The rows below move, and the grid scrolls when they do not fit";
   const pairHint =
     "Drag to move the line between these tiles. Past the minimum width (Settings > Grid), the tile on the right moves down a row";
   const edgeHint = "Drag to set this tile's width";
@@ -43,11 +53,11 @@ export function SplitHandles({
           onMouseDown={(e) => onBegin(e, { axis: "rows", index: tile.row - 1 })}
         />
       )}
-      {lastRow < rows - 1 && (
+      {(lastRow < rows - 1 || !fitRows) && (
         <Strip
           className="inset-x-0 bottom-0 h-1.5 cursor-row-resize"
           orientation="horizontal"
-          label={rowsHint}
+          label={bottomHint}
           onMouseDown={(e) => onBegin(e, { axis: "rows", index: lastRow })}
         />
       )}
