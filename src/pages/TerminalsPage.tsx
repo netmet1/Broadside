@@ -1048,7 +1048,11 @@ export function TerminalsPage({
       }),
     [onSetWorkspaceSizes, activeWorkspaceId, sessions, slotIds],
   );
-  const { dragging: draggingLine, begin: beginSplit } = useGridSplitters({
+  const {
+    dragging: draggingLine,
+    begin: beginSplit,
+    gapProps: splitGapProps,
+  } = useGridSplitters({
     gridRef: gridScrollRef,
     flow,
     cell,
@@ -3340,6 +3344,7 @@ export function TerminalsPage({
           !customGrid && gridMode && gridCount > 2 && "grid gap-2 overflow-auto",
         )}
         style={gridStyle}
+        {...splitGapProps}
       >
         {/* Every tile hidden but terminals still open: say so, or the grid
             reads as broken. The way out is offered here rather than only

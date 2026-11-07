@@ -1311,11 +1311,13 @@ export function HostsPage({
             icon={CameraIcon}
             title="Snapshots"
             actionLabel="Save open workspaces"
-            onAction={() => {
-              if (canSaveSnapshot) onSaveSnapshot();
-              else toast.info("Open some terminals on the Terminals tab first, then save them here.");
-            }}
-            actionHint="Save every open workspace, with its tabs, names and grid sizes, as a snapshot"
+            onAction={onSaveSnapshot}
+            actionDisabled={!canSaveSnapshot}
+            actionHint={
+              canSaveSnapshot
+                ? "Save every open workspace, with its tabs, names and grid sizes, as a snapshot"
+                : "Nothing is open on the Terminals tab to save. Open some workspaces first"
+            }
             description="A snapshot keeps every workspace you have open, with its tabs, name, colour and grid sizes. Open it later to get them all back at once."
             helpSection={HELP_TERMINALS}
             onOpenHelp={onOpenHelp}

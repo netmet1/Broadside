@@ -50,7 +50,8 @@ export function SplitHandles({
           className="inset-x-0 top-0 h-1.5 cursor-row-resize"
           orientation="horizontal"
           label={rowsHint}
-          onMouseDown={(e) => onBegin(e, { axis: "rows", index: tile.row - 1 })}
+          line={{ axis: "rows", index: tile.row - 1 }}
+          onBegin={onBegin}
         />
       )}
       {(lastRow < rows - 1 || !fitRows) && (
@@ -58,7 +59,8 @@ export function SplitHandles({
           className="inset-x-0 bottom-0 h-1.5 cursor-row-resize"
           orientation="horizontal"
           label={bottomHint}
-          onMouseDown={(e) => onBegin(e, { axis: "rows", index: lastRow })}
+          line={{ axis: "rows", index: lastRow }}
+          onBegin={onBegin}
         />
       )}
       {left && (
@@ -66,7 +68,8 @@ export function SplitHandles({
           className="inset-y-0 left-0 w-1.5 cursor-col-resize"
           orientation="vertical"
           label={sideHint(left)}
-          onMouseDown={(e) => onBegin(e, { axis: "cols", line: left })}
+          line={{ axis: "cols", line: left }}
+          onBegin={onBegin}
         />
       )}
       {right && (
@@ -74,33 +77,40 @@ export function SplitHandles({
           className="inset-y-0 right-0 w-1.5 cursor-col-resize"
           orientation="vertical"
           label={sideHint(right)}
-          onMouseDown={(e) => onBegin(e, { axis: "cols", line: right })}
+          line={{ axis: "cols", line: right }}
+          onBegin={onBegin}
         />
       )}
     </>
   );
 }
 
+/** `data-split` carries the line, so a press in the gap beside the strip can
+ * find it (see useGridSplitters' `gapProps`), which also lights it with
+ * `data-near`. */
 function Strip({
   className,
   orientation,
   label,
-  onMouseDown,
+  line,
+  onBegin,
 }: {
   className: string;
   orientation: "horizontal" | "vertical";
   label: string;
-  onMouseDown: (e: React.MouseEvent) => void;
+  line: SplitLine;
+  onBegin: (e: React.MouseEvent, line: SplitLine) => void;
 }) {
   return (
     <div
-      onMouseDown={onMouseDown}
+      onMouseDown={(e) => onBegin(e, line)}
       role="separator"
       aria-orientation={orientation}
       aria-label={label}
       title={label}
       data-resize-handle=""
-      className={`absolute z-20 hover:bg-primary/40 ${className}`}
+      data-split={JSON.stringify(line)}
+      className={`absolute z-20 hover:bg-primary/40 data-near:bg-primary/40 ${className}`}
     />
   );
 }

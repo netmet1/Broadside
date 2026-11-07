@@ -72,6 +72,11 @@ export function WorkspaceStrip({
   };
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** The name box, and whether Rename was picked from the right-click menu:
+   * the menu hands the focus back to the chip as it closes, after the box
+   * has taken it, so the box takes it back then. */
+  const renameRef = useRef<HTMLInputElement>(null);
+  const renameFromMenu = useRef(false);
   const chipRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // A plain wheel scrolls the row sideways. Left to itself it scrolls nothing,
@@ -217,6 +222,7 @@ export function WorkspaceStrip({
                 />
                 {renaming === w.id ? (
                   <input
+                    ref={renameRef}
                     autoFocus
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
@@ -239,12 +245,25 @@ export function WorkspaceStrip({
                 </span>
               </div>
             </ContextMenuTrigger>
-            <ContextMenuContent>
+            <ContextMenuContent
+              onCloseAutoFocus={(e) => {
+                if (!renameFromMenu.current) return;
+                renameFromMenu.current = false;
+                e.preventDefault();
+                renameRef.current?.focus();
+                renameRef.current?.select();
+              }}
+            >
               <ContextMenuLabel className="max-w-56 truncate">
                 {w.name}
               </ContextMenuLabel>
               <ContextMenuSeparator />
-              <ContextMenuItem onSelect={() => startRename(w)}>
+              <ContextMenuItem
+                onSelect={() => {
+                  renameFromMenu.current = true;
+                  startRename(w);
+                }}
+              >
                 <PencilIcon />
                 Rename
               </ContextMenuItem>

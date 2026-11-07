@@ -22,6 +22,15 @@
  *
  * Either way the step is a whole cell, the same as the locked drag, so the
  * terminals only resize when a row or column is crossed.
+ *
+ * **The gap between tiles** is part of the line too. The strips sit inside
+ * the tiles (a tile clips what overflows it), so on their own they are a few
+ * pixels either side of a gap that does nothing, and a press aimed at the
+ * line you can see lands in the gap. `gapProps` goes on the grid itself: a
+ * press there takes the nearest strip's line, and hovering there lights it.
+ *
+ * **Past the bottom:** while a row is dragged into the bottom of a grid that
+ * scrolls, the grid scrolls with it, so a tall row takes one drag.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -38,7 +47,16 @@ export type SplitLine =
 export type SlotWidths = Map<number, number | null>;
 
 type Drag =
-  | { axis: "rows"; index: number; rows: number[]; start: number }
+  | {
+      axis: "rows";
+      index: number;
+      rows: number[];
+      start: number;
+      /** What scrolls the grid, and how far it was scrolled at the start:
+       * scrolling during the drag counts as moving the pointer. */
+      scroller: HTMLElement | null;
+      scroll0: number;
+    }
   | {
       axis: "cols";
       line: FlowLine;
@@ -61,6 +79,46 @@ function trackPx(value: string): number[] {
 }
 
 const round = (v: number) => Math.round(v * 10000) / 10000;
+
+/** How far from a strip a press in the gap still counts as on it: the gap
+ * itself, plus a little. */
+const GAP_REACH_PX = 10;
+/** The band at the bottom of a scrolling grid that scrolls it during a row
+ * drag, and how fast it goes, in px a second: slow at the top of the band,
+ * up to the fastest at its bottom edge and beyond. By the clock, not by the
+ * frame, so a 144Hz screen scrolls no faster than a 60Hz one. */
+const EDGE_BAND_PX = 24;
+const EDGE_SLOW_PX_S = 150;
+const EDGE_FAST_PX_S = 600;
+
+/** The element that scrolls the grid: the grid itself on the Terminals tab,
+ * the pane around it in the Templates editor. No further up: past that is
+ * the app's own page scroll, which a row drag has no business moving. */
+function scrollerOf(el: HTMLElement): HTMLElement | null {
+  for (const n of [el, el.parentElement]) {
+    const o = n ? getComputedStyle(n).overflowY : "";
+    if (o === "auto" || o === "scroll") return n;
+  }
+  return null;
+}
+
+/** The strip nearest a point in the grid's gap, within reach, or null. A
+ * strip carries its line in `data-split`. */
+function stripNear(grid: HTMLElement, x: number, y: number): HTMLElement | null {
+  let best: HTMLElement | null = null;
+  let bestD = GAP_REACH_PX;
+  for (const el of grid.querySelectorAll<HTMLElement>("[data-split]")) {
+    const r = el.getBoundingClientRect();
+    const dx = Math.max(r.left - x, 0, x - r.right);
+    const dy = Math.max(r.top - y, 0, y - r.bottom);
+    const d = Math.hypot(dx, dy);
+    if (d <= bestD) {
+      best = el;
+      bestD = d;
+    }
+  }
+  return best;
+}
 
 export function useGridSplitters({
   gridRef,
@@ -96,6 +154,8 @@ export function useGridSplitters({
   const [dragging, setDragging] = useState(false);
   const drag = useRef<Drag | null>(null);
   const lastStep = useRef<number | null>(null);
+  /** The strip lit from the gap, so it can be put out again. */
+  const lit = useRef<HTMLElement | null>(null);
 
   const begin = useCallback(
     (e: React.MouseEvent, line: SplitLine) => {
@@ -107,7 +167,15 @@ export function useGridSplitters({
         const rows = trackPx(cs.gridTemplateRows);
         const last = fitRows ? rows.length - 2 : rows.length - 1;
         if (line.index < 0 || line.index > last) return;
-        d = { axis: "rows", index: line.index, rows, start: e.clientY };
+        const scroller = fitRows ? null : scrollerOf(grid);
+        d = {
+          axis: "rows",
+          index: line.index,
+          rows,
+          start: e.clientY,
+          scroller,
+          scroll0: scroller?.scrollTop ?? 0,
+        };
       } else {
         const total = trackPx(cs.gridTemplateColumns).reduce((a, b) => a + b, 0);
         if (!(total > 0)) return;
@@ -131,27 +199,68 @@ export function useGridSplitters({
   useEffect(() => {
     if (!dragging) return;
 
+    let lastY = 0;
+    let frame = 0;
+    let lastT = 0;
+
+    const rowsTo = (d: Extract<Drag, { axis: "rows" }>, y: number) => {
+      const a = d.rows[d.index]!;
+      const scrolled = (d.scroller?.scrollTop ?? 0) - d.scroll0;
+      let step = Math.round((y - d.start + scrolled) / cell.cellH) * cell.cellH;
+      const next = [...d.rows];
+      if (fitRows) {
+        // Whole cells, and never past either neighbour's floor. A pair that
+        // is already under the floor (a pane too small for both) stays.
+        const b = d.rows[d.index + 1]!;
+        step = Math.max(Math.min(step, b - minRowPx), minRowPx - a);
+        if (a + b < 2 * minRowPx) step = 0;
+        next[d.index + 1] = b - step;
+      } else {
+        step = Math.max(step, Math.min(minRowPx - a, 0));
+      }
+      if (step === lastStep.current) return;
+      lastStep.current = step;
+      next[d.index] = a + step;
+      onRows(next.map(toLines));
+    };
+
+    // Held in the band at the bottom of a grid that scrolls, the drag keeps
+    // going: scroll a little, then size the row as if the pointer had moved
+    // that far. The row grows, which makes room for the next scroll.
+    const edgeScroll = (t: number) => {
+      frame = 0;
+      const d = drag.current;
+      if (!d || d.axis !== "rows" || !d.scroller) return;
+      const r = d.scroller.getBoundingClientRect();
+      const into = lastY - (r.bottom - EDGE_BAND_PX);
+      if (into <= 0) {
+        lastT = 0;
+        return;
+      }
+      const dt = lastT ? Math.min(t - lastT, 50) : 16;
+      lastT = t;
+      const speed = Math.min(
+        EDGE_SLOW_PX_S + (into / EDGE_BAND_PX) * (EDGE_FAST_PX_S - EDGE_SLOW_PX_S),
+        EDGE_FAST_PX_S,
+      );
+      const by = Math.max(Math.round((speed * dt) / 1000), 1);
+      const before = d.scroller.scrollTop;
+      d.scroller.scrollTop = before + by;
+      // Nothing left to scroll yet (the grid ends at the row being dragged):
+      // grow the row as far as the scroll would have gone, which makes the
+      // room for the next frame to scroll into.
+      if (d.scroller.scrollTop === before) d.scroll0 -= by;
+      rowsTo(d, lastY);
+      frame = requestAnimationFrame(edgeScroll);
+    };
+
     const onMove = (e: MouseEvent) => {
       const d = drag.current;
       if (!d) return;
       if (d.axis === "rows") {
-        const a = d.rows[d.index]!;
-        let step = Math.round((e.clientY - d.start) / cell.cellH) * cell.cellH;
-        const next = [...d.rows];
-        if (fitRows) {
-          // Whole cells, and never past either neighbour's floor. A pair that
-          // is already under the floor (a pane too small for both) stays.
-          const b = d.rows[d.index + 1]!;
-          step = Math.max(Math.min(step, b - minRowPx), minRowPx - a);
-          if (a + b < 2 * minRowPx) step = 0;
-          next[d.index + 1] = b - step;
-        } else {
-          step = Math.max(step, Math.min(minRowPx - a, 0));
-        }
-        if (step === lastStep.current) return;
-        lastStep.current = step;
-        next[d.index] = a + step;
-        onRows(next.map(toLines));
+        lastY = e.clientY;
+        rowsTo(d, lastY);
+        if (!frame && d.scroller) frame = requestAnimationFrame(edgeScroll);
         return;
       }
 
@@ -191,6 +300,7 @@ export function useGridSplitters({
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => {
+      if (frame) cancelAnimationFrame(frame);
       document.body.style.userSelect = prevSelect;
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
@@ -207,5 +317,41 @@ export function useGridSplitters({
     onWidths,
   ]);
 
-  return { dragging, begin };
+  // A press or a hover in the gap between tiles. Only on the grid itself,
+  // never bubbled up from a tile, so a press inside a tile is left alone.
+  const light = useCallback((el: HTMLElement | null) => {
+    if (lit.current === el) return;
+    if (lit.current) delete lit.current.dataset.near;
+    if (el) el.dataset.near = "";
+    lit.current = el;
+  }, []);
+  const gapProps = {
+    onMouseDown: (e: React.MouseEvent<HTMLElement>) => {
+      if (e.button !== 0 || e.target !== e.currentTarget) return;
+      const line = stripNear(e.currentTarget, e.clientX, e.clientY)?.dataset
+        .split;
+      if (!line) return;
+      light(null);
+      begin(e, JSON.parse(line) as SplitLine);
+    },
+    onMouseMove: (e: React.MouseEvent<HTMLElement>) => {
+      if (drag.current) return;
+      const el =
+        e.target === e.currentTarget
+          ? stripNear(e.currentTarget, e.clientX, e.clientY)
+          : null;
+      light(el);
+      e.currentTarget.style.cursor = !el
+        ? ""
+        : el.getAttribute("aria-orientation") === "vertical"
+          ? "col-resize"
+          : "row-resize";
+    },
+    onMouseLeave: (e: React.MouseEvent<HTMLElement>) => {
+      light(null);
+      e.currentTarget.style.cursor = "";
+    },
+  };
+
+  return { dragging, begin, gapProps };
 }

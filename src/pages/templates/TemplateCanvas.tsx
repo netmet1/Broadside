@@ -12,6 +12,7 @@ import {
   GRID_PREFS_EVENT,
   isAutoGrid,
   loadGridFitRows,
+  loadGridMinHeight,
   loadGridMinWidth,
   loadGridPrefs,
   loadRowFill,
@@ -145,12 +146,15 @@ export function TemplateCanvas({
   const [rowFill, setRowFill] = useState<RowFill>(loadRowFill);
   const [minWidthPct, setMinWidthPct] = useState<number>(loadGridMinWidth);
   const [fitRows, setFitRows] = useState<boolean>(loadGridFitRows);
+  const [minHeightLines, setMinHeightLines] =
+    useState<number>(loadGridMinHeight);
   useEffect(() => {
     const reload = () => {
       setGridPrefs(loadGridPrefs());
       setRowFill(loadRowFill());
       setMinWidthPct(loadGridMinWidth());
       setFitRows(loadGridFitRows());
+      setMinHeightLines(loadGridMinHeight());
     };
     window.addEventListener(GRID_PREFS_EVENT, reload);
     window.addEventListener("storage", reload);
@@ -259,10 +263,11 @@ export function TemplateCanvas({
           rows: layout?.rows,
           fit: fitRows,
           minPx: rowMinPx,
-          evenPx: Math.max(
-            (paneH - (flow.rows - 1) * gapPx) / Math.max(flow.rows, 1),
-            rowMinPx,
-          ),
+          // Once rows have heights, a new one opens the way the grid would
+          // open it: an even share, never under the minimum tile height.
+          newMinPx:
+            count <= 2 ? 0 : linesToPx(minHeightLines, cell.cellH, chrome),
+          evenPx: (paneH - (flow.rows - 1) * gapPx) / Math.max(flow.rows, 1),
         }),
       )
     : defaultGridStyle({
@@ -276,7 +281,11 @@ export function TemplateCanvas({
   // The lines between the boxes drag the same way the Terminals grid's do
   // with its tiles unlocked (see useGridSplitters), and what they set is the
   // template's own sizes.
-  const { dragging: sizing, begin: beginSplit } = useGridSplitters({
+  const {
+    dragging: sizing,
+    begin: beginSplit,
+    gapProps,
+  } = useGridSplitters({
     gridRef,
     flow,
     cell,
@@ -345,7 +354,12 @@ export function TemplateCanvas({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div ref={paneRef} className="min-h-0 flex-1 overflow-auto p-2">
-        <div ref={gridRef} className="grid h-full min-h-0 gap-2" style={gridStyle}>
+        <div
+          ref={gridRef}
+          className="grid h-full min-h-0 gap-2"
+          style={gridStyle}
+          {...gapProps}
+        >
           {items.map((item, i) => {
             const r = resolveItem(item, sources);
             const span = flow

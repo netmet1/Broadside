@@ -577,7 +577,8 @@ export function useGridLayout({
           rows: sizes?.rows,
           fit: fitRows,
           minPx,
-          evenPx: Math.max(inner / Math.max(flow.rows, 1), minPx),
+          newMinPx: gridCount <= 2 ? 0 : tileMinH,
+          evenPx: inner / Math.max(flow.rows, 1),
         }),
       );
     }

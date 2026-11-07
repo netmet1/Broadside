@@ -280,6 +280,9 @@ export function pxToLines(px: number, cellH: number, chrome: number): number {
  *  - otherwise each row is as tall as it says, and the grid scrolls when they
  *    are taller than the pane. A row with no height yet gets `evenPx`, an
  *    even share of the pane.
+ * A row with no height of its own is never shorter than `newMinPx` (Settings
+ * -> Grid's minimum tile height): only a row someone dragged may go under it,
+ * down to `minPx`.
  */
 export function flowRowTracks({
   n,
@@ -287,6 +290,7 @@ export function flowRowTracks({
   rows,
   fit,
   minPx,
+  newMinPx = minPx,
   evenPx,
 }: {
   n: number;
@@ -294,14 +298,16 @@ export function flowRowTracks({
   rows?: number[] | null;
   fit: boolean;
   minPx: number;
+  newMinPx?: number;
   evenPx: number;
 }): string {
   const track = (i: number) => {
     if (heightsPx.length > 0) {
       const h = heightsPx[i];
-      if (!fit) return `${Math.round(Math.max(h ?? evenPx, minPx))}px`;
+      const floor = h === undefined ? Math.max(minPx, newMinPx) : minPx;
+      if (!fit) return `${Math.round(Math.max(h ?? evenPx, floor))}px`;
       const known = heightsPx.reduce((a, b) => a + b, 0) / heightsPx.length;
-      return `minmax(${minPx}px, ${Math.round(h ?? known)}fr)`;
+      return `minmax(${Math.round(floor)}px, ${Math.round(h ?? known)}fr)`;
     }
     return `minmax(${minPx}px, ${rows?.[i] ?? 1}fr)`;
   };

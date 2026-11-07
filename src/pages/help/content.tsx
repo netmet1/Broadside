@@ -697,11 +697,13 @@ export const SECTIONS: HelpSection[] = [
           </p>
           <p>
             A template saves the sessions and their order. It can also keep
-            each session's width and each row's height: saved from a grid whose
-            lines you dragged, or set by dragging the edges between the boxes
-            in the editor, the same way as on the Terminals grid. Widths are
-            shares of the window and heights are lines of text, so it looks the
-            same on a laptop or a wall of monitors. <Nav>Forget sizes</Nav>, on
+            the tile widths and row heights: saved from a grid whose lines you
+            dragged, or set by dragging the edges between the boxes in the
+            editor, the same way as on the Terminals grid. A box that would be
+            left narrower than the <Nav>Minimum tile width</Nav> moves down a
+            row, and a box you move to another place keeps its width. Widths are shares of the window
+            and row heights are lines of text, so it looks the same on a laptop
+            or a wall of monitors. <Nav>Forget sizes</Nav>, on
             the line under the canvas, drops them.
           </p>
           <H3>Names, and finding one again</H3>
@@ -1366,15 +1368,22 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Resize tiles together</Nav> in the <Nav>View</Nav> menu
               (Grid only). A tile's left and right edges then move the line
               between it and its neighbour in that row only: one grows and the
-              other shrinks.
+              other shrinks. You can grab a line by the gap between two tiles
+              as well as by either tile's edge.
             </li>
             <li>
-              A tile's bottom edge sets the height of its row, and its top edge
-              the height of the row above. The rows below move down, and when
+              A tile's bottom edge sets its row height, and its top edge the
+              row height of the row above. The rows below move down, and when
               the rows no longer fit the window the grid scrolls; no other tile
-              gets shorter. To have the rows always fit the window instead, so
-              the line between two rows trades height between them, tick{" "}
+              gets shorter. Drag a row past the bottom of the grid and the grid
+              scrolls with you. To have the rows always fit the window instead,
+              so the line between two rows trades row height between them, tick{" "}
               <Nav>Fit rows to the window</Nav> in <Nav>Settings → Grid</Nav>.
+            </li>
+            <li>
+              The mouse wheel over a terminal scrolls that terminal&apos;s
+              scrollback. To scroll the grid, use the wheel over the gap between
+              tiles, or the grid&apos;s scrollbar.
             </li>
             <li>
               Drag a tile wider until the one to its right would be narrower
@@ -1388,7 +1397,8 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Those sizes belong to the workspace, and each tab keeps its own
               width, so a new tab opens at the usual size. A new row gets an
-              even share of the window. They are kept in a template or a
+              even share of the window, and never less than the{" "}
+              <Nav>Minimum tile height</Nav>. They are kept in a template or a
               snapshot, or forgotten when Broadside closes.{" "}
               <Nav>Reset grid</Nav> evens them out. With{" "}
               <Nav>Columns across</Nav> or a tile size set in{" "}
@@ -1401,7 +1411,8 @@ export const SECTIONS: HelpSection[] = [
               and the tile <Nav>Item width</Nav> / <Nav>Item height</Nav> in
               characters. Tiles too wide for the window scroll sideways rather
               than shrink. <Nav>Minimum tile height</Nav> (13 lines by default)
-              is how short the grid lets tiles get before it scrolls instead;
+              is the smallest row height the grid gives tiles before it
+              scrolls instead (a row you drag can still go down to 4 lines);
               raise it if many terminals become too small to use. One or two
               terminals always fill the space whatever
               these say, and a column count larger than the number of open
