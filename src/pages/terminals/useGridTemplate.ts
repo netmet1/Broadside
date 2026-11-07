@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { GridTracks } from "@/lib/gridShape";
+import type { GridSizes } from "@/lib/gridShape";
 import { listTemplates, type Template } from "@/lib/tauri/templates";
 import {
+  layoutFromSizes,
   matchingTemplate,
-  sameTracks,
+  sameLayout,
   sessionTemplateItem,
 } from "@/pages/terminals/gridTemplate";
 import type { TermSession } from "@/pages/terminals/session";
@@ -36,7 +37,7 @@ export function useGridTemplate({
   gridMode,
   sessions,
   isLaidOut,
-  tracks,
+  sizes,
 }: {
   visible: boolean;
   gridMode: boolean;
@@ -45,7 +46,7 @@ export function useGridTemplate({
   /** Whether this session is a tile in the grid right now. */
   isLaidOut: (s: TermSession) => boolean;
   /** The grid's own sizes when they are in force, or null for an even split. */
-  tracks: GridTracks | null;
+  sizes: GridSizes | null;
 }) {
   const [templates, setTemplates] = useState<Template[] | null>(null);
   const [readCount, setReadCount] = useState(0);
@@ -71,9 +72,20 @@ export function useGridTemplate({
     () => (gridMode ? sessions.filter(isLaidOut) : []),
     [gridMode, sessions, isLaidOut],
   );
-  const items = useMemo(
-    () => tiles.flatMap((s) => sessionTemplateItem(s) ?? []),
+  const saved = useMemo(
+    () =>
+      tiles.flatMap((s) => {
+        const item = sessionTemplateItem(s);
+        return item ? [{ id: s.id, item }] : [];
+      }),
     [tiles],
+  );
+  const items = useMemo(() => saved.map((t) => t.item), [saved]);
+  // A width for each tile that is saved, so a serial console left out cannot
+  // shift the widths onto the wrong sessions.
+  const layout = useMemo(
+    () => layoutFromSizes(sizes, saved.map((t) => t.id)),
+    [sizes, saved],
   );
   const match =
     templates !== null && items.length >= 2
@@ -81,9 +93,11 @@ export function useGridTemplate({
       : null;
   const offered = templates !== null && items.length >= 2 && match === null;
   const sizesTo =
-    match !== null && tracks !== null && !sameTracks(match.layout, tracks)
+    match !== null &&
+    layout !== null &&
+    !sameLayout(match.layout, layout, items.length)
       ? match
       : null;
 
-  return { offered, sizesTo, items, layout: tracks, reload };
+  return { offered, sizesTo, items, layout, reload };
 }

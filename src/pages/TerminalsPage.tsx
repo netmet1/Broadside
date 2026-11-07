@@ -103,11 +103,14 @@ import { useControlsAutoHide } from "@/pages/terminals/useControlsAutoHide";
 import type { Workspace } from "@/pages/terminals/useWorkspaces";
 import { SplitHandles } from "@/pages/terminals/SplitHandles";
 import { HeldWorkspace } from "@/pages/terminals/HeldWorkspace";
-import { useGridSplitters } from "@/pages/terminals/useGridSplitters";
+import {
+  useGridSplitters,
+  type SlotWidths,
+} from "@/pages/terminals/useGridSplitters";
 import {
   GRID_FLOOR_COLS,
   TILE_BORDER_X,
-  type GridTracks,
+  type GridSizes,
 } from "@/lib/gridShape";
 import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
 import { copyName } from "@/pages/templates/copyName";
@@ -121,6 +124,7 @@ import {
   updateTemplate,
   type Template,
   type TemplateItem,
+  type TemplateLayout,
 } from "@/lib/tauri/templates";
 import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
@@ -247,8 +251,12 @@ type Props = {
   onNewWorkspace: () => void;
   onRenameWorkspace: (id: string, name: string) => void;
   onRecolorWorkspace: (id: string, color: string) => void;
-  /** Set how a workspace's grid shares the pane (null: evenly). */
-  onSetWorkspaceTracks: (id: string, tracks: GridTracks | null) => void;
+  /** Set how a workspace's grid shares the pane (null: evenly), outright or
+   * from what it has now. */
+  onSetWorkspaceSizes: (
+    id: string,
+    sizes: GridSizes | null | ((prev: GridSizes | null) => GridSizes | null),
+  ) => void;
   /** A held workspace's Connect was pressed (see useSnapshots). */
   onReleaseWorkspace: (id: string) => void;
   /** Ask for a name and save every open workspace as a snapshot. */
@@ -301,7 +309,7 @@ type Props = {
   onNewHost: () => void;
   /** Hand the grid on screen to the Templates tab as a new template, to be
    * named and saved there, with its sizes when its lines were dragged. */
-  onSaveAsTemplate: (items: TemplateItem[], layout: GridTracks | null) => void;
+  onSaveAsTemplate: (items: TemplateItem[], layout: TemplateLayout | null) => void;
   /** Open a saved template from the launcher's Templates section. App asks
    * where the tabs go when some are open already. */
   onOpenTemplate: (template: Template) => void;
@@ -335,7 +343,7 @@ export function TerminalsPage({
   onNewWorkspace,
   onRenameWorkspace,
   onRecolorWorkspace,
-  onSetWorkspaceTracks,
+  onSetWorkspaceSizes,
   onReleaseWorkspace,
   onSaveSnapshot,
   canSaveSnapshot,
@@ -885,7 +893,7 @@ export function TerminalsPage({
   // been dragged (or a template brought sizes). Kept on the workspace, so each
   // one keeps its own and a template or snapshot can hand them over.
   const shownWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
-  const shownTracks = shownWorkspace?.tracks ?? null;
+  const shownSizes = shownWorkspace?.sizes ?? null;
   // Opened from a snapshot with its sessions held: they were made without
   // connecting, and this workspace waits behind one Connect button until it is
   // pressed. Pressing it connects these tabs and no others.
@@ -899,9 +907,9 @@ export function TerminalsPage({
     for (const s of sessions) reconnectSession(s.id);
     onReleaseWorkspace(activeWorkspaceId);
   };
-  const clearTracks = useCallback(
-    () => onSetWorkspaceTracks(activeWorkspaceId, null),
-    [onSetWorkspaceTracks, activeWorkspaceId],
+  const clearSizes = useCallback(
+    () => onSetWorkspaceSizes(activeWorkspaceId, null),
+    [onSetWorkspaceSizes, activeWorkspaceId],
   );
 
   // Grid layout: which tiles, in what order, laid out how. See ./terminals/
@@ -927,9 +935,10 @@ export function TerminalsPage({
     lockedTiles,
     toggleLockedTiles,
     splitGrid,
-    hasTracks,
-    trackShape,
-    placement,
+    hasSizes,
+    flow,
+    slotIds,
+    minWidth,
     cell,
     headerH,
     splitMinH,
@@ -944,8 +953,8 @@ export function TerminalsPage({
     visible,
     maximized,
     paneRef: gridScrollRef,
-    tracks: shownTracks,
-    clearTracks,
+    sizes: shownSizes,
+    clearSizes,
   });
 
   // Save as template: the tiles on screen, offered as a new template unless a
@@ -959,12 +968,12 @@ export function TerminalsPage({
     gridMode,
     sessions,
     isLaidOut,
-    tracks: hasTracks ? shownTracks : null,
+    sizes: hasSizes ? shownSizes : null,
   });
   // The grid is a saved template's sessions with new sizes: the same button
   // writes the sizes to that template, there and then, and says so.
   const saveSizesTo = useCallback(
-    async (t: Template, layout: GridTracks | null) => {
+    async (t: Template, layout: TemplateLayout | null) => {
       try {
         await updateTemplate(t.id, {
           name: t.name,
@@ -1002,23 +1011,50 @@ export function TerminalsPage({
   });
   // Unlocked, the edges between tiles are lines to drag instead, and the sizes
   // belong to the workspace on screen. See ./terminals/useGridSplitters.
-  const onTracks = useCallback(
-    (t: GridTracks) => onSetWorkspaceTracks(activeWorkspaceId, t),
-    [onSetWorkspaceTracks, activeWorkspaceId],
+  const onRows = useCallback(
+    (rows: number[]) =>
+      onSetWorkspaceSizes(activeWorkspaceId, (prev) => ({
+        rows,
+        widths: prev?.widths ?? {},
+      })),
+    [onSetWorkspaceSizes, activeWorkspaceId],
+  );
+  // Widths are kept by tab. A closed tab's width goes when the next one is
+  // set, so the map holds this workspace's open tabs and nothing else.
+  const onWidths = useCallback(
+    (changes: SlotWidths) =>
+      onSetWorkspaceSizes(activeWorkspaceId, (prev) => {
+        const open = new Set(sessions.map((s) => s.id));
+        const widths: Record<string, number> = {};
+        for (const [id, w] of Object.entries(prev?.widths ?? {})) {
+          if (open.has(id)) widths[id] = w;
+        }
+        for (const [slot, w] of changes) {
+          const id = slotIds[slot];
+          if (!id) continue;
+          if (w == null) delete widths[id];
+          else widths[id] = w;
+        }
+        return { rows: prev?.rows ?? [], widths };
+      }),
+    [onSetWorkspaceSizes, activeWorkspaceId, sessions, slotIds],
   );
   const { dragging: draggingLine, begin: beginSplit } = useGridSplitters({
     gridRef: gridScrollRef,
+    flow,
     cell,
     minRowPx: splitMinH,
     minColPx: Math.round(GRID_FLOOR_COLS * cell.cellW) + TILE_BORDER_X,
-    onTracks,
+    minWidth,
+    onRows,
+    onWidths,
   });
   const resizing = resizingTiles || draggingLine;
   // Locked handles are pointless where a pinned tile size has no effect: in
   // Tabs, and at one or two tiles (which always take the full window by design).
   const canResizeTiles = gridMode && gridCount > 2 && !splitGrid;
   const sizeIsPinned =
-    gridPrefs.itemCols !== null || gridPrefs.itemRows !== null || hasTracks;
+    gridPrefs.itemCols !== null || gridPrefs.itemRows !== null || hasSizes;
 
   // Broadcast rail: pick targets and type a command without leaving the page,
   // so the panes you are watching are the ones that answer. Off by default;
@@ -3340,6 +3376,11 @@ export function TerminalsPage({
           const filtered =
             kindFilter.isHidden(s) || s.workspaceId !== activeWorkspaceId;
           const disconnected = isDown(s);
+          // This tile's place in the flow, when its edges are lines to drag.
+          const flowTile =
+            splitGrid && flow && !excluded && !filtered
+              ? flow.tiles[gridSlot.get(s.id) ?? 0]
+              : undefined;
           // The active tile's header mirrors the tab tint: a ~20% fill in the
           // tab's colour and a top bar in it, falling back to the theme accent
           // (with a foreground top bar) for tiles with no usable hue, which now
@@ -3598,12 +3639,15 @@ export function TerminalsPage({
               )}
               {/* Unlocked: every edge this tile shares with another is a line
                   to drag, top and left included, so a full-width tile under
-                  two others can be made shorter from its top. Outer edges get
-                  nothing: there is no neighbour to give or take the room. */}
-              {splitGrid && !excluded && !filtered && (
+                  two others can be made shorter from its top. So is the right
+                  edge of a tile with blank space beside it, or alone in its
+                  row, which sets its width. */}
+              {flowTile && flow && (
                 <SplitHandles
-                  place={placement(gridSlot.get(s.id) ?? 0)}
-                  shape={trackShape}
+                  tile={flowTile}
+                  rows={flow.rows}
+                  left={flow.leftLine[gridSlot.get(s.id) ?? 0] ?? null}
+                  right={flow.rightLine[gridSlot.get(s.id) ?? 0] ?? null}
                   onBegin={beginSplit}
                 />
               )}

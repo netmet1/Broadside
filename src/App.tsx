@@ -45,6 +45,7 @@ import {
   startupTemplate,
   type Template,
   type TemplateItem,
+  type TemplateLayout,
 } from "@/lib/tauri/templates";
 import type { HelpSectionId } from "@/pages/help/sections";
 import { BroadcastPage } from "@/pages/BroadcastPage";
@@ -91,7 +92,7 @@ import {
 } from "@/lib/tauri/hosts";
 import { onPtySudo, onPtySudoRejected } from "@/lib/tauri/pty";
 import { useWindowBlurredAttr } from "@/lib/windowFocus";
-import type { GridTracks } from "@/lib/gridShape";
+import { sizesFromLayout } from "@/pages/terminals/gridTemplate";
 import { OpenSnapshotDialog, SaveSnapshotDialog } from "@/components/SnapshotDialogs";
 import { useSnapshots } from "@/pages/terminals/useSnapshots";
 
@@ -118,6 +119,7 @@ function App() {
     activeWorkspaceId,
     create: createWorkspace,
     adoptIfBlank,
+    setSizes: setWorkspaceSizes,
     removeEmpty: removeEmptyWorkspace,
   } = ws;
   // Session ids with a live PTY connection (drives Hosts connected dots).
@@ -477,18 +479,35 @@ function App() {
       sessions: LaunchSession[],
       place: "front" | "end" | "new",
       connect: boolean,
-      from?: { name: string; color: string; layout?: GridTracks | null },
+      from?: {
+        name: string;
+        color: string;
+        items?: TemplateItem[];
+        layout?: TemplateLayout | null;
+      },
     ) => {
       if (sessions.length === 0) return;
       let workspaceId = activeWorkspaceId;
+      let ownWorkspace = false;
       if (place === "new") {
-        workspaceId = createWorkspace(from?.name, from?.color, {
-          tracks: from?.layout,
-        });
+        workspaceId = createWorkspace(from?.name, from?.color);
+        ownWorkspace = true;
       } else if (from) {
-        adoptIfBlank(from.name, from.color, { tracks: from.layout });
+        ownWorkspace = adoptIfBlank(from.name, from.color) !== null;
       }
       const made = termSessionsFor(sessions, workspaceId, connect, nextSeq);
+      if (ownWorkspace && from?.layout) {
+        // Widths are kept by tab, so they follow the tabs. A template that
+        // opened only some of its sessions keeps its row heights alone.
+        setWorkspaceSizes(
+          workspaceId,
+          sizesFromLayout(
+            from.layout,
+            made.map((m) => m.id),
+            sessions.length === from.items?.length,
+          ),
+        );
+      }
       setSessions((prev) =>
         place === "front" ? [...made, ...prev] : [...prev, ...made],
       );
@@ -496,7 +515,7 @@ function App() {
       setActiveSessionId(made[0].id);
       setPage("terminals");
     },
-    [nextSeq, activeWorkspaceId, createWorkspace, adoptIfBlank],
+    [nextSeq, activeWorkspaceId, createWorkspace, adoptIfBlank, setWorkspaceSizes],
   );
 
   /** Several templates' sessions, one after another, each into a workspace of
@@ -583,6 +602,7 @@ function App() {
     activeWorkspaceId,
     createWorkspace,
     adoptIfBlank,
+    setWorkspaceSizes,
   });
   const [savingSnapshot, setSavingSnapshot] = useState(false);
   const openSaveSnapshot = useCallback(() => setSavingSnapshot(true), []);
@@ -765,7 +785,7 @@ function App() {
   /** The Terminals tab's Save as template: a new template holding the grid on
    * screen, opened in the editor to be named and saved. */
   const saveGridAsTemplate = useCallback(
-    (items: TemplateItem[], layout: GridTracks | null) => {
+    (items: TemplateItem[], layout: TemplateLayout | null) => {
       setTemplateFocus((f) => ({
         template: null,
         items,
@@ -1147,7 +1167,7 @@ function App() {
           onNewWorkspace={ws.createAndShow}
           onRenameWorkspace={ws.rename}
           onRecolorWorkspace={ws.recolor}
-          onSetWorkspaceTracks={ws.setTracks}
+          onSetWorkspaceSizes={setWorkspaceSizes}
           onReleaseWorkspace={ws.release}
           canSaveSnapshot={snaps.canSave}
           onSaveSnapshot={openSaveSnapshot}

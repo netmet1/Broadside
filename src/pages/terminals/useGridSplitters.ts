@@ -1,30 +1,50 @@
 /**
- * Drag the line between two grid tiles, with the tiles unlocked: the tile on
- * one side grows by what the other gives up, and the grid still fills the
- * pane. A full-width tile under two others keeps its span; dragging its top
- * edge down makes the row above taller and it shorter (prompts135).
+ * Drag the lines between grid tiles, with the tiles unlocked.
  *
- * The grid's rows and columns are CSS tracks in `fr`. A drag starts from the
- * sizes the browser has actually laid out (read back from the computed style,
- * so a track held at its legible floor is measured as it is, not as the `fr`
- * says), moves pixels from one track to its neighbour, and hands the new sizes
- * back as fractions. The step is a whole cell, the same as the locked drag, so
- * the terminals on either side only resize when a row or column is crossed.
+ * **Rows:** the line between two rows. One grows by what the other gives up,
+ * and the grid still fills the pane. A drag starts from the heights the
+ * browser has actually laid out (read back from the computed style, so a row
+ * held at its legible floor is measured as it is, not as its `fr` says), and
+ * hands the new heights back as fractions.
+ *
+ * **Tiles side by side:** each row has its own widths (see lib/gridShape's
+ * flowLayout), so a drag moves one row's line and no other. Between two tiles,
+ * the left one grows by what the right one gives up; once the right one would
+ * be left at or under the minimum width it moves down to the next row, and the
+ * left one keeps the width it was dragged to, leaving blank space beside it.
+ * Dragging back brings it up again. The right edge of a tile
+ * with blank space beside it, or alone in its row, sets that tile's width and
+ * nothing else's.
+ *
+ * Either way the step is a whole cell, the same as the locked drag, so the
+ * terminals only resize when a row or column is crossed.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { normalizeTracks, type GridTracks } from "@/lib/gridShape";
+import { normalizeTracks, type Flow, type FlowLine } from "@/lib/gridShape";
 
-/** Which line: between row `index` and the next, or column `index` and the
- * next. */
-export type SplitLine = { axis: "rows" | "cols"; index: number };
+/** Which line: between row `index` and the next, or a line between tiles. */
+export type SplitLine =
+  | { axis: "rows"; index: number }
+  | { axis: "cols"; line: FlowLine };
 
-type Drag = SplitLine & {
-  rows: number[];
-  cols: number[];
-  start: number;
-};
+/** New widths by slot; null takes a tile's own width away, so it shares what
+ * its row has left. */
+export type SlotWidths = Map<number, number | null>;
+
+type Drag =
+  | { axis: "rows"; index: number; rows: number[]; start: number }
+  | {
+      axis: "cols";
+      line: FlowLine;
+      /** The grid's width, gaps left out: what a width's fraction is of. */
+      total: number;
+      /** The tiles' widths when the drag began, as fractions. */
+      a: number;
+      b: number;
+      start: number;
+    };
 
 /** A computed `grid-template-rows/columns`: the used size of every track, in
  * px ("312px 312.5px"). */
@@ -36,21 +56,32 @@ function trackPx(value: string): number[] {
     .filter((v) => Number.isFinite(v));
 }
 
+const round = (v: number) => Math.round(v * 10000) / 10000;
+
 export function useGridSplitters({
   gridRef,
+  flow,
   cell,
   minRowPx,
   minColPx,
-  onTracks,
+  minWidth,
+  onRows,
+  onWidths,
 }: {
   /** The element the tiles are laid out in. */
   gridRef: React.RefObject<HTMLDivElement | null>;
+  flow: Flow | null;
   cell: { cellW: number; cellH: number };
-  /** The narrowest a row / column may be dragged to, in px. */
+  /** The shortest a row may be dragged to, in px. */
   minRowPx: number;
+  /** The narrowest a tile may be dragged to, in px. */
   minColPx: number;
-  /** The new sizes, as the drag crosses each cell. */
-  onTracks: (tracks: GridTracks) => void;
+  /** Settings -> Grid's minimum tile width, as a fraction of the grid. */
+  minWidth: number;
+  /** The new row heights, as the drag crosses each cell. */
+  onRows: (rows: number[]) => void;
+  /** The new tile widths, as the drag crosses each cell. */
+  onWidths: (widths: SlotWidths) => void;
 }) {
   const [dragging, setDragging] = useState(false);
   const drag = useRef<Drag | null>(null);
@@ -59,26 +90,31 @@ export function useGridSplitters({
   const begin = useCallback(
     (e: React.MouseEvent, line: SplitLine) => {
       const grid = gridRef.current;
-      if (!grid) return;
+      if (!grid || !flow) return;
       const cs = getComputedStyle(grid);
-      const rows = trackPx(cs.gridTemplateRows);
-      const cols = trackPx(cs.gridTemplateColumns);
-      const sizes = line.axis === "rows" ? rows : cols;
-      if (line.index < 0 || line.index + 1 >= sizes.length) return;
+      let d: Drag;
+      if (line.axis === "rows") {
+        const rows = trackPx(cs.gridTemplateRows);
+        if (line.index < 0 || line.index + 1 >= rows.length) return;
+        d = { axis: "rows", index: line.index, rows, start: e.clientY };
+      } else {
+        const total = trackPx(cs.gridTemplateColumns).reduce((a, b) => a + b, 0);
+        if (!(total > 0)) return;
+        const l = line.line;
+        const a = flow.tiles[l.kind === "pair" ? l.left : l.slot]?.w;
+        const b = l.kind === "pair" ? flow.tiles[l.right]?.w : 0;
+        if (a === undefined || b === undefined) return;
+        d = { axis: "cols", line: l, total, a, b, start: e.clientX };
+      }
       // Don't let the mousedown reach the tile, which would select that
       // terminal, or start a text selection.
       e.preventDefault();
       e.stopPropagation();
-      drag.current = {
-        ...line,
-        rows,
-        cols,
-        start: line.axis === "rows" ? e.clientY : e.clientX,
-      };
+      drag.current = d;
       lastStep.current = null;
       setDragging(true);
     },
-    [gridRef],
+    [gridRef, flow],
   );
 
   useEffect(() => {
@@ -87,27 +123,46 @@ export function useGridSplitters({
     const onMove = (e: MouseEvent) => {
       const d = drag.current;
       if (!d) return;
-      const rowsAxis = d.axis === "rows";
-      const unit = rowsAxis ? cell.cellH : cell.cellW;
-      const min = rowsAxis ? minRowPx : minColPx;
-      const sizes = rowsAxis ? d.rows : d.cols;
-      const a = sizes[d.index]!;
-      const b = sizes[d.index + 1]!;
-      const raw = (rowsAxis ? e.clientY : e.clientX) - d.start;
-      // Whole cells, and never past either neighbour's floor. A pair that is
-      // already under the floor (a pane too small for both) stays as it is.
-      let step = Math.round(raw / unit) * unit;
-      step = Math.max(Math.min(step, b - min), min - a);
-      if (a + b < 2 * min) step = 0;
+      if (d.axis === "rows") {
+        const a = d.rows[d.index]!;
+        const b = d.rows[d.index + 1]!;
+        // Whole cells, and never past either neighbour's floor. A pair that is
+        // already under the floor (a pane too small for both) stays as it is.
+        let step = Math.round((e.clientY - d.start) / cell.cellH) * cell.cellH;
+        step = Math.max(Math.min(step, b - minRowPx), minRowPx - a);
+        if (a + b < 2 * minRowPx) step = 0;
+        if (step === lastStep.current) return;
+        lastStep.current = step;
+        const next = [...d.rows];
+        next[d.index] = a + step;
+        next[d.index + 1] = b - step;
+        onRows(normalizeTracks(next));
+        return;
+      }
+
+      // Side to side, in fractions of the grid's width, a whole cell a step.
+      const unit = cell.cellW / d.total;
+      const floor = Math.min(Math.max(minWidth, minColPx / d.total), 1);
+      let step = Math.round((e.clientX - d.start) / d.total / unit) * unit;
+      // The left tile never goes under the floor, and nothing goes past the
+      // grid's right side.
+      step = Math.min(Math.max(step, floor - d.a), 1 - d.a);
       if (step === lastStep.current) return;
       lastStep.current = step;
-      const next = [...sizes];
-      next[d.index] = a + step;
-      next[d.index + 1] = b - step;
-      onTracks({
-        rows: normalizeTracks(rowsAxis ? next : d.rows),
-        cols: normalizeTracks(rowsAxis ? d.cols : next),
-      });
+      const l = d.line;
+      if (l.kind === "edge") {
+        onWidths(new Map([[l.slot, round(d.a + step)]]));
+        return;
+      }
+      const right = d.b - step;
+      onWidths(
+        new Map([
+          [l.left, round(d.a + step)],
+          // At or under the floor, the right tile has no width of its own: it
+          // moves down a row and shares that one.
+          [l.right, right <= floor + 1e-6 ? null : round(right)],
+        ]),
+      );
     };
 
     const onUp = () => {
@@ -125,7 +180,7 @@ export function useGridSplitters({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [dragging, cell, minRowPx, minColPx, onTracks]);
+  }, [dragging, cell, minRowPx, minColPx, minWidth, onRows, onWidths]);
 
   return { dragging, begin };
 }

@@ -15,10 +15,14 @@ import {
   GRID_ITEM_COLS_MIN,
   GRID_ITEM_ROWS_MAX,
   GRID_ITEM_ROWS_MIN,
+  GRID_MIN_WIDTH_MAX,
+  GRID_MIN_WIDTH_MIN,
+  loadGridMinWidth,
   loadGridSeeds,
   resetGridSeeds,
   saveGridSeedCols,
   saveGridSeedItemCols,
+  saveGridMinWidth,
   saveGridSeedItemRows,
   saveGridStrict,
 } from "@/lib/gridPrefs";
@@ -38,6 +42,7 @@ import {
 export function GridSection({ id }: { id: string }) {
   const f = useGridFields();
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [minWidth, setMinWidth] = useState(loadGridMinWidth);
   const hint = useHint();
 
   return (
@@ -57,7 +62,8 @@ export function GridSection({ id }: { id: string }) {
       <p className="max-w-md text-xs text-muted-foreground">
         The Templates editor draws its preview from these same numbers, and
         offers the four below on the line under its canvas. There is one set of
-        them: a template stores no layout of its own.
+        them: a template keeps only the tile widths and row heights dragged on
+        the Terminals grid.
       </p>
       <div className="grid max-w-md gap-4">
         <label
@@ -89,6 +95,27 @@ export function GridSection({ id }: { id: string }) {
           </span>
         </label>
         <GridFields f={f} />
+        <div {...hint(
+          "With View > Resize tiles together off: drag the line between two tiles so the right one would be this narrow, and it moves down to the next row instead",
+        )}>
+          <SeedField
+            label="Minimum tile width"
+            unit="% of the grid"
+            min={GRID_MIN_WIDTH_MIN}
+            max={GRID_MIN_WIDTH_MAX}
+            value={minWidth}
+            onCommit={(v) => {
+              setMinWidth(v);
+              saveGridMinWidth(v);
+            }}
+          />
+          <p className="mt-1 max-w-md text-xs text-muted-foreground">
+            With Resize tiles together off (View menu), dragging the line
+            between two tiles stops a tile on the right this narrow: it moves
+            down to the next row, and the tile on the left keeps the width you
+            gave it. Default 15.
+          </p>
+        </div>
         <div className="border-t border-border/50 pt-3">
           <button
             type="button"

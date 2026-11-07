@@ -82,50 +82,221 @@ export function fitsTwoUp(paneW: number, threshold: number, was: boolean): boole
 export type TwoUpSplit = "cols" | "rows";
 
 /**
- * How the default grid's rows and columns share the pane, as relative sizes
- * (CSS `fr`), set by dragging the line between two tiles while the tiles are
- * not resized together. One number per track, top to bottom and left to right.
+ * How a workspace's grid is sized once a line between its tiles has been
+ * dragged with the tiles unlocked, or a template or snapshot brought sizes.
+ *
+ * `widths`: a tile's width as a fraction of the grid's width (0 to 1), by tab
+ * id. A tab without one takes an even share of what its row has left. Keyed
+ * by tab rather than by position, so a closed tab takes its width with it and
+ * a new one opens at the default.
+ *
+ * `rows`: each row's height relative to the others (CSS `fr`), top to bottom.
+ * By position: a grid with more rows than this gives the new ones an even
+ * share and one with fewer ignores the rest, so a row that comes and goes as
+ * a tile moves down and back keeps its height.
  *
  * Fractions rather than pixels or characters, so the same arrangement fits a
  * laptop and a wall of monitors, which is what lets a template or a snapshot
- * carry it. They only apply while the grid has exactly that many rows and
- * columns: three tiles in two columns is 2 x 2, and closing one makes it 1 x 2,
- * whose tracks these say nothing about.
+ * carry it.
  */
-export type GridTracks = { rows: number[]; cols: number[] };
+export type GridSizes = { rows: number[]; widths: Record<string, number> };
 
-/** How many rows and columns the default grid has for this many tiles. */
-export function gridTrackCounts({
-  count,
+/** One tile of a flowed grid: its row (and how many it spans, two only for
+ * the "tall" short-row fill), and its left edge and width as fractions of the
+ * grid's width. */
+export type FlowTile = { row: number; rowSpan: number; x: number; w: number };
+
+/** A line between tiles that a drag can move, side to side.
+ *  - `pair`: between two tiles in a row. One grows by what the other gives
+ *    up, and the right one moves down a row once it would be left at or under
+ *    the minimum width.
+ *  - `edge`: the right edge of the last tile in a row that is alone or has
+ *    blank space beside it. Only that tile changes. */
+export type FlowLine =
+  | { kind: "pair"; left: number; right: number }
+  | { kind: "edge"; slot: number };
+
+export type Flow = {
+  rows: number;
+  /** By slot. */
+  tiles: FlowTile[];
+  /** The line on each tile's left and right edge, by slot; null where a drag
+   * has nothing to move. */
+  leftLine: (FlowLine | null)[];
+  rightLine: (FlowLine | null)[];
+  /** Every distinct left and right edge, 0 to 1: the grid's column lines. */
+  edges: number[];
+};
+
+const EPS = 1e-6;
+
+/**
+ * Lay the tiles out in rows, in tab order, the way text wraps. `cols` is how
+ * many a row holds. A tile with a width keeps it, and the tiles without one
+ * share what their row has left. A tile goes onto the next row when the row
+ * is full, when its width does not fit, or when it (or a tile without a width
+ * already there) would be left at or under `min`.
+ *
+ * With no widths at all this is the default grid: `cols` to a row, and a
+ * short last row filled per the Grid setting. "Tall" is a span down into the
+ * last row, which only works while the row above is two tiles edge to edge,
+ * so it holds only while the tile under it has no width of its own.
+ *
+ * With one column every tile has a row to itself at full width, whatever its
+ * width says: a pane too narrow for two is too narrow for blank space.
+ */
+export function flowLayout({
+  widths,
   cols,
-  twoUpSplit,
-  twoUpFits,
+  min,
+  rowFill,
 }: {
-  count: number;
-  cols: number | null;
-  twoUpSplit: TwoUpSplit;
-  twoUpFits: boolean;
-}): { rows: number; cols: number } {
-  if (count <= 1) return { rows: 1, cols: 1 };
-  if (count === 2) {
-    return twoUpSplit === "cols" && twoUpFits
-      ? { rows: 1, cols: 2 }
-      : { rows: 2, cols: 1 };
+  /** By slot: a fraction of the grid's width, or null for none. */
+  widths: (number | null)[];
+  cols: number;
+  /** The narrowest a tile may be, as a fraction of the grid's width. */
+  min: number;
+  rowFill: RowFill;
+}): Flow {
+  const count = widths.length;
+  const c = Math.max(cols, 1);
+  const own = (i: number): number | null => {
+    const w = c < 2 ? null : (widths[i] ?? null);
+    return w == null ? null : Math.min(Math.max(w, 0), 1);
+  };
+
+  const rows: number[][] = [];
+  let cur: number[] = [];
+  let fixed = 0;
+  let free = 0;
+  for (let i = 0; i < count; i++) {
+    const w = own(i);
+    let fits = cur.length > 0 && cur.length < c;
+    if (fits) {
+      const left = 1 - fixed - (w ?? 0);
+      const sharing = free + (w == null ? 1 : 0);
+      fits = left > -EPS && (sharing === 0 || left / sharing > min + EPS);
+    }
+    if (!fits && cur.length > 0) {
+      rows.push(cur);
+      cur = [];
+      fixed = 0;
+      free = 0;
+    }
+    cur.push(i);
+    if (w == null) free++;
+    else fixed += w;
   }
-  const c = Math.max(cols ?? 1, 1);
-  return { rows: Math.ceil(count / c), cols: c };
+  if (cur.length > 0) rows.push(cur);
+
+  const tiles: FlowTile[] = [];
+  const lastRow = rows.length - 1;
+  rows.forEach((slots, r) => {
+    const sizes = slots.map(own);
+    const taken = sizes.reduce<number>((a, w) => a + (w ?? 0), 0);
+    const sharing = sizes.filter((w) => w == null).length;
+    let share = sharing > 0 ? Math.max(1 - taken, 0) / sharing : 0;
+    if (rowFill === "gaps" && r === lastRow && c >= 2) {
+      share = Math.min(share, 1 / c);
+    }
+    let x = 0;
+    slots.forEach((i, k) => {
+      const w = Math.max(Math.min(sizes[k] ?? share, 1 - x), 0);
+      tiles[i] = { row: r, rowSpan: 1, x, w };
+      x += w;
+    });
+  });
+
+  const leftLine = new Array<FlowLine | null>(count).fill(null);
+  const rightLine = new Array<FlowLine | null>(count).fill(null);
+  if (c >= 2) {
+    for (const slots of rows) {
+      const used = slots.reduce((a, i) => a + tiles[i]!.w, 0);
+      slots.forEach((i, k) => {
+        if (k > 0) leftLine[i] = { kind: "pair", left: slots[k - 1]!, right: i };
+        if (k < slots.length - 1) {
+          rightLine[i] = { kind: "pair", left: i, right: slots[k + 1]! };
+        } else if (slots.length === 1 || used < 1 - EPS) {
+          rightLine[i] = { kind: "edge", slot: i };
+        }
+      });
+    }
+  }
+
+  if (rowFill === "tall" && c === 2 && rows.length >= 2) {
+    const last = rows[lastRow]!;
+    const above = rows[lastRow - 1]!;
+    const aboveUsed = above.reduce((a, i) => a + tiles[i]!.w, 0);
+    if (
+      last.length === 1 &&
+      own(last[0]!) == null &&
+      above.length === 2 &&
+      aboveUsed > 1 - EPS
+    ) {
+      const [first, tall] = above as [number, number];
+      tiles[tall] = { ...tiles[tall]!, rowSpan: 2 };
+      tiles[last[0]!] = { row: lastRow, rowSpan: 1, x: 0, w: tiles[first]!.w };
+      rightLine[last[0]!] = { kind: "pair", left: first, right: tall };
+    }
+  }
+
+  const edges: number[] = [];
+  const sorted = [0, 1, ...tiles.flatMap((t) => [t.x, t.x + t.w])].sort(
+    (a, b) => a - b,
+  );
+  for (const v of sorted) {
+    if (edges.length === 0 || v - edges[edges.length - 1]! > 0.002) edges.push(v);
+  }
+  edges[edges.length - 1] = 1;
+
+  return { rows: rows.length, tiles, leftLine, rightLine, edges };
 }
 
-/** These tracks, if they were made for a grid of this shape; otherwise null,
- * and the grid shares the pane equally. */
-export function tracksFor(
-  tracks: GridTracks | null | undefined,
-  shape: { rows: number; cols: number },
-): GridTracks | null {
-  if (!tracks) return null;
-  return tracks.rows.length === shape.rows && tracks.cols.length === shape.cols
-    ? tracks
-    : null;
+/** `sizes` stretched or cut to `n` rows, the new ones at an even share. */
+export function flowRowSizes(
+  sizes: number[] | null | undefined,
+  n: number,
+): number[] {
+  return Array.from({ length: n }, (_, i) => sizes?.[i] ?? 1);
+}
+
+/** The grid's tracks for a flow: a column between each pair of neighbouring
+ * edges, and the rows at `rowSizes`, none shorter than `rowMin`. The columns
+ * are in hundredths so they sum to 100, because `fr` values that sum to under
+ * 1 leave part of the grid unused. */
+export function flowGridStyle(
+  flow: Flow,
+  rowSizes: number[] | null | undefined,
+  rowMin: string,
+): React.CSSProperties {
+  const cols = flow.edges
+    .slice(1)
+    .map((e, i) => Math.round((e - flow.edges[i]!) * 100000) / 1000);
+  return {
+    gridTemplateColumns: cols.map((f) => `minmax(0, ${f}fr)`).join(" "),
+    gridTemplateRows: flowRowSizes(rowSizes, flow.rows)
+      .map((f) => `minmax(${rowMin}, ${f}fr)`)
+      .join(" "),
+  };
+}
+
+/** Where the tile in `slot` sits in the grid `flowGridStyle` makes. */
+export function flowPlace(flow: Flow, slot: number): React.CSSProperties {
+  const t = flow.tiles[slot];
+  if (!t) return {};
+  const at = (v: number) => {
+    let best = 0;
+    flow.edges.forEach((e, i) => {
+      if (Math.abs(e - v) < Math.abs(flow.edges[best]! - v)) best = i;
+    });
+    return best;
+  };
+  const a = at(t.x);
+  const b = Math.max(at(t.x + t.w), a + 1);
+  return {
+    gridRow: `${t.row + 1} / span ${t.rowSpan}`,
+    gridColumn: `${a + 1} / ${b + 1}`,
+  };
 }
 
 /** Scale a list of sizes so they average 1: the same proportions, in numbers
@@ -135,69 +306,6 @@ export function normalizeTracks(sizes: number[]): number[] {
   if (!(sum > 0)) return sizes.map(() => 1);
   return sizes.map((s) => Math.round(((s * sizes.length) / sum) * 1000) / 1000);
 }
-
-function frTracks(sizes: number[], min: string): string {
-  return sizes.map((f) => `minmax(${min}, ${f}fr)`).join(" ");
-}
-
-/** Where a tile sits in the default grid: its first row and column, and how
- * many of each it spans. The same placement CSS grid's auto-flow gives the
- * spans `tileSpan` hands out, worked out so the page knows which of a tile's
- * edges are lines it shares with another tile. */
-export type TilePlacement = {
-  row: number;
-  col: number;
-  rowSpan: number;
-  colSpan: number;
-};
-
-export function tilePlacement({
-  slot,
-  count,
-  cols,
-  twoUpSplit,
-  twoUpFits,
-  rowFill,
-}: {
-  slot: number;
-  count: number;
-  cols: number | null;
-  twoUpSplit: TwoUpSplit;
-  twoUpFits: boolean;
-  rowFill: RowFill;
-}): TilePlacement {
-  const one = { rowSpan: 1, colSpan: 1 };
-  if (count <= 1) return { row: 0, col: 0, ...one };
-  if (count === 2) {
-    return twoUpSplit === "cols" && twoUpFits
-      ? { row: 0, col: slot, ...one }
-      : { row: slot, col: 0, ...one };
-  }
-  const c = Math.max(cols ?? 1, 1);
-  const plain = { row: Math.floor(slot / c), col: slot % c, ...one };
-  if (rowFill === "gaps" || c < 2 || count <= c) return plain;
-  const rows = Math.ceil(count / c);
-  const lastRowStart = (rows - 1) * c;
-  const lastRowCount = count - lastRowStart;
-  const gap = c - lastRowCount;
-  if (gap <= 0) return plain;
-  if (rowFill === "tall" && gap === 1) {
-    if (slot === lastRowStart - 1) {
-      return { row: rows - 2, col: c - 1, rowSpan: 2, colSpan: 1 };
-    }
-    return plain;
-  }
-  if (slot < lastRowStart) return plain;
-  // The stretched last row: each tile's span as tileSpan works it out, and its
-  // column is the spans of the tiles before it.
-  const spanOf = (nth: number) =>
-    Math.floor(c / lastRowCount) + (nth < c % lastRowCount ? 1 : 0);
-  const nth = slot - lastRowStart;
-  let col = 0;
-  for (let i = 0; i < nth; i++) col += spanOf(i);
-  return { row: rows - 1, col, rowSpan: 1, colSpan: spanOf(nth) };
-}
-
 /**
  * The tracks for the **default** (nothing pinned) grid.
  *
@@ -212,8 +320,9 @@ export function tilePlacement({
  * row. `minmax(floor, 1fr)` shares the pane when the rows fit and holds the
  * legible floor and scrolls when they do not.
  *
- * `tracks`, when they fit this shape, share the pane unequally instead (see
- * GridTracks): the same floors, other proportions.
+ * This is the grid the Templates editor previews when a size is pinned in
+ * Settings. The Terminals tab's own default grid is `flowLayout`, which can
+ * also hold the widths and heights dragged with the tiles unlocked.
  */
 export function defaultGridStyle({
   count,
@@ -221,7 +330,6 @@ export function defaultGridStyle({
   twoUpSplit,
   twoUpFits,
   tileMinH,
-  tracks,
 }: {
   count: number;
   /** The column count for three or more tiles. Null falls back to one. */
@@ -229,22 +337,11 @@ export function defaultGridStyle({
   twoUpSplit: TwoUpSplit;
   twoUpFits: boolean;
   tileMinH: number;
-  tracks?: GridTracks | null;
 }): React.CSSProperties {
   if (count <= 1) {
     return {
       gridTemplateColumns: "minmax(0, 1fr)",
       gridTemplateRows: "minmax(0, 1fr)",
-    };
-  }
-  const own = tracksFor(
-    tracks,
-    gridTrackCounts({ count, cols, twoUpSplit, twoUpFits }),
-  );
-  if (own) {
-    return {
-      gridTemplateColumns: frTracks(own.cols, "0"),
-      gridTemplateRows: frTracks(own.rows, count === 2 ? "0" : `${tileMinH}px`),
     };
   }
   if (count === 2) {

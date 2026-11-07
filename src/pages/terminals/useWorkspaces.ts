@@ -28,7 +28,7 @@
 
 import { useCallback, useState } from "react";
 
-import type { GridTracks } from "@/lib/gridShape";
+import type { GridSizes } from "@/lib/gridShape";
 import type { TermSession } from "@/pages/terminals/session";
 
 export type Workspace = {
@@ -43,15 +43,16 @@ export type Workspace = {
   /** How this workspace's grid shares the pane, dragged with the tiles
    * unlocked or brought by a template. Null shares it equally. Per workspace,
    * because each one is its own wall of tiles. */
-  tracks: GridTracks | null;
+  sizes: GridSizes | null;
   /** Opened from a snapshot with its sessions held: they wait, not connected,
    * behind a Connect button over the grid until it is pressed. */
   held: boolean;
 };
 
-/** What a new workspace is given beyond its name: grid sizes, and whether its
- * sessions are held (see Workspace). */
-export type WorkspaceExtras = { tracks?: GridTracks | null; held?: boolean };
+/** What a new workspace is given beyond its name: whether its sessions are
+ * held (see Workspace). Its grid sizes follow with `setSizes`, once its tabs
+ * exist, because they are kept by tab. */
+export type WorkspaceExtras = { held?: boolean };
 
 function freshWorkspace(n: number): Workspace {
   return {
@@ -59,7 +60,7 @@ function freshWorkspace(n: number): Workspace {
     name: `Workspace ${n}`,
     color: "",
     named: false,
-    tracks: null,
+    sizes: null,
     held: false,
   };
 }
@@ -149,7 +150,7 @@ export function useWorkspaces({
             name: "Workspace 1",
             color: "",
             named: false,
-            tracks: null,
+            sizes: null,
             held: false,
           },
         ];
@@ -185,7 +186,7 @@ export function useWorkspaces({
    * (a tab made active in it brings it forward by rule 1). */
   const create = useCallback(
     (name?: string, color?: string, extras?: WorkspaceExtras): string => {
-      const more = { tracks: extras?.tracks ?? null, held: extras?.held ?? false };
+      const more = { sizes: null, held: extras?.held ?? false };
       const ws: Workspace = name
         ? {
             id: crypto.randomUUID(),
@@ -226,12 +227,23 @@ export function useWorkspaces({
     );
   }, []);
 
-  /** Set how a workspace's grid shares the pane (null: equally). */
-  const setTracks = useCallback((id: string, tracks: GridTracks | null) => {
-    setWorkspaces((prev) =>
-      prev.map((w) => (w.id === id ? { ...w, tracks } : w)),
-    );
-  }, []);
+  /** Set how a workspace's grid shares the pane (null: equally), outright or
+   * from what it has now. */
+  const setSizes = useCallback(
+    (
+      id: string,
+      sizes: GridSizes | null | ((prev: GridSizes | null) => GridSizes | null),
+    ) => {
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === id
+            ? { ...w, sizes: typeof sizes === "function" ? sizes(w.sizes) : sizes }
+            : w,
+        ),
+      );
+    },
+    [],
+  );
 
   /** A held workspace's Connect was pressed: it is an ordinary one now. */
   const release = useCallback((id: string) => {
@@ -271,7 +283,7 @@ export function useWorkspaces({
                 name,
                 color,
                 named: true,
-                tracks: extras?.tracks ?? null,
+                sizes: null,
                 held: extras?.held ?? false,
               }
             : w,
@@ -308,7 +320,7 @@ export function useWorkspaces({
     createAndShow,
     rename,
     recolor,
-    setTracks,
+    setSizes,
     release,
     reorder,
     adoptIfBlank,
