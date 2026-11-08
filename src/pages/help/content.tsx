@@ -700,7 +700,7 @@ export const SECTIONS: HelpSection[] = [
           <p>
             A template saves the sessions and their order. It can also keep
             the tile widths and row heights: saved from a grid whose lines you
-            dragged, or set by dragging the edges between the boxes in the
+            dragged, or set by dragging the lines between the boxes in the
             editor, the same way as on the Terminals grid. A box that would be
             left narrower than the <Nav>Minimum tile width</Nav> moves down a
             row, and a box you move to another place keeps its width. Widths are shares of the window
@@ -1369,17 +1369,17 @@ export const SECTIONS: HelpSection[] = [
             <li>
               To give some tiles more room than others, untick{" "}
               <Nav>Resize tiles together</Nav> in the <Nav>View</Nav> menu
-              (Grid only). A tile's left and right edges then move the line
-              between it and its neighbour in that row only: one grows and the
-              other shrinks. You can grab a line by the gap between two tiles
-              as well as by either tile's edge. Unticking it also drops a size
+              (Grid only). Each line between two tiles is then a handle in the
+              gap, which lights when the pointer is over it. Dragging the line
+              beside a tile moves it in that row only: one tile grows and the
+              other shrinks. Unticking it also drops a size
               dragged while it was ticked, so the lines are there at once; a
               size typed in <Nav>Settings → Grid</Nav> stays, and Broadside
               says so with a <Nav>Reset grid</Nav> button.
             </li>
             <li>
-              A tile's bottom edge sets its row height, and its top edge the
-              row height of the row above. The rows below move down, and when
+              The line under a row (the gap below it, or the bottom edge of
+              the last row) sets that row's height. The rows below move down, and when
               the rows no longer fit the window the grid scrolls; no other tile
               gets shorter. Drag a row past the bottom of the grid and the grid
               scrolls with you. To have the rows always fit the window instead,

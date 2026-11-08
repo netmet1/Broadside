@@ -23,11 +23,11 @@
  * Either way the step is a whole cell, the same as the locked drag, so the
  * terminals only resize when a row or column is crossed.
  *
- * **The gap between tiles** is part of the line too. The strips sit inside
- * the tiles (a tile clips what overflows it), so on their own they are a few
- * pixels either side of a gap that does nothing, and a press aimed at the
- * line you can see lands in the gap. `gapProps` goes on the grid itself: a
- * press there takes the nearest strip's line, and hovering there lights it.
+ * **The gap between tiles** is the line. Each line has one handle, centred
+ * on the gap and reaching a little into the tiles either side (see
+ * SplitHandles). What the handles leave, where a row line meets a column line
+ * or past a handle's end, is covered by `gapProps` on the grid itself: a press
+ * there takes the nearest handle's line, and hovering there lights it.
  *
  * **Past the bottom:** while a row is dragged into the bottom of a grid that
  * scrolls, the grid scrolls with it, so a tall row takes one drag.

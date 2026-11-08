@@ -3422,11 +3422,6 @@ export function TerminalsPage({
           const filtered =
             kindFilter.isHidden(s) || s.workspaceId !== activeWorkspaceId;
           const disconnected = isDown(s);
-          // This tile's place in the flow, when its edges are lines to drag.
-          const flowTile =
-            splitGrid && flow && !excluded && !filtered
-              ? flow.tiles[gridSlot.get(s.id) ?? 0]
-              : undefined;
           // The active tile's header mirrors the tab tint: a ~20% fill in the
           // tab's colour and a top bar in it, falling back to the theme accent
           // (with a foreground top bar) for tiles with no usable hue, which now
@@ -3683,24 +3678,16 @@ export function TerminalsPage({
                   />
                 </>
               )}
-              {/* Unlocked: every edge this tile shares with another is a line
-                  to drag, top and left included, so a full-width tile under
-                  two others can be made shorter from its top. So is the right
-                  edge of a tile with blank space beside it, or alone in its
-                  row, which sets its width. */}
-              {flowTile && flow && (
-                <SplitHandles
-                  tile={flowTile}
-                  rows={flow.rows}
-                  left={flow.leftLine[gridSlot.get(s.id) ?? 0] ?? null}
-                  right={flow.rightLine[gridSlot.get(s.id) ?? 0] ?? null}
-                  fitRows={fitRows}
-                  onBegin={beginSplit}
-                />
-              )}
             </div>
           );
         })}
+        {/* Unlocked: every line between tiles is a handle to drag, one per
+            line, centred on the gap. So is the right edge of a tile with
+            blank space beside it, or alone in its row, which sets its width.
+            Laid out by the grid beside the tiles, not inside them. */}
+        {splitGrid && flow && (
+          <SplitHandles flow={flow} fitRows={fitRows} onBegin={beginSplit} />
+        )}
       </div>
       </div>
       </div>
