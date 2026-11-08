@@ -98,6 +98,7 @@ export function useSnapshots({
         color: w.color,
         named: w.named,
         layout: layoutFromSizes(w.sizes, saved.map((t) => t.id)),
+        view: w.view,
         items: saved.map((t) => t.item),
       });
     }
@@ -168,7 +169,7 @@ export function useSnapshots({
       snapshot.workspaces.forEach((w, i) => {
         const plan = plans[i];
         if (!plan || plan.sessions.length === 0) return;
-        const extras = { held };
+        const extras = { held, view: w.view };
         let id: string | null = null;
         if (!usedBlank) {
           // An empty, unnamed workspace on screen takes the first one, as it

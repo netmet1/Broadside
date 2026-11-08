@@ -13,6 +13,9 @@ export type SnapshotWorkspace = {
   color: string;
   named: boolean;
   layout: TemplateLayout | null;
+  /** Tabs one at a time, or the grid. Absent in a snapshot taken before each
+   * workspace had its own, which then opens the way a new workspace would. */
+  view?: "tabs" | "grid";
   items: TemplateItem[];
 };
 

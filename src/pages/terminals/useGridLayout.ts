@@ -66,8 +66,20 @@ export { TILE_BORDER_X, TILE_BORDER_Y };
 
 
 /** How the open terminals are laid out below the tab strip: one pane at a time
- * (the default) or every pane tiled at once, mirroring the skill run panel. */
+ * (the default) or every pane tiled at once, mirroring the skill run panel.
+ * Each workspace has its own (see useWorkspaces). */
 export type TermLayout = "tabs" | "grid";
+
+/** The last layout chosen, which the first workspace starts in at launch, so
+ * a restart comes back to the layout that was in use. Workspaces themselves
+ * last only while Broadside runs. */
+export function loadLastLayout(): TermLayout {
+  try {
+    return localStorage.getItem(LAYOUT_KEY) === "grid" ? "grid" : "tabs";
+  } catch {
+    return "tabs";
+  }
+}
 
 export type GridLayout = {
   layout: TermLayout;
@@ -172,6 +184,8 @@ export type GridLayout = {
 };
 
 export function useGridLayout({
+  layout,
+  onLayout,
   sessions,
   filteredOut,
   visible,
@@ -180,6 +194,10 @@ export function useGridLayout({
   sizes,
   clearSizes,
 }: {
+  /** The shown workspace's layout. */
+  layout: TermLayout;
+  /** Change it, for the shown workspace. */
+  onLayout: (next: TermLayout) => void;
   sessions: TermSession[];
   /** Sessions the View menu's Filter is hiding. They claim no tile, exactly as
    * a tab hidden from the grid does, so the count, the slots and the short-row
@@ -196,17 +214,22 @@ export function useGridLayout({
   /** Put the shown workspace's sizes back to even (Reset grid). */
   clearSizes: () => void;
 }): GridLayout {
-  // Pane layout: one tab at a time (default) or every pane tiled like the skill
-  // run panel. Persisted in localStorage so it survives tab switches (the page
-  // stays mounted anyway) and program restarts. Maximizing always collapses to
-  // the single fullscreen pane, so grid only applies when not maximized.
-  const [layout, setLayout] = useState<TermLayout>(() =>
-    localStorage.getItem(LAYOUT_KEY) === "grid" ? "grid" : "tabs",
+  // Pane layout: one tab at a time or every pane tiled like the skill run
+  // panel. The shown workspace's own, kept with the workspace. The last one
+  // chosen is also remembered here, for the first workspace after a restart.
+  // Maximizing always collapses to the single fullscreen pane, so grid only
+  // applies when not maximized.
+  const chooseLayout = useCallback(
+    (next: TermLayout) => {
+      onLayout(next);
+      try {
+        localStorage.setItem(LAYOUT_KEY, next);
+      } catch {
+        // Only the next launch's starting layout is lost.
+      }
+    },
+    [onLayout],
   );
-  const chooseLayout = useCallback((next: TermLayout) => {
-    setLayout(next);
-    localStorage.setItem(LAYOUT_KEY, next);
-  }, []);
   const gridMode = layout === "grid" && !maximized;
 
   // Hide every grid tile's title bar for a denser, chrome-free wall of

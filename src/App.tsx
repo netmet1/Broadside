@@ -1167,6 +1167,7 @@ function App() {
           onRecolorWorkspace={ws.recolor}
           onSetWorkspaceSizes={setWorkspaceSizes}
           onReleaseWorkspace={ws.release}
+          onSetWorkspaceView={ws.setView}
           canSaveSnapshot={snaps.canSave}
           onSaveSnapshot={openSaveSnapshot}
           onReorderWorkspace={ws.reorder}

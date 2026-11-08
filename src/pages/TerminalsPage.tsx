@@ -118,7 +118,10 @@ import {
 import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
 import { copyName } from "@/pages/templates/copyName";
 import { useProfileActions } from "@/lib/useProfileActions";
-import { useGridLayout } from "@/pages/terminals/useGridLayout";
+import {
+  useGridLayout,
+  type TermLayout,
+} from "@/pages/terminals/useGridLayout";
 import {
   useGridResize,
 } from "@/pages/terminals/useGridResize";
@@ -262,6 +265,8 @@ type Props = {
   ) => void;
   /** A held workspace's Connect was pressed (see useSnapshots). */
   onReleaseWorkspace: (id: string) => void;
+  /** Tabs or Grid, for one workspace. */
+  onSetWorkspaceView: (id: string, view: TermLayout) => void;
   /** Ask for a name and save every open workspace as a snapshot. */
   onSaveSnapshot: () => void;
   canSaveSnapshot: boolean;
@@ -348,6 +353,7 @@ export function TerminalsPage({
   onRecolorWorkspace,
   onSetWorkspaceSizes,
   onReleaseWorkspace,
+  onSetWorkspaceView,
   onSaveSnapshot,
   canSaveSnapshot,
   onReorderWorkspace,
@@ -897,6 +903,12 @@ export function TerminalsPage({
   // one keeps its own and a template or snapshot can hand them over.
   const shownWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const shownSizes = shownWorkspace?.sizes ?? null;
+  // Tabs or Grid is the shown workspace's own.
+  const shownView: TermLayout = shownWorkspace?.view ?? "tabs";
+  const setShownView = useCallback(
+    (view: TermLayout) => onSetWorkspaceView(activeWorkspaceId, view),
+    [onSetWorkspaceView, activeWorkspaceId],
+  );
   // Opened from a snapshot with its sessions held: they were made without
   // connecting, and this workspace waits behind one Connect button until it is
   // pressed. Pressing it connects these tabs and no others.
@@ -952,6 +964,8 @@ export function TerminalsPage({
     customGrid,
     gridStyle,
   } = useGridLayout({
+    layout: shownView,
+    onLayout: setShownView,
     sessions: allSessions,
     filteredOut: gridFilteredOut,
     visible,
