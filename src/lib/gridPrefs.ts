@@ -25,6 +25,11 @@ const FIT_ROWS_KEY = "terminal-grid-fit-rows";
 const SEED_COLS_KEY = "terminal-grid-seed-cols";
 const SEED_ITEM_COLS_KEY = "terminal-grid-seed-item-cols";
 const SEED_ITEM_ROWS_KEY = "terminal-grid-seed-item-rows";
+/** What a drag last wrote into Item width / Item height with Strict off, so
+ * unticking View > Resize tiles together can take back a size that came from a
+ * drag and leave one that was typed. Any other write to the field drops it. */
+const DRAGGED_ITEM_COLS_KEY = "terminal-grid-dragged-item-cols";
+const DRAGGED_ITEM_ROWS_KEY = "terminal-grid-dragged-item-rows";
 
 /** Fired on this window whenever any grid pref is written.
  *
@@ -101,25 +106,64 @@ export function saveGridCols(v: number | null): void {
   writeField(COLS_KEY, v, GRID_COLS_MIN, GRID_COLS_MAX);
 }
 export function saveGridItemCols(v: number | null): void {
+  localStorage.removeItem(DRAGGED_ITEM_COLS_KEY);
   writeField(ITEM_COLS_KEY, v, GRID_ITEM_COLS_MIN, GRID_ITEM_COLS_MAX);
 }
 export function saveGridItemRows(v: number | null): void {
+  localStorage.removeItem(DRAGGED_ITEM_ROWS_KEY);
   writeField(ITEM_ROWS_KEY, v, GRID_ITEM_ROWS_MIN, GRID_ITEM_ROWS_MAX);
 }
 
+/** The same two writes, from a tile drag in the Terminals grid (Strict off).
+ * The value is also noted as dragged; see `forgetDraggedGridSize`. */
+export function saveDraggedGridItemCols(v: number): void {
+  const stored = writeField(ITEM_COLS_KEY, v, GRID_ITEM_COLS_MIN, GRID_ITEM_COLS_MAX);
+  localStorage.setItem(DRAGGED_ITEM_COLS_KEY, stored ?? "");
+}
+export function saveDraggedGridItemRows(v: number): void {
+  const stored = writeField(ITEM_ROWS_KEY, v, GRID_ITEM_ROWS_MIN, GRID_ITEM_ROWS_MAX);
+  localStorage.setItem(DRAGGED_ITEM_ROWS_KEY, stored ?? "");
+}
+
+/**
+ * Clear Item width and Item height where they still hold what a drag wrote,
+ * and leave them where someone typed a value in Settings since. Called when
+ * View > Resize tiles together is unticked: a size dragged with it ticked pins
+ * the whole grid, which is what kept the lines between tiles from appearing.
+ * Survives a restart, because with Strict off the dragged size does too.
+ */
+export function forgetDraggedGridSize(): void {
+  let changed = false;
+  for (const [key, mark] of [
+    [ITEM_COLS_KEY, DRAGGED_ITEM_COLS_KEY],
+    [ITEM_ROWS_KEY, DRAGGED_ITEM_ROWS_KEY],
+  ] as const) {
+    const dragged = localStorage.getItem(mark);
+    if (dragged !== null && localStorage.getItem(key) === dragged) {
+      localStorage.removeItem(key);
+      changed = true;
+    }
+    localStorage.removeItem(mark);
+  }
+  if (changed) announce();
+}
+
+/** Writes one field and returns what was stored (null when cleared). */
 function writeField(
   key: string,
   v: number | null,
   min: number,
   max: number,
-): void {
+): string | null {
+  let stored: string | null = null;
   if (v === null) {
     localStorage.removeItem(key);
   } else {
-    const clamped = Math.min(Math.max(Math.round(v), min), max);
-    localStorage.setItem(key, String(clamped));
+    stored = String(Math.min(Math.max(Math.round(v), min), max));
+    localStorage.setItem(key, stored);
   }
   announce();
+  return stored;
 }
 
 /* ------------------------------------------------------------------ *

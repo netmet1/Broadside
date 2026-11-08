@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   GRID_PREFS_EVENT,
+  forgetDraggedGridSize,
   isAutoGrid,
   loadGridFitRows,
   loadGridMinHeight,
@@ -19,6 +20,8 @@ import {
   loadGridPrefs,
   loadGridStrict,
   loadRowFill,
+  saveDraggedGridItemCols,
+  saveDraggedGridItemRows,
   saveGridItemCols,
   saveGridItemRows,
   type GridPrefs,
@@ -110,7 +113,11 @@ export type GridLayout = {
   /** True (the default): dragging one tile resizes them all. False: a drag
    * moves the line between two rows or tiles. Remembered across restarts. */
   lockedTiles: boolean;
-  toggleLockedTiles: () => void;
+  /** Flip `lockedTiles`. Unticking also drops a tile size that came from a
+   * drag (see the hook), and returns what Settings -> Grid still pins after
+   * that, so the caller can say why the lines between tiles are not there.
+   * Null when nothing is pinned, and always null when ticking. */
+  toggleLockedTiles: () => GridPrefs | null;
   /** The lines between tiles are what a drag moves: unlocked, on the default
    * grid (nothing pinned in Settings), with two or more tiles. */
   splitGrid: boolean;
@@ -369,14 +376,14 @@ export function useGridLayout({
   const setDragCols = useCallback(
     (cols: number) => {
       setDragSize((s) => (s.cols === cols ? s : { ...s, cols }));
-      if (!strictGrid) saveGridItemCols(cols);
+      if (!strictGrid) saveDraggedGridItemCols(cols);
     },
     [strictGrid],
   );
   const setDragRows = useCallback(
     (rows: number) => {
       setDragSize((s) => (s.rows === rows ? s : { ...s, rows }));
-      if (!strictGrid) saveGridItemRows(rows);
+      if (!strictGrid) saveDraggedGridItemRows(rows);
     },
     [strictGrid],
   );
@@ -389,12 +396,24 @@ export function useGridLayout({
   const [lockedTiles, setLockedTiles] = useState(
     () => localStorage.getItem(GRID_LOCKED_KEY) !== "0",
   );
-  const toggleLockedTiles = useCallback(() => {
-    setLockedTiles((on) => {
-      localStorage.setItem(GRID_LOCKED_KEY, on ? "0" : "1");
-      return !on;
-    });
-  }, []);
+  //
+  // A tile size dragged with the tiles locked pins the whole grid (it is what
+  // `customGrid` below tests), and a pinned grid has no lines to drag. So
+  // unticking drops that size: this session's, and with Strict off the copy
+  // the drag wrote into Settings too, unless a value has been typed there
+  // since. A size typed in Settings is left alone; the caller is told it is
+  // there instead.
+  const toggleLockedTiles = useCallback((): GridPrefs | null => {
+    const next = !lockedTiles;
+    setLockedTiles(next);
+    localStorage.setItem(GRID_LOCKED_KEY, next ? "1" : "0");
+    if (next) return null;
+    setDragSize({ cols: null, rows: null });
+    forgetDraggedGridSize();
+    const left = loadGridPrefs();
+    setSavedPrefs(left);
+    return isAutoGrid(left) ? null : left;
+  }, [lockedTiles]);
   // Reset size means "tiles that fit the window", so it has to clear the
   // dragged size, any size pinned in Settings, and the shown workspace's own
   // sizes, or the button would appear to do nothing for someone who set one

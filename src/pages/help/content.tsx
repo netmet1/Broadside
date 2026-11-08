@@ -1372,7 +1372,10 @@ export const SECTIONS: HelpSection[] = [
               (Grid only). A tile's left and right edges then move the line
               between it and its neighbour in that row only: one grows and the
               other shrinks. You can grab a line by the gap between two tiles
-              as well as by either tile's edge.
+              as well as by either tile's edge. Unticking it also drops a size
+              dragged while it was ticked, so the lines are there at once; a
+              size typed in <Nav>Settings → Grid</Nav> stays, and Broadside
+              says so with a <Nav>Reset grid</Nav> button.
             </li>
             <li>
               A tile's bottom edge sets its row height, and its top edge the

@@ -1077,6 +1077,24 @@ export function TerminalsPage({
   const canResizeTiles = gridMode && gridCount > 2 && !splitGrid;
   const sizeIsPinned =
     gridPrefs.itemCols !== null || gridPrefs.itemRows !== null || hasSizes;
+  // Unticking Resize tiles together drops a dragged tile size by itself (see
+  // useGridLayout). What it leaves is a size typed in Settings -> Grid, which
+  // still pins the grid at three or more tiles, so the lines between tiles do
+  // not appear. Say so rather than leave the untick looking broken.
+  const onToggleLockedTiles = () => {
+    const pinned = toggleLockedTiles();
+    if (pinned === null || gridCount <= 2) return;
+    if (pinned.cols !== null) {
+      toast(
+        `Settings > Grid sets Columns across to ${pinned.cols}, so the lines between tiles can't be dragged. Set it back to Auto there to drag them.`,
+      );
+    } else {
+      toast(
+        "Settings > Grid sets a tile size, so the lines between tiles can't be dragged.",
+        { action: { label: "Reset grid", onClick: resetTileSize } },
+      );
+    }
+  };
 
   // Broadcast rail: pick targets and type a command without leaving the page,
   // so the panes you are watching are the ones that answer. Off by default;
@@ -2259,7 +2277,7 @@ export function TerminalsPage({
         sizeIsPinned={sizeIsPinned}
         resetTileSize={resetTileSize}
         lockedTiles={lockedTiles}
-        toggleLockedTiles={toggleLockedTiles}
+        toggleLockedTiles={onToggleLockedTiles}
         gridFullscreen={gridFullscreen}
         onGridFullscreen={onGridFullscreen}
         maximizeActive={() => {
