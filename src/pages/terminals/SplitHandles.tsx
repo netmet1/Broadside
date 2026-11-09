@@ -49,6 +49,11 @@ export function SplitHandles({
         const lastRow = tile.row + tile.rowSpan - 1;
         const right = flow.rightLine[slot] ?? null;
         const place = flowPlace(flow, slot);
+        // A line on the grid's own edge has the pane's padding beside it, not
+        // a gap and a tile, so its handle stops at the padding: reaching the
+        // usual 3px further made the pane scroll sideways (smoke test 87-3).
+        const atBottom = lastRow === flow.rows - 1;
+        const atRight = tile.x + tile.w > 1 - 1e-6;
         return (
           <Fragment key={slot}>
             {(lastRow < flow.rows - 1 || !fitRows) && (
@@ -57,7 +62,7 @@ export function SplitHandles({
                   ...place,
                   alignSelf: "end",
                   height: REACH,
-                  marginBottom: PAST,
+                  marginBottom: atBottom ? EDGE : PAST,
                 }}
                 className="cursor-row-resize"
                 orientation="horizontal"
@@ -72,7 +77,7 @@ export function SplitHandles({
                   ...place,
                   justifySelf: "end",
                   width: REACH,
-                  marginRight: PAST,
+                  marginRight: atRight ? EDGE : PAST,
                 }}
                 className="cursor-col-resize"
                 orientation="vertical"
@@ -97,6 +102,8 @@ const GAP = "0.5rem";
 const REACH = `calc(${GAP} + 2 * ${INSET})`;
 /** Out of the owning tile's area, over the gap, into the next tile. */
 const PAST = `calc(-1 * (${GAP} + ${INSET}))`;
+/** Out of the owning tile's area into the pane's padding, and no further. */
+const EDGE = `calc(-1 * ${GAP})`;
 
 /** `data-split` carries the line, so a press in the gap beside the strip can
  * find it (see useGridSplitters' `gapProps`), which also lights it with
