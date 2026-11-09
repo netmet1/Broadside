@@ -16,11 +16,14 @@ import { useRowDrag } from "@/lib/useRowDrag";
  * things its rows do (delete, duplicate, drag). Editing is not here: the pencil
  * hands the template to the editor beside it.
  *
- * Read when the List is shown, so it is current on every visit. `onChanged`
- * tells the page a delete, copy or reorder happened, so the editor's own list
- * (its template picker, the Home screen's recent ones) reads it again too.
+ * Read every time the List is shown (`visible`), so it is current on every
+ * visit: the page stays mounted behind the other tabs, and a list read once
+ * played a template with the sizes it had before the Terminals grid saved new
+ * ones to it (smoke test 89). `onChanged` tells the page a delete, copy or
+ * reorder happened, so the editor's own list (its template picker, the Home
+ * screen's recent ones) reads it again too.
  */
-export function useTemplateList(onChanged: () => void) {
+export function useTemplateList(visible: boolean, onChanged: () => void) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   // Which ones Multi-template would open. Checkboxes, like the hosts beside
@@ -37,6 +40,7 @@ export function useTemplateList(onChanged: () => void) {
   }, [onChanged]);
 
   useEffect(() => {
+    if (!visible) return;
     let alive = true;
     listTemplates()
       .then((list) => {
@@ -49,7 +53,7 @@ export function useTemplateList(onChanged: () => void) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [visible]);
 
   const toggle = useCallback((id: number) => {
     setCheckedIds((prev) => {

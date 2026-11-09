@@ -60,7 +60,7 @@ export function TemplateListView({
     runDelete,
     duplicate,
     drag,
-  } = useTemplateList(onChanged);
+  } = useTemplateList(visible, onChanged);
 
   usePageStatus(
     loading
