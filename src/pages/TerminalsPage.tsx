@@ -942,6 +942,8 @@ export function TerminalsPage({
     clearGridExcluded,
     hideGridHeaders,
     toggleGridHeaders,
+    gridLock,
+    toggleGridLock,
     twoUpSplit,
     toggleTwoUpSplit,
     gridPrefs,
@@ -1094,7 +1096,9 @@ export function TerminalsPage({
   const resizing = resizingTiles || draggingLine;
   // Locked handles are pointless where a pinned tile size has no effect: in
   // Tabs, and at one or two tiles (which always take the full window by design).
-  const canResizeTiles = gridMode && gridCount > 2 && !splitGrid;
+  // View > Lock grid takes them away, and the lines between tiles with them.
+  const canResizeTiles = gridMode && gridCount > 2 && !splitGrid && !gridLock;
+  const splitHandles = splitGrid && !gridLock;
   const sizeIsPinned =
     gridPrefs.itemCols !== null || gridPrefs.itemRows !== null || hasSizes;
   // Unticking Resize tiles together drops a dragged tile size by itself (see
@@ -2305,6 +2309,8 @@ export function TerminalsPage({
         }}
         hideGridHeaders={hideGridHeaders}
         toggleGridHeaders={toggleGridHeaders}
+        gridLock={gridLock}
+        toggleGridLock={toggleGridLock}
         saveAsTemplate={
           gridTemplate.offered
             ? {
@@ -3394,7 +3400,7 @@ export function TerminalsPage({
           !customGrid && gridMode && gridCount > 2 && "grid gap-2 overflow-auto",
         )}
         style={gridStyle}
-        {...splitGapProps}
+        {...(splitHandles ? splitGapProps : {})}
       >
         {/* Every tile hidden but terminals still open: say so, or the grid
             reads as broken. The way out is offered here rather than only
@@ -3705,7 +3711,7 @@ export function TerminalsPage({
             line, centred on the gap. So is the right edge of a tile with
             blank space beside it, or alone in its row, which sets its width.
             Laid out by the grid beside the tiles, not inside them. */}
-        {splitGrid && flow && (
+        {splitHandles && flow && (
           <SplitHandles flow={flow} fitRows={fitRows} onBegin={beginSplit} />
         )}
       </div>

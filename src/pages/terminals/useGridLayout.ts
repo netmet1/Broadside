@@ -55,6 +55,10 @@ const GRID_HIDE_HEADERS_KEY = "terminal-grid-hide-headers";
 /** Whether grid tiles resize together ("1", the default and the behaviour
  * before this setting existed) or by the lines between them ("0"). */
 const GRID_LOCKED_KEY = "terminal-grid-locked";
+/** View > Lock grid: "1" takes every resize handle off the grid. Off by
+ * default. Not the same thing as `GRID_LOCKED_KEY`, which only decides what a
+ * drag resizes. */
+const GRID_LOCK_KEY = "terminal-grid-lock";
 
 /* The tile geometry these two use (minimum widths, the border allowance, the
  * two-up threshold and the hysteresis on it) lives in lib/gridShape, because
@@ -105,6 +109,11 @@ export type GridLayout = {
 
   hideGridHeaders: boolean;
   toggleGridHeaders: () => void;
+
+  /** View > Lock grid: no tile edge or line between tiles can be dragged, in
+   * any workspace. Off by default, remembered across restarts. */
+  gridLock: boolean;
+  toggleGridLock: () => void;
 
   twoUpSplit: "cols" | "rows";
   toggleTwoUpSplit: () => void;
@@ -241,6 +250,18 @@ export function useGridLayout({
     setHideGridHeaders((h) => {
       localStorage.setItem(GRID_HIDE_HEADERS_KEY, h ? "0" : "1");
       return !h;
+    });
+  }, []);
+
+  // Lock grid: the sizes stay as they are, so a stray press on a tile's edge
+  // can't move anything. Only the handles go; the layout is untouched.
+  const [gridLock, setGridLock] = useState(
+    () => localStorage.getItem(GRID_LOCK_KEY) === "1",
+  );
+  const toggleGridLock = useCallback(() => {
+    setGridLock((on) => {
+      localStorage.setItem(GRID_LOCK_KEY, on ? "0" : "1");
+      return !on;
     });
   }, []);
 
@@ -703,6 +724,8 @@ export function useGridLayout({
     clearGridExcluded,
     hideGridHeaders,
     toggleGridHeaders,
+    gridLock,
+    toggleGridLock,
     twoUpSplit,
     toggleTwoUpSplit,
     gridPrefs,
