@@ -91,6 +91,7 @@ import {
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
 import { HostLauncherList } from "@/pages/terminals/HostLauncherList";
+import { SaveSizesConfirm } from "@/pages/terminals/SaveSizesConfirm";
 import {
   LauncherSectionHeader,
   SectionDropLine,
@@ -995,7 +996,12 @@ export function TerminalsPage({
     onSaveAsTemplate(gridTemplate.items, gridTemplate.layout);
 
   // The grid is a saved template's sessions with new sizes: the same button
-  // writes the sizes to that template, there and then, and says so.
+  // writes the sizes to that template once the user says yes, and says so.
+  // What it would save is held while it asks.
+  const [sizesConfirm, setSizesConfirm] = useState<{
+    t: Template;
+    layout: TemplateLayout | null;
+  } | null>(null);
   const saveSizesTo = useCallback(
     async (t: Template, layout: TemplateLayout | null) => {
       try {
@@ -2318,7 +2324,7 @@ export function TerminalsPage({
                   sizesTo: gridTemplate.sizesTo.name,
                   onSave: () => {
                     const t = gridTemplate.sizesTo;
-                    if (t) void saveSizesTo(t, gridTemplate.layout);
+                    if (t) setSizesConfirm({ t, layout: gridTemplate.layout });
                   },
                 }
               : null
@@ -3748,6 +3754,16 @@ export function TerminalsPage({
         onContinue={() => {
           setSerialConfirm(null);
           saveGridAsTemplate();
+        }}
+      />
+
+      <SaveSizesConfirm
+        name={sizesConfirm?.t.name ?? null}
+        onCancel={() => setSizesConfirm(null)}
+        onSave={() => {
+          if (sizesConfirm)
+            void saveSizesTo(sizesConfirm.t, sizesConfirm.layout);
+          setSizesConfirm(null);
         }}
       />
 

@@ -682,9 +682,9 @@ export const SECTIONS: HelpSection[] = [
             </li>
             <li>
               When the grid is a saved template's sessions but you have dragged
-              its lines to new sizes, the same button (now a save icon) writes
-              the sizes to that template. Opening the template in a workspace of
-              its own puts them back.
+              its lines to new sizes, the same button (now a save icon) asks,
+              then writes the sizes to that template. Opening the template in a
+              workspace of its own puts them back.
             </li>
           </Bullets>
           <H3>The preview</H3>
