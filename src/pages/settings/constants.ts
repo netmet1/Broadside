@@ -19,6 +19,21 @@ export const SCOPE_LABELS: Record<ShortcutScope, string> = IS_MAC
       serial: "Serial console (COM port)",
     };
 
+/** Whether a shortcut of this scope is listed. A Mac without PowerShell
+ * (see lib/powershell) hides the PowerShell ones, built in or the operator's:
+ * hidden, not deleted, so they come back once `pwsh` is installed. Windows
+ * always has PowerShell, so there this is always true. */
+export function scopeShown(scope: ShortcutScope, powershell: boolean): boolean {
+  return powershell || scope !== "local";
+}
+
+/** The scope a shortcut is shown as. Without PowerShell, Both reaches only the
+ * Unix shells, so it reads (and wears the icon) as the Unix scope rather than
+ * as "Both (Unix and PowerShell)". The shortcut itself keeps its scope. */
+export function shownScope(scope: ShortcutScope, powershell: boolean): ShortcutScope {
+  return !powershell && scope === "both" ? "ssh" : scope;
+}
+
 /** Stable DOM id for a settings section, used by the jump-to dropdown. */
 export function sectionDomId(title: string): string {
   return "settings-sec-" + title.toLowerCase().replace(/[^a-z0-9]+/g, "-");

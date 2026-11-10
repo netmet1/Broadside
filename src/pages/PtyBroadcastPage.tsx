@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 import { IS_MAC } from "@/lib/platform";
+import { usePowershellInstalled } from "@/lib/powershell";
 import { cn } from "@/lib/utils";
 import type {
   LocalTermSession,
@@ -61,6 +62,7 @@ export function PtyBroadcastPage({
   onJumpToSession: (sessionId: string) => void;
 }) {
   const [tab, setTab] = useState<PtyTab>(readTab);
+  const powershell = usePowershellInstalled();
   useEffect(() => {
     localStorage.setItem(TAB_KEY, tab);
   }, [tab]);
@@ -99,6 +101,10 @@ export function PtyBroadcastPage({
       ),
     [sessions],
   );
+  const showPowershell = powershell || powershellSessions.length > 0;
+  // A tab left on PowerShell from before it was uninstalled opens on SSH.
+  const shownTab: PtyTab = tab === "powershell" && !showPowershell ? "ssh" : tab;
+
   // Serial consoles get a family of their own rather than joining one, for the
   // reason above: what answers on a console cable is a switch or a firewall,
   // not a shell, so a command valid for the POSIX panel is not valid here. It
@@ -119,23 +125,27 @@ export function PtyBroadcastPage({
       {/* Tab switcher, fixed set, always shown. */}
       <div className="flex shrink-0 items-center gap-1 border-b border-border/50 px-2 py-1.5">
         <TabButton
-          active={tab === "ssh"}
+          active={shownTab === "ssh"}
           onClick={() => setTab("ssh")}
           icon={<RadioTowerIcon className="h-4 w-4" />}
           label="SSH"
           count={sshSessions.length}
         />
-        <TabButton
-          active={tab === "powershell"}
-          onClick={() => setTab("powershell")}
-          icon={<SquareTerminalIcon className="h-4 w-4" />}
-          label="PowerShell"
-          count={powershellSessions.length}
-        />
+        {/* No PowerShell tab on a Mac without PowerShell (lib/powershell),
+            unless one is open anyway: every open session has a family. */}
+        {showPowershell && (
+          <TabButton
+            active={shownTab === "powershell"}
+            onClick={() => setTab("powershell")}
+            icon={<SquareTerminalIcon className="h-4 w-4" />}
+            label="PowerShell"
+            count={powershellSessions.length}
+          />
+        )}
         {/* A Mac has no Command Prompt, so no tab for one. */}
         {!IS_MAC && (
           <TabButton
-            active={tab === "cmd"}
+            active={shownTab === "cmd"}
             onClick={() => setTab("cmd")}
             icon={<SquareTerminalIcon className="h-4 w-4" />}
             label="Command Prompt"
@@ -143,14 +153,14 @@ export function PtyBroadcastPage({
           />
         )}
         <TabButton
-          active={tab === "wsl"}
+          active={shownTab === "wsl"}
           onClick={() => setTab("wsl")}
           icon={<TerminalIcon className="h-4 w-4" />}
           label={POSIX_LABEL}
           count={wslSessions.length}
         />
         <TabButton
-          active={tab === "serial"}
+          active={shownTab === "serial"}
           onClick={() => setTab("serial")}
           icon={<CableIcon className="h-4 w-4" />}
           label="Serial consoles"
@@ -160,18 +170,18 @@ export function PtyBroadcastPage({
 
       {/* Bodies stay mounted so selection + reports survive tab switches. */}
       <div className="min-h-0 flex-1">
-        <div className={tab === "ssh" ? "h-full" : "hidden"}>
+        <div className={shownTab === "ssh" ? "h-full" : "hidden"}>
           <SshBroadcastPanel
-            visible={visible && tab === "ssh"}
+            visible={visible && shownTab === "ssh"}
             sessions={sshSessions}
             connectedSessions={connectedSessions}
             onManageShortcuts={onManageShortcuts}
             onJumpToSession={onJumpToSession}
           />
         </div>
-        <div className={tab === "powershell" ? "h-full" : "hidden"}>
+        <div className={shownTab === "powershell" ? "h-full" : "hidden"}>
           <LocalBroadcastPanel
-            visible={visible && tab === "powershell"}
+            visible={visible && shownTab === "powershell"}
             family="PowerShell"
             sessions={powershellSessions}
             connectedSessions={connectedSessions}
@@ -181,9 +191,9 @@ export function PtyBroadcastPage({
             storagePrefix="pty-broadcast-powershell"
           />
         </div>
-        <div className={tab === "cmd" ? "h-full" : "hidden"}>
+        <div className={shownTab === "cmd" ? "h-full" : "hidden"}>
           <LocalBroadcastPanel
-            visible={visible && tab === "cmd"}
+            visible={visible && shownTab === "cmd"}
             family="Command Prompt"
             sessions={cmdSessions}
             connectedSessions={connectedSessions}
@@ -193,9 +203,9 @@ export function PtyBroadcastPage({
             storagePrefix="pty-broadcast-cmd"
           />
         </div>
-        <div className={tab === "wsl" ? "h-full" : "hidden"}>
+        <div className={shownTab === "wsl" ? "h-full" : "hidden"}>
           <LocalBroadcastPanel
-            visible={visible && tab === "wsl"}
+            visible={visible && shownTab === "wsl"}
             family={POSIX_LABEL}
             sessions={wslSessions}
             connectedSessions={connectedSessions}
@@ -205,9 +215,9 @@ export function PtyBroadcastPage({
             storagePrefix="pty-broadcast-wsl"
           />
         </div>
-        <div className={tab === "serial" ? "h-full" : "hidden"}>
+        <div className={shownTab === "serial" ? "h-full" : "hidden"}>
           <LocalBroadcastPanel
-            visible={visible && tab === "serial"}
+            visible={visible && shownTab === "serial"}
             family="Serial consoles"
             sessions={serialSessions}
             connectedSessions={connectedSessions}

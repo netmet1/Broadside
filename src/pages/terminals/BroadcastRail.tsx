@@ -23,6 +23,7 @@ import { ShellChip } from "@/components/ShellChip";
 import { checkDestructive, type GuardHit } from "@/lib/tauri/broadcast";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { IS_MAC } from "@/lib/platform";
+import { usePowershellInstalled } from "@/lib/powershell";
 import { useHint } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
@@ -118,7 +119,7 @@ export function BroadcastRail({
   // foot-gun: the command wouldn't be valid everywhere, and the line ending
   // differs (SSH needs \n; local shells need \r or PowerShell and cmd park at a
   // ">>" continuation prompt instead of running anything).
-  const [family, setFamily] = useState<Family>("ssh");
+  const [picked, setFamily] = useState<Family>("ssh");
 
   const byFamily = useMemo(() => {
     const m: Record<Family, TermSession[]> = {
@@ -134,6 +135,16 @@ export function BroadcastRail({
     }
     return m;
   }, [sessions]);
+
+  // A Mac has no Command Prompt, and one without PowerShell (lib/powershell)
+  // has no PowerShell either, so neither family is offered there unless a
+  // session of it is open anyway: every open session has a family it can be
+  // reached from. A family picked and then gone falls back to SSH.
+  const powershell = usePowershellInstalled();
+  const familyShown = (f: Family) =>
+    byFamily[f].length > 0 ||
+    (f === "cmd" ? !IS_MAC : f !== "powershell" || powershell);
+  const family: Family = familyShown(picked) ? picked : "ssh";
 
   const targets = byFamily[family];
   const isSsh = family === "ssh";
@@ -259,7 +270,7 @@ export function BroadcastRail({
             "One shell language at a time, so a command is always valid for everything it goes to.",
           )}
         >
-          {(Object.keys(FAMILY_LABELS) as Family[]).map((f) => (
+          {(Object.keys(FAMILY_LABELS) as Family[]).filter(familyShown).map((f) => (
             <option key={f} value={f}>
               {FAMILY_LABELS[f]} ({byFamily[f].length})
             </option>

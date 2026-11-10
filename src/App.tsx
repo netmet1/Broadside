@@ -92,6 +92,7 @@ import {
 } from "@/lib/tauri/hosts";
 import { onPtySudo, onPtySudoRejected } from "@/lib/tauri/pty";
 import { useWindowBlurredAttr } from "@/lib/windowFocus";
+import { refreshPowershell } from "@/lib/powershell";
 import { sizesFromLayout } from "@/pages/terminals/gridTemplate";
 import { OpenSnapshotDialog, SaveSnapshotDialog } from "@/components/SnapshotDialogs";
 import { useSnapshots } from "@/pages/terminals/useSnapshots";
@@ -183,6 +184,13 @@ function App() {
         // until they try and get prompted.
       }
     })();
+  }, []);
+
+  // Whether a Mac has PowerShell, asked once at start so Settings, Broadcast
+  // and Help know before they are first shown (see lib/powershell). Windows
+  // never asks.
+  useEffect(() => {
+    void refreshPowershell();
   }, []);
 
   // Sudo auto-fill transparency (D-065): toast whenever the backend answers a

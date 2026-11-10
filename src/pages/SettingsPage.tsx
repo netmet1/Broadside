@@ -60,6 +60,7 @@ import {
   setHistoryScrubEnabled,
 } from "@/lib/tauri/settings";
 import { isExitGuardEnabled, setExitGuardEnabled } from "@/lib/exitGuard";
+import { refreshPowershell, usePowershellInstalled } from "@/lib/powershell";
 import { migrateLegacyProfiles } from "@/lib/useShellProfiles";
 import { AdminUnlockDialog } from "@/components/AdminUnlockDialog";
 import {
@@ -74,6 +75,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   SCOPE_LABELS,
+  scopeShown,
+  shownScope,
   SECTION_KEYWORDS,
   SECTION_TITLES,
   SEARCH_STORAGE_KEY,
@@ -366,6 +369,13 @@ export function SettingsPage({
     deleteShortcut,
     cancelShortcutForm,
   } = useShortcuts(settings, setSettings);
+  // Whether PowerShell is on this machine (always on Windows). Asked again each
+  // time the page is shown, so a pwsh installed since start shows up here
+  // without a restart.
+  const powershell = usePowershellInstalled();
+  useEffect(() => {
+    if (visible) void refreshPowershell();
+  }, [visible]);
 
   // Backup & Restore (shared with the Danger Zone "back up first" offer).
   const {
@@ -992,20 +1002,25 @@ export function SettingsPage({
           title="Shortcut commands"
           hint={
             IS_MAC
-              ? "One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / local shell (Unix) commands run on SSH hosts and local zsh or bash tabs; PowerShell commands run in a PowerShell custom terminal. Core shortcuts are built in; add, edit or delete your own."
+              ? powershell
+                ? "One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / local shell (Unix) commands run on SSH hosts and local zsh or bash tabs; PowerShell commands run in a PowerShell custom terminal. Core shortcuts are built in; add, edit or delete your own."
+                : "One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / local shell (Unix) commands run on SSH hosts and local zsh or bash tabs. Core shortcuts are built in; add, edit or delete your own."
               : "One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / WSL (Linux) commands run on SSH hosts and WSL tabs; Command Prompt / PowerShell commands run on local Windows shells. Core shortcuts are built in; add, edit or delete your own."
           }
         />
 
-        {settings && settings.user_shortcuts.length > 0 && (
+        {settings &&
+          settings.user_shortcuts.some((s) => scopeShown(s.scope, powershell)) && (
           <div className="space-y-1">
-            {settings.user_shortcuts.map((s) => (
+            {settings.user_shortcuts
+              .filter((s) => scopeShown(s.scope, powershell))
+              .map((s) => (
               <div
                 key={s.id}
                 className="flex items-center gap-3 rounded-md border border-border/40 px-3 py-2 text-sm"
               >
-                <span title={SCOPE_LABELS[s.scope]}>
-                  <ScopeIcon scope={s.scope} />
+                <span title={SCOPE_LABELS[shownScope(s.scope, powershell)]}>
+                  <ScopeIcon scope={shownScope(s.scope, powershell)} />
                 </span>
                 {s.label?.trim() ? (
                   <span className="flex min-w-0 flex-1 items-baseline gap-2">
@@ -1080,8 +1095,10 @@ export function SettingsPage({
             </div>
             <div className="grid gap-1">
               <Label htmlFor="shortcut-scope">Runs in</Label>
+              {/* Without PowerShell a Both shortcut shows as the Unix scope and
+                  keeps Both unless another scope is picked. */}
               <Select
-                value={shortcutScope}
+                value={shownScope(shortcutScope, powershell)}
                 onValueChange={(v) => setShortcutScope(v as ShortcutScope)}
               >
                 <SelectTrigger id="shortcut-scope" size="sm" className="w-full">
@@ -1094,18 +1111,22 @@ export function SettingsPage({
                       {SCOPE_LABELS.ssh}
                     </span>
                   </SelectItem>
-                  <SelectItem value="local">
-                    <span className="flex items-center gap-2">
-                      <SquareTerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      {SCOPE_LABELS.local}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="both">
-                    <span className="flex items-center gap-2">
-                      <SquareAsteriskIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      {SCOPE_LABELS.both}
-                    </span>
-                  </SelectItem>
+                  {powershell && (
+                    <SelectItem value="local">
+                      <span className="flex items-center gap-2">
+                        <SquareTerminalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        {SCOPE_LABELS.local}
+                      </span>
+                    </SelectItem>
+                  )}
+                  {powershell && (
+                    <SelectItem value="both">
+                      <span className="flex items-center gap-2">
+                        <SquareAsteriskIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        {SCOPE_LABELS.both}
+                      </span>
+                    </SelectItem>
+                  )}
                   <SelectItem value="serial">
                     <span className="flex items-center gap-2">
                       <CableIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -1115,14 +1136,27 @@ export function SettingsPage({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {IS_MAC
-                  ? "SSH / local shell commands run on SSH hosts and local zsh or bash tabs; PowerShell commands run in a PowerShell custom terminal;"
-                  : "SSH / WSL commands run on SSH hosts and WSL tabs; Command Prompt / PowerShell commands run on local Windows shells;"}{" "}
-                Both runs in either of those (for example whoami). Serial console stands on
-                its own, and Both does not reach it: the far end of a console
-                cable is a switch or a firewall rather than a shell, so
-                Broadside ships no commands for it and the picker on a serial
-                tab stays empty until you add some here.
+                {powershell ? (
+                  <>
+                    {IS_MAC
+                      ? "SSH / local shell commands run on SSH hosts and local zsh or bash tabs; PowerShell commands run in a PowerShell custom terminal;"
+                      : "SSH / WSL commands run on SSH hosts and WSL tabs; Command Prompt / PowerShell commands run on local Windows shells;"}{" "}
+                    Both runs in either of those (for example whoami). Serial console stands on
+                    its own, and Both does not reach it: the far end of a console
+                    cable is a switch or a firewall rather than a shell, so
+                    Broadside ships no commands for it and the picker on a serial
+                    tab stays empty until you add some here.
+                  </>
+                ) : (
+                  // A Mac without PowerShell: one shell language and the cable.
+                  <>
+                    SSH / local shell commands run on SSH hosts and local zsh or
+                    bash tabs. Serial console stands on its own: the far end of a
+                    console cable is a switch or a firewall rather than a shell,
+                    so Broadside ships no commands for it and the picker on a
+                    serial tab stays empty until you add some here.
+                  </>
+                )}
               </p>
             </div>
             <div className="flex gap-2 pt-1">
@@ -1154,14 +1188,16 @@ export function SettingsPage({
           <p className="pt-2 text-xs font-medium text-muted-foreground">
             Core shortcuts (built in)
           </p>
-          {settings?.core_shortcuts.map((c) => (
+          {settings?.core_shortcuts
+            .filter((c) => scopeShown(c.scope, powershell))
+            .map((c) => (
             <div
               key={`${c.scope}:${c.command}`}
               className="flex items-center gap-3 rounded-md border border-border/30 px-3 py-1.5 text-sm text-muted-foreground"
             >
               <LockIcon className="h-3.5 w-3.5 shrink-0" />
-              <span title={SCOPE_LABELS[c.scope]}>
-                <ScopeIcon scope={c.scope} />
+              <span title={SCOPE_LABELS[shownScope(c.scope, powershell)]}>
+                <ScopeIcon scope={shownScope(c.scope, powershell)} />
               </span>
               <span className="min-w-0 flex-1 truncate font-mono text-xs">
                 {c.command}
