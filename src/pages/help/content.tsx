@@ -856,7 +856,12 @@ export const SECTIONS: HelpSection[] = [
               <OnMac>
                 The same <Nav>plus button</Nav> opens the Mac's own shells:
                 your login shell (zsh, unless you changed it) first, then bash
-                and the others macOS lists as shells. Each starts as a login
+                and the others macOS lists as shells
+                <IfPowershell>
+                  , and PowerShell while PowerShell 7 (<code>pwsh</code>) is
+                  installed
+                </IfPowershell>
+                . Each starts as a login
                 shell in your home folder, so your profile, your PATH and the
                 Homebrew tools on it are all there.
               </OnMac>
@@ -1100,7 +1105,10 @@ export const SECTIONS: HelpSection[] = [
                 a shell you install yourself (fish from Homebrew, for example)
                 appears once it is added to that file, which is the same step
                 that lets you make it your login shell. Your login shell is
-                listed first.
+                listed first. PowerShell 7 (<code>pwsh</code>) is listed as{" "}
+                <Nav>PowerShell</Nav> whenever it is installed, from Homebrew
+                or Microsoft's installer, with no need to add it anywhere; it
+                leaves the list if it is removed.
               </OnMac>
             </li>
             <li>
@@ -1124,13 +1132,11 @@ export const SECTIONS: HelpSection[] = [
                 the usual path and options for you.
               </OnWindows>
               <OnMac>
-                Detection only finds the shells in <code>/etc/shells</code>. For
-                anything else, such as a shell you have not registered there
-                <IfPowershell>
-                  {" "}or PowerShell (<code>pwsh</code>)
-                </IfPowershell>
-                , open <Nav>Settings</Nav> and the{" "}
-                <Nav>Custom terminals</Nav> section and add it yourself.
+                Detection only finds the shells in <code>/etc/shells</code>
+                <IfPowershell> and PowerShell</IfPowershell>. For anything else,
+                such as a shell you have not registered there, open{" "}
+                <Nav>Settings</Nav> and the <Nav>Custom terminals</Nav> section
+                and add it yourself.
               </OnMac>
             </li>
             <li>
@@ -1721,7 +1727,7 @@ export const SECTIONS: HelpSection[] = [
                 Mac's own shells (zsh, bash) speak the same language as an SSH
                 host, so they use the SSH ones
                 <IfPowershell without=".">
-                  ; the PowerShell scope is for a PowerShell custom terminal.
+                  ; the PowerShell scope is for PowerShell tabs.
                 </IfPowershell>
               </OnMac>
             </li>
