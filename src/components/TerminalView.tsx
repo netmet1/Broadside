@@ -1562,8 +1562,17 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
 
           A literal 2px, not `pl-0.5`: rem follows the app font size and a
           terminal cell does not, so a rem gutter would grow against text that
-          had not moved. */}
-      <div ref={containerRef} className="h-full w-full pl-[2px]" />
+          had not moved.
+
+          `isolate` keeps xterm's own layers inside this box. xterm gives some
+          of them a z-index (its scrollbar 11, its helpers 5, and the WebGL
+          renderer's link canvas 2, which covers the whole pane), and without a
+          stacking context of its own here those numbers competed with the
+          panes drawn over the terminal below, none of which has one: with the
+          GPU renderer on, the link canvas sat on top of the failed-connect
+          panel and the disconnected banner and took every click meant for Try
+          again, Reconnect and Close tab. */}
+      <div ref={containerRef} className="isolate h-full w-full pl-[2px]" />
       {/* Back to the live end, for a pane you have scrolled up in.
           Ctrl+End does it and so does typing anything, but neither is
           discoverable, and reading something a thousand lines back and then
