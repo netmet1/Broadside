@@ -1058,7 +1058,8 @@ export function SettingsPage({
                 autoComplete="off"
               />
               <p className="text-xs text-muted-foreground">
-                A friendly name shown in the dropdown instead of the raw command.
+                A friendly name the Shortcut command picker shows instead of the
+                command; the command is in the status bar when you point at it.
                 Leave blank to show the command itself.
               </p>
             </div>
