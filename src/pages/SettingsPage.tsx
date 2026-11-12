@@ -762,13 +762,20 @@ export function SettingsPage({
               terminal uses the standard drawing.
             </p>
           ) : (
-            gpuStatus.gpu + gpuStatus.standard > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Now: {gpuStatus.gpu} open{" "}
-                {gpuStatus.gpu === 1 ? "terminal" : "terminals"} drawn with the
-                GPU, {gpuStatus.standard} the standard way.
-              </p>
-            )
+            // Always there, so the line is where the operator looks whether or
+            // not a terminal happens to be open; with none it says so rather
+            // than vanishing, which read as the setting not working.
+            <p className="text-xs text-muted-foreground">
+              {gpuStatus.gpu + gpuStatus.standard === 0 ? (
+                "Now: no terminals open."
+              ) : (
+                <>
+                  Now: {gpuStatus.gpu} open{" "}
+                  {gpuStatus.gpu === 1 ? "terminal" : "terminals"} drawn with
+                  the GPU, {gpuStatus.standard} the standard way.
+                </>
+              )}
+            </p>
           )}
         </div>
       </section>
