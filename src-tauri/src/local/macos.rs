@@ -284,42 +284,72 @@ pub(crate) fn powershell_installed(custom: &[String]) -> bool {
 /// `PATH`, where `pwsh` is. Only a path to a real program counts: a profile
 /// may print a banner, so the last line is the one read.
 fn login_shell_pwsh() -> Option<PathBuf> {
-    use std::io::Read;
-    use std::process::{Command, Stdio};
-
     let shell = login_shell()
         .filter(|p| is_program(p))
         .unwrap_or_else(|| PathBuf::from("/bin/zsh"));
-    let mut child = Command::new(&shell)
-        .args(["-l", "-c", "command -v pwsh"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-    let started = std::time::Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if started.elapsed() < LOGIN_LOOKUP_TIMEOUT => {
-                std::thread::sleep(std::time::Duration::from_millis(25));
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-        }
-    }
-    let mut out = String::new();
-    if let Some(mut stdout) = child.stdout.take() {
-        let _ = stdout.read_to_string(&mut out);
-    }
-    out.lines()
-        .map(str::trim)
-        .rfind(|l| !l.is_empty())
+    run_for_last_line(&shell, &["-l", "-c", "command -v pwsh"])
         .map(PathBuf::from)
         .filter(|p| p.is_absolute() && is_program(p))
+}
+
+/// Runs `program` with `args` and gives back the last line it printed that is
+/// not blank, or `None` if it would not start or was still running after
+/// [`LOGIN_LOOKUP_TIMEOUT`], when it is killed.
+///
+/// Its stdout is a file, not a pipe. A job a profile starts in the background
+/// (`some-sync &`) inherits stdout and can outlive the shell, and reading a
+/// pipe to the end waits until every holder has closed it, which for such a
+/// job may be never. A file can be read once the shell is done, whoever still
+/// has it open. The file is made new (`create_new`, so nothing already there
+/// is followed or reused) in the per-user temporary folder, and removed again
+/// on every path.
+fn run_for_last_line(program: &Path, args: &[&str]) -> Option<String> {
+    use std::process::{Command, Stdio};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static RUNS: AtomicU64 = AtomicU64::new(0);
+    let out_path = std::env::temp_dir().join(format!(
+        "broadside-pwsh-{}-{}-{}",
+        std::process::id(),
+        RUNS.fetch_add(1, Ordering::Relaxed),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    ));
+    let out_file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&out_path)
+        .ok()?;
+    let spawned = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(out_file))
+        .stderr(Stdio::null())
+        .spawn();
+    let out = spawned.ok().and_then(|mut child| {
+        let started = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if started.elapsed() < LOGIN_LOOKUP_TIMEOUT => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+            }
+        }
+        std::fs::read_to_string(&out_path).ok()
+    });
+    let _ = std::fs::remove_file(&out_path);
+    out?.lines()
+        .map(str::trim)
+        .rfind(|l| !l.is_empty())
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -353,5 +383,44 @@ mod tests {
         let started = std::time::Instant::now();
         let _ = login_shell_pwsh();
         assert!(started.elapsed() < LOGIN_LOOKUP_TIMEOUT + std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_job_the_shell_leaves_running_does_not_hold_up_the_answer() {
+        // What a profile with `some-sync &` in it does: the job outlives the
+        // shell and still has the shell's stdout.
+        let started = std::time::Instant::now();
+        let found = run_for_last_line(Path::new("/bin/sh"), &["-c", "sleep 30 & echo /bin/sh"]);
+        assert_eq!(found.as_deref(), Some("/bin/sh"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+        assert!(no_lookup_file_left());
+    }
+
+    #[test]
+    fn a_shell_that_never_finishes_is_given_up_on() {
+        let started = std::time::Instant::now();
+        assert_eq!(run_for_last_line(Path::new("/bin/sh"), &["-c", "sleep 30"]), None);
+        assert!(started.elapsed() < LOGIN_LOOKUP_TIMEOUT + std::time::Duration::from_secs(1));
+        assert!(no_lookup_file_left());
+    }
+
+    /// No `broadside-pwsh-` file of this process is left in the temporary
+    /// folder. Other tests in the process may be mid-lookup, so this waits a
+    /// moment for theirs to go before saying so.
+    fn no_lookup_file_left() -> bool {
+        let mine = format!("broadside-pwsh-{}-", std::process::id());
+        let started = std::time::Instant::now();
+        loop {
+            let left = std::fs::read_dir(std::env::temp_dir())
+                .map(|d| d.flatten().any(|e| e.file_name().to_string_lossy().starts_with(&mine)))
+                .unwrap_or(false);
+            if !left {
+                return true;
+            }
+            if started.elapsed() > LOGIN_LOOKUP_TIMEOUT + std::time::Duration::from_secs(1) {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 }
