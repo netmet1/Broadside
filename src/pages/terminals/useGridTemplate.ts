@@ -99,5 +99,9 @@ export function useGridTemplate({
       ? match
       : null;
 
-  return { offered, sizesTo, items, layout, reload };
+  // Serial tiles on screen, which a new template leaves out: the Save as
+  // template button asks first when there are any.
+  const serialLeftOut = tiles.length - saved.length;
+
+  return { offered, sizesTo, items, layout, serialLeftOut, reload };
 }

@@ -64,6 +64,7 @@ import {
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { SearchBar } from "@/components/SearchBar";
+import { SerialLeftOutConfirm } from "@/components/SerialLeftOutNote";
 import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
@@ -90,6 +91,7 @@ import {
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
 import { HostLauncherList } from "@/pages/terminals/HostLauncherList";
+import { SaveSizesConfirm } from "@/pages/terminals/SaveSizesConfirm";
 import {
   LauncherSectionHeader,
   SectionDropLine,
@@ -117,7 +119,10 @@ import {
 import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
 import { copyName } from "@/pages/templates/copyName";
 import { useProfileActions } from "@/lib/useProfileActions";
-import { useGridLayout } from "@/pages/terminals/useGridLayout";
+import {
+  useGridLayout,
+  type TermLayout,
+} from "@/pages/terminals/useGridLayout";
 import {
   useGridResize,
 } from "@/pages/terminals/useGridResize";
@@ -261,6 +266,8 @@ type Props = {
   ) => void;
   /** A held workspace's Connect was pressed (see useSnapshots). */
   onReleaseWorkspace: (id: string) => void;
+  /** Tabs or Grid, for one workspace. */
+  onSetWorkspaceView: (id: string, view: TermLayout) => void;
   /** Ask for a name and save every open workspace as a snapshot. */
   onSaveSnapshot: () => void;
   canSaveSnapshot: boolean;
@@ -347,6 +354,7 @@ export function TerminalsPage({
   onRecolorWorkspace,
   onSetWorkspaceSizes,
   onReleaseWorkspace,
+  onSetWorkspaceView,
   onSaveSnapshot,
   canSaveSnapshot,
   onReorderWorkspace,
@@ -896,6 +904,12 @@ export function TerminalsPage({
   // one keeps its own and a template or snapshot can hand them over.
   const shownWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const shownSizes = shownWorkspace?.sizes ?? null;
+  // Tabs or Grid is the shown workspace's own.
+  const shownView: TermLayout = shownWorkspace?.view ?? "tabs";
+  const setShownView = useCallback(
+    (view: TermLayout) => onSetWorkspaceView(activeWorkspaceId, view),
+    [onSetWorkspaceView, activeWorkspaceId],
+  );
   // Opened from a snapshot with its sessions held: they were made without
   // connecting, and this workspace waits behind one Connect button until it is
   // pressed. Pressing it connects these tabs and no others.
@@ -928,6 +942,8 @@ export function TerminalsPage({
     clearGridExcluded,
     hideGridHeaders,
     toggleGridHeaders,
+    gridLock,
+    toggleGridLock,
     twoUpSplit,
     toggleTwoUpSplit,
     gridPrefs,
@@ -951,6 +967,8 @@ export function TerminalsPage({
     customGrid,
     gridStyle,
   } = useGridLayout({
+    layout: shownView,
+    onLayout: setShownView,
     sessions: allSessions,
     filteredOut: gridFilteredOut,
     visible,
@@ -973,8 +991,19 @@ export function TerminalsPage({
     isLaidOut,
     sizes: hasSizes ? shownSizes : null,
   });
+  // Serial tiles on the grid are left out of a new template, so the button
+  // asks first when there are any: this is how many, while it is asking.
+  const [serialConfirm, setSerialConfirm] = useState<number | null>(null);
+  const saveGridAsTemplate = () =>
+    onSaveAsTemplate(gridTemplate.items, gridTemplate.layout);
+
   // The grid is a saved template's sessions with new sizes: the same button
-  // writes the sizes to that template, there and then, and says so.
+  // writes the sizes to that template once the user says yes, and says so.
+  // What it would save is held while it asks.
+  const [sizesConfirm, setSizesConfirm] = useState<{
+    t: Template;
+    layout: TemplateLayout | null;
+  } | null>(null);
   const saveSizesTo = useCallback(
     async (t: Template, layout: TemplateLayout | null) => {
       try {
@@ -1067,9 +1096,29 @@ export function TerminalsPage({
   const resizing = resizingTiles || draggingLine;
   // Locked handles are pointless where a pinned tile size has no effect: in
   // Tabs, and at one or two tiles (which always take the full window by design).
-  const canResizeTiles = gridMode && gridCount > 2 && !splitGrid;
+  // View > Lock grid takes them away, and the lines between tiles with them.
+  const canResizeTiles = gridMode && gridCount > 2 && !splitGrid && !gridLock;
+  const splitHandles = splitGrid && !gridLock;
   const sizeIsPinned =
     gridPrefs.itemCols !== null || gridPrefs.itemRows !== null || hasSizes;
+  // Unticking Resize tiles together drops a dragged tile size by itself (see
+  // useGridLayout). What it leaves is a size typed in Settings -> Grid, which
+  // still pins the grid at three or more tiles, so the lines between tiles do
+  // not appear. Say so rather than leave the untick looking broken.
+  const onToggleLockedTiles = () => {
+    const pinned = toggleLockedTiles();
+    if (pinned === null || gridCount <= 2) return;
+    if (pinned.cols !== null) {
+      toast(
+        `Settings > Grid sets Columns across to ${pinned.cols}, so the lines between tiles can't be dragged. Set it back to Auto there to drag them.`,
+      );
+    } else {
+      toast(
+        "Settings > Grid sets a tile size, so the lines between tiles can't be dragged.",
+        { action: { label: "Reset grid", onClick: resetTileSize } },
+      );
+    }
+  };
 
   // Broadcast rail: pick targets and type a command without leaving the page,
   // so the panes you are watching are the ones that answer. Off by default;
@@ -2252,7 +2301,7 @@ export function TerminalsPage({
         sizeIsPinned={sizeIsPinned}
         resetTileSize={resetTileSize}
         lockedTiles={lockedTiles}
-        toggleLockedTiles={toggleLockedTiles}
+        toggleLockedTiles={onToggleLockedTiles}
         gridFullscreen={gridFullscreen}
         onGridFullscreen={onGridFullscreen}
         maximizeActive={() => {
@@ -2260,13 +2309,20 @@ export function TerminalsPage({
         }}
         hideGridHeaders={hideGridHeaders}
         toggleGridHeaders={toggleGridHeaders}
+        gridLock={gridLock}
+        toggleGridLock={toggleGridLock}
         saveAsTemplate={
           gridTemplate.offered
             ? {
                 count: gridTemplate.items.length,
                 sizesTo: null,
-                onSave: () =>
-                  onSaveAsTemplate(gridTemplate.items, gridTemplate.layout),
+                onSave: () => {
+                  if (gridTemplate.serialLeftOut > 0) {
+                    setSerialConfirm(gridTemplate.serialLeftOut);
+                  } else {
+                    saveGridAsTemplate();
+                  }
+                },
               }
             : gridTemplate.sizesTo
               ? {
@@ -2274,7 +2330,7 @@ export function TerminalsPage({
                   sizesTo: gridTemplate.sizesTo.name,
                   onSave: () => {
                     const t = gridTemplate.sizesTo;
-                    if (t) void saveSizesTo(t, gridTemplate.layout);
+                    if (t) setSizesConfirm({ t, layout: gridTemplate.layout });
                   },
                 }
               : null
@@ -3344,7 +3400,7 @@ export function TerminalsPage({
           !customGrid && gridMode && gridCount > 2 && "grid gap-2 overflow-auto",
         )}
         style={gridStyle}
-        {...splitGapProps}
+        {...(splitHandles ? splitGapProps : {})}
       >
         {/* Every tile hidden but terminals still open: say so, or the grid
             reads as broken. The way out is offered here rather than only
@@ -3392,11 +3448,6 @@ export function TerminalsPage({
           const filtered =
             kindFilter.isHidden(s) || s.workspaceId !== activeWorkspaceId;
           const disconnected = isDown(s);
-          // This tile's place in the flow, when its edges are lines to drag.
-          const flowTile =
-            splitGrid && flow && !excluded && !filtered
-              ? flow.tiles[gridSlot.get(s.id) ?? 0]
-              : undefined;
           // The active tile's header mirrors the tab tint: a ~20% fill in the
           // tab's colour and a top bar in it, falling back to the theme accent
           // (with a foreground top bar) for tiles with no usable hue, which now
@@ -3653,24 +3704,16 @@ export function TerminalsPage({
                   />
                 </>
               )}
-              {/* Unlocked: every edge this tile shares with another is a line
-                  to drag, top and left included, so a full-width tile under
-                  two others can be made shorter from its top. So is the right
-                  edge of a tile with blank space beside it, or alone in its
-                  row, which sets its width. */}
-              {flowTile && flow && (
-                <SplitHandles
-                  tile={flowTile}
-                  rows={flow.rows}
-                  left={flow.leftLine[gridSlot.get(s.id) ?? 0] ?? null}
-                  right={flow.rightLine[gridSlot.get(s.id) ?? 0] ?? null}
-                  fitRows={fitRows}
-                  onBegin={beginSplit}
-                />
-              )}
             </div>
           );
         })}
+        {/* Unlocked: every line between tiles is a handle to drag, one per
+            line, centred on the gap. So is the right edge of a tile with
+            blank space beside it, or alone in its row, which sets its width.
+            Laid out by the grid beside the tiles, not inside them. */}
+        {splitHandles && flow && (
+          <SplitHandles flow={flow} fitRows={fitRows} onBegin={beginSplit} />
+        )}
       </div>
       </div>
       </div>
@@ -3710,6 +3753,25 @@ export function TerminalsPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <SerialLeftOutConfirm
+        count={serialConfirm}
+        onCancel={() => setSerialConfirm(null)}
+        onContinue={() => {
+          setSerialConfirm(null);
+          saveGridAsTemplate();
+        }}
+      />
+
+      <SaveSizesConfirm
+        name={sizesConfirm?.t.name ?? null}
+        onCancel={() => setSizesConfirm(null)}
+        onSave={() => {
+          if (sizesConfirm)
+            void saveSizesTo(sizesConfirm.t, sizesConfirm.layout);
+          setSizesConfirm(null);
+        }}
+      />
 
       <AlertDialog
         open={!!workspaceClosing}

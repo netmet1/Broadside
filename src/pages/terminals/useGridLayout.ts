@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   GRID_PREFS_EVENT,
+  forgetDraggedGridSize,
   isAutoGrid,
   loadGridFitRows,
   loadGridMinHeight,
@@ -19,6 +20,8 @@ import {
   loadGridPrefs,
   loadGridStrict,
   loadRowFill,
+  saveDraggedGridItemCols,
+  saveDraggedGridItemRows,
   saveGridItemCols,
   saveGridItemRows,
   type GridPrefs,
@@ -52,6 +55,10 @@ const GRID_HIDE_HEADERS_KEY = "terminal-grid-hide-headers";
 /** Whether grid tiles resize together ("1", the default and the behaviour
  * before this setting existed) or by the lines between them ("0"). */
 const GRID_LOCKED_KEY = "terminal-grid-locked";
+/** View > Lock grid: "1" takes every resize handle off the grid. Off by
+ * default. Not the same thing as `GRID_LOCKED_KEY`, which only decides what a
+ * drag resizes. */
+const GRID_LOCK_KEY = "terminal-grid-lock";
 
 /* The tile geometry these two use (minimum widths, the border allowance, the
  * two-up threshold and the hysteresis on it) lives in lib/gridShape, because
@@ -63,8 +70,20 @@ export { TILE_BORDER_X, TILE_BORDER_Y };
 
 
 /** How the open terminals are laid out below the tab strip: one pane at a time
- * (the default) or every pane tiled at once, mirroring the skill run panel. */
+ * (the default) or every pane tiled at once, mirroring the skill run panel.
+ * Each workspace has its own (see useWorkspaces). */
 export type TermLayout = "tabs" | "grid";
+
+/** The last layout chosen, which the first workspace starts in at launch, so
+ * a restart comes back to the layout that was in use. Workspaces themselves
+ * last only while Broadside runs. */
+export function loadLastLayout(): TermLayout {
+  try {
+    return localStorage.getItem(LAYOUT_KEY) === "grid" ? "grid" : "tabs";
+  } catch {
+    return "tabs";
+  }
+}
 
 export type GridLayout = {
   layout: TermLayout;
@@ -91,6 +110,11 @@ export type GridLayout = {
   hideGridHeaders: boolean;
   toggleGridHeaders: () => void;
 
+  /** View > Lock grid: no tile edge or line between tiles can be dragged, in
+   * any workspace. Off by default, remembered across restarts. */
+  gridLock: boolean;
+  toggleGridLock: () => void;
+
   twoUpSplit: "cols" | "rows";
   toggleTwoUpSplit: () => void;
 
@@ -110,7 +134,11 @@ export type GridLayout = {
   /** True (the default): dragging one tile resizes them all. False: a drag
    * moves the line between two rows or tiles. Remembered across restarts. */
   lockedTiles: boolean;
-  toggleLockedTiles: () => void;
+  /** Flip `lockedTiles`. Unticking also drops a tile size that came from a
+   * drag (see the hook), and returns what Settings -> Grid still pins after
+   * that, so the caller can say why the lines between tiles are not there.
+   * Null when nothing is pinned, and always null when ticking. */
+  toggleLockedTiles: () => GridPrefs | null;
   /** The lines between tiles are what a drag moves: unlocked, on the default
    * grid (nothing pinned in Settings), with two or more tiles. */
   splitGrid: boolean;
@@ -165,6 +193,8 @@ export type GridLayout = {
 };
 
 export function useGridLayout({
+  layout,
+  onLayout,
   sessions,
   filteredOut,
   visible,
@@ -173,6 +203,10 @@ export function useGridLayout({
   sizes,
   clearSizes,
 }: {
+  /** The shown workspace's layout. */
+  layout: TermLayout;
+  /** Change it, for the shown workspace. */
+  onLayout: (next: TermLayout) => void;
   sessions: TermSession[];
   /** Sessions the View menu's Filter is hiding. They claim no tile, exactly as
    * a tab hidden from the grid does, so the count, the slots and the short-row
@@ -189,17 +223,22 @@ export function useGridLayout({
   /** Put the shown workspace's sizes back to even (Reset grid). */
   clearSizes: () => void;
 }): GridLayout {
-  // Pane layout: one tab at a time (default) or every pane tiled like the skill
-  // run panel. Persisted in localStorage so it survives tab switches (the page
-  // stays mounted anyway) and program restarts. Maximizing always collapses to
-  // the single fullscreen pane, so grid only applies when not maximized.
-  const [layout, setLayout] = useState<TermLayout>(() =>
-    localStorage.getItem(LAYOUT_KEY) === "grid" ? "grid" : "tabs",
+  // Pane layout: one tab at a time or every pane tiled like the skill run
+  // panel. The shown workspace's own, kept with the workspace. The last one
+  // chosen is also remembered here, for the first workspace after a restart.
+  // Maximizing always collapses to the single fullscreen pane, so grid only
+  // applies when not maximized.
+  const chooseLayout = useCallback(
+    (next: TermLayout) => {
+      onLayout(next);
+      try {
+        localStorage.setItem(LAYOUT_KEY, next);
+      } catch {
+        // Only the next launch's starting layout is lost.
+      }
+    },
+    [onLayout],
   );
-  const chooseLayout = useCallback((next: TermLayout) => {
-    setLayout(next);
-    localStorage.setItem(LAYOUT_KEY, next);
-  }, []);
   const gridMode = layout === "grid" && !maximized;
 
   // Hide every grid tile's title bar for a denser, chrome-free wall of
@@ -211,6 +250,18 @@ export function useGridLayout({
     setHideGridHeaders((h) => {
       localStorage.setItem(GRID_HIDE_HEADERS_KEY, h ? "0" : "1");
       return !h;
+    });
+  }, []);
+
+  // Lock grid: the sizes stay as they are, so a stray press on a tile's edge
+  // can't move anything. Only the handles go; the layout is untouched.
+  const [gridLock, setGridLock] = useState(
+    () => localStorage.getItem(GRID_LOCK_KEY) === "1",
+  );
+  const toggleGridLock = useCallback(() => {
+    setGridLock((on) => {
+      localStorage.setItem(GRID_LOCK_KEY, on ? "0" : "1");
+      return !on;
     });
   }, []);
 
@@ -369,14 +420,14 @@ export function useGridLayout({
   const setDragCols = useCallback(
     (cols: number) => {
       setDragSize((s) => (s.cols === cols ? s : { ...s, cols }));
-      if (!strictGrid) saveGridItemCols(cols);
+      if (!strictGrid) saveDraggedGridItemCols(cols);
     },
     [strictGrid],
   );
   const setDragRows = useCallback(
     (rows: number) => {
       setDragSize((s) => (s.rows === rows ? s : { ...s, rows }));
-      if (!strictGrid) saveGridItemRows(rows);
+      if (!strictGrid) saveDraggedGridItemRows(rows);
     },
     [strictGrid],
   );
@@ -389,12 +440,24 @@ export function useGridLayout({
   const [lockedTiles, setLockedTiles] = useState(
     () => localStorage.getItem(GRID_LOCKED_KEY) !== "0",
   );
-  const toggleLockedTiles = useCallback(() => {
-    setLockedTiles((on) => {
-      localStorage.setItem(GRID_LOCKED_KEY, on ? "0" : "1");
-      return !on;
-    });
-  }, []);
+  //
+  // A tile size dragged with the tiles locked pins the whole grid (it is what
+  // `customGrid` below tests), and a pinned grid has no lines to drag. So
+  // unticking drops that size: this session's, and with Strict off the copy
+  // the drag wrote into Settings too, unless a value has been typed there
+  // since. A size typed in Settings is left alone; the caller is told it is
+  // there instead.
+  const toggleLockedTiles = useCallback((): GridPrefs | null => {
+    const next = !lockedTiles;
+    setLockedTiles(next);
+    localStorage.setItem(GRID_LOCKED_KEY, next ? "1" : "0");
+    if (next) return null;
+    setDragSize({ cols: null, rows: null });
+    forgetDraggedGridSize();
+    const left = loadGridPrefs();
+    setSavedPrefs(left);
+    return isAutoGrid(left) ? null : left;
+  }, [lockedTiles]);
   // Reset size means "tiles that fit the window", so it has to clear the
   // dragged size, any size pinned in Settings, and the shown workspace's own
   // sizes, or the button would appear to do nothing for someone who set one
@@ -661,6 +724,8 @@ export function useGridLayout({
     clearGridExcluded,
     hideGridHeaders,
     toggleGridHeaders,
+    gridLock,
+    toggleGridLock,
     twoUpSplit,
     toggleTwoUpSplit,
     gridPrefs,

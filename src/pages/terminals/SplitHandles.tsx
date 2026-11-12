@@ -1,100 +1,122 @@
-import type { FlowLine, FlowTile } from "@/lib/gridShape";
+import { Fragment } from "react";
+
+import { flowPlace, type Flow } from "@/lib/gridShape";
 import type { SplitLine } from "@/pages/terminals/useGridSplitters";
 
 /**
- * The drag strips on a grid tile's edges while the tiles are unlocked. The top
- * and bottom strips move the line above or below this tile's rows (and the
- * bottom of the last row is a line too, unless the rows fit the window); the
- * left and right ones move the line beside it in its own row (see
- * useGridSplitters). The right edge of a tile with blank space beside it, or
- * alone in its row, has a strip too, which sets its width. Every other edge
- * on the outside of the grid has none.
+ * The handles for the lines between grid tiles while the tiles are unlocked:
+ * one per line, centred on the gap, so the line you can see is the thing you
+ * grab. The bottom of a tile is the line under its row (and the bottom of the
+ * last row is a line too, unless the rows fit the window); the right of a tile
+ * is the line beside it in its own row (see useGridSplitters). The right edge
+ * of a tile with blank space beside it, or alone in its row, has a handle too,
+ * which sets its width.
  *
- * Above the terminal (z-20), because xterm's own scrollbar sits at z 11 and
+ * Each handle is a grid item of its own, placed in the area of the tile above
+ * or to the left of its line and pushed out over the gap with a negative
+ * margin, reaching a few pixels into the tiles either side. Drawn by the grid
+ * rather than by the tiles because a tile clips what overflows it: inside the
+ * tiles, every line had a strip on each side of the gap, two things to grab
+ * and two to light for the one line. Only the tile above and the tile to the
+ * left hold handles, so no line gets two.
+ *
+ * Above the terminals (z-20), because xterm's own scrollbar sits at z 11 and
  * would otherwise take the right edge.
  */
 export function SplitHandles({
-  tile,
-  rows,
-  left,
-  right,
+  flow,
   fitRows,
   onBegin,
 }: {
-  tile: FlowTile;
-  /** How many rows the grid has. */
-  rows: number;
-  left: FlowLine | null;
-  right: FlowLine | null;
+  flow: Flow;
   /** Rows always fill the pane (Settings -> Grid), so the grid's bottom edge
    * is not a line. */
   fitRows: boolean;
   onBegin: (e: React.MouseEvent, line: SplitLine) => void;
 }) {
-  const lastRow = tile.row + tile.rowSpan - 1;
   const rowsHint = fitRows
     ? "Drag to move the line between these rows"
     : "Drag to set the height of the row above this line. The rows below move, and the grid scrolls when they do not fit";
-  const bottomHint = fitRows
+  const lastHint = fitRows
     ? rowsHint
     : "Drag to set this row's height. The rows below move, and the grid scrolls when they do not fit";
   const pairHint =
     "Drag to move the line between these tiles. Past the minimum width (Settings > Grid), the tile on the right moves down a row";
   const edgeHint = "Drag to set this tile's width";
-  const sideHint = (line: FlowLine) =>
-    line.kind === "pair" ? pairHint : edgeHint;
   return (
     <>
-      {tile.row > 0 && (
-        <Strip
-          className="inset-x-0 top-0 h-1.5 cursor-row-resize"
-          orientation="horizontal"
-          label={rowsHint}
-          line={{ axis: "rows", index: tile.row - 1 }}
-          onBegin={onBegin}
-        />
-      )}
-      {(lastRow < rows - 1 || !fitRows) && (
-        <Strip
-          className="inset-x-0 bottom-0 h-1.5 cursor-row-resize"
-          orientation="horizontal"
-          label={bottomHint}
-          line={{ axis: "rows", index: lastRow }}
-          onBegin={onBegin}
-        />
-      )}
-      {left && (
-        <Strip
-          className="inset-y-0 left-0 w-1.5 cursor-col-resize"
-          orientation="vertical"
-          label={sideHint(left)}
-          line={{ axis: "cols", line: left }}
-          onBegin={onBegin}
-        />
-      )}
-      {right && (
-        <Strip
-          className="inset-y-0 right-0 w-1.5 cursor-col-resize"
-          orientation="vertical"
-          label={sideHint(right)}
-          line={{ axis: "cols", line: right }}
-          onBegin={onBegin}
-        />
-      )}
+      {flow.tiles.map((tile, slot) => {
+        const lastRow = tile.row + tile.rowSpan - 1;
+        const right = flow.rightLine[slot] ?? null;
+        const place = flowPlace(flow, slot);
+        // A line on the grid's own edge has the pane's padding beside it, not
+        // a gap and a tile, so its handle stops at the padding: reaching the
+        // usual 3px further made the pane scroll sideways (smoke test 87-3).
+        const atBottom = lastRow === flow.rows - 1;
+        const atRight = tile.x + tile.w > 1 - 1e-6;
+        return (
+          <Fragment key={slot}>
+            {(lastRow < flow.rows - 1 || !fitRows) && (
+              <Strip
+                style={{
+                  ...place,
+                  alignSelf: "end",
+                  height: REACH,
+                  marginBottom: atBottom ? EDGE : PAST,
+                }}
+                className="cursor-row-resize"
+                orientation="horizontal"
+                label={lastRow < flow.rows - 1 ? rowsHint : lastHint}
+                line={{ axis: "rows", index: lastRow }}
+                onBegin={onBegin}
+              />
+            )}
+            {right && (
+              <Strip
+                style={{
+                  ...place,
+                  justifySelf: "end",
+                  width: REACH,
+                  marginRight: atRight ? EDGE : PAST,
+                }}
+                className="cursor-col-resize"
+                orientation="vertical"
+                label={right.kind === "pair" ? pairHint : edgeHint}
+                line={{ axis: "cols", line: right }}
+                onBegin={onBegin}
+              />
+            )}
+          </Fragment>
+        );
+      })}
     </>
   );
 }
+
+/** How far a handle reaches into the tile on each side of the gap. */
+const INSET = "3px";
+/** The grid's gap (`gap-2`), and the pane's padding past the last row and the
+ * last tile in a row, which are the same 0.5rem. */
+const GAP = "0.5rem";
+/** A handle across: the gap and a little of the tile on each side. */
+const REACH = `calc(${GAP} + 2 * ${INSET})`;
+/** Out of the owning tile's area, over the gap, into the next tile. */
+const PAST = `calc(-1 * (${GAP} + ${INSET}))`;
+/** Out of the owning tile's area into the pane's padding, and no further. */
+const EDGE = `calc(-1 * ${GAP})`;
 
 /** `data-split` carries the line, so a press in the gap beside the strip can
  * find it (see useGridSplitters' `gapProps`), which also lights it with
  * `data-near`. */
 function Strip({
+  style,
   className,
   orientation,
   label,
   line,
   onBegin,
 }: {
+  style: React.CSSProperties;
   className: string;
   orientation: "horizontal" | "vertical";
   label: string;
@@ -110,7 +132,8 @@ function Strip({
       title={label}
       data-resize-handle=""
       data-split={JSON.stringify(line)}
-      className={`absolute z-20 hover:bg-primary/40 data-near:bg-primary/40 ${className}`}
+      style={style}
+      className={`z-20 rounded-sm hover:bg-primary/40 data-near:bg-primary/40 ${className}`}
     />
   );
 }

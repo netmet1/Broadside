@@ -153,6 +153,8 @@ export function TerminalRail({
   resetTileSize,
   lockedTiles,
   toggleLockedTiles,
+  gridLock,
+  toggleGridLock,
   gridFullscreen,
   onGridFullscreen,
   maximizeActive,
@@ -211,6 +213,9 @@ export function TerminalRail({
   /** Tiles resize together when dragged (the default), or one at a time. */
   lockedTiles: boolean;
   toggleLockedTiles: () => void;
+  /** View > Lock grid: nothing on the grid can be resized. */
+  gridLock: boolean;
+  toggleGridLock: () => void;
   gridFullscreen: boolean;
   onGridFullscreen: (on: boolean) => void;
   /** Fill the window with the active terminal (what F11 does). No-op with no
@@ -787,14 +792,34 @@ export function TerminalRail({
           {/* Whether dragging a tile's edge resizes every tile or only that
               one. A checkbox, so it stays open to be read back, and Grid's
               alone like Reset grid below. */}
+          {/* Lock grid: no handle at all, so the sizes can't be knocked out
+              of place. Above the two entries it switches off, since they
+              resize the grid too. */}
+          {gridMode && (
+            <DropdownMenuCheckboxItem
+              checked={gridLock}
+              onCheckedChange={toggleGridLock}
+              {...hint(
+                gridLock
+                  ? "The grid is locked: no tile or line between tiles can be dragged. Untick to resize again."
+                  : "Lock the grid so no tile or line between tiles can be dragged, in every workspace.",
+              )}
+            >
+              Lock grid
+            </DropdownMenuCheckboxItem>
+          )}
+
           {gridMode && (
             <DropdownMenuCheckboxItem
               checked={lockedTiles}
+              disabled={gridLock}
               onCheckedChange={toggleLockedTiles}
               {...hint(
-                lockedTiles
-                  ? "Dragging a tile's edge resizes every tile. Untick to drag the lines between tiles instead."
-                  : "Dragging the line between two tiles moves it: one grows, its neighbour shrinks. Tick to resize every tile together again.",
+                gridLock
+                  ? "The grid is locked. Untick Lock grid to change how tiles resize."
+                  : lockedTiles
+                    ? "Dragging a tile's edge resizes every tile. Untick to drag the lines between tiles instead."
+                    : "Dragging the line between two tiles moves it: one grows, its neighbour shrinks. Tick to resize every tile together again.",
               )}
             >
               Resize tiles together
@@ -803,12 +828,14 @@ export function TerminalRail({
 
           {gridMode && (
             <DropdownMenuItem
-              disabled={!sizeIsPinned}
+              disabled={!sizeIsPinned || gridLock}
               onSelect={resetTileSize}
               {...hint(
-                sizeIsPinned
-                  ? "Clear the tile size (dragged or set in Settings) and go back to original configured grid settings."
-                  : "Nothing to reset: the tiles already fit the window. Drag a tile edge, or pin a size in Settings, and this clears it.",
+                gridLock
+                  ? "The grid is locked. Untick Lock grid to reset its sizes."
+                  : sizeIsPinned
+                    ? "Clear the tile size (dragged or set in Settings) and go back to original configured grid settings."
+                    : "Nothing to reset: the tiles already fit the window. Drag a tile edge, or pin a size in Settings, and this clears it.",
               )}
             >
               <UndoIcon />
@@ -1010,11 +1037,13 @@ export function TerminalRail({
                 onSelect={onSaveSnapshot}
                 disabled={!canSaveSnapshot}
                 {...hint(
-                  "Save every open workspace, with its tabs, names and grid sizes, under one name. Open it again from Library > Snapshots",
+                  canSaveSnapshot
+                    ? "Save every open workspace, with its tabs, names, colours and grid sizes, as one snapshot. Open them all again from Library > Snapshots. Serial consoles are left out"
+                    : "Nothing open that a snapshot can hold. Serial consoles are left out of snapshots",
                 )}
               >
                 <CameraIcon />
-                Save workspaces as snapshot…
+                Snapshot workspaces…
               </DropdownMenuItem>
 
               {/* The bulk repairs, above the bulk destruction. Each is the way

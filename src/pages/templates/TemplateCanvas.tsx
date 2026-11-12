@@ -297,10 +297,6 @@ export function TemplateCanvas({
     onRows: (h) => onLayout(layoutWithHeights(layout, count, h)),
     onWidths: (w) => onLayout(layoutWithWidths(layout, count, w)),
   });
-  // A box is also something to drag somewhere else, so a mousedown on one of
-  // its lines must not turn into moving the box.
-  const splitDown = useRef(false);
-
   // Which box the pointer is currently over, so a drop has somewhere visible
   // to land. Null when the drag is elsewhere or there is none.
   const [overIndex, setOverIndex] = useState<number | null>(null);
@@ -377,10 +373,6 @@ export function TemplateCanvas({
                 key={itemKey(item, i)}
                 draggable={!sizing}
                 onDragStart={(e) => {
-                  if (splitDown.current) {
-                    e.preventDefault();
-                    return;
-                  }
                   e.dataTransfer.effectAllowed = "move";
                   e.dataTransfer.setData("text/plain", `${DRAG_BOX_PREFIX}${i}`);
                   setDragIndex(i);
@@ -455,29 +447,15 @@ export function TemplateCanvas({
                     <span>{r.missing}</span>
                   </span>
                 )}
-                {flow && count >= 2 && flow.tiles[i] && (
-                  <SplitHandles
-                    tile={flow.tiles[i]}
-                    rows={flow.rows}
-                    left={flow.leftLine[i] ?? null}
-                    right={flow.rightLine[i] ?? null}
-                    fitRows={fitRows}
-                    onBegin={(e, line) => {
-                      splitDown.current = true;
-                      window.addEventListener(
-                        "mouseup",
-                        () => {
-                          splitDown.current = false;
-                        },
-                        { once: true },
-                      );
-                      beginSplit(e, line);
-                    }}
-                  />
-                )}
               </div>
             );
           })}
+          {/* The lines between the boxes, one handle each, centred on the
+              gap. Beside the boxes rather than in them, so a press on a line
+              is never the start of dragging a box somewhere else. */}
+          {flow && count >= 2 && (
+            <SplitHandles flow={flow} fitRows={fitRows} onBegin={beginSplit} />
+          )}
           {items.length === 0 && dropBand(true)}
         </div>
       </div>

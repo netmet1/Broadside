@@ -135,6 +135,7 @@ export function HostsPage({
   startWithNewHost = false,
   onNewHostConsumed,
   canSaveSnapshot,
+  snapshotSerialLeftOut,
   onSaveSnapshot,
   onOpenSnapshot,
   onRetakeSnapshot,
@@ -162,6 +163,8 @@ export function HostsPage({
   onNewHostConsumed?: () => void;
   /** Something is open that a snapshot can hold. */
   canSaveSnapshot: boolean;
+  /** Serial consoles open, which a snapshot leaves out. */
+  snapshotSerialLeftOut: number;
   /** Ask for a name and save every open workspace as a snapshot. */
   onSaveSnapshot: () => void;
   onOpenSnapshot: (s: Snapshot) => void;
@@ -1096,8 +1099,8 @@ export function HostsPage({
               aria-label="Save open workspaces"
               {...hint(
                 canSaveSnapshot
-                  ? "Save every open workspace, with its tabs, names and grid sizes, as a snapshot"
-                  : "Nothing is open on the Terminals tab to save. Open some workspaces first",
+                  ? "Save every open workspace, with its tabs, names and grid sizes, as a snapshot. Serial consoles are left out"
+                  : "Nothing is open on the Terminals tab that a snapshot can hold. Open some workspaces first (serial consoles are left out)",
               )}
             >
               <CameraIcon />
@@ -1302,6 +1305,7 @@ export function HostsPage({
             snapshots={snapshots}
             loading={snapshotsLoading}
             canRetake={canSaveSnapshot}
+            serialLeftOut={snapshotSerialLeftOut}
             onOpen={onOpenSnapshot}
             onRetake={onRetakeSnapshot}
             onChanged={reloadSnapshots}
@@ -1315,8 +1319,8 @@ export function HostsPage({
             actionDisabled={!canSaveSnapshot}
             actionHint={
               canSaveSnapshot
-                ? "Save every open workspace, with its tabs, names and grid sizes, as a snapshot"
-                : "Nothing is open on the Terminals tab to save. Open some workspaces first"
+                ? "Save every open workspace, with its tabs, names and grid sizes, as a snapshot. Serial consoles are left out"
+                : "Nothing is open on the Terminals tab that a snapshot can hold. Open some workspaces first (serial consoles are left out)"
             }
             description="A snapshot keeps every workspace you have open, with its tabs, name, colour and grid sizes. Open it later to get them all back at once."
             helpSection={HELP_TERMINALS}

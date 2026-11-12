@@ -45,9 +45,22 @@ pub struct SnapshotWorkspace {
     /// How its grid shared the pane, or none for an even split.
     #[serde(default)]
     pub layout: Option<TemplateLayout>,
+    /// Whether it was showing its tabs one at a time or as a grid. Each
+    /// workspace has its own. None in a snapshot taken before there was a
+    /// choice per workspace, which opens the way a new workspace would.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<WorkspaceView>,
     /// Its tabs, in the tab strip's order.
     #[serde(default)]
     pub items: Vec<TemplateItem>,
+}
+
+/// The Terminals tab's two layouts, `"tabs"` and `"grid"` in the JSON.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkspaceView {
+    Tabs,
+    Grid,
 }
 
 /// What a snapshot holds, stored as one JSON column.
@@ -265,6 +278,7 @@ mod tests {
             color: String::new(),
             named: true,
             layout: None,
+            view: None,
             items: (0..n).map(|_| shell("pwsh")).collect(),
         }
     }
@@ -296,6 +310,7 @@ mod tests {
                 username: "joe".into(),
             },
         });
+        first.view = Some(WorkspaceView::Grid);
         let mut i = input("Friday", vec![first.clone(), ws("Logs", 1)]);
         i.active = 1;
         let s = create(&mut conn, &i).unwrap();
@@ -350,6 +365,20 @@ mod tests {
         ] {
             assert!(create(&mut conn, &bad).is_err(), "accepted {:?}", bad.name);
         }
+    }
+
+    #[test]
+    fn the_view_is_optional_and_lowercase_in_the_json() {
+        let old: SnapshotWorkspace =
+            serde_json::from_str(r#"{"name":"A","items":[]}"#).unwrap();
+        assert_eq!(old.view, None);
+        let mut w = ws("A", 0);
+        assert!(!serde_json::to_string(&w).unwrap().contains("view"));
+        w.view = Some(WorkspaceView::Tabs);
+        assert!(serde_json::to_string(&w).unwrap().contains(r#""view":"tabs""#));
+        let back: SnapshotWorkspace =
+            serde_json::from_str(r#"{"name":"A","view":"grid","items":[]}"#).unwrap();
+        assert_eq!(back.view, Some(WorkspaceView::Grid));
     }
 
     #[test]
