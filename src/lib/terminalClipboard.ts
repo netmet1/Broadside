@@ -11,8 +11,11 @@
  * of the command copied a minute ago.
  */
 
+import { writeText as writeNativeClipboard } from "@tauri-apps/plugin-clipboard-manager";
 import type { Terminal } from "@xterm/xterm";
 import { toast } from "sonner";
+
+import { IS_MAC } from "@/lib/platform";
 
 /**
  * Copy the pane's selection and clear it. Returns whether there was anything
@@ -21,7 +24,8 @@ import { toast } from "sonner";
  * The toast is the only sign the clipboard changed. The selection is cleared
  * straight away rather than once the write resolves, so it is gone by the time
  * the next right-click arrives and that one pastes, which is the whole rhythm
- * of the gesture: right-click to copy, right-click again to paste.
+ * of the gesture: right-click to copy, right-click again to paste. A write that
+ * fails says so, since the selection it would have copied is already gone.
  */
 export function copyTerminalSelection(
   term: Pick<Terminal, "getSelection" | "clearSelection">,
@@ -29,11 +33,22 @@ export function copyTerminalSelection(
   const sel = term.getSelection();
   if (!sel) return false;
   term.clearSelection();
-  navigator.clipboard
-    ?.writeText(sel)
+  writeClipboard(sel)
     .then(copied)
-    .catch(() => {});
+    .catch(() => {
+      toast.error("Could not copy to the clipboard", { duration: 2500 });
+    });
   return true;
+}
+
+/** Put text on the clipboard. On a Mac through the native pasteboard: WKWebView
+ * refuses `navigator.clipboard.writeText()` from a right-click, so the copy
+ * silently did nothing there. WebView2 allows it, and Windows never registers
+ * the native plugin, so it keeps the browser API. */
+function writeClipboard(text: string): Promise<void> {
+  if (IS_MAC) return writeNativeClipboard(text);
+  if (!navigator.clipboard) return Promise.reject(new Error("no clipboard"));
+  return navigator.clipboard.writeText(text);
 }
 
 /**

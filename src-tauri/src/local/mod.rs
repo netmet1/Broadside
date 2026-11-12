@@ -2,7 +2,7 @@
 //! ConPTY on Windows, a Unix pty on macOS), surfaced as terminal tabs alongside
 //! SSH sessions. Which shells exist is the platform's business: PowerShell /
 //! pwsh / Command Prompt / WSL distros on Windows (`windows.rs`), the shells in
-//! `/etc/shells` on macOS (`macos.rs`). This reuses the SAME session plumbing as
+//! `/etc/shells` and PowerShell 7 if it is there on macOS (`macos.rs`). This reuses the SAME session plumbing as
 //! the SSH path (`crate::ssh::pty`): the `PtyState` registry, the `SessionCmd`
 //! write/resize/close channel, and the `pty:data` / `pty:closed` events. Only
 //! the data SOURCE differs (a local child process instead of an SSH channel),
@@ -33,13 +33,13 @@ use windows as platform;
 pub struct LocalShell {
     /// Stable id used to launch it: `powershell`, `pwsh`, `cmd`, or
     /// `wsl:<distro>` (e.g. `wsl:Ubuntu-24.04`) on Windows; `unix:<name>`
-    /// (e.g. `unix:zsh`) on macOS.
+    /// (e.g. `unix:zsh`) or `pwsh` on macOS.
     pub id: String,
     /// Human label for the launcher menu.
     pub label: String,
     /// Coarse kind for the UI icon: `powershell` | `pwsh` | `cmd` | `wsl` on
     /// Windows; `posix` on macOS, which puts them in the same family as a
-    /// Bash-like custom terminal.
+    /// Bash-like custom terminal, and `powershell` for PowerShell there.
     pub kind: String,
 }
 
@@ -50,28 +50,56 @@ pub struct LocalShell {
 /// was the multi-second Settings-spinner / launch-hitch bug).
 static SHELLS: tokio::sync::OnceCell<Vec<LocalShell>> = tokio::sync::OnceCell::const_new();
 
-/// Lists the local shells available on this machine, cached for the app's
-/// lifetime (the set effectively never changes mid-run; re-detecting per call
-/// paid the wsl.exe cost every time). Concurrent first callers share one
-/// detection run. Call `prewarm_shells` at startup so this is already resolved
-/// by the time any page asks.
-pub async fn list_local_shells_cached() -> Vec<LocalShell> {
-    SHELLS
+/// Lists the local shells available on this machine. Detection is cached for
+/// the app's lifetime (the set effectively never changes mid-run; re-detecting
+/// per call paid the wsl.exe cost every time). Concurrent first callers share
+/// one detection run. Call `prewarm_shells` at startup so this is already
+/// resolved by the time any page asks.
+///
+/// The one exception is PowerShell on macOS, which is looked for again on
+/// every call (a few file checks), because it comes and goes with `pwsh` and
+/// the rest of the app already follows it without a restart.
+pub async fn list_local_shells() -> Vec<LocalShell> {
+    #[allow(unused_mut)]
+    let mut shells = SHELLS
         .get_or_init(|| async {
             tauri::async_runtime::spawn_blocking(platform::detect)
                 .await
                 .unwrap_or_default()
         })
         .await
-        .clone()
+        .clone();
+    #[cfg(target_os = "macos")]
+    shells.extend(macos::powershell_shell());
+    shells
 }
 
 /// Kicks off shell detection in the background at startup, so the first real
 /// caller (Terminals launcher, Settings Appearance) gets a cache hit.
 pub fn prewarm_shells() {
     tauri::async_runtime::spawn(async {
-        let _ = list_local_shells_cached().await;
+        let _ = list_local_shells().await;
     });
+}
+
+/// Whether PowerShell 7 is installed, for whether the app mentions PowerShell
+/// at all. Always true on Windows, which has Windows PowerShell whatever else is
+/// there. On macOS it is looked for every time it is asked (Settings asks each
+/// time it is shown), so installing it needs no restart; `custom` is the
+/// programs of the custom terminals declared as PowerShell. Async because the
+/// look can start the login shell, which must never hold up the IPC thread.
+pub async fn powershell_installed(custom: Vec<String>) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(move || macos::powershell_installed(&custom))
+            .await
+            .unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        let _ = custom;
+        true
+    }
 }
 
 /// A user-defined terminal application resolved from the database, ready to

@@ -86,7 +86,7 @@ export function StartupSection({
             {...hint(
               locked
                 ? "A template already consumes this option, please disable its startup first."
-                : "The tab Broadside opens on. Hosts unless you pick another.",
+                : "The tab Broadside opens on. Library unless you pick another.",
             )}
           >
             <SelectValue />
@@ -108,7 +108,7 @@ export function StartupSection({
         ) : (
           <p className="text-xs text-muted-foreground">
             Applies the next time Broadside starts; no Save needed. Reset puts
-            it back to Hosts.
+            it back to Library.
           </p>
         )}
       </div>

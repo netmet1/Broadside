@@ -101,8 +101,8 @@ pub fn run() {
 
     let builder = tauri::Builder::default();
     // The menu bar (and with it ⌘C/⌘V in text fields, and a ⌘Q that the exit
-    // guard sees), plus the native clipboard read the terminal's right-click
-    // paste uses there. See macos_menu.rs and Cargo.toml.
+    // guard sees), plus the native clipboard the terminal's right-click
+    // paste and copy use there. See macos_menu.rs and Cargo.toml.
     #[cfg(target_os = "macos")]
     let builder = builder
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -245,6 +245,7 @@ pub fn run() {
             commands::pty::pty_open_local,
             commands::pty::list_local_shells,
             commands::pty::list_serial_ports,
+            commands::pty::powershell_installed,
             commands::pty::list_custom_terminals,
             commands::pty::create_custom_terminal,
             commands::pty::update_custom_terminal,
@@ -362,6 +363,11 @@ pub fn run() {
             commands::templates::delete_template,
             commands::templates::export_template,
             commands::templates::read_template_file,
+            commands::snapshots::list_snapshots,
+            commands::snapshots::create_snapshot,
+            commands::snapshots::update_snapshot,
+            commands::snapshots::rename_snapshot,
+            commands::snapshots::delete_snapshot,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

@@ -201,13 +201,27 @@ pub fn pty_resize(
 
 /// Lists the local shells available on this machine (PowerShell / pwsh / Command
 /// Prompt / installed WSL distros on Windows; zsh, bash and the rest of
-/// `/etc/shells` on macOS) for the "New local shell" launcher. Async and
+/// `/etc/shells`, and PowerShell while `pwsh` is installed, on macOS) for the "New local shell" launcher. Async and
 /// cached: detection spawns wsl.exe (seconds when the WSL service is cold), and
 /// running that inside a sync command blocked the main thread, freezing every
 /// other IPC call (the Settings-spinner stall) and the event loop itself.
 #[tauri::command]
 pub async fn list_local_shells() -> Vec<crate::local::LocalShell> {
-    crate::local::list_local_shells_cached().await
+    crate::local::list_local_shells().await
+}
+
+/// Whether PowerShell 7 is installed (always true on Windows). A Mac without
+/// it leaves PowerShell out of the app: the shortcut scopes, the colour row,
+/// the broadcast family and the custom terminal family. A custom terminal the
+/// operator has declared as PowerShell counts, wherever its program lives.
+#[tauri::command]
+pub async fn powershell_installed(state: State<'_, DbState>) -> AppResult<bool> {
+    let custom = with_db(&state, crate::db::custom_terminals::list)?
+        .into_iter()
+        .filter(|t| t.family == crate::db::custom_terminals::FAMILY_POWERSHELL)
+        .map(|t| t.exe_path)
+        .collect();
+    Ok(crate::local::powershell_installed(custom).await)
 }
 
 /// The serial ports on this machine, for the "New local shell" launcher's serial

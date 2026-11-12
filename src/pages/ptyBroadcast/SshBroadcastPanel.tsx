@@ -449,7 +449,7 @@ export function SshBroadcastPanel({
             )}
             {sessions.length === 0 && !railCollapsed && (
               <p className="px-2 py-4 text-xs text-muted-foreground">
-                No open terminal sessions. Open terminals from the Hosts page
+                No open terminal sessions. Open terminals from the Library tab
                 first.
               </p>
             )}

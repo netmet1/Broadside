@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { SectionHeading } from "@/pages/settings/shared";
 import { TerminalColorsBlock } from "@/pages/settings/TerminalColorsBlock";
 import { IS_MAC } from "@/lib/platform";
+import { refreshPowershell, usePowershellInstalled } from "@/lib/powershell";
 import { errorMessage } from "@/lib/tauri/hosts";
 import {
   createCustomTerminal,
@@ -81,7 +82,11 @@ export function CustomTerminalsSection({ id }: { id: string }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const powershell = usePowershellInstalled();
   const reload = useCallback(() => {
+    // A custom terminal declared as PowerShell counts as PowerShell being here
+    // (see lib/powershell), so the answer is asked again with every change.
+    void refreshPowershell();
     listCustomTerminals()
       .then(setRows)
       .catch((e) => toast.error(errorMessage(e)))
@@ -147,7 +152,7 @@ export function CustomTerminalsSection({ id }: { id: string }) {
     <section id={id} className="space-y-4">
       <SectionHeading
         title="Custom terminals"
-        hint={`Add your own terminal application (${IS_MAC ? "fish, PowerShell, or any other shell" : "Git Bash, MSYS2, Cygwin"}) to the Terminals + launcher, alongside the shells Broadside detects, and choose the colour each kind of local tab wears.`}
+        hint={`Add your own terminal application (${IS_MAC ? "fish, or any other shell" : "Git Bash, MSYS2, Cygwin"}) to the Terminals + launcher, alongside the shells Broadside detects, and choose the colour each kind of local tab wears.`}
       />
 
       <div className="max-w-2xl space-y-3">
@@ -326,7 +331,11 @@ export function CustomTerminalsSection({ id }: { id: string }) {
                 }
                 className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus-visible:border-ring"
               >
-                {(Object.keys(FAMILY_LABELS) as TerminalFamily[]).map((f) => (
+                {/* No PowerShell family on a Mac without PowerShell, unless
+                    the row being edited already is one. */}
+                {(Object.keys(FAMILY_LABELS) as TerminalFamily[])
+                  .filter((f) => powershell || f !== "powershell" || draft.family === f)
+                  .map((f) => (
                   <option key={f} value={f}>
                     {FAMILY_LABELS[f]}
                   </option>

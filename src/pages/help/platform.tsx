@@ -28,6 +28,7 @@
 import { type ReactNode } from "react";
 
 import { type KeySpec, keyLabel, PLATFORM, type Platform } from "@/lib/platform";
+import { powershellInstalled, usePowershellInstalled } from "@/lib/powershell";
 
 export type HelpMode = Platform | "both";
 
@@ -123,4 +124,27 @@ Keys.searchNode = (props: Record<string, unknown>): ReactNode => {
   const { k } = props as { k: KeySpec };
   if (mode !== "both") return keyLabel(k, mode);
   return `${keyLabel(k, "windows")} ${keyLabel(k, "macos")}`;
+};
+
+type IfPowershellProps = { children: ReactNode; without?: ReactNode };
+
+function powershellHere(): boolean {
+  return mode !== "macos" || powershellInstalled();
+}
+
+/** Words about PowerShell, for a Mac that may not have it (see
+ * lib/powershell): `children` where PowerShell is on the machine, `without`
+ * (or nothing) on a Mac where it is not. Windows always has it, and the PDF,
+ * which speaks to every machine, always says it, so both read exactly as they
+ * did before this existed. Use it inside a `Plat`'s `mac` or an `OnMac`. */
+export function IfPowershell({ children, without }: IfPowershellProps) {
+  // Subscribed so the Help tab follows an install without a restart; the mode
+  // check comes after, so the hook is called on every render.
+  const installed = usePowershellInstalled();
+  return <>{mode !== "macos" || installed ? children : without}</>;
+}
+
+IfPowershell.searchNode = (props: Record<string, unknown>): ReactNode => {
+  const { children, without } = props as IfPowershellProps;
+  return powershellHere() ? children : without;
 };

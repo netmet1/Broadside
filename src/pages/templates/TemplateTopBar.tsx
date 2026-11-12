@@ -6,10 +6,8 @@ import {
   LayoutTemplateIcon,
   PlusIcon,
   SaveIcon,
-  ServerIcon,
   Trash2Icon,
   UploadIcon,
-  XIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -36,7 +34,7 @@ const STARTUP_OPTIONS: {
   {
     value: "off",
     label: "Don't open at startup",
-    hint: "This template only opens when you press Open on the Hosts tab.",
+    hint: "This template only opens when you open it from the List or the Terminals tab's + menu.",
   },
   {
     value: "launch",
@@ -69,7 +67,7 @@ const STARTUP_OPTIONS: {
  * icon-only controls (measured on the release build). Folding the three buys
  * 5.5rem, and the name field keeps its width.
  *
- * Startup is a setting on the template rather than a switch in the Hosts list
+ * Startup is a setting on the template rather than a switch in the List
  * on purpose. It is a property of the arrangement, it belongs with the name and
  * the colour, and putting it here is what lets the confirmation happen at the
  * moment somebody decided it rather than the moment they were doing something
@@ -80,7 +78,6 @@ export function TemplateTopBar({
   templates,
   currentId,
   onPick,
-  onBrowseTemplates,
   name,
   onNameChange,
   color,
@@ -91,7 +88,6 @@ export function TemplateTopBar({
   dirty,
   saving,
   onSave,
-  onCancel,
   onDelete,
   onExport,
   onImport,
@@ -100,8 +96,6 @@ export function TemplateTopBar({
   currentId: number | null;
   /** Load another saved template, or start a new one (`null`). */
   onPick: (id: number | null) => void;
-  /** Go to the Hosts tab's Templates list, where they are opened. */
-  onBrowseTemplates: () => void;
   name: string;
   onNameChange: (v: string) => void;
   color: string;
@@ -113,7 +107,6 @@ export function TemplateTopBar({
   dirty: boolean;
   saving: boolean;
   onSave: () => void;
-  onCancel: () => void;
   onDelete: () => void;
   onExport: () => void;
   onImport: () => void;
@@ -124,12 +117,9 @@ export function TemplateTopBar({
 
   return (
     <div className="@container flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border/50 px-3 py-2">
-      {/* Which template this is, and the way to another one.
-          Here rather than on the Hosts tab's list alone, because the editor
-          opened on its own lands on the last one edited and there would
-          otherwise be no way from that to any other without leaving the page.
-          It picks what to edit and never opens anything: launching stays on the
-          Hosts tab, where the list of machines is. */}
+      {/* Which template this is, and the way to another one without going
+          through the List. It picks what to edit and never opens anything:
+          launching stays on the List. */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -167,20 +157,6 @@ export function TemplateTopBar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* The way to the list the templates are opened from. An icon only, the
-          Hosts tab's own, because the bar has to fit one row at 1024px. */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onBrowseTemplates}
-        aria-label="All templates, on the Hosts tab"
-        title="All templates, on the Hosts tab"
-        {...hint(
-          "Go to Hosts > Templates, the list where templates are opened, reordered and duplicated. What is on the canvas stays here.",
-        )}
-      >
-        <ServerIcon className="h-3.5 w-3.5" />
-      </Button>
 
       <input
         type="text"
@@ -195,13 +171,13 @@ export function TemplateTopBar({
         // that reads as "save as": say that it is not.
         title={
           saved
-            ? "Template name, as the Hosts tab lists it. Saving a new name renames this template. To keep this one and make a copy, use Duplicate on the Hosts tab."
-            : "Template name, as the Hosts tab will list it"
+            ? "Template name, as the List shows it. Saving a new name renames this template. To keep this one and make a copy, use Duplicate on the List."
+            : "Template name, as the List will show it"
         }
         {...hint(
           saved
-            ? "What this arrangement is called in the Hosts tab's list. A new name renames it; Duplicate on the Hosts tab makes a copy."
-            : "What this arrangement is called in the Hosts tab's list",
+            ? "What this arrangement is called in the List. A new name renames it; Duplicate on the List makes a copy."
+            : "What this arrangement is called in the List",
         )}
       />
 
@@ -214,7 +190,7 @@ export function TemplateTopBar({
             variant="outline"
             size="sm"
             aria-label="Template colour"
-            {...hint("The colour this template wears in the Hosts tab's list")}
+            {...hint("The colour this template wears in the List")}
           >
             <span
               className={cn(
@@ -391,19 +367,7 @@ export function TemplateTopBar({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onCancel}
-          aria-label="Close the editor"
-          {...hint(
-            dirty
-              ? "Close the editor. Unsaved changes are lost."
-              : "Close the editor.",
-          )}
-        >
-          <XIcon className="h-3.5 w-3.5" />
-        </Button>
+
         <Button
           size="sm"
           disabled={saving || name.trim() === "" || (!dirty && saved)}

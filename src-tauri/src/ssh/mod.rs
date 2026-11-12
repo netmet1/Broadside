@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use russh::client::{self, AuthResult, Handle};
-use russh::keys::ssh_key::{HashAlg, PublicKey};
-use russh::keys::{load_secret_key, PrivateKeyWithHashAlg};
+use russh::keys::ssh_key::HashAlg;
+use russh::keys::{load_secret_key, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::ChannelMsg;
 use serde::Serialize;
 
@@ -581,8 +581,19 @@ impl client::Handler for TofuHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
+        // A host certificate is refused, not trusted on first use. The config
+        // never offers a `*-cert-v01` host key algorithm, so a server cannot
+        // send one; this only keeps a library default changing later from
+        // quietly adding a second way in.
+        let PublicKeyOrCertificate::PublicKey {
+            key: server_public_key,
+            ..
+        } = server_key
+        else {
+            return Ok(false);
+        };
         let fingerprint = server_public_key.fingerprint(HashAlg::Sha256).to_string();
         let presented = PresentedKey {
             key_type: server_public_key.algorithm().to_string(),

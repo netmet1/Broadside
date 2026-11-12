@@ -306,7 +306,7 @@ export function BroadcastTab({
             })}
             {b.hosts.length === 0 && !b.railCollapsed && (
               <p className="px-2 py-4 text-xs text-muted-foreground">
-                No hosts yet. Add hosts on the Hosts page first.
+                No hosts yet. Add hosts on the Library tab first.
               </p>
             )}
             {b.hosts.length > 0 &&

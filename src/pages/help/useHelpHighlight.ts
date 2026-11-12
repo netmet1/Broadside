@@ -50,11 +50,21 @@ const MIN_TERM_LEN = 2;
 
 /** Characters that sit between the words of a shortcut or a filename and that a
  * search is not expected to type: `ctrl shift g` has to find `Ctrl+Shift+G`,
- * and `reset display` has to find `Reset display`. */
-const SEPARATORS = String.raw`[\s+._/\\-]*`;
+ * and `reset display` has to find `Reset display`. A possessive is passed over
+ * the same way, so `row height` finds "a row's height". */
+const SEPARATORS = String.raw`(?:['’]s)?[\s+._/\\-]*`;
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** One searched word as a pattern. A plain plural finds the singular too, so
+ * `widths` finds "width" as well as "widths". */
+function termPattern(t: string): string {
+  if (/^[a-z]{3,}s$/.test(t) && !t.endsWith("ss")) {
+    return `${escapeRegExp(t.slice(0, -1))}s?`;
+  }
+  return escapeRegExp(t);
 }
 
 /**
@@ -82,7 +92,7 @@ export function queryPattern(
     .toLowerCase()
     .split(/\s+/)
     .filter((t) => t.length > 0)
-    .map(escapeRegExp);
+    .map(termPattern);
   if (terms.length === 0) return null;
   // A single term still has to clear the length floor; a phrase does not, since
   // `ctrl shift g` is specific enough as a whole even though `g` is not.

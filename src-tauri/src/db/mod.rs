@@ -16,6 +16,7 @@ pub mod restore;
 pub mod settings;
 pub mod shell_profiles;
 pub mod skills;
+pub mod snapshots;
 pub mod templates;
 
 pub struct DbState(pub Mutex<Connection>);
@@ -332,6 +333,23 @@ pub(crate) const MIGRATIONS: &[&str] = &[
          WHERE other.name < templates.name COLLATE NOCASE
             OR (other.name = templates.name COLLATE NOCASE AND other.id < templates.id)
      );",
+    // 27: how a template's grid shares the pane (prompts135), as JSON
+    // `{"rows":[..],"cols":[..]}` of relative sizes, or empty for none. Saved
+    // from the Terminals tab's grid after its lines were dragged; see
+    // templates::TemplateLayout. Empty for every existing row, which is
+    // exactly what they had: an even split.
+    "ALTER TABLE templates ADD COLUMN layout_json TEXT NOT NULL DEFAULT '';",
+    // 28: workspace snapshots (prompts135): every open workspace saved under a
+    // name, opened again as a set. `data_json` holds the workspaces, each with
+    // its name, colour, grid sizes and tabs as template items; see
+    // db/snapshots.rs. References only, never a secret, as with templates.
+    "CREATE TABLE IF NOT EXISTS snapshots (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL,
+        data_json   TEXT NOT NULL DEFAULT '{}',
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    );",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -792,6 +810,7 @@ mod tests {
                     },
                 }],
                 startup: templates::STARTUP_OFF.into(),
+                layout: None,
             },
         )
         .unwrap();

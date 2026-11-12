@@ -10,7 +10,7 @@ import type { Page } from "@/components/AppShell";
  * cannot be missing from the startup choice.
  */
 export const PAGES: readonly { page: Page; label: string }[] = [
-  { page: "hosts", label: "Hosts" },
+  { page: "hosts", label: "Library" },
   { page: "templates", label: "Templates" },
   { page: "terminals", label: "Terminals" },
   { page: "broadcast", label: "Broadcast" },

@@ -12,14 +12,24 @@
  * is exactly as it shipped; the moment any value is set, the grid switches to a
  * uniform settings-driven layout. */
 
+import { GRID_MIN_TILE_ROWS } from "@/lib/gridShape";
+
 const COLS_KEY = "terminal-grid-cols";
 const ITEM_COLS_KEY = "terminal-grid-item-cols";
 const ITEM_ROWS_KEY = "terminal-grid-item-rows";
 const STRICT_KEY = "terminal-grid-strict";
 const ROW_FILL_KEY = "terminal-grid-row-fill";
+const MIN_WIDTH_KEY = "terminal-grid-min-width";
+const MIN_HEIGHT_KEY = "terminal-grid-min-height";
+const FIT_ROWS_KEY = "terminal-grid-fit-rows";
 const SEED_COLS_KEY = "terminal-grid-seed-cols";
 const SEED_ITEM_COLS_KEY = "terminal-grid-seed-item-cols";
 const SEED_ITEM_ROWS_KEY = "terminal-grid-seed-item-rows";
+/** What a drag last wrote into Item width / Item height with Strict off, so
+ * unticking View > Resize tiles together can take back a size that came from a
+ * drag and leave one that was typed. Any other write to the field drops it. */
+const DRAGGED_ITEM_COLS_KEY = "terminal-grid-dragged-item-cols";
+const DRAGGED_ITEM_ROWS_KEY = "terminal-grid-dragged-item-rows";
 
 /** Fired on this window whenever any grid pref is written.
  *
@@ -96,25 +106,64 @@ export function saveGridCols(v: number | null): void {
   writeField(COLS_KEY, v, GRID_COLS_MIN, GRID_COLS_MAX);
 }
 export function saveGridItemCols(v: number | null): void {
+  localStorage.removeItem(DRAGGED_ITEM_COLS_KEY);
   writeField(ITEM_COLS_KEY, v, GRID_ITEM_COLS_MIN, GRID_ITEM_COLS_MAX);
 }
 export function saveGridItemRows(v: number | null): void {
+  localStorage.removeItem(DRAGGED_ITEM_ROWS_KEY);
   writeField(ITEM_ROWS_KEY, v, GRID_ITEM_ROWS_MIN, GRID_ITEM_ROWS_MAX);
 }
 
+/** The same two writes, from a tile drag in the Terminals grid (Strict off).
+ * The value is also noted as dragged; see `forgetDraggedGridSize`. */
+export function saveDraggedGridItemCols(v: number): void {
+  const stored = writeField(ITEM_COLS_KEY, v, GRID_ITEM_COLS_MIN, GRID_ITEM_COLS_MAX);
+  localStorage.setItem(DRAGGED_ITEM_COLS_KEY, stored ?? "");
+}
+export function saveDraggedGridItemRows(v: number): void {
+  const stored = writeField(ITEM_ROWS_KEY, v, GRID_ITEM_ROWS_MIN, GRID_ITEM_ROWS_MAX);
+  localStorage.setItem(DRAGGED_ITEM_ROWS_KEY, stored ?? "");
+}
+
+/**
+ * Clear Item width and Item height where they still hold what a drag wrote,
+ * and leave them where someone typed a value in Settings since. Called when
+ * View > Resize tiles together is unticked: a size dragged with it ticked pins
+ * the whole grid, which is what kept the lines between tiles from appearing.
+ * Survives a restart, because with Strict off the dragged size does too.
+ */
+export function forgetDraggedGridSize(): void {
+  let changed = false;
+  for (const [key, mark] of [
+    [ITEM_COLS_KEY, DRAGGED_ITEM_COLS_KEY],
+    [ITEM_ROWS_KEY, DRAGGED_ITEM_ROWS_KEY],
+  ] as const) {
+    const dragged = localStorage.getItem(mark);
+    if (dragged !== null && localStorage.getItem(key) === dragged) {
+      localStorage.removeItem(key);
+      changed = true;
+    }
+    localStorage.removeItem(mark);
+  }
+  if (changed) announce();
+}
+
+/** Writes one field and returns what was stored (null when cleared). */
 function writeField(
   key: string,
   v: number | null,
   min: number,
   max: number,
-): void {
+): string | null {
+  let stored: string | null = null;
   if (v === null) {
     localStorage.removeItem(key);
   } else {
-    const clamped = Math.min(Math.max(Math.round(v), min), max);
-    localStorage.setItem(key, String(clamped));
+    stored = String(Math.min(Math.max(Math.round(v), min), max));
+    localStorage.setItem(key, stored);
   }
   announce();
+  return stored;
 }
 
 /* ------------------------------------------------------------------ *
@@ -144,6 +193,65 @@ export function loadRowFill(): RowFill {
 
 export function saveRowFill(v: RowFill): void {
   localStorage.setItem(ROW_FILL_KEY, v);
+  announce();
+}
+
+/** How narrow a tile may be dragged with the tiles unlocked, as a percentage
+ * of the grid's width. Dragging the line between two tiles so the one on the
+ * right would be at or under this moves it down to the next row instead, and
+ * the tile on the left keeps the width it was given. */
+export const GRID_MIN_WIDTH_MIN = 10;
+export const GRID_MIN_WIDTH_MAX = 50;
+export const DEFAULT_GRID_MIN_WIDTH = 15;
+
+export function loadGridMinWidth(): number {
+  return clampInt(
+    localStorage.getItem(MIN_WIDTH_KEY),
+    DEFAULT_GRID_MIN_WIDTH,
+    GRID_MIN_WIDTH_MIN,
+    GRID_MIN_WIDTH_MAX,
+  );
+}
+
+export function saveGridMinWidth(v: number): void {
+  writeSeed(MIN_WIDTH_KEY, v, GRID_MIN_WIDTH_MIN, GRID_MIN_WIDTH_MAX);
+}
+
+/** The shortest the grid makes a row on its own, in lines of the terminal
+ * font. Rows share the pane's height while they fit; once that would make
+ * them shorter than this, they stay this tall and the grid scrolls. A row you
+ * drag can go shorter (see GRID_SPLIT_MIN_ROWS). */
+export const GRID_MIN_HEIGHT_MIN = 6;
+export const GRID_MIN_HEIGHT_MAX = 60;
+export const DEFAULT_GRID_MIN_HEIGHT = GRID_MIN_TILE_ROWS;
+
+export function loadGridMinHeight(): number {
+  return clampInt(
+    localStorage.getItem(MIN_HEIGHT_KEY),
+    DEFAULT_GRID_MIN_HEIGHT,
+    GRID_MIN_HEIGHT_MIN,
+    GRID_MIN_HEIGHT_MAX,
+  );
+}
+
+export function saveGridMinHeight(v: number): void {
+  writeSeed(MIN_HEIGHT_KEY, v, GRID_MIN_HEIGHT_MIN, GRID_MIN_HEIGHT_MAX);
+}
+
+/** What dragging the line between two rows does, with the tiles unlocked.
+ *
+ * Off (the default): each row keeps its own height. Dragging a row's edge
+ * makes that row taller or shorter and moves the rows below it, and when the
+ * rows no longer fit the pane the grid scrolls. Nothing else gets shorter.
+ *
+ * On: the rows always fit the pane. Dragging the line between two rows gives
+ * one the height the other loses. */
+export function loadGridFitRows(): boolean {
+  return localStorage.getItem(FIT_ROWS_KEY) === "1";
+}
+
+export function saveGridFitRows(v: boolean): void {
+  localStorage.setItem(FIT_ROWS_KEY, v ? "1" : "0");
   announce();
 }
 

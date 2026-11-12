@@ -11,6 +11,7 @@ import {
   PanelLeftOpenIcon,
   RadioTowerIcon,
   ScrollTextIcon,
+  LibraryBigIcon,
   ServerIcon,
   SettingsIcon,
   TerminalIcon,
@@ -39,10 +40,12 @@ export type Page =
   | "settings"
   | "help";
 
-/** The Hosts hint, exported because the Hosts page puts it on its own heading
- * as well. One string in one place: a heading and a nav button that describe
- * the same page in two slightly different ways is worse than either alone. */
-export const HOSTS_NAV_HINT = "Manage SSH connection targets and credentials";
+/** The Library hint, exported because the Library page puts it on its own
+ * heading as well. One string in one place: a heading and a nav button that
+ * describe the same page in two slightly different ways is worse than either
+ * alone. */
+export const HOSTS_NAV_HINT =
+  "Your saved hosts, launch profiles and snapshots, and the way to your templates";
 
 type NavItem = {
   page: Page;
@@ -56,14 +59,14 @@ const NAV_ITEMS: NavItem[] = [
   {
     page: "hosts",
     label: pageLabel("hosts"),
-    icon: ServerIcon,
+    icon: LibraryBigIcon,
     hint: HOSTS_NAV_HINT,
   },
   {
     page: "templates",
     label: pageLabel("templates"),
     icon: LayoutTemplateIcon,
-    hint: "Build a saved arrangement of sessions; open it from the Hosts tab",
+    hint: "Build saved arrangements of sessions, and open them from the List",
   },
   {
     page: "terminals",

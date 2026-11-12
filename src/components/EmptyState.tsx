@@ -31,6 +31,7 @@ export function EmptyState({
   actionLabel,
   onAction,
   actionHint,
+  actionDisabled = false,
   secondaryLabel,
   onSecondary,
   secondaryHint,
@@ -45,6 +46,9 @@ export function EmptyState({
   onAction: () => void;
   /** Status-bar line for the button, as everywhere else. */
   actionHint: string;
+  /** Greys the button when there is nothing for it to do yet; `actionHint`
+   * should then say why. */
+  actionDisabled?: boolean;
   /** An optional second way in, drawn beside the first and less loudly. */
   secondaryLabel?: string;
   onSecondary?: () => void;
@@ -66,7 +70,11 @@ export function EmptyState({
         {title}
       </h2>
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-        <Button onClick={onAction} {...hint(actionHint)}>
+        <Button
+          onClick={onAction}
+          disabled={actionDisabled}
+          {...hint(actionHint)}
+        >
           {actionLabel}
         </Button>
         {secondaryLabel && onSecondary && (

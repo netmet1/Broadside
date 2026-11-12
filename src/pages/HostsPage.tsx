@@ -15,12 +15,12 @@ import {
   ListFilterIcon,
   Loader2Icon,
   PencilIcon,
-  PlayIcon,
   PlugZapIcon,
   PlusIcon,
   SearchIcon,
   ServerIcon,
   SquareTerminalIcon,
+  CameraIcon,
   TagIcon,
   TerminalIcon,
   Trash2Icon,
@@ -98,8 +98,10 @@ import { useHostOrder } from "@/pages/hosts/useHostOrder";
 import { RowGrip } from "@/components/RowGrip";
 import { useColumnResize } from "@/pages/hosts/useColumnResize";
 import { useHostTagFilter } from "@/pages/hosts/useHostTagFilter";
-import { TemplatesView } from "@/pages/hosts/TemplatesView";
-import { useTemplateList } from "@/pages/hosts/useTemplateList";
+import { SegmentedTabs } from "@/components/SegmentedTabs";
+import { SnapshotsView } from "@/pages/hosts/SnapshotsView";
+import { useSnapshotList } from "@/pages/hosts/useSnapshotList";
+import type { Snapshot } from "@/lib/tauri/snapshots";
 import { ProfilesView } from "@/pages/hosts/ProfilesView";
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
@@ -107,10 +109,8 @@ import { type ShellProfile } from "@/lib/localShellProfiles";
 import { listLocalShells, type LocalShell } from "@/lib/tauri/local";
 import { loadDisabledShells } from "@/lib/localShellPrefs";
 import { useProfileActions } from "@/lib/useProfileActions";
-import { type Template } from "@/lib/tauri/templates";
 import {
   HELP_HOSTS,
-  HELP_TEMPLATES,
   HELP_TERMINALS,
   type HelpSectionId,
 } from "@/pages/help/sections";
@@ -129,12 +129,17 @@ export function HostsPage({
   onTerminateHost,
   connectedHostIds,
   openHostIds,
-  onEditTemplate,
-  onOpenTemplates,
+  onBrowseTemplates,
   onOpenProfiles,
   onOpenHelp,
   startWithNewHost = false,
   onNewHostConsumed,
+  canSaveSnapshot,
+  snapshotSerialLeftOut,
+  onSaveSnapshot,
+  onOpenSnapshot,
+  onRetakeSnapshot,
+  snapshotsVersion,
 }: {
   onOpenTerminal: (host: Host) => void;
   /** Open terminal tabs for several hosts at once (multi-select). */
@@ -145,13 +150,8 @@ export function HostsPage({
   connectedHostIds: Set<number>;
   /** Hosts with at least one open terminal tab (for the already-open guards). */
   openHostIds: Set<number>;
-  /** Switch to the Templates tab with this template loaded, or a new one. */
-  onEditTemplate: (template: Template | null) => void;
-  /** Open every session in these templates, one template after another in the
-   * order given: one from its row, or every one ticked. The App layer owns what
-   * happens when terminals are already open, because it is the one that
-   * knows. */
-  onOpenTemplates: (templates: Template[]) => void;
+  /** The Templates button: the Templates tab, at its List. */
+  onBrowseTemplates: () => void;
   /** Open these saved profiles as terminal tabs: one from its row, or every one
    * ticked. Resolved and opened by the App layer, through the same path a
    * template launch and the "+" launcher take. */
@@ -161,30 +161,41 @@ export function HostsPage({
    * Hosts section). One-shot: cleared by the caller once taken. */
   startWithNewHost?: boolean;
   onNewHostConsumed?: () => void;
+  /** Something is open that a snapshot can hold. */
+  canSaveSnapshot: boolean;
+  /** Serial consoles open, which a snapshot leaves out. */
+  snapshotSerialLeftOut: number;
+  /** Ask for a name and save every open workspace as a snapshot. */
+  onSaveSnapshot: () => void;
+  onOpenSnapshot: (s: Snapshot) => void;
+  /** Take a snapshot again from what is open; resolves true once done. */
+  onRetakeSnapshot: (s: Snapshot) => Promise<boolean>;
+  /** Bumped by App whenever a snapshot is saved, so the list reads it. */
+  snapshotsVersion: number;
 }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
-  // Which side of the Hosts | Templates toggle is showing. Persisted, because
-  // an operator who works from templates should not have to pick the same side
-  // of the same switch on every launch.
+  // Which side of the Hosts | Profiles switch is showing. Persisted, because
+  // an operator who works from profiles should not have to pick the same side
+  // of the same switch on every launch. Templates sits between them in the
+  // switch but is a way to the Templates tab's List, not a side of this page.
   const [side, setSide] = useState<HostsSide>(loadHostsSide);
-  const chooseSide = useCallback((next: HostsSide) => {
-    setSide(next);
-    rememberHostsSide(next);
-  }, []);
   const {
-    templates,
-    loading: templatesLoading,
-    checkedIds: checkedTemplateIds,
-    checked: checkedTemplates,
-    toggle: toggleTemplate,
-    toggleAll: toggleAllTemplates,
-    deleting: deletingTemplate,
-    setDeleting: setDeletingTemplate,
-    runDelete: runDeleteTemplate,
-    duplicate: duplicateTemplate,
-    drag: templateDrag,
-  } = useTemplateList();
+    snapshots,
+    loading: snapshotsLoading,
+    reload: reloadSnapshots,
+  } = useSnapshotList(snapshotsVersion);
+  const chooseSide = useCallback(
+    (next: HostsSide | "templates") => {
+      if (next === "templates") {
+        onBrowseTemplates();
+        return;
+      }
+      setSide(next);
+      rememberHostsSide(next);
+    },
+    [onBrowseTemplates],
+  );
   // Saved launch profiles, the third side. The Hosts page is built fresh on
   // every visit (App renders it behind `page === "hosts"`), so the hook is
   // always "visible" while this component exists and re-reads on each arrival.
@@ -813,7 +824,13 @@ export function HostsPage({
   };
 
   usePageStatus(
-    side === "profiles"
+    side === "snapshots"
+      ? snapshotsLoading
+        ? null
+        : `Showing ${snapshots.length} ${
+            snapshots.length === 1 ? "snapshot" : "snapshots"
+          }`
+      : side === "profiles"
       ? profilesLoading
         ? null
         : profileSelection.size > 0
@@ -823,12 +840,6 @@ export function HostsPage({
           : `Showing ${profiles.length} ${
               profiles.length === 1 ? "profile" : "profiles"
             }`
-      : side === "templates"
-      ? templatesLoading
-        ? null
-        : `Showing ${templates.length} ${
-            templates.length === 1 ? "template" : "templates"
-          }`
       : loading
         ? null
         : (tagFilterActive || labelFilterActive) && visibleHosts.length !== hosts.length
@@ -1042,76 +1053,61 @@ export function HostsPage({
             className="min-w-0 truncate font-heading text-xl font-semibold tracking-tight"
             {...hint(HOSTS_NAV_HINT)}
           >
-            Hosts
+            Library
           </h1>
-          {/* Two lists on one tab, switched the way the Terminals rail switches
-              between Tabs and Grid. They belong together: a template is an
-              arrangement of the machines in the other list, and keeping it on
-              its own tab would mean two places to go to answer "what have I got
-              and how do I open it". The Templates *editor* is elsewhere; this
-              is the list. */}
-          <div
-            role="group"
-            aria-label="Hosts, templates or profiles"
-            className="flex shrink-0 items-center gap-0.5 rounded-md border border-input p-0.5"
-          >
-            <button
-              type="button"
-              onClick={() => chooseSide("hosts")}
-              aria-pressed={side === "hosts"}
-              className={cn(
-                "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
-                side === "hosts"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              {...hint("The machines Broadside knows about.")}
-            >
-              <ServerIcon className="h-3.5 w-3.5" />
-              Hosts
-            </button>
-            <button
-              type="button"
-              onClick={() => chooseSide("templates")}
-              aria-pressed={side === "templates"}
-              className={cn(
-                "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
-                side === "templates"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              {...hint(
-                "Saved arrangements of sessions. Pick one and press Open to launch the whole set.",
-              )}
-            >
-              <LayoutTemplateIcon className="h-3.5 w-3.5" />
-              Templates
-            </button>
-            {/* The third list. A profile is a saved way of opening a session,
-                the same kind of thing as the two beside it, and until now it
-                could only be managed from a dropdown on another tab: a folder
-                path and a startup command had to be read through a tooltip.
-                The "+" launcher is still where they are used. */}
-            <button
-              type="button"
-              onClick={() => chooseSide("profiles")}
-              aria-pressed={side === "profiles"}
-              className={cn(
-                "flex items-center gap-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
-                side === "profiles"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              {...hint(
-                "Saved local-shell launch profiles: a shell, a folder and an optional startup command. Open one from its row, or tick several and open them together.",
-              )}
-            >
-              <SquareTerminalIcon className="h-3.5 w-3.5" />
-              Profiles
-            </button>
-          </div>
+          {/* Everything saved that a session is opened from, switched the way
+              the Terminals rail switches between Tabs and Grid. Templates is
+              a way to the Templates tab's List rather than a side of its own:
+              the list of them lives beside their editor (prompts135). */}
+          <SegmentedTabs<HostsSide | "templates">
+            label="Hosts, templates or profiles"
+            value={side}
+            onChange={chooseSide}
+            segments={[
+              {
+                value: "hosts",
+                label: "Hosts",
+                icon: ServerIcon,
+                hint: "The machines Broadside knows about.",
+              },
+              {
+                value: "templates",
+                label: "Templates",
+                icon: LayoutTemplateIcon,
+                hint: "Saved arrangements of sessions. Goes to the Templates tab's List, where they are opened.",
+              },
+              {
+                value: "profiles",
+                label: "Profiles",
+                icon: SquareTerminalIcon,
+                hint: "Saved local-shell launch profiles: a shell, a folder and an optional startup command. Open one from its row, or tick several and open them together.",
+              },
+              {
+                value: "snapshots",
+                label: "Snapshots",
+                icon: CameraIcon,
+                hint: "Every workspace you had open, saved under one name. Open one to get them all back.",
+              },
+            ]}
+          />
         </div>
-        {side === "profiles" ? (
+        {side === "snapshots" ? (
+          <div className="flex shrink-0 gap-2">
+            <Button
+              onClick={onSaveSnapshot}
+              disabled={!canSaveSnapshot}
+              aria-label="Save open workspaces"
+              {...hint(
+                canSaveSnapshot
+                  ? "Save every open workspace, with its tabs, names and grid sizes, as a snapshot. Serial consoles are left out"
+                  : "Nothing is open on the Terminals tab that a snapshot can hold. Open some workspaces first (serial consoles are left out)",
+              )}
+            >
+              <CameraIcon />
+              {!compact && "Save open workspaces"}
+            </Button>
+          </div>
+        ) : side === "profiles" ? (
           <div className="flex shrink-0 gap-2">
             {/* The same button the Hosts side has, doing the same thing to the
                 same kind of list: open every ticked one at once. A profile is
@@ -1201,42 +1197,6 @@ export function HostsPage({
             >
               <PlusIcon />
               {!compact && "New profile"}
-            </Button>
-          </div>
-        ) : side === "templates" ? (
-          <div className="flex shrink-0 gap-2">
-            {/* The Templates side's Multi-terminal: every ticked template,
-                one after another in the list's order. One ticked opens just
-                that one, as its row's play button would; two or more always
-                ask first, saying the order. */}
-            <Button
-              variant="outline"
-              onClick={() => onOpenTemplates(checkedTemplates)}
-              disabled={checkedTemplates.length === 0}
-              aria-label="Multi-template"
-              {...hint(
-                checkedTemplates.length === 0
-                  ? "Tick templates to open several at once, in the list's order. To open just one, use its play button or double-click its row"
-                  : checkedTemplates.length === 1
-                    ? `Open every session in "${checkedTemplates[0].name}", in order, on the Terminals tab`
-                    : `Open the ${checkedTemplates.length} ticked templates one after another, top of the list first`,
-              )}
-            >
-              <PlayIcon />
-              {compact ? "" : "Multi-template"}
-              {checkedTemplates.length > 0
-                ? compact
-                  ? checkedTemplates.length
-                  : ` (${checkedTemplates.length})`
-                : ""}
-            </Button>
-            <Button
-              onClick={() => onEditTemplate(null)}
-              aria-label="New template"
-              {...hint("Build a new arrangement on the Templates tab")}
-            >
-              <PlusIcon />
-              {!compact && "New template"}
             </Button>
           </div>
         ) : (
@@ -1339,7 +1299,35 @@ export function HostsPage({
         )}
       </div>
 
-      {side === "profiles" ? (
+      {side === "snapshots" ? (
+        snapshotsLoading || snapshots.length > 0 ? (
+          <SnapshotsView
+            snapshots={snapshots}
+            loading={snapshotsLoading}
+            canRetake={canSaveSnapshot}
+            serialLeftOut={snapshotSerialLeftOut}
+            onOpen={onOpenSnapshot}
+            onRetake={onRetakeSnapshot}
+            onChanged={reloadSnapshots}
+          />
+        ) : (
+          <EmptyState
+            icon={CameraIcon}
+            title="Snapshots"
+            actionLabel="Save open workspaces"
+            onAction={onSaveSnapshot}
+            actionDisabled={!canSaveSnapshot}
+            actionHint={
+              canSaveSnapshot
+                ? "Save every open workspace, with its tabs, names and grid sizes, as a snapshot. Serial consoles are left out"
+                : "Nothing is open on the Terminals tab that a snapshot can hold. Open some workspaces first (serial consoles are left out)"
+            }
+            description="A snapshot keeps every workspace you have open, with its tabs, name, colour and grid sizes. Open it later to get them all back at once."
+            helpSection={HELP_TERMINALS}
+            onOpenHelp={onOpenHelp}
+          />
+        )
+      ) : side === "profiles" ? (
         profilesLoading || profiles.length > 0 ? (
           <ProfilesView
             profiles={profiles}
@@ -1364,32 +1352,6 @@ export function HostsPage({
             actionHint="A shell, a folder and an optional startup command, saved under a name"
             description="A profile is a saved way of opening a local shell: which shell, which folder, and a command to run once it opens. Kept here, opened from here or from the Terminals + menu."
             helpSection={HELP_TERMINALS}
-            onOpenHelp={onOpenHelp}
-          />
-        )
-      ) : side === "templates" ? (
-        templatesLoading || templates.length > 0 ? (
-          <TemplatesView
-            templates={templates}
-            loading={templatesLoading}
-            checkedIds={checkedTemplateIds}
-            onToggle={toggleTemplate}
-            onToggleAll={toggleAllTemplates}
-            drag={templateDrag}
-            onOpen={(t) => onOpenTemplates([t])}
-            onEdit={onEditTemplate}
-            onDuplicate={(t) => void duplicateTemplate(t)}
-            onDelete={setDeletingTemplate}
-          />
-        ) : (
-          <EmptyState
-            icon={LayoutTemplateIcon}
-            title="Templates"
-            actionLabel="Create your first template"
-            onAction={() => onEditTemplate(null)}
-            actionHint="Build an arrangement of sessions on the Templates tab"
-            description="A template is a saved arrangement of terminal sessions. Build it once, then open the whole set from here in a single action."
-            helpSection={HELP_TEMPLATES}
             onOpenHelp={onOpenHelp}
           />
         )
@@ -1637,36 +1599,6 @@ export function HostsPage({
       </div>
       )}
 
-      {/* Deleting a template from the list beside the hosts. Its own dialog
-          rather than the host one: nothing here is a machine, and the wording
-          that matters is which of the two is going. */}
-      <AlertDialog
-        open={deletingTemplate !== null}
-        onOpenChange={(o) => {
-          if (!o) setDeletingTemplate(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete &ldquo;{deletingTemplate?.name}&rdquo;?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              The arrangement goes. The hosts, shells and profiles it names are
-              not touched, and neither is anything currently open.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => void runDeleteTemplate()}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* The profile editor, the same dialog the Terminals "+" menu opens: one
           form for one thing, wherever you reached it from. */}

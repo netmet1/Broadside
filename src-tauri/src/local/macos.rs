@@ -7,7 +7,7 @@
 //! same rule `custom:<id>` follows.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use portable_pty::CommandBuilder;
 
@@ -32,16 +32,14 @@ fn shells() -> &'static [Shell] {
 /// lists that is really there, one per name. `/etc/shells` is the system's own
 /// list of what counts as a login shell, and `chsh` and Homebrew's instructions
 /// both go through it, so a fish the operator uses is in it.
+///
+/// Never `pwsh`, even when `/etc/shells` lists it (Microsoft's `.pkg` adds it
+/// there): PowerShell is its own entry, [`powershell_shell`], because it speaks
+/// a different language from the rest of this list and its tabs belong with
+/// PowerShell, not with zsh and bash.
 fn find_shells() -> Vec<Shell> {
     let mut paths: Vec<PathBuf> = login_shell().into_iter().collect();
-    if let Ok(text) = std::fs::read_to_string("/etc/shells") {
-        paths.extend(
-            text.lines()
-                .map(str::trim)
-                .filter(|l| l.starts_with('/'))
-                .map(PathBuf::from),
-        );
-    }
+    paths.extend(etc_shells());
     // Every Mac since Catalina has it, and a launcher with nothing in it would
     // be a stranger failure than a list of one.
     paths.push(PathBuf::from("/bin/zsh"));
@@ -54,12 +52,26 @@ fn find_shells() -> Vec<Shell> {
         let Some(name) = path.file_name().and_then(|n| n.to_str()).map(str::to_owned) else {
             continue;
         };
-        if found.iter().any(|s| s.name == name) {
+        if name == PWSH || found.iter().any(|s| s.name == name) {
             continue;
         }
         found.push(Shell { name, path });
     }
     found
+}
+
+/// The programs `/etc/shells` lists, read fresh each time (it is one small
+/// file). Whether each is really there is the caller's business.
+fn etc_shells() -> Vec<PathBuf> {
+    std::fs::read_to_string("/etc/shells")
+        .map(|text| {
+            text.lines()
+                .map(str::trim)
+                .filter(|l| l.starts_with('/'))
+                .map(PathBuf::from)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The login shell. `SHELL` is what launchd gives an app it starts; the
@@ -87,7 +99,8 @@ fn is_program(path: &Path) -> bool {
 }
 
 /// The local shells, login shell first. Labels are the shells' own names,
-/// which is what a Mac user calls them.
+/// which is what a Mac user calls them. PowerShell is not here: it comes and
+/// goes with `pwsh` (see [`powershell_shell`]), and this list is found once.
 pub(super) fn detect() -> Vec<LocalShell> {
     shells()
         .iter()
@@ -97,6 +110,18 @@ pub(super) fn detect() -> Vec<LocalShell> {
             kind: "posix".into(),
         })
         .collect()
+}
+
+/// PowerShell for the launcher, while `pwsh` is on this Mac. Its own id rather
+/// than `unix:pwsh`, and the `powershell` kind, which is what a custom terminal
+/// declared as PowerShell has: so its tabs take the PowerShell colour, icon,
+/// shortcuts and broadcast family, as one of those would.
+pub(super) fn powershell_shell() -> Option<LocalShell> {
+    current_pwsh().map(|_| LocalShell {
+        id: PWSH.into(),
+        label: "PowerShell".into(),
+        kind: "powershell".into(),
+    })
 }
 
 /// Variables a terminal app sets for its own sessions. Under `tauri dev` the
@@ -121,10 +146,18 @@ const INHERITED_TERMINAL_VARS: [&str; 8] = [
 /// Dock gets launchd's bare PATH, and it is the login profile (`path_helper`
 /// in `/etc/zprofile`, Homebrew's `shellenv`) that puts the operator's tools on
 /// it. zsh, bash, sh, dash, ksh, csh, tcsh and fish all take `-l`.
+///
+/// PowerShell takes `-l` too (`-Login`, which has to come first): it runs the
+/// same `/etc/profile` and `~/.profile` through `/bin/sh` before it starts, so
+/// it gets the same PATH a zsh tab has.
 pub(super) fn builtin_command(shell_id: &str) -> Option<CommandBuilder> {
-    let name = shell_id.strip_prefix("unix:")?;
-    let shell = shells().iter().find(|s| s.name == name)?;
-    let mut c = CommandBuilder::new(&shell.path);
+    let path = if shell_id == PWSH {
+        current_pwsh()?
+    } else {
+        let name = shell_id.strip_prefix("unix:")?;
+        shells().iter().find(|s| s.name == name)?.path.clone()
+    };
+    let mut c = CommandBuilder::new(&path);
     c.arg("-l");
     set_terminal_env(&mut c);
     Some(c)
@@ -182,4 +215,212 @@ fn utf8_locale() -> &'static str {
 /// Where a shell starts when no profile says otherwise.
 pub(super) fn home_dir() -> Option<String> {
     std::env::var("HOME").ok()
+}
+
+/// PowerShell 7's program name, and the id its launcher entry opens it by.
+const PWSH: &str = "pwsh";
+
+/// Where the PowerShell installers put `pwsh`: Homebrew on Apple silicon, then
+/// on Intel, then Microsoft's own `.pkg` (which also links `/usr/local/bin`).
+const PWSH_PLACES: [&str; 3] = [
+    "/opt/homebrew/bin/pwsh",
+    "/usr/local/bin/pwsh",
+    "/usr/local/microsoft/powershell/7/pwsh",
+];
+
+/// How long the login shell gets to say where `pwsh` is. A profile that waits
+/// on the network can take a while, and the answer is only ever a nicety.
+const LOGIN_LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The `pwsh` the last full look found ([`powershell_installed`]), which is the
+/// only one that asks the login shell. Kept so a `pwsh` only the login shell's
+/// PATH knows about can still be listed and opened between looks.
+static PWSH_FOUND: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+fn pwsh_found() -> std::sync::MutexGuard<'static, Option<PathBuf>> {
+    PWSH_FOUND.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// `pwsh` in the places that cost a few file checks to look in: the usual
+/// ones, `/etc/shells` (the `.pkg` registers it), and the app's own `PATH`.
+fn pwsh_quick() -> Option<PathBuf> {
+    PWSH_PLACES
+        .iter()
+        .map(PathBuf::from)
+        .chain(etc_shells().into_iter().filter(|p| p.file_name().is_some_and(|n| n == PWSH)))
+        .chain(
+            std::env::var_os("PATH")
+                .map(|path| std::env::split_paths(&path).map(|d| d.join(PWSH)).collect::<Vec<_>>())
+                .unwrap_or_default(),
+        )
+        .find(|p| is_program(p))
+}
+
+/// The `pwsh` to list and to open, as things stand now: a quick look, and
+/// failing that the one the last full look found, if it is still there. Cheap
+/// enough to run every time the launcher is listed, which is what lets a
+/// `brew unlink powershell` take it out of the launcher, and a `brew link` put
+/// it back, without a restart.
+fn current_pwsh() -> Option<PathBuf> {
+    pwsh_quick().or_else(|| pwsh_found().clone().filter(|p| is_program(p)))
+}
+
+/// Whether PowerShell 7 is on this Mac, for whether the app talks about it at
+/// all. `custom` is the programs of the custom terminals the operator has said
+/// are PowerShell: one of those that is really there counts, wherever it is.
+///
+/// The full look: [`pwsh_quick`], and only then the login shell's `PATH`, which
+/// is the one a Dock-launched app does not have and the one that knows about a
+/// `pwsh` somewhere unusual. What it finds is kept for the launcher. Blocking:
+/// it can start a shell, so it runs off the IPC thread.
+pub(crate) fn powershell_installed(custom: &[String]) -> bool {
+    let found = pwsh_quick().or_else(login_shell_pwsh);
+    let installed = found.is_some();
+    *pwsh_found() = found;
+    installed || custom.iter().any(|p| is_program(Path::new(p)))
+}
+
+/// Asks the operator's login shell, run as a login shell so its profile sets
+/// `PATH`, where `pwsh` is. Only a path to a real program counts: a profile
+/// may print a banner, so the last line is the one read.
+fn login_shell_pwsh() -> Option<PathBuf> {
+    let shell = login_shell()
+        .filter(|p| is_program(p))
+        .unwrap_or_else(|| PathBuf::from("/bin/zsh"));
+    run_for_last_line(&shell, &["-l", "-c", "command -v pwsh"])
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute() && is_program(p))
+}
+
+/// Runs `program` with `args` and gives back the last line it printed that is
+/// not blank, or `None` if it would not start or was still running after
+/// [`LOGIN_LOOKUP_TIMEOUT`], when it is killed.
+///
+/// Its stdout is a file, not a pipe. A job a profile starts in the background
+/// (`some-sync &`) inherits stdout and can outlive the shell, and reading a
+/// pipe to the end waits until every holder has closed it, which for such a
+/// job may be never. A file can be read once the shell is done, whoever still
+/// has it open. The file is made new (`create_new`, so nothing already there
+/// is followed or reused) in the per-user temporary folder, and removed again
+/// on every path.
+fn run_for_last_line(program: &Path, args: &[&str]) -> Option<String> {
+    use std::process::{Command, Stdio};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static RUNS: AtomicU64 = AtomicU64::new(0);
+    let out_path = std::env::temp_dir().join(format!(
+        "broadside-pwsh-{}-{}-{}",
+        std::process::id(),
+        RUNS.fetch_add(1, Ordering::Relaxed),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    ));
+    let out_file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&out_path)
+        .ok()?;
+    let spawned = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(out_file))
+        .stderr(Stdio::null())
+        .spawn();
+    let out = spawned.ok().and_then(|mut child| {
+        let started = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if started.elapsed() < LOGIN_LOOKUP_TIMEOUT => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+            }
+        }
+        std::fs::read_to_string(&out_path).ok()
+    });
+    let _ = std::fs::remove_file(&out_path);
+    out?.lines()
+        .map(str::trim)
+        .rfind(|l| !l.is_empty())
+        .map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_powershell_custom_terminal_that_is_there_counts() {
+        assert!(powershell_installed(&["/bin/sh".to_string()]));
+    }
+
+    #[test]
+    fn pwsh_is_never_one_of_the_unix_shells() {
+        assert!(detect().iter().all(|s| s.id != "unix:pwsh" && s.kind == "posix"));
+    }
+
+    #[test]
+    fn powershell_is_listed_as_powershell_when_it_is_here() {
+        match (current_pwsh(), powershell_shell()) {
+            (Some(_), Some(s)) => {
+                assert_eq!((s.id.as_str(), s.kind.as_str()), ("pwsh", "powershell"));
+                assert!(builtin_command("pwsh").is_some());
+            }
+            (None, None) => assert!(builtin_command("pwsh").is_none()),
+            _ => panic!("the launcher entry and the program disagree"),
+        }
+    }
+
+    #[test]
+    fn the_login_shell_lookup_answers_without_hanging() {
+        let started = std::time::Instant::now();
+        let _ = login_shell_pwsh();
+        assert!(started.elapsed() < LOGIN_LOOKUP_TIMEOUT + std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_job_the_shell_leaves_running_does_not_hold_up_the_answer() {
+        // What a profile with `some-sync &` in it does: the job outlives the
+        // shell and still has the shell's stdout.
+        let started = std::time::Instant::now();
+        let found = run_for_last_line(Path::new("/bin/sh"), &["-c", "sleep 30 & echo /bin/sh"]);
+        assert_eq!(found.as_deref(), Some("/bin/sh"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+        assert!(no_lookup_file_left());
+    }
+
+    #[test]
+    fn a_shell_that_never_finishes_is_given_up_on() {
+        let started = std::time::Instant::now();
+        assert_eq!(run_for_last_line(Path::new("/bin/sh"), &["-c", "sleep 30"]), None);
+        assert!(started.elapsed() < LOGIN_LOOKUP_TIMEOUT + std::time::Duration::from_secs(1));
+        assert!(no_lookup_file_left());
+    }
+
+    /// No `broadside-pwsh-` file of this process is left in the temporary
+    /// folder. Other tests in the process may be mid-lookup, so this waits a
+    /// moment for theirs to go before saying so.
+    fn no_lookup_file_left() -> bool {
+        let mine = format!("broadside-pwsh-{}-", std::process::id());
+        let started = std::time::Instant::now();
+        loop {
+            let left = std::fs::read_dir(std::env::temp_dir())
+                .map(|d| d.flatten().any(|e| e.file_name().to_string_lossy().starts_with(&mine)))
+                .unwrap_or(false);
+            if !left {
+                return true;
+            }
+            if started.elapsed() > LOGIN_LOOKUP_TIMEOUT + std::time::Duration::from_secs(1) {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
 }

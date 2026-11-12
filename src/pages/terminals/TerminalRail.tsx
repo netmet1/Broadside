@@ -83,8 +83,10 @@ import {
   EyeIcon,
   EyeOffIcon,
   LayoutTemplateIcon,
+  SaveIcon,
   Grid2x2Icon,
   LayersIcon,
+  CameraIcon,
   LayoutGridIcon,
   ListFilterIcon,
   ListIcon,
@@ -151,6 +153,8 @@ export function TerminalRail({
   resetTileSize,
   lockedTiles,
   toggleLockedTiles,
+  gridLock,
+  toggleGridLock,
   gridFullscreen,
   onGridFullscreen,
   maximizeActive,
@@ -177,6 +181,8 @@ export function TerminalRail({
   onDisconnectAll,
   onCloseAll,
   onNewWorkspace,
+  onSaveSnapshot,
+  canSaveSnapshot,
   workspaceCount,
   allSessionCount,
   onCloseAllWorkspaces,
@@ -207,6 +213,9 @@ export function TerminalRail({
   /** Tiles resize together when dragged (the default), or one at a time. */
   lockedTiles: boolean;
   toggleLockedTiles: () => void;
+  /** View > Lock grid: nothing on the grid can be resized. */
+  gridLock: boolean;
+  toggleGridLock: () => void;
   gridFullscreen: boolean;
   onGridFullscreen: (on: boolean) => void;
   /** Fill the window with the active terminal (what F11 does). No-op with no
@@ -217,7 +226,13 @@ export function TerminalRail({
   /** Save the grid on screen as a template, or null when that is not on offer:
    * outside Grid, with fewer than two tiles, or when a saved template already
    * opens exactly these sessions. `count` is how many sessions it would hold. */
-  saveAsTemplate: { count: number; onSave: () => void } | null;
+  /** `sizesTo`: the grid is that saved template's sessions with new sizes, and
+   * the button saves the sizes to it rather than making a new template. */
+  saveAsTemplate: {
+    count: number;
+    sizesTo: string | null;
+    onSave: () => void;
+  } | null;
   /** Whether the tab strip is rolled up. Grid-only, and remembered. */
   tabBarHidden: boolean;
   toggleTabBar: () => void;
@@ -246,6 +261,9 @@ export function TerminalRail({
   /** Start an empty workspace and show it. Once there are two, the workspace
    * strip appears above the tabs. */
   onNewWorkspace: () => void;
+  /** Ask for a name and save every open workspace as a snapshot. */
+  onSaveSnapshot: () => void;
+  canSaveSnapshot: boolean;
   /** How many workspaces there are, and how many tabs they hold between
    * them. At two or more workspaces the menu offers to close them all. */
   workspaceCount: number;
@@ -522,12 +540,20 @@ export function TerminalRail({
           size="icon-sm"
           variant="outline"
           onClick={saveAsTemplate.onSave}
-          aria-label="Save as template"
+          aria-label={
+            saveAsTemplate.sizesTo ? "Save sizes to template" : "Save as template"
+          }
           {...hint(
-            `Save this grid as a template: the Templates tab opens with these ${saveAsTemplate.count} sessions in this order, ready to name and save`,
+            saveAsTemplate.sizesTo
+              ? `Save these tile sizes to "${saveAsTemplate.sizesTo}", so opening it lays the grid out like this`
+              : `Save this grid as a template: the Templates tab opens with these ${saveAsTemplate.count} sessions in this order, and their sizes, ready to name and save`,
           )}
         >
-          <LayoutTemplateIcon className="h-3.5 w-3.5" />
+          {saveAsTemplate.sizesTo ? (
+            <SaveIcon className="h-3.5 w-3.5" />
+          ) : (
+            <LayoutTemplateIcon className="h-3.5 w-3.5" />
+          )}
         </Button>
       )}
 
@@ -766,14 +792,34 @@ export function TerminalRail({
           {/* Whether dragging a tile's edge resizes every tile or only that
               one. A checkbox, so it stays open to be read back, and Grid's
               alone like Reset grid below. */}
+          {/* Lock grid: no handle at all, so the sizes can't be knocked out
+              of place. Above the two entries it switches off, since they
+              resize the grid too. */}
+          {gridMode && (
+            <DropdownMenuCheckboxItem
+              checked={gridLock}
+              onCheckedChange={toggleGridLock}
+              {...hint(
+                gridLock
+                  ? "The grid is locked: no tile or line between tiles can be dragged. Untick to resize again."
+                  : "Lock the grid so no tile or line between tiles can be dragged, in every workspace.",
+              )}
+            >
+              Lock grid
+            </DropdownMenuCheckboxItem>
+          )}
+
           {gridMode && (
             <DropdownMenuCheckboxItem
               checked={lockedTiles}
+              disabled={gridLock}
               onCheckedChange={toggleLockedTiles}
               {...hint(
-                lockedTiles
-                  ? "Dragging a tile's edge resizes every tile. Untick to resize tiles one at a time."
-                  : "Dragging a tile's edge resizes only that tile, and the others wrap around it. Tick to resize them all together again.",
+                gridLock
+                  ? "The grid is locked. Untick Lock grid to change how tiles resize."
+                  : lockedTiles
+                    ? "Dragging a tile's edge resizes every tile. Untick to drag the lines between tiles instead."
+                    : "Dragging the line between two tiles moves it: one grows, its neighbour shrinks. Tick to resize every tile together again.",
               )}
             >
               Resize tiles together
@@ -782,12 +828,14 @@ export function TerminalRail({
 
           {gridMode && (
             <DropdownMenuItem
-              disabled={!sizeIsPinned}
+              disabled={!sizeIsPinned || gridLock}
               onSelect={resetTileSize}
               {...hint(
-                sizeIsPinned
-                  ? "Clear the tile size (dragged or set in Settings) and go back to original configured grid settings."
-                  : "Nothing to reset: the tiles already fit the window. Drag a tile edge, or pin a size in Settings, and this clears it.",
+                gridLock
+                  ? "The grid is locked. Untick Lock grid to reset its sizes."
+                  : sizeIsPinned
+                    ? "Clear the tile size (dragged or set in Settings) and go back to original configured grid settings."
+                    : "Nothing to reset: the tiles already fit the window. Drag a tile edge, or pin a size in Settings, and this clears it.",
               )}
             >
               <UndoIcon />
@@ -984,6 +1032,18 @@ export function TerminalRail({
               >
                 <LayersIcon />
                 New workspace
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={onSaveSnapshot}
+                disabled={!canSaveSnapshot}
+                {...hint(
+                  canSaveSnapshot
+                    ? "Save every open workspace, with its tabs, names, colours and grid sizes, as one snapshot. Open them all again from Library > Snapshots. Serial consoles are left out"
+                    : "Nothing open that a snapshot can hold. Serial consoles are left out of snapshots",
+                )}
+              >
+                <CameraIcon />
+                Snapshot workspaces…
               </DropdownMenuItem>
 
               {/* The bulk repairs, above the bulk destruction. Each is the way

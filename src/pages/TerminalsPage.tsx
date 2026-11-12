@@ -64,6 +64,7 @@ import {
 import { TofuKeyDialog } from "@/components/TofuKeyDialog";
 import { KeyMismatchDialog } from "@/components/KeyMismatchDialog";
 import { SearchBar } from "@/components/SearchBar";
+import { SerialLeftOutConfirm } from "@/components/SerialLeftOutNote";
 import { ptyClose, ptyWrite } from "@/lib/tauri/pty";
 import { errorMessage, listHosts, type Host } from "@/lib/tauri/hosts";
 import { type LocalShell, listLocalShells } from "@/lib/tauri/local";
@@ -90,6 +91,7 @@ import {
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
 import { HostLauncherList } from "@/pages/terminals/HostLauncherList";
+import { SaveSizesConfirm } from "@/pages/terminals/SaveSizesConfirm";
 import {
   LauncherSectionHeader,
   SectionDropLine,
@@ -101,16 +103,36 @@ import { TemplateLauncherList } from "@/pages/terminals/TemplateLauncherList";
 import { WorkspaceStrip } from "@/pages/terminals/WorkspaceStrip";
 import { useControlsAutoHide } from "@/pages/terminals/useControlsAutoHide";
 import type { Workspace } from "@/pages/terminals/useWorkspaces";
+import { SplitHandles } from "@/pages/terminals/SplitHandles";
+import { HeldWorkspace } from "@/pages/terminals/HeldWorkspace";
+import {
+  useGridSplitters,
+  type SlotWidths,
+} from "@/pages/terminals/useGridSplitters";
+import {
+  GRID_FLOOR_COLS,
+  TILE_BORDER_X,
+  TILE_BORDER_Y,
+  pxToLines,
+  type GridSizes,
+} from "@/lib/gridShape";
 import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
 import { copyName } from "@/pages/templates/copyName";
 import { useProfileActions } from "@/lib/useProfileActions";
-import { useGridLayout } from "@/pages/terminals/useGridLayout";
+import {
+  useGridLayout,
+  type TermLayout,
+} from "@/pages/terminals/useGridLayout";
 import {
   useGridResize,
-  type ResizeTarget,
 } from "@/pages/terminals/useGridResize";
 import { useGridTemplate } from "@/pages/terminals/useGridTemplate";
-import type { Template, TemplateItem } from "@/lib/tauri/templates";
+import {
+  updateTemplate,
+  type Template,
+  type TemplateItem,
+  type TemplateLayout,
+} from "@/lib/tauri/templates";
 import { BroadcastRail } from "@/pages/terminals/BroadcastRail";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import { TerminalRail } from "@/pages/terminals/TerminalRail";
@@ -236,6 +258,19 @@ type Props = {
   onNewWorkspace: () => void;
   onRenameWorkspace: (id: string, name: string) => void;
   onRecolorWorkspace: (id: string, color: string) => void;
+  /** Set how a workspace's grid shares the pane (null: evenly), outright or
+   * from what it has now. */
+  onSetWorkspaceSizes: (
+    id: string,
+    sizes: GridSizes | null | ((prev: GridSizes | null) => GridSizes | null),
+  ) => void;
+  /** A held workspace's Connect was pressed (see useSnapshots). */
+  onReleaseWorkspace: (id: string) => void;
+  /** Tabs or Grid, for one workspace. */
+  onSetWorkspaceView: (id: string, view: TermLayout) => void;
+  /** Ask for a name and save every open workspace as a snapshot. */
+  onSaveSnapshot: () => void;
+  canSaveSnapshot: boolean;
   /** Move a workspace to where another one is in the row. */
   onReorderWorkspace: (sourceId: string, targetId: string) => void;
   /** Close every tab in a workspace, and the workspace. Asked about here
@@ -282,8 +317,8 @@ type Props = {
    * section's New). */
   onNewHost: () => void;
   /** Hand the grid on screen to the Templates tab as a new template, to be
-   * named and saved there. */
-  onSaveAsTemplate: (items: TemplateItem[]) => void;
+   * named and saved there, with its sizes when its lines were dragged. */
+  onSaveAsTemplate: (items: TemplateItem[], layout: TemplateLayout | null) => void;
   /** Open a saved template from the launcher's Templates section. App asks
    * where the tabs go when some are open already. */
   onOpenTemplate: (template: Template) => void;
@@ -317,6 +352,11 @@ export function TerminalsPage({
   onNewWorkspace,
   onRenameWorkspace,
   onRecolorWorkspace,
+  onSetWorkspaceSizes,
+  onReleaseWorkspace,
+  onSetWorkspaceView,
+  onSaveSnapshot,
+  canSaveSnapshot,
   onReorderWorkspace,
   onCloseWorkspace,
   onMoveToWorkspace,
@@ -859,6 +899,35 @@ export function TerminalsPage({
   // the grid can hold is a question about this pane's width, not the window's.
   const gridScrollRef = useRef<HTMLDivElement>(null);
 
+  // How the workspace on screen shares its grid, once a line between tiles has
+  // been dragged (or a template brought sizes). Kept on the workspace, so each
+  // one keeps its own and a template or snapshot can hand them over.
+  const shownWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
+  const shownSizes = shownWorkspace?.sizes ?? null;
+  // Tabs or Grid is the shown workspace's own.
+  const shownView: TermLayout = shownWorkspace?.view ?? "tabs";
+  const setShownView = useCallback(
+    (view: TermLayout) => onSetWorkspaceView(activeWorkspaceId, view),
+    [onSetWorkspaceView, activeWorkspaceId],
+  );
+  // Opened from a snapshot with its sessions held: they were made without
+  // connecting, and this workspace waits behind one Connect button until it is
+  // pressed. Pressing it connects these tabs and no others.
+  // A pane connected some other way (Reconnect all, its own Reconnect) ends
+  // the hold too, so the cover never sits over a live shell.
+  const held =
+    shownWorkspace?.held === true &&
+    sessions.length > 0 &&
+    !sessions.some((s) => connectedSessions.has(s.id));
+  const connectHeld = () => {
+    for (const s of sessions) reconnectSession(s.id);
+    onReleaseWorkspace(activeWorkspaceId);
+  };
+  const clearSizes = useCallback(
+    () => onSetWorkspaceSizes(activeWorkspaceId, null),
+    [onSetWorkspaceSizes, activeWorkspaceId],
+  );
+
   // Grid layout: which tiles, in what order, laid out how. See ./terminals/
   // useGridLayout, pure layout, nothing in it touches a PTY.
   const {
@@ -873,6 +942,8 @@ export function TerminalsPage({
     clearGridExcluded,
     hideGridHeaders,
     toggleGridHeaders,
+    gridLock,
+    toggleGridLock,
     twoUpSplit,
     toggleTwoUpSplit,
     gridPrefs,
@@ -881,24 +952,30 @@ export function TerminalsPage({
     resetTileSize,
     lockedTiles,
     toggleLockedTiles,
-    setTileCols,
-    setTileRows,
-    freeTiles,
-    hasTileSizes,
-    freeTileStyle,
+    splitGrid,
+    hasSizes,
+    flow,
+    slotIds,
+    minWidth,
+    fitRows,
     cell,
     headerH,
-    tileMinH,
+    splitMinH,
+    tileFloorH,
     gridSlot,
     tileSpan,
     customGrid,
     gridStyle,
   } = useGridLayout({
+    layout: shownView,
+    onLayout: setShownView,
     sessions: allSessions,
     filteredOut: gridFilteredOut,
     visible,
     maximized,
     paneRef: gridScrollRef,
+    sizes: shownSizes,
+    clearSizes,
   });
 
   // Save as template: the tiles on screen, offered as a new template unless a
@@ -912,38 +989,136 @@ export function TerminalsPage({
     gridMode,
     sessions,
     isLaidOut,
+    sizes: hasSizes ? shownSizes : null,
   });
+  // Serial tiles on the grid are left out of a new template, so the button
+  // asks first when there are any: this is how many, while it is asking.
+  const [serialConfirm, setSerialConfirm] = useState<number | null>(null);
+  const saveGridAsTemplate = () =>
+    onSaveAsTemplate(gridTemplate.items, gridTemplate.layout);
 
-  // Drag a tile's edge to set the tile size, for as long as the program is
-  // running. Locked (the default), for the whole grid, and whether that also
-  // writes the Settings -> Grid numbers is the strict setting's business, not
-  // this page's (see gridPrefs.ts). Unlocked, for the dragged tile alone,
-  // never written anywhere.
-  const onResizeCols = useCallback(
-    (cols: number, t: ResizeTarget) => {
-      if (lockedTiles) setDragCols(cols);
-      else setTileCols(t.id, cols, t.start);
+  // The grid is a saved template's sessions with new sizes: the same button
+  // writes the sizes to that template once the user says yes, and says so.
+  // What it would save is held while it asks.
+  const [sizesConfirm, setSizesConfirm] = useState<{
+    t: Template;
+    layout: TemplateLayout | null;
+  } | null>(null);
+  const saveSizesTo = useCallback(
+    async (t: Template, layout: TemplateLayout | null) => {
+      try {
+        await updateTemplate(t.id, {
+          name: t.name,
+          color: t.color,
+          items: t.items,
+          startup: t.startup,
+          layout,
+        });
+        toast.success(`Saved these sizes to "${t.name}"`);
+        gridTemplate.reload();
+      } catch (e) {
+        toast.error(errorMessage(e));
+      }
     },
-    [lockedTiles, setDragCols, setTileCols],
+    [gridTemplate],
+  );
+
+  // Drag a tile's edge to set the tile size for the whole grid, for as long as
+  // the program is running (tiles locked, the default, or a grid pinned in
+  // Settings). Whether that also writes the Settings -> Grid numbers is the
+  // strict setting's business, not this page's (see gridPrefs.ts).
+  const onResizeCols = useCallback(
+    (cols: number) => setDragCols(cols),
+    [setDragCols],
   );
   const onResizeRows = useCallback(
-    (rows: number, t: ResizeTarget) => {
-      if (lockedTiles) setDragRows(rows);
-      else setTileRows(t.id, rows, t.start);
-    },
-    [lockedTiles, setDragRows, setTileRows],
+    (rows: number) => setDragRows(rows),
+    [setDragRows],
   );
-  const { resizing, begin: beginResize } = useGridResize({
+  const { resizing: resizingTiles, begin: beginResize } = useGridResize({
     cell,
     headerH,
     onCols: onResizeCols,
     onRows: onResizeRows,
   });
-  // Handles are pointless where a pinned tile size has no effect: in Tabs, and
-  // at one or two tiles (which always take the full window by design).
-  const canResizeTiles = gridMode && gridCount > 2;
+  // Unlocked, the edges between tiles are lines to drag instead, and the sizes
+  // belong to the workspace on screen. See ./terminals/useGridSplitters.
+  // Every row's height, in lines. A drag replaces any relative heights a
+  // template from before rows had heights brought.
+  const onRows = useCallback(
+    (heights: number[]) =>
+      onSetWorkspaceSizes(activeWorkspaceId, (prev) => ({
+        heights,
+        widths: prev?.widths ?? {},
+      })),
+    [onSetWorkspaceSizes, activeWorkspaceId],
+  );
+  const toLines = useCallback(
+    (px: number) => pxToLines(px, cell.cellH, headerH + TILE_BORDER_Y),
+    [cell, headerH],
+  );
+  // Widths are kept by tab. A closed tab's width goes when the next one is
+  // set, so the map holds this workspace's open tabs and nothing else.
+  const onWidths = useCallback(
+    (changes: SlotWidths) =>
+      onSetWorkspaceSizes(activeWorkspaceId, (prev) => {
+        const open = new Set(sessions.map((s) => s.id));
+        const widths: Record<string, number> = {};
+        for (const [id, w] of Object.entries(prev?.widths ?? {})) {
+          if (open.has(id)) widths[id] = w;
+        }
+        for (const [slot, w] of changes) {
+          const id = slotIds[slot];
+          if (!id) continue;
+          if (w == null) delete widths[id];
+          else widths[id] = w;
+        }
+        return { ...prev, heights: prev?.heights ?? [], widths };
+      }),
+    [onSetWorkspaceSizes, activeWorkspaceId, sessions, slotIds],
+  );
+  const {
+    dragging: draggingLine,
+    begin: beginSplit,
+    gapProps: splitGapProps,
+  } = useGridSplitters({
+    gridRef: gridScrollRef,
+    flow,
+    cell,
+    minRowPx: splitMinH,
+    minColPx: Math.round(GRID_FLOOR_COLS * cell.cellW) + TILE_BORDER_X,
+    minWidth,
+    fitRows,
+    toLines,
+    onRows,
+    onWidths,
+  });
+  const resizing = resizingTiles || draggingLine;
+  // Locked handles are pointless where a pinned tile size has no effect: in
+  // Tabs, and at one or two tiles (which always take the full window by design).
+  // View > Lock grid takes them away, and the lines between tiles with them.
+  const canResizeTiles = gridMode && gridCount > 2 && !splitGrid && !gridLock;
+  const splitHandles = splitGrid && !gridLock;
   const sizeIsPinned =
-    gridPrefs.itemCols !== null || gridPrefs.itemRows !== null || hasTileSizes;
+    gridPrefs.itemCols !== null || gridPrefs.itemRows !== null || hasSizes;
+  // Unticking Resize tiles together drops a dragged tile size by itself (see
+  // useGridLayout). What it leaves is a size typed in Settings -> Grid, which
+  // still pins the grid at three or more tiles, so the lines between tiles do
+  // not appear. Say so rather than leave the untick looking broken.
+  const onToggleLockedTiles = () => {
+    const pinned = toggleLockedTiles();
+    if (pinned === null || gridCount <= 2) return;
+    if (pinned.cols !== null) {
+      toast(
+        `Settings > Grid sets Columns across to ${pinned.cols}, so the lines between tiles can't be dragged. Set it back to Auto there to drag them.`,
+      );
+    } else {
+      toast(
+        "Settings > Grid sets a tile size, so the lines between tiles can't be dragged.",
+        { action: { label: "Reset grid", onClick: resetTileSize } },
+      );
+    }
+  };
 
   // Broadcast rail: pick targets and type a command without leaving the page,
   // so the panes you are watching are the ones that answer. Off by default;
@@ -2126,7 +2301,7 @@ export function TerminalsPage({
         sizeIsPinned={sizeIsPinned}
         resetTileSize={resetTileSize}
         lockedTiles={lockedTiles}
-        toggleLockedTiles={toggleLockedTiles}
+        toggleLockedTiles={onToggleLockedTiles}
         gridFullscreen={gridFullscreen}
         onGridFullscreen={onGridFullscreen}
         maximizeActive={() => {
@@ -2134,13 +2309,31 @@ export function TerminalsPage({
         }}
         hideGridHeaders={hideGridHeaders}
         toggleGridHeaders={toggleGridHeaders}
+        gridLock={gridLock}
+        toggleGridLock={toggleGridLock}
         saveAsTemplate={
           gridTemplate.offered
             ? {
                 count: gridTemplate.items.length,
-                onSave: () => onSaveAsTemplate(gridTemplate.items),
+                sizesTo: null,
+                onSave: () => {
+                  if (gridTemplate.serialLeftOut > 0) {
+                    setSerialConfirm(gridTemplate.serialLeftOut);
+                  } else {
+                    saveGridAsTemplate();
+                  }
+                },
               }
-            : null
+            : gridTemplate.sizesTo
+              ? {
+                  count: gridTemplate.items.length,
+                  sizesTo: gridTemplate.sizesTo.name,
+                  onSave: () => {
+                    const t = gridTemplate.sizesTo;
+                    if (t) setSizesConfirm({ t, layout: gridTemplate.layout });
+                  },
+                }
+              : null
         }
         tabBarHidden={tabBarHidden}
         toggleTabBar={toggleTabBar}
@@ -2164,6 +2357,8 @@ export function TerminalsPage({
         onDisconnectAll={requestDisconnectAll}
         onCloseAll={() => setCloseAllOpen(true)}
         onNewWorkspace={onNewWorkspace}
+        onSaveSnapshot={onSaveSnapshot}
+        canSaveSnapshot={canSaveSnapshot}
         workspaceCount={workspaces.length}
         allSessionCount={allSessions.length}
         onCloseAllWorkspaces={() => setCloseEverywhereOpen(true)}
@@ -3047,7 +3242,7 @@ export function TerminalsPage({
         })}
         {sessions.length === 0 && (
           <p className="px-3 py-2 text-sm text-muted-foreground">
-            No open terminals. Open an SSH host from the Hosts page, or a local
+            No open terminals. Open an SSH host from the Library tab, or a local
             shell with the + button.
           </p>
         )}
@@ -3170,6 +3365,14 @@ export function TerminalsPage({
           />
         </div>
       )}
+      <div className="relative flex min-h-0 min-w-0 flex-1">
+      {held && (
+        <HeldWorkspace
+          name={shownWorkspace?.name ?? ""}
+          count={sessions.length}
+          onConnect={connectHeld}
+        />
+      )}
       <div
         ref={gridScrollRef}
         className={cn(
@@ -3197,6 +3400,7 @@ export function TerminalsPage({
           !customGrid && gridMode && gridCount > 2 && "grid gap-2 overflow-auto",
         )}
         style={gridStyle}
+        {...(splitHandles ? splitGapProps : {})}
       >
         {/* Every tile hidden but terminals still open: say so, or the grid
             reads as broken. The way out is offered here rather than only
@@ -3272,12 +3476,8 @@ export function TerminalsPage({
                 // drifted apart and the tiles overlapped. A custom grid's
                 // rows are already sized by Settings, and one or two tiles
                 // always fill the pane, so neither takes a floor.
-                ...(!customGrid && gridCount > 2 && !freeTiles
-                  ? { minHeight: tileMinH }
-                  : {}),
-                // Unlocked and resized: this tile's own width and height.
-                ...(freeTiles && !excluded && !filtered
-                  ? freeTileStyle(s.id)
+                ...(!customGrid && gridCount > 2
+                  ? { minHeight: tileFloorH }
                   : {}),
                 // Filling a short last row (Settings -> Grid). Nothing for most
                 // tiles; a span for the ones that take up the slack.
@@ -3476,18 +3676,10 @@ export function TerminalsPage({
                     }
                     role="separator"
                     aria-orientation="vertical"
-                    aria-label={
-                      lockedTiles
-                        ? "Drag to set the width of every grid tile"
-                        : "Drag to set the width of this tile"
-                    }
-                    title={
-                      lockedTiles
-                        ? "Drag to set the width of every tile"
-                        : "Drag to set the width of this tile"
-                    }
+                    aria-label="Drag to set the width of every grid tile"
+                    title="Drag to set the width of every tile"
                     data-resize-handle=""
-                    className="absolute inset-y-0 right-0 w-1.5 cursor-col-resize hover:bg-primary/40"
+                    className="absolute inset-y-0 right-0 z-20 w-1.5 cursor-col-resize hover:bg-primary/40"
                   />
                   <div
                     onMouseDown={(e) =>
@@ -3495,42 +3687,34 @@ export function TerminalsPage({
                     }
                     role="separator"
                     aria-orientation="horizontal"
-                    aria-label={
-                      lockedTiles
-                        ? "Drag to set the height of every grid tile"
-                        : "Drag to set the height of this tile"
-                    }
-                    title={
-                      lockedTiles
-                        ? "Drag to set the height of every tile"
-                        : "Drag to set the height of this tile"
-                    }
+                    aria-label="Drag to set the height of every grid tile"
+                    title="Drag to set the height of every tile"
                     data-resize-handle=""
-                    className="absolute inset-x-0 bottom-0 h-1.5 cursor-row-resize hover:bg-primary/40"
+                    className="absolute inset-x-0 bottom-0 z-20 h-1.5 cursor-row-resize hover:bg-primary/40"
                   />
                   <div
                     onMouseDown={(e) =>
                       beginResize(e, "both", paneElRefs.current.get(s.id) ?? null, s.id)
                     }
                     role="separator"
-                    aria-label={
-                      lockedTiles
-                        ? "Drag to set the size of every grid tile"
-                        : "Drag to set the size of this tile"
-                    }
-                    title={
-                      lockedTiles
-                        ? "Drag to set the size of every tile"
-                        : "Drag to set the size of this tile"
-                    }
+                    aria-label="Drag to set the size of every grid tile"
+                    title="Drag to set the size of every tile"
                     data-resize-handle=""
-                    className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize hover:bg-primary/50"
+                    className="absolute bottom-0 right-0 z-20 h-3 w-3 cursor-nwse-resize hover:bg-primary/50"
                   />
                 </>
               )}
             </div>
           );
         })}
+        {/* Unlocked: every line between tiles is a handle to drag, one per
+            line, centred on the gap. So is the right edge of a tile with
+            blank space beside it, or alone in its row, which sets its width.
+            Laid out by the grid beside the tiles, not inside them. */}
+        {splitHandles && flow && (
+          <SplitHandles flow={flow} fitRows={fitRows} onBegin={beginSplit} />
+        )}
+      </div>
       </div>
       </div>
 
@@ -3569,6 +3753,25 @@ export function TerminalsPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <SerialLeftOutConfirm
+        count={serialConfirm}
+        onCancel={() => setSerialConfirm(null)}
+        onContinue={() => {
+          setSerialConfirm(null);
+          saveGridAsTemplate();
+        }}
+      />
+
+      <SaveSizesConfirm
+        name={sizesConfirm?.t.name ?? null}
+        onCancel={() => setSizesConfirm(null)}
+        onSave={() => {
+          if (sizesConfirm)
+            void saveSizesTo(sizesConfirm.t, sizesConfirm.layout);
+          setSizesConfirm(null);
+        }}
+      />
 
       <AlertDialog
         open={!!workspaceClosing}

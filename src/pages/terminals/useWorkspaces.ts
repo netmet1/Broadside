@@ -28,7 +28,12 @@
 
 import { useCallback, useState } from "react";
 
+import type { GridSizes } from "@/lib/gridShape";
 import type { TermSession } from "@/pages/terminals/session";
+import {
+  loadLastLayout,
+  type TermLayout,
+} from "@/pages/terminals/useGridLayout";
 
 export type Workspace = {
   id: string;
@@ -39,14 +44,35 @@ export type Workspace = {
   /** Named by the operator or by a template. An unnamed workspace takes the
    * name of the first template opened into it while it is empty. */
   named: boolean;
+  /** How this workspace's grid shares the pane, dragged with the tiles
+   * unlocked or brought by a template. Null shares it equally. Per workspace,
+   * because each one is its own wall of tiles. */
+  sizes: GridSizes | null;
+  /** Opened from a snapshot with its sessions held: they wait, not connected,
+   * behind a Connect button over the grid until it is pressed. */
+  held: boolean;
+  /** Its tabs one at a time, or all of them as a grid. Each workspace has its
+   * own, so a wall of tiles can sit beside a workspace worked in one tab at a
+   * time. A new workspace starts with the one shown when it was made; the
+   * first, at launch, with the last one chosen (see loadLastLayout). */
+  view: TermLayout;
 };
 
-function freshWorkspace(n: number): Workspace {
+/** What a new workspace is given beyond its name: whether its sessions are
+ * held (see Workspace), and Tabs or Grid when that is not the shown
+ * workspace's (a snapshot's). Its grid sizes follow with `setSizes`, once its
+ * tabs exist, because they are kept by tab. */
+export type WorkspaceExtras = { held?: boolean; view?: TermLayout };
+
+function freshWorkspace(n: number, view: TermLayout): Workspace {
   return {
     id: crypto.randomUUID(),
     name: `Workspace ${n}`,
     color: "",
     named: false,
+    sizes: null,
+    held: false,
+    view,
   };
 }
 
@@ -92,7 +118,7 @@ export function useWorkspaces({
   setActiveSessionId: (id: string | null) => void;
 }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>(() => [
-    freshWorkspace(1),
+    freshWorkspace(1, loadLastLayout()),
   ]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(
     () => workspaces[0]!.id,
@@ -129,7 +155,16 @@ export function useWorkspaces({
       if (next.length === 0) {
         // Everything has closed. Keep the one that was shown, unnamed again.
         const keep = workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0]!;
-        next = [{ ...keep, name: "Workspace 1", color: "", named: false }];
+        next = [
+          {
+            ...keep,
+            name: "Workspace 1",
+            color: "",
+            named: false,
+            sizes: null,
+            held: false,
+          },
+        ];
       }
       setWorkspaces(next);
       if (!next.some((w) => w.id === activeWorkspaceId)) {
@@ -161,14 +196,25 @@ export function useWorkspaces({
   /** Make a workspace and return its id. It is not shown; the caller decides
    * (a tab made active in it brings it forward by rule 1). */
   const create = useCallback(
-    (name?: string, color?: string): string => {
+    (name?: string, color?: string, extras?: WorkspaceExtras): string => {
+      const view =
+        extras?.view ??
+        workspaces.find((w) => w.id === activeWorkspaceId)?.view ??
+        loadLastLayout();
+      const more = { sizes: null, held: extras?.held ?? false, view };
       const ws: Workspace = name
-        ? { id: crypto.randomUUID(), name, color: color ?? "", named: true }
-        : freshWorkspace(nextNumber(workspaces));
+        ? {
+            id: crypto.randomUUID(),
+            name,
+            color: color ?? "",
+            named: true,
+            ...more,
+          }
+        : { ...freshWorkspace(nextNumber(workspaces), view), ...more };
       setWorkspaces((prev) => [...prev, ws]);
       return ws.id;
     },
-    [workspaces],
+    [workspaces, activeWorkspaceId],
   );
 
   /** A new, empty workspace, shown at once: what the strip's + and the rail's
@@ -196,6 +242,38 @@ export function useWorkspaces({
     );
   }, []);
 
+  /** Set how a workspace's grid shares the pane (null: equally), outright or
+   * from what it has now. */
+  const setSizes = useCallback(
+    (
+      id: string,
+      sizes: GridSizes | null | ((prev: GridSizes | null) => GridSizes | null),
+    ) => {
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === id
+            ? { ...w, sizes: typeof sizes === "function" ? sizes(w.sizes) : sizes }
+            : w,
+        ),
+      );
+    },
+    [],
+  );
+
+  /** Show a workspace's tabs one at a time, or as a grid. */
+  const setView = useCallback((id: string, view: TermLayout) => {
+    setWorkspaces((prev) =>
+      prev.map((w) => (w.id === id && w.view !== view ? { ...w, view } : w)),
+    );
+  }, []);
+
+  /** A held workspace's Connect was pressed: it is an ordinary one now. */
+  const release = useCallback((id: string) => {
+    setWorkspaces((prev) =>
+      prev.map((w) => (w.id === id && w.held ? { ...w, held: false } : w)),
+    );
+  }, []);
+
   /** Move a workspace to where another one is, the way the tab strip reorders
    * tabs: dragged right it lands after the target, dragged left before it. */
   const reorder = useCallback((sourceId: string, targetId: string) => {
@@ -211,19 +289,30 @@ export function useWorkspaces({
     });
   }, []);
 
-  /** Give the shown workspace a template's name and colour, if it is still the
-   * unnamed default and has nothing in it. Called just before the template's
-   * tabs land in it. */
+  /** Give the shown workspace a template's name, colour and grid sizes, if it
+   * is still the unnamed default and has nothing in it. Called just before the
+   * template's tabs land in it. */
   const adoptIfBlank = useCallback(
-    (name: string, color: string) => {
+    (name: string, color: string, extras?: WorkspaceExtras): string | null => {
       const ws = workspaces.find((w) => w.id === activeWorkspaceId);
-      if (!ws || ws.named) return;
-      if (sessions.some((s) => s.workspaceId === ws.id)) return;
+      if (!ws || ws.named) return null;
+      if (sessions.some((s) => s.workspaceId === ws.id)) return null;
       setWorkspaces((prev) =>
         prev.map((w) =>
-          w.id === ws.id ? { ...w, name, color, named: true } : w,
+          w.id === ws.id
+            ? {
+                ...w,
+                name,
+                color,
+                named: true,
+                sizes: null,
+                held: extras?.held ?? false,
+                view: extras?.view ?? w.view,
+              }
+            : w,
         ),
       );
+      return ws.id;
     },
     [workspaces, activeWorkspaceId, sessions],
   );
@@ -254,6 +343,9 @@ export function useWorkspaces({
     createAndShow,
     rename,
     recolor,
+    setSizes,
+    setView,
+    release,
     reorder,
     adoptIfBlank,
     removeEmpty,

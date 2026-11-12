@@ -140,7 +140,7 @@ export function shellNotice(
       key: "never",
       label: "no integration",
       message:
-        "Shell integration is set to Never here, so nothing is sent to its shell. No command blocks and no skills. Change it in Hosts.",
+        "Shell integration is set to Never here, so nothing is sent to its shell. No command blocks and no skills. Change it on the Library tab.",
     };
   }
   // Reaching here with `always` set means the probe read a shell it can name

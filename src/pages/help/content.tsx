@@ -25,7 +25,7 @@ import { type ReactNode } from "react";
 
 import { IS_MAC, SHORTCUTS } from "@/lib/platform";
 import { ShortcutMatrix, WarningMatrix } from "@/pages/help/matrices";
-import { Keys, OnMac, OnWindows, Plat } from "@/pages/help/platform";
+import { IfPowershell, Keys, OnMac, OnWindows, Plat } from "@/pages/help/platform";
 import {
   HELP_HOSTS,
   HELP_SKILLS,
@@ -371,14 +371,14 @@ export const SECTIONS: HelpSection[] = [
           <H3>The left rail</H3>
           <p>
             The buttons down the left side switch between the main areas of the
-            app: <Nav>Hosts</Nav>, <Nav>Templates</Nav>, <Nav>Terminals</Nav>,{" "}
+            app: <Nav>Library</Nav>, <Nav>Templates</Nav>, <Nav>Terminals</Nav>,{" "}
             <Nav>Broadcast</Nav>, <Nav>PTY Broadcast</Nav>,{" "}
             <Nav>MultiTerminal</Nav>, <Nav>Skills</Nav> and <Nav>SFTP</Nav> at
             the top, and <Nav>Logs</Nav>, <Nav>Settings</Nav>, <Nav>Help</Nav>{" "}
             and <Nav>About</Nav> at the bottom. The rail shrinks to icons on
             narrow windows, or with the collapse button at the top. Drag its
             right edge to resize it, or double-click that edge to reset the
-            width. Broadside opens on <Nav>Hosts</Nav>;{" "}
+            width. Broadside opens on <Nav>Library</Nav>;{" "}
             <Nav>Settings → Startup</Nav> picks a different first tab.
           </p>
           <H3>Finding your way</H3>
@@ -431,16 +431,25 @@ export const SECTIONS: HelpSection[] = [
   },
   {
     id: HELP_HOSTS,
-    title: "Hosts",
+    title: "Library and hosts",
     keywords:
-      "server add edit import csv xlsx excel workbook spreadsheet first sheet xls old format not supported credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first drag column header move reorder rearrange columns order of columns put hostname first swap columns remembered across restarts reset defaults columns box scoped chips in settings drag the chips header label truncated cut off ellipsis la userna long line flashes on connect blink flicker flash before the banner what was that line where did it come from omni_precmd bash_version prompt_command typed by itself not mine setup line visible on slow connection vpn wireless remote high latency laggy link appears then disappears wiped cleared line in my shell history up arrow recalls it bash_history histcontrol ignorespace ignoreboth hist_ignore_space histtimeformat delete the entry remove from history broadside typed it not the user zsh cannot delete hosts templates profiles switch three sides third position profiles side of the hosts tab where is the profiles list manage shell profiles from the hosts tab export a single profile launch a profile from the hosts tab open a profile from the profiles list multi-profile multi profile button open several profiles at once tick profiles and open them terminal button on a profile row profile row launch reorder hosts drag a host row grip beside the checkbox my own order custom order new host at the end sort off third click back to my order unsort clear the sort double-click a host row double click to open a terminal double-click a profile row open a profile show password eye reveal what i typed see my password coloured colored digits blue numbers symbols red special characters one or lowercase l zero or capital o tell apart confusable characters fixed width monospace",
+      "server add edit import csv xlsx excel workbook spreadsheet first sheet xls old format not supported credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first drag column header move reorder rearrange columns order of columns put hostname first swap columns remembered across restarts reset defaults columns box scoped chips in settings drag the chips header label truncated cut off ellipsis la userna long line flashes on connect blink flicker flash before the banner what was that line where did it come from omni_precmd bash_version prompt_command typed by itself not mine setup line visible on slow connection vpn wireless remote high latency laggy link appears then disappears wiped cleared line in my shell history up arrow recalls it bash_history histcontrol ignorespace ignoreboth hist_ignore_space histtimeformat delete the entry remove from history broadside typed it not the user zsh cannot delete library tab where did the hosts tab go renamed hosts tab hosts templates profiles switch three sides third position profiles side of the hosts tab where is the profiles list manage shell profiles from the hosts tab export a single profile launch a profile from the hosts tab open a profile from the profiles list multi-profile multi profile button open several profiles at once tick profiles and open them terminal button on a profile row profile row launch reorder hosts drag a host row grip beside the checkbox my own order custom order new host at the end sort off third click back to my order unsort clear the sort double-click a host row double click to open a terminal double-click a profile row open a profile show password eye reveal what i typed see my password coloured colored digits blue numbers symbols red special characters one or lowercase l zero or capital o tell apart confusable characters fixed width monospace",
     body: (
       <>
         <Lead>
-          The <Nav>Hosts</Nav> tab is your address book of machines to connect
-          to. Each host records how to reach it (address, port, username) and how
-          to sign in.
+          The <Nav>Library</Nav> tab holds what sessions are opened from. Its{" "}
+          <Nav>Hosts</Nav> list is your address book of machines to connect to:
+          each host records how to reach it (address, port, username) and how to
+          sign in.
         </Lead>
+        <p>
+          The switch at the top shows <Nav>Hosts</Nav>, <Nav>Profiles</Nav> or{" "}
+          <Nav>Snapshots</Nav> (saved sets of workspaces, see{" "}
+          <SectionLink id="help-sec-terminals">Terminals</SectionLink>).{" "}
+          <Nav>Templates</Nav> in the same switch goes to the{" "}
+          <Nav>Templates</Nav> tab's <Nav>List</Nav>, where templates are kept.
+          The Library tab used to be called Hosts.
+        </p>
         <Detail>
           <H3>Adding and editing hosts</H3>
           <Bullets>
@@ -621,7 +630,7 @@ export const SECTIONS: HelpSection[] = [
     id: HELP_TEMPLATES,
     title: "Templates",
     keywords:
-      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup checkbox tick several multi-template multi template open several templates at once in order which opens first top of the list play button double-click a row double click to open reorder templates drag a template grip save as template save the grid as a template from the terminals tab keep this layout button appears disappears matches a template add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list hosts tab toggle switch between hosts and templates nothing launches from the templates tab why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group grid settings popover change columns without leaving the page drag a session here strip band at the bottom duplicate name same name twice numbered 02 03 renamed automatically duplicate a template copy a template clone save as rename instead of copy make a variant swap sessions two templates called the same thing show all templates recent five import from the splash screen closed editor deleted somewhere else deleted while open create it again discard greyed button no tooltip why is the button grey status bar hint on a disabled button back to the hosts tab templates list shortcut server button get to the list from the editor replace what is on the canvas unsaved changes lost overwritten keep editing replaced my template asks before replacing",
+      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup checkbox tick several multi-template multi template open several templates at once in order which opens first top of the list play button double-click a row double click to open reorder templates drag a template grip save as template save the grid as a template from the terminals tab serial console left out of template keep this layout button appears disappears matches a template add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list home editor list switch where is the list start screen opens on home x button gone close the editor nothing launches from the editor why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group grid settings popover change columns without leaving the page drag a session here strip band at the bottom duplicate name same name twice numbered 02 03 renamed automatically duplicate a template copy a template clone save as rename instead of copy make a variant swap sessions two templates called the same thing show all templates recent five import from the splash screen closed editor deleted somewhere else deleted while open create it again discard greyed button no tooltip why is the button grey status bar hint on a disabled button back to the hosts tab templates list library tab templates button get to the list from the editor sizes saved tile sizes row height column width resize the boxes in the editor drag the edges between boxes forget sizes save sizes to template replace what is on the canvas unsaved changes lost overwritten keep editing replaced my template asks before replacing",
     body: (
       <>
         <Lead>
@@ -631,10 +640,12 @@ export const SECTIONS: HelpSection[] = [
           by hand every morning.
         </Lead>
         <p>
-          The <Nav>Templates</Nav> tab on the left rail is where you build and
-          edit templates; nothing launches from it. You open them from the{" "}
-          <Nav>Hosts</Nav> tab, using the <Nav>Hosts</Nav> |{" "}
-          <Nav>Templates</Nav> | <Nav>Profiles</Nav> switch at the top.
+          The <Nav>Templates</Nav> tab has three views, switched at its top
+          left: <Nav>Home</Nav> (start a template, import one, or pick up a
+          recent one), <Nav>Editor</Nav> (build and change one; nothing launches
+          from it) and <Nav>List</Nav> (every template, and where they are
+          opened). <Nav>Templates</Nav> on the <Nav>Library</Nav> tab also goes
+          to the List.
         </p>
         <Detail>
           <H3>Building one</H3>
@@ -663,9 +674,17 @@ export const SECTIONS: HelpSection[] = [
               To keep a grid you already have open, press{" "}
               <Nav>Save as template</Nav> on the Terminals tab (beside{" "}
               <Nav>Grid Titles</Nav>). This tab opens with those sessions on the
-              canvas, in tile order; name it and press <Nav>Create</Nav>. The
-              button shows in Grid with two or more tiles, and only when no
-              saved template already opens exactly those.
+              canvas, in tile order, and the tile sizes; name it and press{" "}
+              <Nav>Create</Nav>. The button shows in Grid with two or more
+              tiles, when no saved template already opens exactly those.
+              Templates can&apos;t hold serial consoles: with one on the grid,
+              it asks first and leaves it out.
+            </li>
+            <li>
+              When the grid is a saved template's sessions but you have dragged
+              its lines to new sizes, the same button (now a save icon) asks,
+              then writes the sizes to that template. Opening the template in a
+              workspace of its own puts them back.
             </li>
           </Bullets>
           <H3>The preview</H3>
@@ -679,8 +698,15 @@ export const SECTIONS: HelpSection[] = [
             <Nav>Drag a session here</Nav> strip.
           </p>
           <p>
-            A template saves only the sessions and their order, not a layout, so
-            the same template looks right on a laptop or a wall of monitors.
+            A template saves the sessions and their order. It can also keep
+            the tile widths and row heights: saved from a grid whose lines you
+            dragged, or set by dragging the lines between the boxes in the
+            editor, the same way as on the Terminals grid. A box that would be
+            left narrower than the <Nav>Minimum tile width</Nav> moves down a
+            row, and a box you move to another place keeps its width. Widths are shares of the window
+            and row heights are lines of text, so it looks the same on a laptop
+            or a wall of monitors. <Nav>Forget sizes</Nav>, on
+            the line under the canvas, drops them.
           </p>
           <H3>Names, and finding one again</H3>
           <Bullets>
@@ -691,41 +717,41 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Changing the name of a saved template and pressing{" "}
               <Nav>Save</Nav> renames it; it does not make a copy. To copy one,
-              use the <Nav>Duplicate</Nav> button on its row in the Hosts tab's
-              Templates list. The copy is numbered like a clashing name, appears
+              use the <Nav>Duplicate</Nav> button on its row in the{" "}
+              <Nav>List</Nav>. The copy is numbered like a clashing name, appears
               directly under the original, and never opens at startup.
             </li>
             <li>
-              Closing the editor with the <Nav>x</Nav> shows{" "}
-              <Nav>New template</Nav>, <Nav>Import</Nav> and the five templates
-              you edited most recently, with a link to the full list on the
-              Hosts tab.
+              The tab opens on <Nav>Home</Nav> each time Broadside starts. A
+              template you opened in the editor stays there while you visit other
+              tabs, until you press <Nav>Home</Nav> or <Nav>List</Nav>.
             </li>
             <li>
-              The server button beside the template menu, at the left of the
-              editor's bar, goes straight to <Nav>Hosts → Templates</Nav>.
-              Whatever is on the canvas is still there when you come back.
+              <Nav>Home</Nav> or <Nav>List</Nav> closes the editor. With unsaved
+              changes they ask first: <Nav>Discard</Nav> closes it,{" "}
+              <Nav>Keep editing</Nav> stays. <Nav>Editor</Nav> is greyed while
+              nothing is open in it.
             </li>
             <li>
               Putting something else on the canvas while it has unsaved changes
-              asks first: another template from the menu, <Nav>Edit</Nav> on the
-              Hosts tab, <Nav>Edit</Nav> or <Nav>Duplicate</Nav> in the Terminals
+              asks first: another template from the menu, <Nav>Edit</Nav> or{" "}
+              <Nav>Duplicate</Nav> in the Terminals
               tab's <Nav>plus button</Nav> menu, <Nav>Save as template</Nav> on
               the Terminals tab, or an import. <Nav>Keep editing</Nav> leaves your work as it was.
             </li>
             <li>
-              If you delete a template on the Hosts tab while it is open in the
-              editor, nothing on the canvas is lost: <Nav>Create</Nav> saves it
-              again as a new template, or <Nav>Discard</Nav> closes the editor.
+              If a template is deleted while it is open in the editor (from the
+              Terminals tab's <Nav>plus button</Nav> menu), nothing on the canvas
+              is lost: <Nav>Create</Nav> saves it again as a new template, or{" "}
+              <Nav>Discard</Nav> closes the editor.
             </li>
           </Bullets>
           <H3>Opening one</H3>
           <Bullets>
             <li>
-              On the <Nav>Hosts</Nav> tab, switch to <Nav>Templates</Nav> and
-              press the play button on a row, or double-click the row. It opens
-              every session in the saved order and takes you to the Terminals
-              tab.
+              On the <Nav>List</Nav>, press the play button on a row, or
+              double-click the row. It opens every session in the saved order and
+              takes you to the Terminals tab. The pencil opens it in the editor.
             </li>
             <li>
               Or open one from the <Nav>Templates</Nav> section of the Terminals
@@ -800,7 +826,7 @@ export const SECTIONS: HelpSection[] = [
     id: HELP_TERMINALS,
     title: "Terminals",
     keywords:
-      "terminal tab interactive shell profile profiles import export reorder grip survive reset backup restore startup command local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved resize one tile only independent tile sizes resize tiles together lock unlock different sized tiles ragged single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes advanced grid settings collapsed section starting number seed default unchecking auto lands on your own numbers 80x24 classic terminal size reset defaults just the advanced section session timeout idle close automatically inactivity why did my terminal close by itself left it overnight closed while i was away keep alive keepalive nat firewall state table connection dropped silently hangs after a while disable the timeout never close sleep 120 long running command was closed while it was running foreground background job ampersand tmux screen vim editor full screen program never times out how does it know paste mode plain sh dash device cli no shell integration falls back spinner connecting forever stuck on connecting nothing happening is it frozen hung blank pane black screen after connecting no prompt taking ages slow to open which half is slow signed in waiting for the login screen wireless vpn latency why does it take ten seconds duplicate a profile copy clone make another one like this second profile same shell different folder profile copy numbered delete profile double click doubleclick two clicks confirm dialog ok cancel are you sure guard accidental deletion undo a deleted profile single click does nothing bin trash icon copy of a copy nested copy copy numbering collapses close others close other tabs keep only this one close everything except this tab close other ssh close other command prompts close other powershell right click a tab menu filter by kind show only ssh hide powershell hide local shells view filter all none tabs missing where did my tabs go hidden by filter select then right click to copy right click copies highlight does not copy any more clipboard overwritten by selecting import profile import profiles export profile export profiles importing profiles exporting profiles profile file profiles file json file of profiles share profiles copy profiles to another pc move profiles another machine carry my profiles back up profiles restore profiles profile import preview startup command shown before importing profile already taken numbered copy on import custom terminal matched by name struck through after import which shell did this profile use remembers the name of the missing shell hover a struck through profile tells you which terminal to re-add edit pre-picks the shell after you add it back profiles on the hosts tab third switch position profiles list table manage profiles somewhere bigger export a single profile export one profile export just this one tick boxes export selected profiles per profile export where do i see the folder and startup command without hovering launch a profile from the hosts tab open profiles from the profiles list multi-profile multi profile open several profiles at once open four shells in one go greyed multi-profile button nothing ticked opening the same profile twice does not ask second shell same folder ticked profile missing shell skipped hosts in the plus menu open a host from the terminals tab launcher hosts section saved hosts list in the launcher without leaving terminals collapse section roll up sections expand collapse twisty chevron fold sections away remembered across restarts persisted collapsed menu too long scrolling past hosts to reach profiles how many applies to hosts open three sessions to one host already open host second session to the same host does not ask why does the hosts tab ask and the plus menu not menu cut off at the bottom serial console cut off profiles cut off have to scroll the window to reach it menu taller than the window fits the window resize add a host from the plus menu new host from the terminals tab reorder profiles on the hosts tab drag a profile row grip move profile columns resize profile columns hide profile columns paste double spaced blank line between every line extra empty lines crlf windows line endings vs code notepad multi-line paste runs each line bracketed paste waits for enter right click goes to tmux menu claude code pasted twice double paste shift right click mouse program save as template save the grid as a template keep this layout as a template template button next to the eye workspace workspaces group tabs groups of tabs switch between sets of tabs hide these tabs show only these tabs new workspace move tab to workspace rename workspace close workspace workspace row strip reorder workspaces drag a workspace change the order of workspaces too many workspaces scroll the workspace row off the end saved workspaces gone after restart close all workspaces close every workspace which workspace does the template go into controls row toolbar hidden tucked away where did the toolbar go buttons gone top of the terminals tab tab at the top centre hover to show the controls keep the toolbar on screen auto-hide controls view menu reorder the sections of the plus menu move sections drag section heading put templates first change the order of the launcher templates in the plus menu open a template from the terminals tab launcher templates section edit a template duplicate a template copy a template delete a template reorder templates apt progress bar left behind twice duplicate progress line after closing a tile stale status line resize leftovers" +
+      "terminal tab interactive shell profile profiles import export reorder grip survive reset backup restore startup command local powershell pwsh wsl cmd command prompt drag reorder find search maximize close all conpty pty plus launcher reconnect divider session disconnected scrollback stack clean screen mouse reporting stuck htop garbage path restart shortcut commands scope shortcut label friendly name which command will it run see the command alt arrow switch next previous keyboard navigation copy paste clipboard right-click select ctrl shift c v go to session jump scroll center grid tiled layout split screen tabs toggle side by side watch several settings columns across item width height characters rows pin fixed size horizontal scroll auto profile profiles saved launch working directory folder browse startup command name label how many claude open in directory eye hide show title bar header chrome peek hover outline host colour selected active tile denser rename pencil tab name title exclude ignore hide from grid order rearrange match two terminals side by side full window fullscreen ctrl shift g keyboard shortcut not f10 mc nano function key strip reveal slide focus controls ctrl shift t toolbar keyboard reach tab key drag resize tile edge corner handle reset size temporary this session only not saved resize one tile only independent tile sizes resize tiles together lock unlock different sized tiles lock grid freeze the grid stop resizing cant resize tiles any more handles gone accidentally resized nudged moved the line by mistake splitter drag the line between tiles top edge of the bottom tile make the bottom terminal shorter taller row bigger column wider full width tile minimum tile width moves down to the next row wraps drops to the next row blank space beside a tile empty space narrower tile alone in its row row height taller tile does not shrink the others scroll down fit rows to the window minimum tile height tiles too small many terminals unusable single terminal fills ignores grid settings custom terminal application git bash msys2 cygwin exe program arguments browse add your own posix family command language broadcast rail send to several at once composer targets in place reset display redraw garbled stuck full screen prompt dialog box debconf needrestart kernel upgrade escape sequences echoed arrow keys not working enter tab unresponsive noninteractive ctrl l redraw prompt blank pane after reset why no ctrl c interrupt stray ^l character while command running sleep long command still clears output disappeared missing after reset display screen wiped when command finished withdraw redraw type ahead kept reset grid strict checkbox drag saved written to settings lost on restart short last row stretch tall tile in the last column leave the gap fill hole uneven columns trimmed to terminals open auto fit fewer than columns try again retry failed connection unreachable close tab focus ring where is the keyboard esc leaves the strip back to the terminal tab wraps does not go into the grid hidden buttons appear when focused status bar count sessions connected red tab not connected magnify enlarge shrink squint hard to read focus follows mouse hover highlight which tile is active where does my typing go paste lands wrong terminal mouse over outline moves view menu sessions menu grouped controls toolbar crowded buttons missing where did the button go reset grid reset display side by side compact tab labels small window narrow 1024 rail fits tiles too small grid unusable ridiculous cramped one column stacked single column instead of two why did the grid stack minimum window size small screen laptop 16 inch large monitor app font size big text buttons lost their labels icons only sessions button cut off clipped edge horizontal scrollbar chrome too big too many terminals open at once how many can i watch greyed out ghosted dimmed pale disabled menu entry vanished where did reset grid go why cant i click it full tab labels checkbox tick empty box unchecked initials dot esc does nothing in fullscreen does not exit maximized terminal grid ctrl shift g only vi vim editor keeps escape empty grid nothing to show view menu disappears behind strip menu cut off top of screen dropdown clipped in fullscreen pull tab handle grabber top centre middle of the top edge how do i get the toolbar back controls gone cant find the toolbar in fullscreen top edge does not open the strip any more moving the mouse to the top does nothing click the tab tab does not open the strip nothing happens when i hover the tab strip blinks flickers bounces after closing a menu focus changes too fast moving to the toolbar sweeping across tiles crossing a tile on the way wrong tile became active settle pause delay before focus moves shortcut list changed to the wrong session go button keeps the keyboard stuck in the toolbar cannot type after pressing go have to click the tile again serial console com port baud rate line speed 9600 115200 8n1 console cable usb serial adapter router switch firewall rs232 db9 rj45 rollover port already in use access denied putty tera term blank pane press enter garbage characters wrong speed unplugged disconnected select a tab with the keyboard arrow keys along the tab strip cannot reach the tabs by tabbing home end enter choose session no mouse typing went into the other window wrong application typed in my browser by mistake keystrokes lost window not focused not the active window inactive background looks active but is not scroll bars appear on hover when unfocused alt tab back to broadside outline moved while i was away click to activate first click activates and selects hover does not focus the window focus follows mouse across applications how many matches find bar does not say how many no count number of results 3 of 17 which match am i on next previous match highlight all matches yellow search scrollback for a word ctrl f in a terminal search says nothing found when there are matches retry all close failed unhide all bulk repair reconnect everything red tabs at once clear away dead tabs remove failed connections tidy up serial shortcut scope greyed go button disabled no commands for com port no serial shortcuts empty picker list nothing to pick manage shortcuts add the first one console cable cisco ios show version tab colour color local shell tint powershell blue command prompt wsl which tab am i typing in profile colour my font is missing inter segoe ui arial proportional not in the list why cant i pick my favourite font variable width scrollback scroll back buffer history how far up can i scroll output cut off truncated lost older lines gone only 1000 lines 5000 lines memory per pane raise the limit end a session hang up disconnect without closing the tab unplug keep the pane keep the output stay on screen close the shell not the tab mangled garbled box drawing characters question marks accents emoji utf-8 unicode code page 437 chcp 65001 claude logo ascii art broken corners weird symbols in powershell local shell encoding disconnect all hang up every session at once keep all the tabs bulk unplug ask before acting on more than confirmation threshold are you sure stop asking me so often too many prompts guard limit 5 default 1 to 11 broadcast button greyed disabled one terminal only nothing to broadcast to rail hidden ssh pill is it back yet rebooted reconnect check icmp ping port check green red amber percentage last two minutes advanced grid settings collapsed section starting number seed default unchecking auto lands on your own numbers 80x24 classic terminal size reset defaults just the advanced section session timeout idle close automatically inactivity why did my terminal close by itself left it overnight closed while i was away keep alive keepalive nat firewall state table connection dropped silently hangs after a while disable the timeout never close sleep 120 long running command was closed while it was running foreground background job ampersand tmux screen vim editor full screen program never times out how does it know paste mode plain sh dash device cli no shell integration falls back spinner connecting forever stuck on connecting nothing happening is it frozen hung blank pane black screen after connecting no prompt taking ages slow to open which half is slow signed in waiting for the login screen wireless vpn latency why does it take ten seconds duplicate a profile copy clone make another one like this second profile same shell different folder profile copy numbered delete profile double click doubleclick two clicks confirm dialog ok cancel are you sure guard accidental deletion undo a deleted profile single click does nothing bin trash icon copy of a copy nested copy copy numbering collapses close others close other tabs keep only this one close everything except this tab close other ssh close other command prompts close other powershell right click a tab menu filter by kind show only ssh hide powershell hide local shells view filter all none tabs missing where did my tabs go hidden by filter select then right click to copy right click copies highlight does not copy any more clipboard overwritten by selecting import profile import profiles export profile export profiles importing profiles exporting profiles profile file profiles file json file of profiles share profiles copy profiles to another pc move profiles another machine carry my profiles back up profiles restore profiles profile import preview startup command shown before importing profile already taken numbered copy on import custom terminal matched by name struck through after import which shell did this profile use remembers the name of the missing shell hover a struck through profile tells you which terminal to re-add edit pre-picks the shell after you add it back profiles on the hosts tab third switch position profiles list table manage profiles somewhere bigger export a single profile export one profile export just this one tick boxes export selected profiles per profile export where do i see the folder and startup command without hovering launch a profile from the hosts tab open profiles from the profiles list multi-profile multi profile open several profiles at once open four shells in one go greyed multi-profile button nothing ticked opening the same profile twice does not ask second shell same folder ticked profile missing shell skipped hosts in the plus menu open a host from the terminals tab launcher hosts section saved hosts list in the launcher without leaving terminals collapse section roll up sections expand collapse twisty chevron fold sections away remembered across restarts persisted collapsed menu too long scrolling past hosts to reach profiles how many applies to hosts open three sessions to one host already open host second session to the same host does not ask why does the hosts tab ask and the plus menu not menu cut off at the bottom serial console cut off profiles cut off have to scroll the window to reach it menu taller than the window fits the window resize add a host from the plus menu new host from the terminals tab reorder profiles on the hosts tab drag a profile row grip move profile columns resize profile columns hide profile columns paste double spaced blank line between every line extra empty lines crlf windows line endings vs code notepad multi-line paste runs each line bracketed paste waits for enter right click goes to tmux menu claude code pasted twice double paste shift right click mouse program save as template save the grid as a template keep this layout as a template template button next to the eye workspace workspaces group tabs groups of tabs switch between sets of tabs hide these tabs show only these tabs new workspace move tab to workspace rename workspace close workspace workspace row strip reorder workspaces drag a workspace change the order of workspaces too many workspaces scroll the workspace row off the end saved workspaces gone after restart snapshot snapshots snapshot workspaces save all workspaces serial console left out of snapshot open every workspace again restore my workspaces connect button not connected waiting held add alongside replace close all workspaces close every workspace which workspace does the template go into grid in one workspace tabs in another each workspace its own view tabs or grid per workspace both workspaces switch to grid together controls row toolbar hidden tucked away where did the toolbar go buttons gone top of the terminals tab tab at the top centre hover to show the controls keep the toolbar on screen auto-hide controls view menu reorder the sections of the plus menu move sections drag section heading put templates first change the order of the launcher templates in the plus menu open a template from the terminals tab launcher templates section edit a template duplicate a template copy a template delete a template reorder templates apt progress bar left behind twice duplicate progress line after closing a tile stale status line resize leftovers" +
       onMac(
         "zsh bash fish login shell etc shells homebrew command key cmd c cmd v option arrow word jump alt drag cu.usbserial usbmodem dev cu screen minicom coolterm mac",
       ),
@@ -816,7 +842,7 @@ export const SECTIONS: HelpSection[] = [
           <H3>Remote and local shells</H3>
           <Bullets>
             <li>
-              Open a remote shell from the <Nav>Hosts</Nav> tab, or from the{" "}
+              Open a remote shell from the <Nav>Library</Nav> tab, or from the{" "}
               <Nav>Hosts</Nav> section of the <Nav>plus button</Nav> menu at the
               end of the tab strip. The connection runs over{" "}
               <Term term="SSH" />.
@@ -830,7 +856,12 @@ export const SECTIONS: HelpSection[] = [
               <OnMac>
                 The same <Nav>plus button</Nav> opens the Mac's own shells:
                 your login shell (zsh, unless you changed it) first, then bash
-                and the others macOS lists as shells. Each starts as a login
+                and the others macOS lists as shells
+                <IfPowershell>
+                  , and PowerShell while PowerShell 7 (<code>pwsh</code>) is
+                  installed
+                </IfPowershell>
+                . Each starts as a login
                 shell in your home folder, so your profile, your PATH and the
                 Homebrew tools on it are all there.
               </OnMac>
@@ -867,7 +898,7 @@ export const SECTIONS: HelpSection[] = [
               it on the <Nav>Templates</Nav> tab. A duplicate arrives named
               with the next free number (<Nav>Name 02</Nav>) and is not saved
               until you save it there. Drag the grip to change the order, which
-              is the same order as the Hosts tab's template list.
+              is the same order as the Templates tab's List.
             </li>
             <li>
               <Nav>How many</Nav> applies to hosts as well: set it to three and
@@ -944,10 +975,53 @@ export const SECTIONS: HelpSection[] = [
               screen, so nothing is sent to a terminal you cannot see.
             </li>
             <li>
-              A workspace that loses its last tab goes away.{" "}
-              <b>Workspaces are not saved</b>: when Broadside closes they are
-              gone. To keep one, use <Nav>Save as template</Nav>, and open that
-              template into a new workspace next time.
+              Each workspace has its own <Nav>Tabs</Nav> / <Nav>Grid</Nav>{" "}
+              choice, so one can be a grid of tiles while another shows one
+              tab at a time; switching workspace switches the view with it. A
+              new workspace starts with the view of the one on screen, and
+              after a restart the first workspace starts with the view you
+              last chose. A template doesn&apos;t change it. The rest of the{" "}
+              <Nav>View</Nav> menu (hidden tiles, title bars,{" "}
+              <Nav>Resize tiles together</Nav>, <Nav>Lock grid</Nav>) is the same in every
+              workspace. Leaving the grid also leaves grid fullscreen.
+            </li>
+            <li>
+              A workspace that loses its last tab goes away. Workspaces are not
+              saved on their own: when Broadside closes they are gone. To keep
+              one, use <Nav>Save as template</Nav>; to keep them all, save a
+              snapshot.
+            </li>
+          </Bullets>
+          <H3>Snapshots</H3>
+          <Bullets>
+            <li>
+              A <Nav>snapshot</Nav> keeps every open workspace under one name:
+              its tabs in order, its name and colour, Tabs or Grid, and its
+              grid sizes. Save
+              one with <Nav>Sessions</Nav> &gt;{" "}
+              <Nav>Snapshot workspaces</Nav>, or{" "}
+              <Nav>Save open workspaces</Nav> on <Nav>Library</Nav> &gt;{" "}
+              <Nav>Snapshots</Nav>. Snapshots can&apos;t hold serial consoles:
+              the save warns when one is open and leaves it out.
+            </li>
+            <li>
+              Open one from <Nav>Library</Nav> &gt; <Nav>Snapshots</Nav> with its
+              play button, or by double-clicking the row. With tabs already
+              open you are asked first: <Nav>Add alongside</Nav> keeps them,{" "}
+              <Nav>Replace</Nav> closes every open tab in every workspace.
+            </li>
+            <li>
+              A snapshot with more than two workspaces opens without connecting.
+              Each workspace shows a <Nav>Connect</Nav> button in the middle,
+              which connects that workspace&apos;s sessions and no others. Change
+              the number, or have every snapshot connect at once, in{" "}
+              <Nav>Settings → Sessions → Snapshots</Nav>; turning that on asks
+              first.
+            </li>
+            <li>
+              A snapshot has no editor. Rename it with the pencil, replace what
+              it holds with what is open now with the update button (asks
+              first), or delete it.
             </li>
           </Bullets>
           <H3>
@@ -1031,7 +1105,10 @@ export const SECTIONS: HelpSection[] = [
                 a shell you install yourself (fish from Homebrew, for example)
                 appears once it is added to that file, which is the same step
                 that lets you make it your login shell. Your login shell is
-                listed first.
+                listed first. PowerShell 7 (<code>pwsh</code>) is listed as{" "}
+                <Nav>PowerShell</Nav> whenever it is installed, from Homebrew
+                or Microsoft's installer, with no need to add it anywhere; it
+                leaves the list if it is removed.
               </OnMac>
             </li>
             <li>
@@ -1055,10 +1132,11 @@ export const SECTIONS: HelpSection[] = [
                 the usual path and options for you.
               </OnWindows>
               <OnMac>
-                Detection only finds the shells in <code>/etc/shells</code>. For
-                anything else, such as a shell you have not registered there or
-                PowerShell (<code>pwsh</code>), open <Nav>Settings</Nav> and the{" "}
-                <Nav>Custom terminals</Nav> section and add it yourself.
+                Detection only finds the shells in <code>/etc/shells</code>
+                <IfPowershell> and PowerShell</IfPowershell>. For anything else,
+                such as a shell you have not registered there, open{" "}
+                <Nav>Settings</Nav> and the <Nav>Custom terminals</Nav> section
+                and add it yourself.
               </OnMac>
             </li>
             <li>
@@ -1106,7 +1184,11 @@ export const SECTIONS: HelpSection[] = [
               coloured by the kind of shell (one colour each for{" "}
               <Plat
                 win="PowerShell, Command Prompt, WSL, Bash-like terminals and serial"
-                mac="Bash-like shells such as zsh, PowerShell and serial"
+                mac={
+                  <IfPowershell without="Bash-like shells such as zsh and bash, and serial">
+                    Bash-like shells such as zsh, PowerShell and serial
+                  </IfPowershell>
+                }
               />
               ), so you can
               see at a glance which command language you are about to type in.
@@ -1162,9 +1244,8 @@ export const SECTIONS: HelpSection[] = [
               place in the list.
             </li>
             <li>
-              <b>The Hosts tab has a fuller list.</b> Set the{" "}
-              <Nav>Hosts</Nav> | <Nav>Templates</Nav> | <Nav>Profiles</Nav>{" "}
-              switch at the top of the <Nav>Hosts</Nav> tab to{" "}
+              <b>The Library tab has a fuller list.</b> Set the switch at the
+              top of the <Nav>Library</Nav> tab to{" "}
               <Nav>Profiles</Nav> for a table that shows each profile's folder
               and startup command. Everything the launcher does works there too,
               and you can also export a single profile, or just the ones you
@@ -1260,7 +1341,8 @@ export const SECTIONS: HelpSection[] = [
             <li>
               The <Nav>Tabs</Nav> / <Nav>Grid</Nav> toggle above the tab strip
               switches between one terminal at a time and every terminal tiled
-              at once. Tiles follow the order of the tabs and resize with the
+              at once, for the workspace on screen (each workspace keeps its
+              own). Tiles follow the order of the tabs and resize with the
               window. When there are too many to read comfortably, they keep a
               readable size and the grid scrolls. Each tile has its own maximize
               and close buttons.
@@ -1311,19 +1393,68 @@ export const SECTIONS: HelpSection[] = [
               <Nav>Reset grid</Nav> goes back to tiles that fit the window.
             </li>
             <li>
-              To resize tiles one at a time, untick{" "}
+              To give some tiles more room than others, untick{" "}
               <Nav>Resize tiles together</Nav> in the <Nav>View</Nav> menu
-              (Grid only). A drag then changes only that tile, and the others
-              wrap around it at the size they had, so rows can be ragged. These
-              sizes are forgotten when Broadside closes. <Nav>Reset grid</Nav>{" "}
-              clears them, and ticking the option again lines the tiles back up.
+              (Grid only). Each line between two tiles is then a handle in the
+              gap, which lights when the pointer is over it. Dragging the line
+              beside a tile moves it in that row only: one tile grows and the
+              other shrinks. Unticking it also drops a size
+              dragged while it was ticked, so the lines are there at once; a
+              size typed in <Nav>Settings → Grid</Nav> stays, and Broadside
+              says so with a <Nav>Reset grid</Nav> button.
+            </li>
+            <li>
+              The line under a row (the gap below it, or the bottom edge of
+              the last row) sets that row's height. The rows below move down, and when
+              the rows no longer fit the window the grid scrolls; no other tile
+              gets shorter. Drag a row past the bottom of the grid and the grid
+              scrolls with you. To have the rows always fit the window instead,
+              so the line between two rows trades row height between them, tick{" "}
+              <Nav>Fit rows to the window</Nav> in <Nav>Settings → Grid</Nav>.
+            </li>
+            <li>
+              The mouse wheel over a terminal scrolls that terminal&apos;s
+              scrollback. To scroll the grid, use the wheel over the gap between
+              tiles, or the grid&apos;s scrollbar.
+            </li>
+            <li>
+              Drag a tile wider until the one to its right would be narrower
+              than <Nav>Minimum tile width</Nav> (<Nav>Settings → Grid</Nav>,
+              15% by default), and that tile moves down to share the next row.
+              The wide tile keeps the width you gave it, with blank space
+              beside it; drag its right edge back to bring the other tile up
+              again. A tile alone in its row can be made narrower from its
+              right edge.
+            </li>
+            <li>
+              Those sizes belong to the workspace, and each tab keeps its own
+              width, so a new tab opens at the usual size. A new row gets an
+              even share of the window, and never less than the{" "}
+              <Nav>Minimum tile height</Nav>. They are kept in a template or a
+              snapshot, or forgotten when Broadside closes.{" "}
+              <Nav>Reset grid</Nav> evens them out. With{" "}
+              <Nav>Columns across</Nav> or a tile size set in{" "}
+              <Nav>Settings → Grid</Nav>, a drag resizes every tile, as with the
+              option ticked.
+            </li>
+            <li>
+              Tick <Nav>Lock grid</Nav> in the <Nav>View</Nav> menu (Grid only,
+              off by default) and nothing on the grid can be dragged: no tile
+              edge, corner or line between tiles. The sizes stay as they are,
+              and <Nav>Resize tiles together</Nav> and <Nav>Reset grid</Nav> are
+              greyed until you untick it. It applies in every workspace and is
+              kept after a restart.
             </li>
             <li>
               To fix the layout, open <Nav>Settings → Grid</Nav>. Leave
               everything on <Nav>Auto</Nav>, or set <Nav>Columns across</Nav>{" "}
               and the tile <Nav>Item width</Nav> / <Nav>Item height</Nav> in
               characters. Tiles too wide for the window scroll sideways rather
-              than shrink. One or two terminals always fill the space whatever
+              than shrink. <Nav>Minimum tile height</Nav> (13 lines by default)
+              is the smallest row height the grid gives tiles before it
+              scrolls instead (a row you drag can still go down to 4 lines);
+              raise it if many terminals become too small to use. One or two
+              terminals always fill the space whatever
               these say, and a column count larger than the number of open
               terminals is reduced to fit. Changes apply the next time you open
               the Terminals page. The{" "}
@@ -1382,7 +1513,12 @@ export const SECTIONS: HelpSection[] = [
             <li>
               <strong className="font-semibold">Copy</strong> by selecting text
               and right-clicking, or with <Nav><Keys k={SHORTCUTS.copy} /></Nav>. Selecting on
-              its own copies nothing. Double-click selects a word and
+              its own copies nothing.{" "}
+              <Plat
+                win=""
+                mac="A Control-click or a two-finger click counts as a right-click."
+                both="On a Mac, a Control-click or a two-finger click counts as a right-click."
+              /> Double-click selects a word and
               triple-click a line. In a program that uses the mouse itself (tmux
               or vim with the mouse on), hold{" "}
               <Nav>
@@ -1568,11 +1704,13 @@ export const SECTIONS: HelpSection[] = [
                 <Plat win="SSH / WSL (Linux)" mac="SSH / local shells (Unix)" />
               </Nav>
               ,{" "}
-              <Nav>
-                <Plat win="Command Prompt / PowerShell" mac="PowerShell" />
-              </Nav>
-              , <Nav>Both</Nav> for commands that work in either (for example
-              whoami), or{" "}
+              <IfPowershell without="or ">
+                <Nav>
+                  <Plat win="Command Prompt / PowerShell" mac="PowerShell" />
+                </Nav>
+                , <Nav>Both</Nav> for commands that work in either (for example
+                whoami), or{" "}
+              </IfPowershell>
               <Nav>
                 <Plat win="Serial console (COM port)" mac="Serial console" />
               </Nav>
@@ -1587,9 +1725,16 @@ export const SECTIONS: HelpSection[] = [
               <OnMac>
                 The dropdown only offers shortcuts that suit the current tab. A
                 Mac's own shells (zsh, bash) speak the same language as an SSH
-                host, so they use the SSH ones; the PowerShell scope is for a
-                PowerShell custom terminal.
+                host, so they use the SSH ones
+                <IfPowershell without=".">
+                  ; the PowerShell scope is for PowerShell tabs.
+                </IfPowershell>
               </OnMac>
+            </li>
+            <li>
+              A shortcut with a label shows the label in the dropdown, with
+              its command beside it in the open list. Point at the picker or{" "}
+              <Nav>Go</Nav> to see the command that will run in the status bar.
             </li>
             <li>
               Serial tabs only get <Nav>Serial console</Nav> shortcuts (
@@ -1653,7 +1798,7 @@ export const SECTIONS: HelpSection[] = [
               Two filters narrow the rail: a <Nav>Find by label…</Nav> box that
               matches host labels as you type, and a <Nav>Filter tags</Nav>{" "}
               dropdown that works like the tag filter on the{" "}
-              <SectionLink id="help-sec-hosts">Hosts</SectionLink> table. The two
+              <SectionLink id="help-sec-hosts">Library</SectionLink> tab's Hosts table. The two
               combine, and both reset when you restart the app.
             </li>
             <li>
@@ -1716,7 +1861,10 @@ export const SECTIONS: HelpSection[] = [
                 }
                 mac={
                   <>
-                    <Nav>PowerShell</Nav>, <Nav>Local shells</Nav>
+                    <IfPowershell>
+                      <Nav>PowerShell</Nav>,{" "}
+                    </IfPowershell>
+                    <Nav>Local shells</Nav>
                   </>
                 }
               />{" "}
@@ -1756,13 +1904,20 @@ export const SECTIONS: HelpSection[] = [
           <H3>
             <Plat
               win="Local shells (PowerShell, Command Prompt, WSL)"
-              mac="Local shells (PowerShell, zsh, bash)"
+              mac={
+                <IfPowershell without="Local shells (zsh, bash)">
+                  Local shells (PowerShell, zsh, bash)
+                </IfPowershell>
+              }
               both="Local shells (PowerShell, Command Prompt, WSL; zsh and bash on a Mac)"
             />
           </H3>
           <Bullets>
             <li>
-              The <Plat win="three" mac="two" /> local tabs fan a command out to the shells running on{" "}
+              <IfPowershell without="The Local shells tab fans">
+                The <Plat win="three" mac="two" /> local tabs fan
+              </IfPowershell>{" "}
+              a command out to the shells running on{" "}
               <em>this machine</em>. A persistent yellow banner marks the danger:
               the command runs in every checked shell immediately, with no undo.
             </li>
@@ -2140,7 +2295,7 @@ export const SECTIONS: HelpSection[] = [
           <p>
             Skills need a <Nav>bash</Nav>, <Nav>zsh</Nav> or <Nav>sh</Nav> login
             shell. A host with any other shell carries an amber chip on the{" "}
-            <SectionLink id="help-sec-hosts">Hosts</SectionLink> tab and in the
+            <SectionLink id="help-sec-hosts">Library</SectionLink> tab and in the
             list here. It can still be ticked, but it reports a failure when the
             run starts, and the skill carries on with the other hosts.
           </p>
@@ -2382,7 +2537,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored profile struck through after a restore profile lost its custom shell profile points at nothing which custom shell did it use name of the wanted shell remembered re-add the shell then edit has it chosen already backup from someone else untrusted backup file restore removed my saved passwords host changed in the backup restore locked admin passcode startup start page open on which tab first tab home greyed template holds startup panel table of contents left side section list highlight follows scroll jump to hidden narrow window profile table columns profiles columns hide shell folder startup command column restore warning disappeared too fast restore closed my terminals tabs gone after restore reset closed my sessions right-click right click mouse programs tmux claude code paste twice" +
+      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored profile struck through after a restore profile lost its custom shell profile points at nothing which custom shell did it use name of the wanted shell remembered re-add the shell then edit has it chosen already backup from someone else untrusted backup file restore removed my saved passwords host changed in the backup restore locked admin passcode startup start page open on which tab first tab home greyed template holds startup panel table of contents left side section list highlight follows scroll jump to hidden narrow window profile table columns profiles columns hide shell folder startup command column restore warning disappeared too fast restore closed my terminals tabs gone after restore reset closed my sessions right-click right click mouse programs tmux claude code paste twice gpu webgl draw terminals with the gpu graphics renderer slow scrolling" +
       onMac("keychain cmd command key menlo sf mono zsh fish"),
     body: (
       <>
@@ -2395,12 +2550,13 @@ export const SECTIONS: HelpSection[] = [
           <H3>What you can change</H3>
           <Bullets>
             <li>
-              <Nav>Startup</Nav>: which tab Broadside opens on (<Nav>Hosts</Nav>{" "}
+              <Nav>Startup</Nav>: which tab Broadside opens on (<Nav>Library</Nav>{" "}
               by default). It is greyed while a template is set to open at
               startup, because that always opens on <Nav>Terminals</Nav>.
             </li>
             <li>
-              <Nav>Performance</Nav>: how many hosts the app talks to at once.
+              <Nav>Performance</Nav>: how many hosts the app talks to at once,
+              and <Nav>Draw terminals with the GPU (WebGL)</Nav>, on by default.
             </li>
             <li>
               <Nav>Network probe</Nav>: how the app checks whether hosts are
@@ -2413,13 +2569,15 @@ export const SECTIONS: HelpSection[] = [
             <li>
               <Nav>Shortcut commands</Nav>: reusable commands for the dropdown on
               the Terminals and Broadcast pages, each for{" "}
-              <Plat win="Linux, Windows" mac="Unix shells, PowerShell" />, both,
+              <IfPowershell without="Unix shells">
+                <Plat win="Linux, Windows" mac="Unix shells, PowerShell" />, both,
+              </IfPowershell>{" "}
               or serial consoles. See{" "}
               <SectionLink id="help-sec-terminals">Terminals</SectionLink>.
             </li>
             <li>
               <Nav>Sessions</Nav>: the idle session timeout (off by default),
-              keep alive (on by default), and whether a right-click goes to a
+              keep alive (on by default), when a snapshot waits for Connect (past two workspaces), and whether a right-click goes to a
               program that uses the mouse (on by default). See{" "}
               <SectionLink id="help-sec-terminals">Terminals</SectionLink>.
             </li>
@@ -2622,7 +2780,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-system",
     title: "System requirements",
     keywords:
-      "already running another instance second copy open twice multiple instances warning dont ask me again turn back on dismissed warnings system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install antivirus defender windows security false positive quarantine flagged virus trojan bearfoos ml detection code signing unsigned publisher unknown smartscreen sha256 checksum verify protection history restore exclusion" +
+      "already running another instance second copy open twice multiple instances warning dont ask me again turn back on dismissed warnings system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install antivirus defender windows security false positive quarantine flagged virus trojan bearfoos ml detection code signing unsigned publisher unknown smartscreen sha256 checksum verify protection history restore exclusion gpu webgl graphics acceleration renderer drawing slow scrolling laggy scroll scrolling is slow long output virtual machine remote desktop text looks wrong" +
       onMac(
         "macos mac ventura sonoma sequoia apple silicon m1 m2 m3 m4 intel universal webkit gatekeeper cannot be opened unidentified developer open anyway control click notarized notarization damaged local network privacy no route to host keychain always allow asks again after update dmg applications shasum",
       ),
@@ -2801,6 +2959,17 @@ export const SECTIONS: HelpSection[] = [
               Memory use grows with the number of open terminals and how much
               scrollback each keeps (<Nav>Settings</Nav> &rarr;{" "}
               <Nav>Appearance</Nav> &rarr; <Nav>Terminal scrollback</Nav>).
+            </li>
+            <li>
+              Terminals are drawn with the GPU (WebGL), which keeps scrolling
+              through long output quick, even with many tiles in a grid. Up to 14
+              terminals use it at a time; any more are drawn the standard way
+              until one of those closes. If terminal text looks wrong, or the
+              computer has no graphics acceleration (some virtual machines and
+              Remote Desktop sessions), untick{" "}
+              <Nav>Draw terminals with the GPU (WebGL)</Nav> in{" "}
+              <Nav>Settings</Nav> &rarr; <Nav>Performance</Nav>. A computer
+              that can&apos;t do WebGL draws them the standard way by itself.
             </li>
             <li>
               Disk use grows with saved sessions, the audit log and backups, all

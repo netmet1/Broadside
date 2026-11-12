@@ -64,7 +64,7 @@ export function RemoteConnectPane({
         </div>
         {hosts.length === 0 && (
           <span className="text-xs text-muted-foreground">
-            No hosts configured. Add hosts on the Hosts page first.
+            No hosts configured. Add hosts on the Library tab first.
           </span>
         )}
       </div>

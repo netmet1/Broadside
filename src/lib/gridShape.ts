@@ -42,9 +42,10 @@ export const GRID_COLS_HYSTERESIS_PX = 16;
 export const TILE_BORDER_X = 2;
 export const TILE_BORDER_Y = 2;
 
-/** Legible minimum tile height, in rows **of the terminal font**. Rows fill the
- * pane when few (so a maximized window has no dead space) but never shrink
- * below this, overflowing to a vertical scroll when many.
+/** Legible minimum tile height, in rows **of the terminal font**: the default
+ * for Settings -> Grid's "Minimum tile height". Rows fill the pane when few (so
+ * a maximized window has no dead space) but never shrink below it, overflowing
+ * to a vertical scroll when many.
  *
  * Deliberately not a rem length. `rem` follows the *app* font size (see
  * UiPrefsProvider, which writes it onto the root element) and a terminal cell
@@ -55,6 +56,13 @@ export const TILE_BORDER_Y = 2;
  * and the error accumulated down the grid, so the tiles overlapped. One number,
  * computed from the metrics it is actually about, cannot do that. */
 export const GRID_MIN_TILE_ROWS = 13;
+
+/** How short a row may be dragged with the tiles unlocked, in rows of the
+ * terminal font. Far below GRID_MIN_TILE_ROWS on purpose: that floor is the
+ * grid choosing a height on the operator's behalf, and this is the operator
+ * asking for a short tile (a log tail under two big shells), which is theirs
+ * to ask for. Enough left to read a prompt and a few lines. */
+export const GRID_SPLIT_MIN_ROWS = 4;
 
 /** How wide a pane has to be before two legible columns fit in it: two tiles at
  * the floor, the gap between them, and the pane's own padding on both sides,
@@ -75,6 +83,280 @@ export function fitsTwoUp(paneW: number, threshold: number, was: boolean): boole
 export type TwoUpSplit = "cols" | "rows";
 
 /**
+ * How a workspace's grid is sized once a line between its tiles has been
+ * dragged with the tiles unlocked, or a template or snapshot brought sizes.
+ *
+ * `widths`: a tile's width as a fraction of the grid's width (0 to 1), by tab
+ * id. A tab without one takes an even share of what its row has left. Keyed
+ * by tab rather than by position, so a closed tab takes its width with it and
+ * a new one opens at the default.
+ *
+ * `heights`: each row's height in lines of the terminal font, top to bottom,
+ * once a row line has been dragged. Lines rather than pixels, so a row keeps
+ * the same number of lines on a laptop and on a wall of monitors. By
+ * position: a grid with more rows than this gives the new ones an even share
+ * of the pane, and one with fewer ignores the rest, so a row that comes and
+ * goes as a tile moves down and back keeps its height. Whether the rows then
+ * fit the pane or scroll is Settings -> Grid's "Fit rows to the window".
+ *
+ * `rows`: relative row heights (CSS `fr`) from a template or snapshot saved
+ * before rows had heights in lines. Shared out over the pane until a row line
+ * is dragged, which replaces them with `heights`.
+ */
+export type GridSizes = {
+  heights: number[];
+  widths: Record<string, number>;
+  rows?: number[];
+};
+
+/** One tile of a flowed grid: its row (and how many it spans, two only for
+ * the "tall" short-row fill), and its left edge and width as fractions of the
+ * grid's width. */
+export type FlowTile = { row: number; rowSpan: number; x: number; w: number };
+
+/** A line between tiles that a drag can move, side to side.
+ *  - `pair`: between two tiles in a row. One grows by what the other gives
+ *    up, and the right one moves down a row once it would be left at or under
+ *    the minimum width.
+ *  - `edge`: the right edge of the last tile in a row that is alone or has
+ *    blank space beside it. Only that tile changes. */
+export type FlowLine =
+  | { kind: "pair"; left: number; right: number }
+  | { kind: "edge"; slot: number };
+
+export type Flow = {
+  rows: number;
+  /** By slot. */
+  tiles: FlowTile[];
+  /** The line on each tile's left and right edge, by slot; null where a drag
+   * has nothing to move. */
+  leftLine: (FlowLine | null)[];
+  rightLine: (FlowLine | null)[];
+  /** Every distinct left and right edge, 0 to 1: the grid's column lines. */
+  edges: number[];
+};
+
+const EPS = 1e-6;
+
+/**
+ * Lay the tiles out in rows, in tab order, the way text wraps. `cols` is how
+ * many a row holds. A tile with a width keeps it, and the tiles without one
+ * share what their row has left. A tile goes onto the next row when the row
+ * is full, when its width does not fit, or when it (or a tile without a width
+ * already there) would be left at or under `min`.
+ *
+ * With no widths at all this is the default grid: `cols` to a row, and a
+ * short last row filled per the Grid setting. "Tall" is a span down into the
+ * last row, which only works while the row above is two tiles edge to edge,
+ * so it holds only while the tile under it has no width of its own.
+ *
+ * With one column every tile has a row to itself at full width, whatever its
+ * width says: a pane too narrow for two is too narrow for blank space.
+ */
+export function flowLayout({
+  widths,
+  cols,
+  min,
+  rowFill,
+}: {
+  /** By slot: a fraction of the grid's width, or null for none. */
+  widths: (number | null)[];
+  cols: number;
+  /** The narrowest a tile may be, as a fraction of the grid's width. */
+  min: number;
+  rowFill: RowFill;
+}): Flow {
+  const count = widths.length;
+  const c = Math.max(cols, 1);
+  const own = (i: number): number | null => {
+    const w = c < 2 ? null : (widths[i] ?? null);
+    return w == null ? null : Math.min(Math.max(w, 0), 1);
+  };
+
+  const rows: number[][] = [];
+  let cur: number[] = [];
+  let fixed = 0;
+  let free = 0;
+  for (let i = 0; i < count; i++) {
+    const w = own(i);
+    let fits = cur.length > 0 && cur.length < c;
+    if (fits) {
+      const left = 1 - fixed - (w ?? 0);
+      const sharing = free + (w == null ? 1 : 0);
+      fits = left > -EPS && (sharing === 0 || left / sharing > min + EPS);
+    }
+    if (!fits && cur.length > 0) {
+      rows.push(cur);
+      cur = [];
+      fixed = 0;
+      free = 0;
+    }
+    cur.push(i);
+    if (w == null) free++;
+    else fixed += w;
+  }
+  if (cur.length > 0) rows.push(cur);
+
+  const tiles: FlowTile[] = [];
+  const lastRow = rows.length - 1;
+  rows.forEach((slots, r) => {
+    const sizes = slots.map(own);
+    const taken = sizes.reduce<number>((a, w) => a + (w ?? 0), 0);
+    const sharing = sizes.filter((w) => w == null).length;
+    let share = sharing > 0 ? Math.max(1 - taken, 0) / sharing : 0;
+    if (rowFill === "gaps" && r === lastRow && c >= 2) {
+      share = Math.min(share, 1 / c);
+    }
+    let x = 0;
+    slots.forEach((i, k) => {
+      const w = Math.max(Math.min(sizes[k] ?? share, 1 - x), 0);
+      tiles[i] = { row: r, rowSpan: 1, x, w };
+      x += w;
+    });
+  });
+
+  const leftLine = new Array<FlowLine | null>(count).fill(null);
+  const rightLine = new Array<FlowLine | null>(count).fill(null);
+  if (c >= 2) {
+    for (const slots of rows) {
+      const used = slots.reduce((a, i) => a + tiles[i]!.w, 0);
+      slots.forEach((i, k) => {
+        if (k > 0) leftLine[i] = { kind: "pair", left: slots[k - 1]!, right: i };
+        if (k < slots.length - 1) {
+          rightLine[i] = { kind: "pair", left: i, right: slots[k + 1]! };
+        } else if (slots.length === 1 || used < 1 - EPS) {
+          rightLine[i] = { kind: "edge", slot: i };
+        }
+      });
+    }
+  }
+
+  if (rowFill === "tall" && c === 2 && rows.length >= 2) {
+    const last = rows[lastRow]!;
+    const above = rows[lastRow - 1]!;
+    const aboveUsed = above.reduce((a, i) => a + tiles[i]!.w, 0);
+    if (
+      last.length === 1 &&
+      own(last[0]!) == null &&
+      above.length === 2 &&
+      aboveUsed > 1 - EPS
+    ) {
+      const [first, tall] = above as [number, number];
+      tiles[tall] = { ...tiles[tall]!, rowSpan: 2 };
+      tiles[last[0]!] = { row: lastRow, rowSpan: 1, x: 0, w: tiles[first]!.w };
+      rightLine[last[0]!] = { kind: "pair", left: first, right: tall };
+    }
+  }
+
+  const edges: number[] = [];
+  const sorted = [0, 1, ...tiles.flatMap((t) => [t.x, t.x + t.w])].sort(
+    (a, b) => a - b,
+  );
+  for (const v of sorted) {
+    if (edges.length === 0 || v - edges[edges.length - 1]! > 0.002) edges.push(v);
+  }
+  edges[edges.length - 1] = 1;
+
+  return { rows: rows.length, tiles, leftLine, rightLine, edges };
+}
+
+/** A tile's height in px for a row `lines` tall, and back: the lines of the
+ * terminal plus the tile's title bar and border (`chrome`). */
+export function linesToPx(lines: number, cellH: number, chrome: number): number {
+  return Math.round(lines * cellH) + chrome;
+}
+export function pxToLines(px: number, cellH: number, chrome: number): number {
+  return Math.max(Math.round(((px - chrome) / cellH) * 100) / 100, 1);
+}
+
+/**
+ * The grid's rows, as `grid-template-rows`.
+ *
+ * With nothing dragged the rows share the pane, none shorter than `minPx`, and
+ * scroll once they would be (`rows`, from an older template, share it
+ * unevenly). With `heightsPx`:
+ *  - `fit`: the heights are proportions of the pane, so the rows always fill
+ *    it and dragging one line trades height between two rows;
+ *  - otherwise each row is as tall as it says, and the grid scrolls when they
+ *    are taller than the pane. A row with no height yet gets `evenPx`, an
+ *    even share of the pane.
+ * A row with no height of its own is never shorter than `newMinPx` (Settings
+ * -> Grid's minimum tile height): only a row someone dragged may go under it,
+ * down to `minPx`.
+ */
+export function flowRowTracks({
+  n,
+  heightsPx,
+  rows,
+  fit,
+  minPx,
+  newMinPx = minPx,
+  evenPx,
+}: {
+  n: number;
+  heightsPx: number[];
+  rows?: number[] | null;
+  fit: boolean;
+  minPx: number;
+  newMinPx?: number;
+  evenPx: number;
+}): string {
+  const track = (i: number) => {
+    if (heightsPx.length > 0) {
+      const h = heightsPx[i];
+      const floor = h === undefined ? Math.max(minPx, newMinPx) : minPx;
+      if (!fit) return `${Math.round(Math.max(h ?? evenPx, floor))}px`;
+      const known = heightsPx.reduce((a, b) => a + b, 0) / heightsPx.length;
+      return `minmax(${Math.round(floor)}px, ${Math.round(h ?? known)}fr)`;
+    }
+    return `minmax(${minPx}px, ${rows?.[i] ?? 1}fr)`;
+  };
+  return Array.from({ length: n }, (_, i) => track(i)).join(" ");
+}
+
+/** The grid's tracks for a flow: a column between each pair of neighbouring
+ * edges, and the rows `flowRowTracks` worked out. The columns are in
+ * hundredths so they sum to 100, because `fr` values that sum to under 1
+ * leave part of the grid unused. */
+export function flowGridStyle(flow: Flow, rowTracks: string): React.CSSProperties {
+  const cols = flow.edges
+    .slice(1)
+    .map((e, i) => Math.round((e - flow.edges[i]!) * 100000) / 1000);
+  return {
+    gridTemplateColumns: cols.map((f) => `minmax(0, ${f}fr)`).join(" "),
+    gridTemplateRows: rowTracks,
+  };
+}
+
+/** The real height of a tile's title bar. Also not a constant: the header is
+ * `py-1` plus a `text-sm` line box plus 3px of border, all of which scale with
+ * the app font, so a hard-coded 30 was only ever right at a 16px app font (this
+ * returns 31 there, and 38 at 20px). Zero when the titles are hidden, because
+ * then there is no header to make room for. */
+export function gridHeaderH(appFontSize: number, hidden: boolean): number {
+  return hidden ? 0 : Math.round(1.75 * appFontSize) + 3;
+}
+
+/** Where the tile in `slot` sits in the grid `flowGridStyle` makes. */
+export function flowPlace(flow: Flow, slot: number): React.CSSProperties {
+  const t = flow.tiles[slot];
+  if (!t) return {};
+  const at = (v: number) => {
+    let best = 0;
+    flow.edges.forEach((e, i) => {
+      if (Math.abs(e - v) < Math.abs(flow.edges[best]! - v)) best = i;
+    });
+    return best;
+  };
+  const a = at(t.x);
+  const b = Math.max(at(t.x + t.w), a + 1);
+  return {
+    gridRow: `${t.row + 1} / span ${t.rowSpan}`,
+    gridColumn: `${a + 1} / ${b + 1}`,
+  };
+}
+
+/**
  * The tracks for the **default** (nothing pinned) grid.
  *
  * One terminal fills the pane and two split it, whatever any Grid setting says:
@@ -87,6 +369,10 @@ export type TwoUpSplit = "cols" | "rows";
  * there, and growing the window bought nothing but dead space below the last
  * row. `minmax(floor, 1fr)` shares the pane when the rows fit and holds the
  * legible floor and scrolls when they do not.
+ *
+ * This is the grid the Templates editor previews when a size is pinned in
+ * Settings. The Terminals tab's own default grid is `flowLayout`, which can
+ * also hold the widths and heights dragged with the tiles unlocked.
  */
 export function defaultGridStyle({
   count,

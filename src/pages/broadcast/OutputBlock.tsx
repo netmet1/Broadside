@@ -279,7 +279,7 @@ function BlockBody({
       return (
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
-            No credentials stored. Edit the host on the Hosts page.
+            No credentials stored. Edit the host on the Library tab.
           </p>
           <RetryButton onRetry={onRetry} />
         </div>

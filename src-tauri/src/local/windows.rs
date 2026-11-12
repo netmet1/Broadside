@@ -7,7 +7,7 @@ use super::LocalShell;
 
 /// Detects the local shells: PowerShell (always present on Windows), pwsh if
 /// installed, Command Prompt, and each installed WSL distro. Blocking, spawns
-/// wsl.exe; only run via `list_local_shells_cached`.
+/// wsl.exe; only run via `list_local_shells`.
 pub(super) fn detect() -> Vec<LocalShell> {
     let mut shells = vec![LocalShell {
         id: "powershell".into(),

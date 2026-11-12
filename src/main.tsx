@@ -8,7 +8,10 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { InstanceGuard } from "@/components/InstanceGuard";
 import { otherInstanceCount } from "@/lib/tauri/instances";
 import { IS_MAC } from "@/lib/platform";
+import { installNoAutoCapitalize } from "@/lib/noAutoCapitalize";
 import "./index.css";
+
+installNoAutoCapitalize();
 
 // Whether another copy is already running is asked before the first render, so
 // the first frame the window shows is the right one: the app, or the warning

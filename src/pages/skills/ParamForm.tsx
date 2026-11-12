@@ -214,7 +214,7 @@ export function ParamForm({
               {preflight.hostsMissingSudo.join(", ")}
             </p>
             <p className="mt-1 opacity-80">
-              Their sudo steps will fail. Store a sudo password on the Hosts page,
+              Their sudo steps will fail. Store a sudo password on the Library tab,
               or run anyway and watch what happens.
             </p>
           </div>

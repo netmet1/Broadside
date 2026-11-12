@@ -19,6 +19,21 @@ export const SCOPE_LABELS: Record<ShortcutScope, string> = IS_MAC
       serial: "Serial console (COM port)",
     };
 
+/** Whether a shortcut of this scope is listed. A Mac without PowerShell
+ * (see lib/powershell) hides the PowerShell ones, built in or the operator's:
+ * hidden, not deleted, so they come back once `pwsh` is installed. Windows
+ * always has PowerShell, so there this is always true. */
+export function scopeShown(scope: ShortcutScope, powershell: boolean): boolean {
+  return powershell || scope !== "local";
+}
+
+/** The scope a shortcut is shown as. Without PowerShell, Both reaches only the
+ * Unix shells, so it reads (and wears the icon) as the Unix scope rather than
+ * as "Both (Unix and PowerShell)". The shortcut itself keeps its scope. */
+export function shownScope(scope: ShortcutScope, powershell: boolean): ShortcutScope {
+  return !powershell && scope === "both" ? "ssh" : scope;
+}
+
 /** Stable DOM id for a settings section, used by the jump-to dropdown. */
 export function sectionDomId(title: string): string {
   return "settings-sec-" + title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -60,7 +75,7 @@ export const SECTION_TITLES = [
 export const SECTION_KEYWORDS: Record<string, string> = {
   Startup:
     "start startup launch open on opens on first tab home default page landing which tab when broadside starts begin boot initial terminals instead of hosts template startup greyed disabled",
-  Performance: "sessions limit concurrent max how many cpu cores memory ram probe suggested capacity timeout slow confirm ask first guard threshold bulk are you sure reconnect all disconnect all close failed close all too many stop asking me",
+  Performance: "sessions limit concurrent max how many cpu cores memory ram probe suggested capacity timeout slow confirm ask first guard threshold bulk are you sure reconnect all disconnect all close failed close all too many stop asking me gpu webgl graphics card renderer rendering drawing hardware acceleration slow scrolling laggy scroll text looks wrong blurry fuzzy",
   "Network probe": "ping latency reachable test hosts responds round trip ms speed check offline",
   "Destructive command guard": "rm dangerous confirm warning block rules pattern regex mkfs dd shutdown reboot guard rails safety typed confirmation",
   "Shortcut commands": "commands dropdown one click quick canned saved snippets scope linux windows both broadcast terminals go button",
@@ -69,8 +84,8 @@ export const SECTION_KEYWORDS: Record<string, string> = {
   "Custom terminals":
     "git bash msys msys2 cygwin add my own program exe application launcher path arguments browse posix bash-like command language family terminal application third party colour color tab colours tint highlight powershell command prompt wsl serial which tab am i in tell tabs apart profile colour",
   Sessions:
-    "session timeout idle close automatically after minutes seconds inactivity abandoned forgotten tab left open overnight keep alive keepalive nat firewall state table drop connection dies silently hangs after a while frozen unresponsive terminal packet every minute why did my terminal close by itself disable turn off never close right click right-click mouse paste twice double paste pasted twice tmux vim claude code menu shift copy controls row toolbar hide show the toolbar banner top bar tucked away slides down hover tab auto hide autohide where did the buttons go",
-  Grid: "tiles layout columns rows tile size width height strict drag resize short last row stretch tall gaps split screen side by side template preview arrangement",
+    "session timeout idle close automatically after minutes seconds inactivity abandoned forgotten tab left open overnight keep alive keepalive nat firewall state table drop connection dies silently hangs after a while frozen unresponsive terminal packet every minute why did my terminal close by itself disable turn off never close right click right-click mouse paste twice double paste pasted twice tmux vim claude code menu shift copy controls row toolbar hide show the toolbar banner top bar tucked away slides down hover tab auto hide autohide where did the buttons go snapshot snapshots connect automatically auto-connect wait for connect hold workspaces how many workspaces before it waits",
+  Grid: "tiles layout columns rows tile size width height strict drag resize short last row stretch tall gaps minimum width wrap next row minimum height fit rows to the window scroll taller row height split screen side by side template preview arrangement",
   Skills:
     "skill log logging record run history remote shell history bash_history up arrow recall summary itemized debug run panel step log exit codes json text output style where to log keep commands out of history audit what did the skill do",
   "Backup & Restore": "backup restore export import copy save file folder migrate move to another pc database",

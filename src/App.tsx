@@ -36,6 +36,7 @@ import { HostsPage } from "@/pages/HostsPage";
 import { TemplatesPage, type TemplateFocus } from "@/pages/TemplatesPage";
 import {
   planTemplateLaunch,
+  termSessionsFor,
   type LaunchPlan,
   type LaunchSession,
 } from "@/pages/templates/launch";
@@ -44,6 +45,7 @@ import {
   startupTemplate,
   type Template,
   type TemplateItem,
+  type TemplateLayout,
 } from "@/lib/tauri/templates";
 import type { HelpSectionId } from "@/pages/help/sections";
 import { BroadcastPage } from "@/pages/BroadcastPage";
@@ -90,6 +92,10 @@ import {
 } from "@/lib/tauri/hosts";
 import { onPtySudo, onPtySudoRejected } from "@/lib/tauri/pty";
 import { useWindowBlurredAttr } from "@/lib/windowFocus";
+import { refreshPowershell } from "@/lib/powershell";
+import { sizesFromLayout } from "@/pages/terminals/gridTemplate";
+import { OpenSnapshotDialog, SaveSnapshotDialog } from "@/components/SnapshotDialogs";
+import { useSnapshots } from "@/pages/terminals/useSnapshots";
 
 function App() {
   // Let the stylesheet know when the window is not the one taking keys, so the
@@ -114,6 +120,7 @@ function App() {
     activeWorkspaceId,
     create: createWorkspace,
     adoptIfBlank,
+    setSizes: setWorkspaceSizes,
     removeEmpty: removeEmptyWorkspace,
   } = ws;
   // Session ids with a live PTY connection (drives Hosts connected dots).
@@ -177,6 +184,13 @@ function App() {
         // until they try and get prompted.
       }
     })();
+  }, []);
+
+  // Whether a Mac has PowerShell, asked once at start so Settings, Broadcast
+  // and Help know before they are first shown (see lib/powershell). Windows
+  // never asks.
+  useEffect(() => {
+    void refreshPowershell();
   }, []);
 
   // Sudo auto-fill transparency (D-065): toast whenever the backend answers a
@@ -466,45 +480,42 @@ function App() {
    * named after `from` (the template). Opened into the shown workspace while
    * that is still the empty, unnamed default, the workspace takes the
    * template's name and colour, so the strip says what it holds once there are
-   * more. */
+   * more. A workspace the template has to itself also takes its saved grid
+   * sizes; tabs added to a workspace that already has some do not. */
   const launchTemplate = useCallback(
     (
       sessions: LaunchSession[],
       place: "front" | "end" | "new",
       connect: boolean,
-      from?: { name: string; color: string },
+      from?: {
+        name: string;
+        color: string;
+        items?: TemplateItem[];
+        layout?: TemplateLayout | null;
+      },
     ) => {
       if (sessions.length === 0) return;
       let workspaceId = activeWorkspaceId;
+      let ownWorkspace = false;
       if (place === "new") {
         workspaceId = createWorkspace(from?.name, from?.color);
+        ownWorkspace = true;
       } else if (from) {
-        adoptIfBlank(from.name, from.color);
+        ownWorkspace = adoptIfBlank(from.name, from.color) !== null;
       }
-      const made: TermSession[] = sessions.map((s) =>
-        s.type === "ssh"
-          ? {
-              id: crypto.randomUUID(),
-              type: "ssh" as const,
-              seq: nextSeq(),
-              workspaceId,
-              host: s.host,
-              startClosed: !connect,
-            }
-          : {
-              id: crypto.randomUUID(),
-              type: "local" as const,
-              seq: nextSeq(),
-              workspaceId,
-              shell: s.shell,
-              cwd: s.opts.cwd,
-              startupCommand: s.opts.startupCommand,
-              profileLabel: s.opts.profileLabel,
-              profileId: s.opts.profileId,
-              profileColor: s.opts.profileColor,
-              startClosed: !connect,
-            },
-      );
+      const made = termSessionsFor(sessions, workspaceId, connect, nextSeq);
+      if (ownWorkspace && from?.layout) {
+        // Widths are kept by tab, so they follow the tabs. A template that
+        // opened only some of its sessions keeps its row heights alone.
+        setWorkspaceSizes(
+          workspaceId,
+          sizesFromLayout(
+            from.layout,
+            made.map((m) => m.id),
+            sessions.length === from.items?.length,
+          ),
+        );
+      }
       setSessions((prev) =>
         place === "front" ? [...made, ...prev] : [...prev, ...made],
       );
@@ -512,7 +523,7 @@ function App() {
       setActiveSessionId(made[0].id);
       setPage("terminals");
     },
-    [nextSeq, activeWorkspaceId, createWorkspace, adoptIfBlank],
+    [nextSeq, activeWorkspaceId, createWorkspace, adoptIfBlank, setWorkspaceSizes],
   );
 
   /** Several templates' sessions, one after another, each into a workspace of
@@ -584,6 +595,36 @@ function App() {
       setSessions((prev) => prev.filter((s) => s.workspaceId !== id));
     },
     [sessions, activeSessionId, removeEmptyWorkspace],
+  );
+
+  // Workspace snapshots: save every open workspace, open them again as a set.
+  // See pages/terminals/useSnapshots.
+  const showTerminals = useCallback(() => setPage("terminals"), []);
+  const snaps = useSnapshots({
+    sessions,
+    setSessions,
+    setActiveSessionId,
+    showTerminals,
+    nextSeq,
+    workspaces: ws.workspaces,
+    activeWorkspaceId,
+    createWorkspace,
+    adoptIfBlank,
+    setWorkspaceSizes,
+  });
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const openSaveSnapshot = useCallback(() => setSavingSnapshot(true), []);
+  // Moves on every save, so Library's Snapshots list reads the new one even
+  // when the dialog was opened from the Terminals tab.
+  const [snapshotsVersion, setSnapshotsVersion] = useState(0);
+  const { saveNew: saveSnapshotNow } = snaps;
+  const saveSnapshot = useCallback(
+    async (name: string) => {
+      const ok = await saveSnapshotNow(name);
+      if (ok) setSnapshotsVersion((n) => n + 1);
+      return ok;
+    },
+    [saveSnapshotNow],
   );
 
   /**
@@ -748,10 +789,18 @@ function App() {
 
   /** The Terminals tab's Save as template: a new template holding the grid on
    * screen, opened in the editor to be named and saved. */
-  const saveGridAsTemplate = useCallback((items: TemplateItem[]) => {
-    setTemplateFocus((f) => ({ template: null, items, n: (f?.n ?? 0) + 1 }));
-    setPage("templates");
-  }, []);
+  const saveGridAsTemplate = useCallback(
+    (items: TemplateItem[], layout: TemplateLayout | null) => {
+      setTemplateFocus((f) => ({
+        template: null,
+        items,
+        layout,
+        n: (f?.n ?? 0) + 1,
+      }));
+      setPage("templates");
+    },
+    [],
+  );
 
   const editTemplate = useCallback((template: Template | null) => {
     setTemplateFocus((f) => ({ template, n: (f?.n ?? 0) + 1 }));
@@ -783,12 +832,10 @@ function App() {
     setPage("settings");
   }, []);
 
-  // "Show all templates", from the Templates splash. The list of them lives on
-  // the Hosts tab beside the list of machines, and that page is rebuilt on each
-  // visit, so setting which side it opens on is all this takes.
+  // Library's Templates button: the Templates tab, at its List.
   const browseTemplates = useCallback(() => {
-    rememberHostsSide("templates");
-    setPage("hosts");
+    setTemplateFocus((f) => ({ template: null, list: true, n: (f?.n ?? 0) + 1 }));
+    setPage("templates");
   }, []);
 
   // New, on the Hosts section of the Terminals "+" menu: the Hosts tab on its
@@ -1053,16 +1100,21 @@ function App() {
           onTerminateHost={terminateHost}
           connectedHostIds={connectedHostIds}
           openHostIds={openHostIds}
-          onEditTemplate={editTemplate}
-          onOpenTemplates={openTemplates}
+          onBrowseTemplates={browseTemplates}
           onOpenProfiles={openProfiles}
+          canSaveSnapshot={snaps.canSave}
+          snapshotSerialLeftOut={snaps.savable.serialLeftOut}
+          onSaveSnapshot={openSaveSnapshot}
+          onOpenSnapshot={snaps.open}
+          onRetakeSnapshot={snaps.retake}
+          snapshotsVersion={snapshotsVersion}
           onOpenHelp={openHelpAt}
           startWithNewHost={newHostRequested}
           onNewHostConsumed={clearNewHostRequest}
         />
       )}
       {/* Templates stays mounted so a half-built arrangement survives a trip to
-          the Hosts tab to check a hostname. */}
+          the Library tab to check a hostname. */}
       <div className={page === "templates" ? "block h-full" : "hidden"}>
         <TemplatesPage
           visible={page === "templates"}
@@ -1070,7 +1122,7 @@ function App() {
           focus={templateFocus}
           onOpenHelp={openHelpAt}
           onOpenGridSettings={openGridSettings}
-          onBrowseTemplates={browseTemplates}
+          onOpenTemplates={openTemplates}
         />
       </div>
       {/* Broadcast stays mounted so output and host selection survive
@@ -1121,6 +1173,11 @@ function App() {
           onNewWorkspace={ws.createAndShow}
           onRenameWorkspace={ws.rename}
           onRecolorWorkspace={ws.recolor}
+          onSetWorkspaceSizes={setWorkspaceSizes}
+          onReleaseWorkspace={ws.release}
+          onSetWorkspaceView={ws.setView}
+          canSaveSnapshot={snaps.canSave}
+          onSaveSnapshot={openSaveSnapshot}
           onReorderWorkspace={ws.reorder}
           onCloseWorkspace={closeWorkspace}
           onMoveToWorkspace={moveToWorkspace}
@@ -1225,8 +1282,8 @@ function App() {
                   {(pendingLaunch?.templates.length ?? 0) > 1 && (
                     <>
                       <p>
-                        They open one after another, in the order the Hosts
-                        tab lists them:
+                        They open one after another, in the order the List
+                        shows them:
                       </p>
                       <ol className="list-decimal space-y-0.5 pl-5">
                         {pendingLaunch?.templates.map(({ template, count }) => (
@@ -1398,6 +1455,18 @@ function App() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        <SaveSnapshotDialog
+          open={savingSnapshot}
+          onOpenChange={setSavingSnapshot}
+          workspaces={snaps.savable.workspaces}
+          tabs={snaps.savable.tabs}
+          serialLeftOut={snaps.savable.serialLeftOut}
+          onSave={saveSnapshot}
+        />
+        <OpenSnapshotDialog
+          pending={snaps.pending}
+          onResolve={snaps.resolvePending}
+        />
         <Toaster />
         <ToastRecorder />
       </AppShell>

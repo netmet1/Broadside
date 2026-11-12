@@ -10,6 +10,8 @@ const IDLE_ON_KEY = "session-idle-timeout-on";
 const KEEPALIVE_KEY = "session-keepalive";
 const RIGHT_CLICK_KEY = "terminal-right-click-to-program";
 const CONTROLS_AUTOHIDE_KEY = "terminal-controls-autohide";
+const SNAPSHOT_AUTO_KEY = "snapshot-auto-connect";
+const SNAPSHOT_HOLD_KEY = "snapshot-hold-over";
 
 /** Fired on this window whenever a session pref is written.
  *
@@ -144,8 +146,55 @@ export function saveRightClickToProgram(on: boolean): void {
   announce();
 }
 
+/** Past this many workspaces, a snapshot opens with its sessions held: each
+ * workspace waits on a Connect button. Two, so a snapshot of a couple of
+ * workspaces opens like a template does, and a wall of them does not log in
+ * to everything at once. */
+export const DEFAULT_SNAPSHOT_HOLD_OVER = 2;
+export const SNAPSHOT_HOLD_MIN = 1;
+export const SNAPSHOT_HOLD_MAX = 20;
+
+/**
+ * Whether opening a snapshot connects every session in every workspace at
+ * once, however many there are. Off by default, and turning it on asks first
+ * (Settings > Sessions): a big snapshot is many logins in the same second.
+ *
+ * Here in localStorage on purpose, like the rest of this file: a backup file
+ * restores the database, never this, so no file can switch it on.
+ */
+export function snapshotAutoConnect(): boolean {
+  return localStorage.getItem(SNAPSHOT_AUTO_KEY) === "1";
+}
+
+export function saveSnapshotAutoConnect(on: boolean): void {
+  localStorage.setItem(SNAPSHOT_AUTO_KEY, on ? "1" : "0");
+  announce();
+}
+
+export function clampSnapshotHold(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULT_SNAPSHOT_HOLD_OVER;
+  return Math.min(SNAPSHOT_HOLD_MAX, Math.max(SNAPSHOT_HOLD_MIN, Math.round(n)));
+}
+
+/** How many workspaces a snapshot may have before its sessions are held. */
+export function snapshotHoldOver(): number {
+  const raw = localStorage.getItem(SNAPSHOT_HOLD_KEY);
+  return raw === null ? DEFAULT_SNAPSHOT_HOLD_OVER : clampSnapshotHold(Number(raw));
+}
+
+export function saveSnapshotHoldOver(n: number): void {
+  localStorage.setItem(SNAPSHOT_HOLD_KEY, String(clampSnapshotHold(n)));
+  announce();
+}
+
+/** Whether a snapshot of `workspaces` workspaces should open held. */
+export function snapshotHolds(workspaces: number): boolean {
+  return !snapshotAutoConnect() && workspaces > snapshotHoldOver();
+}
+
 /** Puts them all back to what they ship as: no timeout, keepalive on, the
- * right-click to mouse programs, the controls row tucked away. */
+ * right-click to mouse programs, the controls row tucked away, snapshots held
+ * past two workspaces. */
 
 export function resetSessionPrefs(): void {
   localStorage.removeItem(IDLE_SECS_KEY);
@@ -153,6 +202,8 @@ export function resetSessionPrefs(): void {
   localStorage.removeItem(KEEPALIVE_KEY);
   localStorage.removeItem(RIGHT_CLICK_KEY);
   localStorage.removeItem(CONTROLS_AUTOHIDE_KEY);
+  localStorage.removeItem(SNAPSHOT_AUTO_KEY);
+  localStorage.removeItem(SNAPSHOT_HOLD_KEY);
   announce();
 }
 

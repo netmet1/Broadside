@@ -306,7 +306,7 @@ export function useSftpBrowser(visible: boolean) {
             break;
           case "no_credentials":
             toast.warning(
-              `${host.label}: no credentials stored. Add them on the Hosts page.`,
+              `${host.label}: no credentials stored. Add them on the Library tab.`,
             );
             break;
         }

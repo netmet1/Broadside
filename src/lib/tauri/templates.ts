@@ -1,14 +1,30 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /**
- * Session templates: a saved arrangement of terminal sessions, edited on the
- * Templates tab and opened from the Hosts tab.
+ * Session templates: a saved arrangement of terminal sessions, edited and
+ * opened on the Templates tab.
  *
  * The TS mirror of `src-tauri/src/db/templates.rs`. A template is an ordered
- * list of references and nothing else: no layout is stored, so the grid a
- * launch produces is always the operator's own Grid settings applied to the
+ * list of references, plus, optionally, how its grid shares the pane. The
+ * grid's shape is always the operator's own Grid settings applied to the
  * number of sessions, exactly as the Terminals tab does it.
  */
+
+/** The sizes saved from a grid whose lines were dragged with the tiles
+ * unlocked (see GridSizes, which is how a workspace keeps them).
+ *
+ * `heights`: each row's height in lines of the terminal font, top to bottom.
+ * `widths`: one per session, in order, as a fraction of the grid's width; 0
+ * for a session that shares what its row has left.
+ * `rows` and `cols`: relative row heights and two column sizes, from a layout
+ * saved before rows and tiles had sizes of their own. Read for those (see
+ * layoutWidths and sizesFromLayout); written empty. */
+export type TemplateLayout = {
+  rows: number[];
+  cols: number[];
+  widths?: number[];
+  heights?: number[];
+};
 
 /** How a template refers to a host it cannot carry across machines. Not the id,
  * which names a row in one database; not the whole host, whose colour, tags,
@@ -42,6 +58,7 @@ export type Template = {
   color: string;
   items: TemplateItem[];
   startup: TemplateStartup;
+  layout: TemplateLayout | null;
   created_at: string;
   updated_at: string;
 };
@@ -51,6 +68,7 @@ export type TemplateInput = {
   color: string;
   items: TemplateItem[];
   startup: TemplateStartup;
+  layout?: TemplateLayout | null;
 };
 
 /** The backend's ceiling on how many sessions one template may hold. Kept in

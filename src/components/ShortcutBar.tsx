@@ -24,6 +24,11 @@ const MANAGE_VALUE = "__manage__";
  * with the same text stay distinct (and never collide as duplicate keys). */
 const SEP = " ";
 
+/** What the list shows for a shortcut: its label, or the command without one. */
+function shownName(s: ScopedShortcut): string {
+  return s.label?.trim() || s.command;
+}
+
 /** Shortcut-command picker shown top-right on the Broadcast, PTY Broadcast,
  * MultiTerminal and Terminals pages (D-054). The dropdown shows only the
  * shortcuts that run in the active terminal: a shortcut matches when its scope
@@ -75,16 +80,20 @@ export function ShortcutBar({
       seen.add(key);
       out.push(s);
     }
+    // By what the list shows: the label where there is one, else the command.
     return out.sort((a, b) =>
-      a.command.localeCompare(b.command, undefined, { sensitivity: "base" }),
+      shownName(a).localeCompare(shownName(b), undefined, {
+        sensitivity: "base",
+      }),
     );
   }, [shortcuts, activeScope]);
 
   const valueOf = (s: ScopedShortcut) => s.scope + SEP + s.command;
   // A selection can linger after switching to a tab where it does not apply;
   // Go stays disabled until the selected shortcut is one of the current items.
-  const runnable =
-    !disabled && selected !== "" && items.some((s) => valueOf(s) === selected);
+  const picked = items.find((s) => valueOf(s) === selected) ?? null;
+  const runnable = !disabled && picked !== null;
+  const pickedLabel = picked?.label?.trim() || null;
 
   // Nothing at all to pick. In practice this is a serial console and only a
   // serial console: SSH and Windows tabs always have the built-in commands
@@ -134,7 +143,9 @@ export function ShortcutBar({
         {...hint(
           nothingToPick
             ? emptyHint
-            : "Pick a shortcut command, then press Go to run it",
+            : picked
+              ? `Runs: ${picked.command}`
+              : "Pick a shortcut command, then press Go to run it",
         )}
       >
       <Select
@@ -152,9 +163,21 @@ export function ShortcutBar({
           className="w-56 min-w-0 font-mono text-xs"
           aria-label="Shortcut command"
         >
+          {/* Closed, a labelled shortcut shows its label alone; the command
+              is in the hint on the picker and on Go, and beside the label in
+              the open list. Squeezed together, the trigger only had room for
+              the start of both. */}
           <SelectValue
             placeholder={nothingToPick ? emptyLabel : "Shortcut command…"}
-          />
+          >
+            {picked ? (
+              pickedLabel ? (
+                <span className="truncate font-sans">{pickedLabel}</span>
+              ) : (
+                <span className="truncate">{picked.command}</span>
+              )
+            ) : undefined}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {items.map((s) => {
@@ -209,7 +232,7 @@ export function ShortcutBar({
           disabled={!runnable}
           onClick={() => onRun(selectedCmd)}
           aria-label={compact ? "Go" : undefined}
-          {...(runnable ? hint("Run the selected shortcut command") : {})}
+          {...(runnable && picked ? hint(`Run: ${picked.command}`) : {})}
         >
           <PlayIcon />
           {!compact && "Go"}

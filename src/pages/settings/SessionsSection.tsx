@@ -19,6 +19,7 @@ import {
   saveRightClickToProgram,
 } from "@/lib/sessionPrefs";
 import { SectionHeading } from "@/pages/settings/shared";
+import { SnapshotSettings } from "@/pages/settings/SnapshotSettings";
 
 /** Settings -> Sessions: how long an idle terminal is kept, whether the
  * connection is kept warm, and who gets a right-click. All are localStorage
@@ -45,7 +46,7 @@ export function SessionsSection({ id }: { id: string }) {
     <section id={id} className="space-y-4">
       <SectionHeading
         title="Sessions"
-        hint="How long an idle terminal is kept open, whether the connection is kept warm, what a right-click does, and whether the Terminals controls row tucks away."
+        hint="How long an idle terminal is kept open, whether the connection is kept warm, what a right-click does, whether the Terminals controls row tucks away, and when a snapshot connects."
       />
       <div className="grid max-w-md gap-4">
         <div className="grid gap-1.5">
@@ -164,6 +165,7 @@ export function SessionsSection({ id }: { id: string }) {
           </p>
         </div>
 
+        <SnapshotSettings />
       </div>
     </section>
   );
