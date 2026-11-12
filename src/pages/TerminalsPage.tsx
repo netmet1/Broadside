@@ -3047,7 +3047,7 @@ export function TerminalsPage({
         })}
         {sessions.length === 0 && (
           <p className="px-3 py-2 text-sm text-muted-foreground">
-            No open terminals. Open an SSH host from the Hosts page, or a local
+            No open terminals. Open an SSH host from the Library tab, or a local
             shell with the + button.
           </p>
         )}

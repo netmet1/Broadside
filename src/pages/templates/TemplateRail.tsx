@@ -101,7 +101,7 @@ export function TemplateRail({
           {hostsError ? (
             <Note>Couldn't read the hosts: {hostsError}</Note>
           ) : sortedHosts.length === 0 ? (
-            <Note>No hosts yet. Add one on the Hosts tab.</Note>
+            <Note>No hosts yet. Add one on the Library tab.</Note>
           ) : visibleHosts.length === 0 ? (
             <Note>No hosts match the current filter.</Note>
           ) : (

@@ -91,18 +91,18 @@ export function HostLauncherList({
           type="button"
           onClick={onNew}
           className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-          {...hint("Add a host: goes to the Hosts tab with the new-host form open")}
+          {...hint("Add a host: goes to the Library tab with the new-host form open")}
         >
           <PlusIcon className="h-3.5 w-3.5" /> New
         </button>
       </LauncherSectionHeader>
       {!open ? null : loading ? null : error ? (
         <p className="px-2 py-1 text-xs text-muted-foreground">
-          Couldn't read the host list. The Hosts tab will say why.
+          Couldn't read the host list. The Library tab will say why.
         </p>
       ) : hosts.length === 0 ? (
         <p className="px-2 py-1 text-xs text-muted-foreground">
-          No hosts yet. Add one on the Hosts tab.
+          No hosts yet. Add one on the Library tab.
         </p>
       ) : (
         // Its own scroller, like the profiles below it: thirty hosts must not

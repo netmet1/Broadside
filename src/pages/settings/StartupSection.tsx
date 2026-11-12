@@ -86,7 +86,7 @@ export function StartupSection({
             {...hint(
               locked
                 ? "A template already consumes this option, please disable its startup first."
-                : "The tab Broadside opens on. Hosts unless you pick another.",
+                : "The tab Broadside opens on. Library unless you pick another.",
             )}
           >
             <SelectValue />

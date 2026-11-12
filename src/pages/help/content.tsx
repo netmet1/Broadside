@@ -371,14 +371,14 @@ export const SECTIONS: HelpSection[] = [
           <H3>The left rail</H3>
           <p>
             The buttons down the left side switch between the main areas of the
-            app: <Nav>Hosts</Nav>, <Nav>Templates</Nav>, <Nav>Terminals</Nav>,{" "}
+            app: <Nav>Library</Nav>, <Nav>Templates</Nav>, <Nav>Terminals</Nav>,{" "}
             <Nav>Broadcast</Nav>, <Nav>PTY Broadcast</Nav>,{" "}
             <Nav>MultiTerminal</Nav>, <Nav>Skills</Nav> and <Nav>SFTP</Nav> at
             the top, and <Nav>Logs</Nav>, <Nav>Settings</Nav>, <Nav>Help</Nav>{" "}
             and <Nav>About</Nav> at the bottom. The rail shrinks to icons on
             narrow windows, or with the collapse button at the top. Drag its
             right edge to resize it, or double-click that edge to reset the
-            width. Broadside opens on <Nav>Hosts</Nav>;{" "}
+            width. Broadside opens on <Nav>Library</Nav>;{" "}
             <Nav>Settings → Startup</Nav> picks a different first tab.
           </p>
           <H3>Finding your way</H3>
@@ -431,16 +431,23 @@ export const SECTIONS: HelpSection[] = [
   },
   {
     id: HELP_HOSTS,
-    title: "Hosts",
+    title: "Library and hosts",
     keywords:
-      "server add edit import csv xlsx excel workbook spreadsheet first sheet xls old format not supported credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first drag column header move reorder rearrange columns order of columns put hostname first swap columns remembered across restarts reset defaults columns box scoped chips in settings drag the chips header label truncated cut off ellipsis la userna long line flashes on connect blink flicker flash before the banner what was that line where did it come from omni_precmd bash_version prompt_command typed by itself not mine setup line visible on slow connection vpn wireless remote high latency laggy link appears then disappears wiped cleared line in my shell history up arrow recalls it bash_history histcontrol ignorespace ignoreboth hist_ignore_space histtimeformat delete the entry remove from history broadside typed it not the user zsh cannot delete hosts templates profiles switch three sides third position profiles side of the hosts tab where is the profiles list manage shell profiles from the hosts tab export a single profile launch a profile from the hosts tab open a profile from the profiles list multi-profile multi profile button open several profiles at once tick profiles and open them terminal button on a profile row profile row launch reorder hosts drag a host row grip beside the checkbox my own order custom order new host at the end sort off third click back to my order unsort clear the sort double-click a host row double click to open a terminal double-click a profile row open a profile show password eye reveal what i typed see my password coloured colored digits blue numbers symbols red special characters one or lowercase l zero or capital o tell apart confusable characters fixed width monospace",
+      "server add edit import csv xlsx excel workbook spreadsheet first sheet xls old format not supported credentials password key sudo color status online offline columns multi-select connect tags tag chip filter sort group untagged hidden missing fields resize column find by label search box query narrow amber chip warning login shell unsupported what does it mean shell integration auto always never console menu pfsense rc.initial no shell shell unread override command block tracking import export menu reconnect check ping icmp is it back yet rebooted server reboot waiting for machine to come up probe interval seconds port 22 tcp check pill green red how often ask still answering back disable disabled turned off green too soon already back that was fast went green then amber why did the pill go green during a reboot sshd still listening shell killed first drag column header move reorder rearrange columns order of columns put hostname first swap columns remembered across restarts reset defaults columns box scoped chips in settings drag the chips header label truncated cut off ellipsis la userna long line flashes on connect blink flicker flash before the banner what was that line where did it come from omni_precmd bash_version prompt_command typed by itself not mine setup line visible on slow connection vpn wireless remote high latency laggy link appears then disappears wiped cleared line in my shell history up arrow recalls it bash_history histcontrol ignorespace ignoreboth hist_ignore_space histtimeformat delete the entry remove from history broadside typed it not the user zsh cannot delete library tab where did the hosts tab go renamed hosts tab hosts templates profiles switch three sides third position profiles side of the hosts tab where is the profiles list manage shell profiles from the hosts tab export a single profile launch a profile from the hosts tab open a profile from the profiles list multi-profile multi profile button open several profiles at once tick profiles and open them terminal button on a profile row profile row launch reorder hosts drag a host row grip beside the checkbox my own order custom order new host at the end sort off third click back to my order unsort clear the sort double-click a host row double click to open a terminal double-click a profile row open a profile show password eye reveal what i typed see my password coloured colored digits blue numbers symbols red special characters one or lowercase l zero or capital o tell apart confusable characters fixed width monospace",
     body: (
       <>
         <Lead>
-          The <Nav>Hosts</Nav> tab is your address book of machines to connect
-          to. Each host records how to reach it (address, port, username) and how
-          to sign in.
+          The <Nav>Library</Nav> tab holds what sessions are opened from. Its{" "}
+          <Nav>Hosts</Nav> list is your address book of machines to connect to:
+          each host records how to reach it (address, port, username) and how to
+          sign in.
         </Lead>
+        <p>
+          The switch at the top shows <Nav>Hosts</Nav> or <Nav>Profiles</Nav>.{" "}
+          <Nav>Templates</Nav> in the same switch goes to the{" "}
+          <Nav>Templates</Nav> tab's <Nav>List</Nav>, where templates are kept.
+          The Library tab used to be called Hosts.
+        </p>
         <Detail>
           <H3>Adding and editing hosts</H3>
           <Bullets>
@@ -621,7 +628,7 @@ export const SECTIONS: HelpSection[] = [
     id: HELP_TEMPLATES,
     title: "Templates",
     keywords:
-      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup checkbox tick several multi-template multi template open several templates at once in order which opens first top of the list play button double-click a row double click to open reorder templates drag a template grip save as template save the grid as a template from the terminals tab keep this layout button appears disappears matches a template add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list hosts tab toggle switch between hosts and templates nothing launches from the templates tab why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group grid settings popover change columns without leaving the page drag a session here strip band at the bottom duplicate name same name twice numbered 02 03 renamed automatically duplicate a template copy a template clone save as rename instead of copy make a variant swap sessions two templates called the same thing show all templates recent five import from the splash screen closed editor deleted somewhere else deleted while open create it again discard greyed button no tooltip why is the button grey status bar hint on a disabled button back to the hosts tab templates list shortcut server button get to the list from the editor replace what is on the canvas unsaved changes lost overwritten keep editing replaced my template asks before replacing",
+      "template templates profile profiles saved arrangement layout set of sessions open several at once workspace preset scene morning routine daily check drag drop canvas grid preview boxes plus box reorder move a box remove a session placeholder unresolved host reference does not match no host here point it at a host export import json file another machine share send a template to a colleague startup launch at startup open at startup connect at startup autostart auto start run on launch only one template can open at startup checkbox tick several multi-template multi template open several templates at once in order which opens first top of the list play button double-click a row double click to open reorder templates drag a template grip save as template save the grid as a template from the terminals tab keep this layout button appears disappears matches a template add to the front add to the end cancel already open terminals arrangement will not match how many sessions eight too many slow name colour color chip badge edit pencil delete a template empty state create your first template where is the templates list home editor list switch where is the list start screen opens on home x button gone close the editor nothing launches from the editor why is there no open button preview does not match my grid columns row fill stretch tall gaps settings grid one more box than sessions plus box counted shell profiles group custom terminals group local shells hidden in settings sort inside each group grid settings popover change columns without leaving the page drag a session here strip band at the bottom duplicate name same name twice numbered 02 03 renamed automatically duplicate a template copy a template clone save as rename instead of copy make a variant swap sessions two templates called the same thing show all templates recent five import from the splash screen closed editor deleted somewhere else deleted while open create it again discard greyed button no tooltip why is the button grey status bar hint on a disabled button back to the hosts tab templates list library tab templates button get to the list from the editor replace what is on the canvas unsaved changes lost overwritten keep editing replaced my template asks before replacing",
     body: (
       <>
         <Lead>
@@ -631,10 +638,12 @@ export const SECTIONS: HelpSection[] = [
           by hand every morning.
         </Lead>
         <p>
-          The <Nav>Templates</Nav> tab on the left rail is where you build and
-          edit templates; nothing launches from it. You open them from the{" "}
-          <Nav>Hosts</Nav> tab, using the <Nav>Hosts</Nav> |{" "}
-          <Nav>Templates</Nav> | <Nav>Profiles</Nav> switch at the top.
+          The <Nav>Templates</Nav> tab has three views, switched at its top
+          left: <Nav>Home</Nav> (start a template, import one, or pick up a
+          recent one), <Nav>Editor</Nav> (build and change one; nothing launches
+          from it) and <Nav>List</Nav> (every template, and where they are
+          opened). <Nav>Templates</Nav> on the <Nav>Library</Nav> tab also goes
+          to the List.
         </p>
         <Detail>
           <H3>Building one</H3>
@@ -691,41 +700,41 @@ export const SECTIONS: HelpSection[] = [
             <li>
               Changing the name of a saved template and pressing{" "}
               <Nav>Save</Nav> renames it; it does not make a copy. To copy one,
-              use the <Nav>Duplicate</Nav> button on its row in the Hosts tab's
-              Templates list. The copy is numbered like a clashing name, appears
+              use the <Nav>Duplicate</Nav> button on its row in the{" "}
+              <Nav>List</Nav>. The copy is numbered like a clashing name, appears
               directly under the original, and never opens at startup.
             </li>
             <li>
-              Closing the editor with the <Nav>x</Nav> shows{" "}
-              <Nav>New template</Nav>, <Nav>Import</Nav> and the five templates
-              you edited most recently, with a link to the full list on the
-              Hosts tab.
+              The tab opens on <Nav>Home</Nav> each time Broadside starts. A
+              template you opened in the editor stays there while you visit other
+              tabs, until you press <Nav>Home</Nav> or <Nav>List</Nav>.
             </li>
             <li>
-              The server button beside the template menu, at the left of the
-              editor's bar, goes straight to <Nav>Hosts → Templates</Nav>.
-              Whatever is on the canvas is still there when you come back.
+              <Nav>Home</Nav> or <Nav>List</Nav> closes the editor. With unsaved
+              changes they ask first: <Nav>Discard</Nav> closes it,{" "}
+              <Nav>Keep editing</Nav> stays. <Nav>Editor</Nav> is greyed while
+              nothing is open in it.
             </li>
             <li>
               Putting something else on the canvas while it has unsaved changes
-              asks first: another template from the menu, <Nav>Edit</Nav> on the
-              Hosts tab, <Nav>Edit</Nav> or <Nav>Duplicate</Nav> in the Terminals
+              asks first: another template from the menu, <Nav>Edit</Nav> or{" "}
+              <Nav>Duplicate</Nav> in the Terminals
               tab's <Nav>plus button</Nav> menu, <Nav>Save as template</Nav> on
               the Terminals tab, or an import. <Nav>Keep editing</Nav> leaves your work as it was.
             </li>
             <li>
-              If you delete a template on the Hosts tab while it is open in the
-              editor, nothing on the canvas is lost: <Nav>Create</Nav> saves it
-              again as a new template, or <Nav>Discard</Nav> closes the editor.
+              If a template is deleted while it is open in the editor (from the
+              Terminals tab's <Nav>plus button</Nav> menu), nothing on the canvas
+              is lost: <Nav>Create</Nav> saves it again as a new template, or{" "}
+              <Nav>Discard</Nav> closes the editor.
             </li>
           </Bullets>
           <H3>Opening one</H3>
           <Bullets>
             <li>
-              On the <Nav>Hosts</Nav> tab, switch to <Nav>Templates</Nav> and
-              press the play button on a row, or double-click the row. It opens
-              every session in the saved order and takes you to the Terminals
-              tab.
+              On the <Nav>List</Nav>, press the play button on a row, or
+              double-click the row. It opens every session in the saved order and
+              takes you to the Terminals tab. The pencil opens it in the editor.
             </li>
             <li>
               Or open one from the <Nav>Templates</Nav> section of the Terminals
@@ -816,7 +825,7 @@ export const SECTIONS: HelpSection[] = [
           <H3>Remote and local shells</H3>
           <Bullets>
             <li>
-              Open a remote shell from the <Nav>Hosts</Nav> tab, or from the{" "}
+              Open a remote shell from the <Nav>Library</Nav> tab, or from the{" "}
               <Nav>Hosts</Nav> section of the <Nav>plus button</Nav> menu at the
               end of the tab strip. The connection runs over{" "}
               <Term term="SSH" />.
@@ -867,7 +876,7 @@ export const SECTIONS: HelpSection[] = [
               it on the <Nav>Templates</Nav> tab. A duplicate arrives named
               with the next free number (<Nav>Name 02</Nav>) and is not saved
               until you save it there. Drag the grip to change the order, which
-              is the same order as the Hosts tab's template list.
+              is the same order as the Templates tab's List.
             </li>
             <li>
               <Nav>How many</Nav> applies to hosts as well: set it to three and
@@ -1162,9 +1171,8 @@ export const SECTIONS: HelpSection[] = [
               place in the list.
             </li>
             <li>
-              <b>The Hosts tab has a fuller list.</b> Set the{" "}
-              <Nav>Hosts</Nav> | <Nav>Templates</Nav> | <Nav>Profiles</Nav>{" "}
-              switch at the top of the <Nav>Hosts</Nav> tab to{" "}
+              <b>The Library tab has a fuller list.</b> Set the switch at the
+              top of the <Nav>Library</Nav> tab to{" "}
               <Nav>Profiles</Nav> for a table that shows each profile's folder
               and startup command. Everything the launcher does works there too,
               and you can also export a single profile, or just the ones you
@@ -1658,7 +1666,7 @@ export const SECTIONS: HelpSection[] = [
               Two filters narrow the rail: a <Nav>Find by label…</Nav> box that
               matches host labels as you type, and a <Nav>Filter tags</Nav>{" "}
               dropdown that works like the tag filter on the{" "}
-              <SectionLink id="help-sec-hosts">Hosts</SectionLink> table. The two
+              <SectionLink id="help-sec-hosts">Library</SectionLink> tab's Hosts table. The two
               combine, and both reset when you restart the app.
             </li>
             <li>
@@ -2145,7 +2153,7 @@ export const SECTIONS: HelpSection[] = [
           <p>
             Skills need a <Nav>bash</Nav>, <Nav>zsh</Nav> or <Nav>sh</Nav> login
             shell. A host with any other shell carries an amber chip on the{" "}
-            <SectionLink id="help-sec-hosts">Hosts</SectionLink> tab and in the
+            <SectionLink id="help-sec-hosts">Library</SectionLink> tab and in the
             list here. It can still be ticked, but it reports a failure when the
             run starts, and the skill carries on with the other hosts.
           </p>
@@ -2400,7 +2408,7 @@ export const SECTIONS: HelpSection[] = [
           <H3>What you can change</H3>
           <Bullets>
             <li>
-              <Nav>Startup</Nav>: which tab Broadside opens on (<Nav>Hosts</Nav>{" "}
+              <Nav>Startup</Nav>: which tab Broadside opens on (<Nav>Library</Nav>{" "}
               by default). It is greyed while a template is set to open at
               startup, because that always opens on <Nav>Terminals</Nav>.
             </li>

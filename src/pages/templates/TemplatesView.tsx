@@ -31,8 +31,7 @@ const STARTUP_CHIP: Record<string, { label: string; hint: string } | null> = {
 };
 
 /**
- * The Templates side of the Hosts tab: the list, and the actions that open
- * them.
+ * The Templates tab's List: every template, and the actions that open them.
  *
  * One opens from its row: the play button, or a double-click anywhere on it.
  * Several open from their ticks, through Multi-template above the list, one
@@ -196,7 +195,7 @@ export function TemplatesView({
                         }}
                         aria-label={`Edit ${t.name}`}
                         className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        {...hint("Open this template on the Templates tab")}
+                        {...hint("Open this template in the editor")}
                       >
                         <PencilIcon className="h-4 w-4" />
                       </button>

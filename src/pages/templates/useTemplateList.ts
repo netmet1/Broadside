@@ -12,14 +12,15 @@ import {
 import { useRowDrag } from "@/lib/useRowDrag";
 
 /**
- * The Templates side of the Hosts tab: the list, which ones are ticked, and the
+ * The Templates tab's List: every template, which ones are ticked, and the
  * things its rows do (delete, duplicate, drag). Editing is not here: the pencil
- * hands the template to the Templates tab.
+ * hands the template to the editor beside it.
  *
- * Its own load rather than a field on the hosts one: the two are independent,
- * and a template read that fails must not cost the page its machines.
+ * Read when the List is shown, so it is current on every visit. `onChanged`
+ * tells the page a delete, copy or reorder happened, so the editor's own list
+ * (its template picker, the Home screen's recent ones) reads it again too.
  */
-export function useTemplateList() {
+export function useTemplateList(onChanged: () => void) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   // Which ones Multi-template would open. Checkboxes, like the hosts beside
@@ -32,7 +33,8 @@ export function useTemplateList() {
       .then(setTemplates)
       .catch((e) => toast.error(errorMessage(e)))
       .finally(() => setLoading(false));
-  }, []);
+    onChanged();
+  }, [onChanged]);
 
   useEffect(() => {
     let alive = true;

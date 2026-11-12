@@ -783,12 +783,10 @@ function App() {
     setPage("settings");
   }, []);
 
-  // "Show all templates", from the Templates splash. The list of them lives on
-  // the Hosts tab beside the list of machines, and that page is rebuilt on each
-  // visit, so setting which side it opens on is all this takes.
+  // Library's Templates button: the Templates tab, at its List.
   const browseTemplates = useCallback(() => {
-    rememberHostsSide("templates");
-    setPage("hosts");
+    setTemplateFocus((f) => ({ template: null, list: true, n: (f?.n ?? 0) + 1 }));
+    setPage("templates");
   }, []);
 
   // New, on the Hosts section of the Terminals "+" menu: the Hosts tab on its
@@ -1053,8 +1051,7 @@ function App() {
           onTerminateHost={terminateHost}
           connectedHostIds={connectedHostIds}
           openHostIds={openHostIds}
-          onEditTemplate={editTemplate}
-          onOpenTemplates={openTemplates}
+          onBrowseTemplates={browseTemplates}
           onOpenProfiles={openProfiles}
           onOpenHelp={openHelpAt}
           startWithNewHost={newHostRequested}
@@ -1062,7 +1059,7 @@ function App() {
         />
       )}
       {/* Templates stays mounted so a half-built arrangement survives a trip to
-          the Hosts tab to check a hostname. */}
+          the Library tab to check a hostname. */}
       <div className={page === "templates" ? "block h-full" : "hidden"}>
         <TemplatesPage
           visible={page === "templates"}
@@ -1070,7 +1067,7 @@ function App() {
           focus={templateFocus}
           onOpenHelp={openHelpAt}
           onOpenGridSettings={openGridSettings}
-          onBrowseTemplates={browseTemplates}
+          onOpenTemplates={openTemplates}
         />
       </div>
       {/* Broadcast stays mounted so output and host selection survive
@@ -1225,8 +1222,8 @@ function App() {
                   {(pendingLaunch?.templates.length ?? 0) > 1 && (
                     <>
                       <p>
-                        They open one after another, in the order the Hosts
-                        tab lists them:
+                        They open one after another, in the order the List
+                        shows them:
                       </p>
                       <ol className="list-decimal space-y-0.5 pl-5">
                         {pendingLaunch?.templates.map(({ template, count }) => (

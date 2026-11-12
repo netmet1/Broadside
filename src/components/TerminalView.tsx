@@ -1393,7 +1393,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
           case "no_credentials":
             setPhase({
               kind: "failed",
-              message: "No credentials stored. Edit the host on the Hosts page.",
+              message: "No credentials stored. Edit the host on the Library tab.",
             });
             break;
         }
