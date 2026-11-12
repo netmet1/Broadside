@@ -155,7 +155,7 @@ export function SettingsPage({
     parsedScrollback,
     syncFromSettings: syncAppearanceFromSettings,
     saveFontSizes,
-  } = useAppearance();
+  } = useAppearance(visible);
 
   // Opt-in admin lock (gates the sudo toggle, credential editing and Reset).
   // All lock/passcode/recovery state + handlers live in the hook, which loads
