@@ -96,6 +96,12 @@ struct PortableTemplate {
     color: String,
     #[serde(default)]
     items: Vec<repo::TemplateItem>,
+    /// How the grid shares the pane (see `repo::TemplateLayout`). Optional, so
+    /// a file written before it existed reads exactly as it did, and a file
+    /// with one still reads in a build that does not know it (serde ignores
+    /// the field), which is why the version did not change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    layout: Option<repo::TemplateLayout>,
 }
 
 /// The highest file version this build can read.
@@ -125,6 +131,7 @@ pub fn export_template(id: i64, path: String, state: State<'_, DbState>) -> AppR
         name: template.name,
         color: template.color,
         items: template.items,
+        layout: template.layout,
     };
     std::fs::write(&path, serde_json::to_string_pretty(&portable)?)?;
     Ok(())
@@ -183,6 +190,11 @@ pub fn read_template_file(path: String, state: State<'_, DbState>) -> AppResult<
         },
         items,
         startup: repo::STARTUP_OFF.into(),
+        // Sizes that are not valid are dropped, like a colour that is not a
+        // colour: the sessions are the thing worth importing.
+        layout: portable
+            .layout
+            .filter(|l| repo::validate_layout(l).is_ok()),
     })
 }
 
@@ -212,6 +224,7 @@ mod tests {
                     label: "PowerShell 7".into(),
                 },
             ],
+            layout: None,
         };
         let text = serde_json::to_string_pretty(&portable).unwrap();
         let back: PortableTemplate = serde_json::from_str(&text).unwrap();
@@ -236,6 +249,7 @@ mod tests {
                     username: "joe".into(),
                 },
             }],
+            layout: None,
         };
         let text = serde_json::to_string(&portable).unwrap();
         assert!(!text.contains("hostId"));
@@ -255,6 +269,7 @@ mod tests {
             color: String::new(),
             items: portable.items,
             startup: repo::STARTUP_OFF.into(),
+            layout: None,
         };
         assert_eq!(input.startup, repo::STARTUP_OFF);
     }

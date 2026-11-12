@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import type { GridTracks } from "@/lib/gridShape";
 import { listTemplates, type Template } from "@/lib/tauri/templates";
 import {
-  matchesATemplate,
+  matchingTemplate,
+  sameTracks,
   sessionTemplateItem,
 } from "@/pages/terminals/gridTemplate";
 import type { TermSession } from "@/pages/terminals/session";
@@ -21,14 +23,20 @@ import type { TermSession } from "@/pages/terminals/session";
  * in a template and is left out of what is saved, and it does not count
  * towards the two either.
  *
- * The templates are read again on every visit to the tab. A template is saved
- * on another tab, so arriving back here is the moment the answer can change.
+ * When the sessions are a saved template's but the grid's lines have been
+ * dragged to sizes that template does not have, the button offers to save the
+ * sizes to it instead (`sizesTo`).
+ *
+ * The templates are read again on every visit to the tab, and after the sizes
+ * are saved here (`reload`). A template is saved on another tab, so arriving
+ * back here is the moment the answer can change.
  */
 export function useGridTemplate({
   visible,
   gridMode,
   sessions,
   isLaidOut,
+  tracks,
 }: {
   visible: boolean;
   gridMode: boolean;
@@ -36,8 +44,12 @@ export function useGridTemplate({
   sessions: TermSession[];
   /** Whether this session is a tile in the grid right now. */
   isLaidOut: (s: TermSession) => boolean;
+  /** The grid's own sizes when they are in force, or null for an even split. */
+  tracks: GridTracks | null;
 }) {
   const [templates, setTemplates] = useState<Template[] | null>(null);
+  const [readCount, setReadCount] = useState(0);
+  const reload = useCallback(() => setReadCount((n) => n + 1), []);
   useEffect(() => {
     if (!visible) return;
     let alive = true;
@@ -53,7 +65,7 @@ export function useGridTemplate({
     return () => {
       alive = false;
     };
-  }, [visible]);
+  }, [visible, readCount]);
 
   const tiles = useMemo(
     () => (gridMode ? sessions.filter(isLaidOut) : []),
@@ -63,10 +75,15 @@ export function useGridTemplate({
     () => tiles.flatMap((s) => sessionTemplateItem(s) ?? []),
     [tiles],
   );
-  const offered =
-    templates !== null &&
-    items.length >= 2 &&
-    !matchesATemplate(items, templates);
+  const match =
+    templates !== null && items.length >= 2
+      ? matchingTemplate(items, templates)
+      : null;
+  const offered = templates !== null && items.length >= 2 && match === null;
+  const sizesTo =
+    match !== null && tracks !== null && !sameTracks(match.layout, tracks)
+      ? match
+      : null;
 
-  return { offered, items };
+  return { offered, sizesTo, items, layout: tracks, reload };
 }

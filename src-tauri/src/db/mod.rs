@@ -332,6 +332,12 @@ pub(crate) const MIGRATIONS: &[&str] = &[
          WHERE other.name < templates.name COLLATE NOCASE
             OR (other.name = templates.name COLLATE NOCASE AND other.id < templates.id)
      );",
+    // 27: how a template's grid shares the pane (prompts135), as JSON
+    // `{"rows":[..],"cols":[..]}` of relative sizes, or empty for none. Saved
+    // from the Terminals tab's grid after its lines were dragged; see
+    // templates::TemplateLayout. Empty for every existing row, which is
+    // exactly what they had: an even split.
+    "ALTER TABLE templates ADD COLUMN layout_json TEXT NOT NULL DEFAULT '';",
 ];
 
 pub(crate) fn bootstrap(conn: &Connection) -> AppResult<()> {
@@ -792,6 +798,7 @@ mod tests {
                     },
                 }],
                 startup: templates::STARTUP_OFF.into(),
+                layout: None,
             },
         )
         .unwrap();

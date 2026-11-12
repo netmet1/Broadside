@@ -3,14 +3,15 @@
  * template button would hand the Templates tab, and whether a saved template
  * already says exactly that.
  *
- * A template is an ordered list of references and nothing else (see
- * lib/tauri/templates), so "the layout matches a template" means the same
- * sessions in the same order: the tiles left to right, top to bottom, which is
- * the tab strip's order. Grid sizes are not part of it because a template does
- * not store any.
+ * "The grid matches a template" means the same sessions in the same order: the
+ * tiles left to right, top to bottom, which is the tab strip's order. The
+ * sizes the grid's lines were dragged to are compared separately, so a grid
+ * that is a saved template with new sizes offers to save the sizes to it
+ * rather than to make a second template.
  */
 
-import type { TemplateItem } from "@/lib/tauri/templates";
+import type { GridTracks } from "@/lib/gridShape";
+import type { Template, TemplateItem } from "@/lib/tauri/templates";
 import type { TermSession } from "@/pages/terminals/session";
 
 /** The template item that would open this tab again, or null for one a
@@ -57,11 +58,23 @@ function itemKey(item: TemplateItem): string {
   }
 }
 
-/** Whether some saved template is exactly these items, in this order. */
-export function matchesATemplate(
+/** The saved template that is exactly these items, in this order, if any. */
+export function matchingTemplate(
   items: TemplateItem[],
-  templates: { items: TemplateItem[] }[],
-): boolean {
+  templates: Template[],
+): Template | null {
   const key = items.map(itemKey).join("|");
-  return templates.some((t) => t.items.map(itemKey).join("|") === key);
+  return templates.find((t) => t.items.map(itemKey).join("|") === key) ?? null;
+}
+
+/** The same sizes, near enough that nobody could see the difference. Two
+ * absent sets are the same (an even split). */
+export function sameTracks(
+  a: GridTracks | null | undefined,
+  b: GridTracks | null | undefined,
+): boolean {
+  if (!a || !b) return !a && !b;
+  const close = (x: number[], y: number[]) =>
+    x.length === y.length && x.every((v, i) => Math.abs(v - y[i]!) < 0.01);
+  return close(a.rows, b.rows) && close(a.cols, b.cols);
 }

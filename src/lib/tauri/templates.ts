@@ -1,14 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { GridTracks } from "@/lib/gridShape";
+
 /**
- * Session templates: a saved arrangement of terminal sessions, edited on the
- * Templates tab and opened from the Hosts tab.
+ * Session templates: a saved arrangement of terminal sessions, edited and
+ * opened on the Templates tab.
  *
  * The TS mirror of `src-tauri/src/db/templates.rs`. A template is an ordered
- * list of references and nothing else: no layout is stored, so the grid a
- * launch produces is always the operator's own Grid settings applied to the
+ * list of references, plus, optionally, how its grid shares the pane. The
+ * grid's shape is always the operator's own Grid settings applied to the
  * number of sessions, exactly as the Terminals tab does it.
  */
+
+/** Relative row and column sizes, saved from a grid whose lines were dragged
+ * (see GridTracks). Used only while the grid has exactly this shape. */
+export type TemplateLayout = GridTracks;
 
 /** How a template refers to a host it cannot carry across machines. Not the id,
  * which names a row in one database; not the whole host, whose colour, tags,
@@ -42,6 +48,7 @@ export type Template = {
   color: string;
   items: TemplateItem[];
   startup: TemplateStartup;
+  layout: TemplateLayout | null;
   created_at: string;
   updated_at: string;
 };
@@ -51,6 +58,7 @@ export type TemplateInput = {
   color: string;
   items: TemplateItem[];
   startup: TemplateStartup;
+  layout?: TemplateLayout | null;
 };
 
 /** The backend's ceiling on how many sessions one template may hold. Kept in

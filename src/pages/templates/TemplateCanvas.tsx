@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/popover";
 import {
   GRID_PREFS_EVENT,
+  isAutoGrid,
   loadGridPrefs,
   loadRowFill,
   type RowFill,
@@ -18,8 +19,11 @@ import {
   TILE_BORDER_X,
   defaultGridStyle,
   fitsTwoUp,
+  gridTrackCounts,
   tileSpan,
+  tracksFor,
   twoUpThresholdPx,
+  type GridTracks,
 } from "@/lib/gridShape";
 import { useGridFields } from "@/lib/gridFields";
 import { measureTerminalCell } from "@/lib/terminalCell";
@@ -82,6 +86,8 @@ export function TemplateCanvas({
   onRemove,
   onOpenGridSettings,
   visible,
+  layout,
+  onForgetLayout,
 }: {
   items: TemplateItem[];
   sources: ItemSources;
@@ -94,6 +100,10 @@ export function TemplateCanvas({
   /** False while another tab is showing. The page stays mounted, hidden, so an
    * open Grid settings panel has to be shut from here. */
   visible: boolean;
+  /** Grid sizes saved with this template, or null for an even split. */
+  layout: GridTracks | null;
+  /** Drop the saved sizes, so it opens evenly. */
+  onForgetLayout: () => void;
 }) {
   const hint = useHint();
   const { prefs: uiPrefs } = useUiPrefs();
@@ -189,15 +199,21 @@ export function TemplateCanvas({
   const spanCols = gridPrefs.itemCols == null;
   const spanRows = gridPrefs.itemRows == null;
 
+  // The saved sizes, when the grid this would open into is the default one
+  // (a size pinned in Settings is the last word, there as here) and has the
+  // shape they were saved for.
+  const shape = gridTrackCounts({ count, cols, twoUpSplit: "cols", twoUpFits });
+  const ownTracks = isAutoGrid(gridPrefs) ? tracksFor(layout, shape) : null;
+
   const gridStyle = defaultGridStyle({
     count,
     cols,
-    // A template stores no layout, so there is nothing here that could ask for
-    // the top/bottom flip: two sessions get the grid's own default, side by
-    // side where the pane is wide enough for it.
+    // A template does not store the two-up top/bottom flip, so two sessions
+    // get the grid's own default, side by side where the pane is wide enough.
     twoUpSplit: "cols",
     twoUpFits,
     tileMinH: PREVIEW_TILE_MIN_H,
+    tracks: ownTracks,
   });
 
   // Which box the pointer is currently over, so a drop has somewhere visible
@@ -423,6 +439,28 @@ export function TemplateCanvas({
             </Popover>{" "}
             lay them out {cols === 1 ? "in one column" : `${cols} across`}, and
             when the last row is short, {ROW_FILL_WORDS[rowFill]}.
+          </>
+        )}
+        {layout && (
+          <>
+            {" "}
+            {ownTracks
+              ? "Rows and columns keep the sizes saved from the Terminals grid."
+              : `Has sizes saved from a grid of ${layout.rows.length} ${
+                  layout.rows.length === 1 ? "row" : "rows"
+                } by ${layout.cols.length} ${
+                  layout.cols.length === 1 ? "column" : "columns"
+                }; laid out like this, it opens evenly.`}{" "}
+            <button
+              type="button"
+              onClick={onForgetLayout}
+              className="font-medium text-primary hover:underline"
+              {...hint(
+                "Drop the saved sizes, so this template opens with its rows and columns even. Save to keep the change.",
+              )}
+            >
+              Forget sizes
+            </button>
           </>
         )}
       </p>

@@ -90,6 +90,7 @@ import {
 } from "@/lib/tauri/hosts";
 import { onPtySudo, onPtySudoRejected } from "@/lib/tauri/pty";
 import { useWindowBlurredAttr } from "@/lib/windowFocus";
+import type { GridTracks } from "@/lib/gridShape";
 
 function App() {
   // Let the stylesheet know when the window is not the one taking keys, so the
@@ -466,20 +467,21 @@ function App() {
    * named after `from` (the template). Opened into the shown workspace while
    * that is still the empty, unnamed default, the workspace takes the
    * template's name and colour, so the strip says what it holds once there are
-   * more. */
+   * more. A workspace the template has to itself also takes its saved grid
+   * sizes; tabs added to a workspace that already has some do not. */
   const launchTemplate = useCallback(
     (
       sessions: LaunchSession[],
       place: "front" | "end" | "new",
       connect: boolean,
-      from?: { name: string; color: string },
+      from?: { name: string; color: string; layout?: GridTracks | null },
     ) => {
       if (sessions.length === 0) return;
       let workspaceId = activeWorkspaceId;
       if (place === "new") {
-        workspaceId = createWorkspace(from?.name, from?.color);
+        workspaceId = createWorkspace(from?.name, from?.color, from?.layout);
       } else if (from) {
-        adoptIfBlank(from.name, from.color);
+        adoptIfBlank(from.name, from.color, from.layout);
       }
       const made: TermSession[] = sessions.map((s) =>
         s.type === "ssh"
@@ -748,10 +750,18 @@ function App() {
 
   /** The Terminals tab's Save as template: a new template holding the grid on
    * screen, opened in the editor to be named and saved. */
-  const saveGridAsTemplate = useCallback((items: TemplateItem[]) => {
-    setTemplateFocus((f) => ({ template: null, items, n: (f?.n ?? 0) + 1 }));
-    setPage("templates");
-  }, []);
+  const saveGridAsTemplate = useCallback(
+    (items: TemplateItem[], layout: GridTracks | null) => {
+      setTemplateFocus((f) => ({
+        template: null,
+        items,
+        layout,
+        n: (f?.n ?? 0) + 1,
+      }));
+      setPage("templates");
+    },
+    [],
+  );
 
   const editTemplate = useCallback((template: Template | null) => {
     setTemplateFocus((f) => ({ template, n: (f?.n ?? 0) + 1 }));
@@ -1118,6 +1128,7 @@ function App() {
           onNewWorkspace={ws.createAndShow}
           onRenameWorkspace={ws.rename}
           onRecolorWorkspace={ws.recolor}
+          onSetWorkspaceTracks={ws.setTracks}
           onReorderWorkspace={ws.reorder}
           onCloseWorkspace={closeWorkspace}
           onMoveToWorkspace={moveToWorkspace}

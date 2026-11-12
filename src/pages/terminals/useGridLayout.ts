@@ -24,12 +24,18 @@ import {
 import {
   GRID_FLOOR_COLS,
   GRID_MIN_TILE_ROWS,
+  GRID_SPLIT_MIN_ROWS,
   TILE_BORDER_X,
   TILE_BORDER_Y,
   defaultGridStyle,
   fitsTwoUp,
+  gridTrackCounts,
+  tilePlacement,
   tileSpan as tileSpanFor,
+  tracksFor,
   twoUpThresholdPx,
+  type GridTracks,
+  type TilePlacement,
 } from "@/lib/gridShape";
 import { measureTerminalCell } from "@/lib/terminalCell";
 import { useUiPrefs } from "@/lib/uiPrefs";
@@ -40,12 +46,8 @@ const LAYOUT_KEY = "terminal-layout";
  * look survives a restart. */
 const GRID_HIDE_HEADERS_KEY = "terminal-grid-hide-headers";
 /** Whether grid tiles resize together ("1", the default and the behaviour
- * before this setting existed) or one at a time ("0"). */
+ * before this setting existed) or by the lines between them ("0"). */
 const GRID_LOCKED_KEY = "terminal-grid-locked";
-
-/** A tile's own size in characters, set by dragging it while the tiles are
- * unlocked. A missing axis takes the base size. */
-type TileSize = { cols: number | null; rows: number | null };
 
 /* The tile geometry these two use (minimum widths, the border allowance, the
  * two-up threshold and the hysteresis on it) lives in lib/gridShape, because
@@ -109,29 +111,32 @@ export type GridLayout = {
   resetTileSize: () => void;
 
   /** True (the default): dragging one tile resizes them all. False: a drag
-   * resizes only the tile dragged. Remembered across restarts. */
+   * moves the line between two rows or columns. Remembered across restarts. */
   lockedTiles: boolean;
   toggleLockedTiles: () => void;
-  /** Set one tile's width / height in characters (unlocked only). `start` is
-   * that tile's size when the drag began, which becomes the size every other
-   * tile keeps the first time a tile gets a size of its own. */
-  setTileCols: (id: string, cols: number, start: { cols: number; rows: number }) => void;
-  setTileRows: (id: string, rows: number, start: { cols: number; rows: number }) => void;
-  /** Tiles are laid out one by one at their own sizes: unlocked, and at least
-   * one has been dragged. The grid becomes a wrapping row of tiles. */
-  freeTiles: boolean;
-  /** Any tile has a size of its own. */
-  hasTileSizes: boolean;
-  /** A tile's width and height while `freeTiles`, in px. */
-  freeTileStyle: (id: string) => React.CSSProperties | undefined;
+  /** The lines between tiles are what a drag moves: unlocked, on the default
+   * grid (nothing pinned in Settings), with two or more tiles. */
+  splitGrid: boolean;
+  /** The shown workspace's own track sizes are in force (see GridTracks). */
+  hasTracks: boolean;
+  /** How many rows and columns the default grid has right now. */
+  trackShape: { rows: number; cols: number };
+  /** Where the tile in slot `n` sits in the default grid. */
+  placement: (slot: number) => TilePlacement;
   /** Measured cell size for the current terminal font, for char <-> px maths. */
   cell: { cellW: number; cellH: number };
   /** A tile's title bar in px, for the char <-> px maths that has to allow for
    * it. Zero when the titles are hidden, and it grows with the app font. */
   headerH: number;
   /** A tile's legible minimum height in px. The row track's floor and the tile's
-   * own `min-height` are handed this same number, so they cannot disagree. */
+   * own `min-height` are handed this same number (`tileFloorH` while the
+   * workspace's own sizes are in force), so they cannot disagree. */
   tileMinH: number;
+  /** How short a row may be dragged with the tiles unlocked, in px. */
+  splitMinH: number;
+  /** The floor actually in force for a tile of the default grid: `splitMinH`
+   * once the lines have been dragged, `tileMinH` otherwise. */
+  tileFloorH: number;
 
   /** True while the Grid settings are the last word and a drag is temporary
    * (the default). False lets a drag write the tile size into Settings. */
@@ -160,6 +165,8 @@ export function useGridLayout({
   visible,
   maximized,
   paneRef,
+  tracks,
+  clearTracks,
 }: {
   sessions: TermSession[];
   /** Sessions the View menu's Filter is hiding. They claim no tile, exactly as
@@ -172,6 +179,10 @@ export function useGridLayout({
    * much room the grid has is not the window's width, it is what the sidebar
    * and the broadcast rail have left of it. */
   paneRef: React.RefObject<HTMLDivElement | null>;
+  /** The shown workspace's track sizes, or null for an even split. */
+  tracks: GridTracks | null;
+  /** Put the shown workspace's tracks back to even (Reset grid). */
+  clearTracks: () => void;
 }): GridLayout {
   // Pane layout: one tab at a time (default) or every pane tiled like the skill
   // run panel. Persisted in localStorage so it survives tab switches (the page
@@ -352,14 +363,9 @@ export function useGridLayout({
     },
     [strictGrid],
   );
-  // Reset size means "tiles that fit the window", so it has to clear both the
-  // dragged size and any size pinned in Settings, or the button would appear to
-  // do nothing for someone who set the numbers by hand.
-  // Tiles resizing one at a time (unlocked). Plain state for the sizes, like
-  // `dragSize` above: an adjustment to the wall in front of you, gone on a
-  // restart. Keyed by session, so a tile keeps its size when tabs are dragged
-  // into another order or it moves to another workspace. The lock itself is a
-  // preference, so it is remembered.
+  // Unlocked, a drag moves the line between two tiles instead (see
+  // useGridSplitters). Those sizes belong to the workspace, not this hook. The
+  // lock itself is a preference, so it is remembered.
   const [lockedTiles, setLockedTiles] = useState(
     () => localStorage.getItem(GRID_LOCKED_KEY) !== "0",
   );
@@ -369,58 +375,17 @@ export function useGridLayout({
       return !on;
     });
   }, []);
-  const [tileSizes, setTileSizes] = useState<ReadonlyMap<string, TileSize>>(
-    () => new Map(),
-  );
-  // What a tile with no size of its own is laid out at once others have one:
-  // the size the tiles shared when the first one was dragged, so the rest stay
-  // where they were rather than jumping to some other default.
-  const [baseSize, setBaseSize] = useState<{ cols: number; rows: number } | null>(
-    null,
-  );
-  const setTileCols = useCallback(
-    (id: string, cols: number, start: { cols: number; rows: number }) => {
-      setBaseSize((b) => b ?? start);
-      setTileSizes((m) => {
-        const cur = m.get(id);
-        if (cur?.cols === cols) return m;
-        return new Map(m).set(id, { cols, rows: cur?.rows ?? null });
-      });
-    },
-    [],
-  );
-  const setTileRows = useCallback(
-    (id: string, rows: number, start: { cols: number; rows: number }) => {
-      setBaseSize((b) => b ?? start);
-      setTileSizes((m) => {
-        const cur = m.get(id);
-        if (cur?.rows === rows) return m;
-        return new Map(m).set(id, { cols: cur?.cols ?? null, rows });
-      });
-    },
-    [],
-  );
-  // Drop sizes whose session has closed, guarded on the outcome like
-  // `liveExcluded` above so a render-phase update cannot loop.
-  const liveTileSizes = (() => {
-    if (tileSizes.size === 0) return tileSizes;
-    const live = new Set(sessions.map((s) => s.id));
-    const next = new Map([...tileSizes].filter(([id]) => live.has(id)));
-    return next.size === tileSizes.size ? tileSizes : next;
-  })();
-  if (liveTileSizes !== tileSizes) {
-    setTileSizes(liveTileSizes);
-    if (liveTileSizes.size === 0) setBaseSize(null);
-  }
-
+  // Reset size means "tiles that fit the window", so it has to clear the
+  // dragged size, any size pinned in Settings, and the shown workspace's own
+  // track sizes, or the button would appear to do nothing for someone who set
+  // one of them.
   const resetTileSize = useCallback(() => {
-    setTileSizes(new Map());
-    setBaseSize(null);
+    clearTracks();
     setDragSize({ cols: null, rows: null });
     saveGridItemCols(null);
     saveGridItemRows(null);
     reloadPrefs();
-  }, [reloadPrefs]);
+  }, [reloadPrefs, clearTracks]);
 
   // What the grid lays out to: the saved prefs with the dragged size over the
   // top. A drag only ever overrides the tile size; the column count stays
@@ -452,6 +417,8 @@ export function useGridLayout({
   const headerH = gridHeaderH(uiPrefs.appFontSize, hideGridHeaders);
   const tileMinH =
     Math.round(GRID_MIN_TILE_ROWS * cell.cellH) + headerH + TILE_BORDER_Y;
+  const splitMinH =
+    Math.round(GRID_SPLIT_MIN_ROWS * cell.cellH) + headerH + TILE_BORDER_Y;
   /** The pane's `gap-2` in pixels. Another rem, so another thing that is not a
    * constant once the app font moves off 16px. */
   const gapPx = Math.round(0.5 * uiPrefs.appFontSize);
@@ -508,39 +475,26 @@ export function useGridLayout({
     return twoUpFits ? 2 : 1;
   }, [gridMode, pinnedCols, customGrid, gridPrefs.itemCols, twoUpFits]);
 
-  const hasTileSizes = tileSizes.size > 0;
-  // One and two tiles still fill the pane, as they do locked: there is no
-  // wall to arrange.
-  const freeTiles = gridMode && !lockedTiles && hasTileSizes && gridCount > 2;
-  const freeTileStyle = useCallback(
-    (id: string): React.CSSProperties | undefined => {
-      if (!freeTiles || !baseSize) return undefined;
-      const own = tileSizes.get(id);
-      const cols = own?.cols ?? baseSize.cols;
-      const rows = own?.rows ?? baseSize.rows;
-      return {
-        width: Math.round(cols * cell.cellW) + TILE_BORDER_X,
-        height: Math.round(rows * cell.cellH) + headerH + TILE_BORDER_Y,
-        // Never wider than the pane: a tile wider than the window would put
-        // its own right edge, and the handle on it, out of reach.
-        maxWidth: "100%",
-        flex: "none",
-      };
-    },
-    [freeTiles, baseSize, tileSizes, cell, headerH],
+  // The default grid's rows and columns, and whether the shown workspace's own
+  // sizes for them are in force: only on the default grid, since a size pinned
+  // in Settings (or dragged with the tiles locked) is the last word on it, and
+  // only while the shape is the one they were made for.
+  const trackShape = useMemo(
+    () =>
+      gridTrackCounts({
+        count: gridCount,
+        cols: effectiveCols,
+        twoUpSplit,
+        twoUpFits,
+      }),
+    [gridCount, effectiveCols, twoUpSplit, twoUpFits],
   );
+  const ownTracks = gridMode && !customGrid ? tracksFor(tracks, trackShape) : null;
+  const hasTracks = ownTracks !== null;
+  const tileFloorH = hasTracks ? splitMinH : tileMinH;
+  const splitGrid = gridMode && !lockedTiles && !customGrid && gridCount >= 2;
 
   const gridStyle = useMemo<React.CSSProperties | undefined>(() => {
-    // Tiles at their own sizes wrap like words in a line, each row as tall as
-    // its tallest tile. Ragged edges are the price of tiles that differ.
-    if (freeTiles) {
-      return {
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "flex-start",
-        alignContent: "flex-start",
-      };
-    }
     // The default (auto/auto/auto) grid. Its columns used to be a Tailwind class
     // (`grid-cols-1 lg:grid-cols-2`) and so a media query on the *window*, which
     // could not see the pane it was actually laying out. They come off the same
@@ -557,7 +511,8 @@ export function useGridLayout({
         cols: effectiveCols,
         twoUpSplit,
         twoUpFits,
-        tileMinH,
+        tileMinH: tileFloorH,
+        tracks: ownTracks,
       });
     }
     const style: React.CSSProperties = {};
@@ -589,7 +544,7 @@ export function useGridLayout({
     }
     return style;
   }, [
-    freeTiles,
+    ownTracks,
     customGrid,
     gridMode,
     gridCount,
@@ -601,6 +556,7 @@ export function useGridLayout({
     cell,
     headerH,
     tileMinH,
+    tileFloorH,
   ]);
 
   // Where each tile sits in the laid-out order. `displayIndex` is a position in
@@ -623,9 +579,7 @@ export function useGridLayout({
   const spanRows = gridPrefs.itemRows == null;
   const tileSpan = useCallback(
     (slot: number): React.CSSProperties | undefined =>
-      freeTiles
-        ? undefined
-        : tileSpanFor({
+      tileSpanFor({
         slot,
         count: gridCount,
         cols: effectiveCols,
@@ -633,7 +587,19 @@ export function useGridLayout({
         spanCols,
         spanRows,
       }),
-    [freeTiles, rowFill, effectiveCols, gridCount, spanCols, spanRows],
+    [rowFill, effectiveCols, gridCount, spanCols, spanRows],
+  );
+  const placement = useCallback(
+    (slot: number) =>
+      tilePlacement({
+        slot,
+        count: gridCount,
+        cols: effectiveCols,
+        twoUpSplit,
+        twoUpFits,
+        rowFill,
+      }),
+    [gridCount, effectiveCols, twoUpSplit, twoUpFits, rowFill],
   );
 
   return {
@@ -657,14 +623,15 @@ export function useGridLayout({
     resetTileSize,
     lockedTiles,
     toggleLockedTiles,
-    setTileCols,
-    setTileRows,
-    freeTiles,
-    hasTileSizes,
-    freeTileStyle,
+    splitGrid,
+    hasTracks,
+    trackShape,
+    placement,
     cell,
     headerH,
     tileMinH,
+    splitMinH,
+    tileFloorH,
     strictGrid,
     gridSlot,
     effectiveCols,
