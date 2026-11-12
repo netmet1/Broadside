@@ -198,8 +198,15 @@ export function useSnapshots({
       showTerminals();
       const skipped = plans.reduce((n, p) => n + p.skipped.length, 0);
       if (skipped > 0) {
+        // Why, and not only how many: three PowerShell tabs on a Mac without
+        // pwsh are one reason, said once, and an operator told only "3
+        // sessions" is left to work out which three. Two reasons at most, so
+        // a toast stays a toast.
+        const reasons = [...new Set(plans.flatMap((p) => p.skipped))];
+        const said = reasons.slice(0, 2).join(" ");
+        const more = reasons.length > 2 ? ` (and ${reasons.length - 2} more)` : "";
         toast.warning(
-          `${skipped} ${skipped === 1 ? "session" : "sessions"} in "${snapshot.name}" could not open on this machine.`,
+          `${skipped} ${skipped === 1 ? "session" : "sessions"} in "${snapshot.name}" could not open. ${said}${more}`,
         );
       }
     },
