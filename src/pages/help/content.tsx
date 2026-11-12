@@ -25,7 +25,7 @@ import { type ReactNode } from "react";
 
 import { IS_MAC, SHORTCUTS } from "@/lib/platform";
 import { ShortcutMatrix, WarningMatrix } from "@/pages/help/matrices";
-import { Keys, OnMac, OnWindows, Plat } from "@/pages/help/platform";
+import { IfPowershell, Keys, OnMac, OnWindows, Plat } from "@/pages/help/platform";
 import {
   HELP_HOSTS,
   HELP_SKILLS,
@@ -1125,8 +1125,11 @@ export const SECTIONS: HelpSection[] = [
               </OnWindows>
               <OnMac>
                 Detection only finds the shells in <code>/etc/shells</code>. For
-                anything else, such as a shell you have not registered there or
-                PowerShell (<code>pwsh</code>), open <Nav>Settings</Nav> and the{" "}
+                anything else, such as a shell you have not registered there
+                <IfPowershell>
+                  {" "}or PowerShell (<code>pwsh</code>)
+                </IfPowershell>
+                , open <Nav>Settings</Nav> and the{" "}
                 <Nav>Custom terminals</Nav> section and add it yourself.
               </OnMac>
             </li>
@@ -1175,7 +1178,11 @@ export const SECTIONS: HelpSection[] = [
               coloured by the kind of shell (one colour each for{" "}
               <Plat
                 win="PowerShell, Command Prompt, WSL, Bash-like terminals and serial"
-                mac="Bash-like shells such as zsh, PowerShell and serial"
+                mac={
+                  <IfPowershell without="Bash-like shells such as zsh and bash, and serial">
+                    Bash-like shells such as zsh, PowerShell and serial
+                  </IfPowershell>
+                }
               />
               ), so you can
               see at a glance which command language you are about to type in.
@@ -1691,11 +1698,13 @@ export const SECTIONS: HelpSection[] = [
                 <Plat win="SSH / WSL (Linux)" mac="SSH / local shells (Unix)" />
               </Nav>
               ,{" "}
-              <Nav>
-                <Plat win="Command Prompt / PowerShell" mac="PowerShell" />
-              </Nav>
-              , <Nav>Both</Nav> for commands that work in either (for example
-              whoami), or{" "}
+              <IfPowershell without="or ">
+                <Nav>
+                  <Plat win="Command Prompt / PowerShell" mac="PowerShell" />
+                </Nav>
+                , <Nav>Both</Nav> for commands that work in either (for example
+                whoami), or{" "}
+              </IfPowershell>
               <Nav>
                 <Plat win="Serial console (COM port)" mac="Serial console" />
               </Nav>
@@ -1710,8 +1719,10 @@ export const SECTIONS: HelpSection[] = [
               <OnMac>
                 The dropdown only offers shortcuts that suit the current tab. A
                 Mac's own shells (zsh, bash) speak the same language as an SSH
-                host, so they use the SSH ones; the PowerShell scope is for a
-                PowerShell custom terminal.
+                host, so they use the SSH ones
+                <IfPowershell without=".">
+                  ; the PowerShell scope is for a PowerShell custom terminal.
+                </IfPowershell>
               </OnMac>
             </li>
             <li>
@@ -1844,7 +1855,10 @@ export const SECTIONS: HelpSection[] = [
                 }
                 mac={
                   <>
-                    <Nav>PowerShell</Nav>, <Nav>Local shells</Nav>
+                    <IfPowershell>
+                      <Nav>PowerShell</Nav>,{" "}
+                    </IfPowershell>
+                    <Nav>Local shells</Nav>
                   </>
                 }
               />{" "}
@@ -1884,13 +1898,20 @@ export const SECTIONS: HelpSection[] = [
           <H3>
             <Plat
               win="Local shells (PowerShell, Command Prompt, WSL)"
-              mac="Local shells (PowerShell, zsh, bash)"
+              mac={
+                <IfPowershell without="Local shells (zsh, bash)">
+                  Local shells (PowerShell, zsh, bash)
+                </IfPowershell>
+              }
               both="Local shells (PowerShell, Command Prompt, WSL; zsh and bash on a Mac)"
             />
           </H3>
           <Bullets>
             <li>
-              The <Plat win="three" mac="two" /> local tabs fan a command out to the shells running on{" "}
+              <IfPowershell without="The Local shells tab fans">
+                The <Plat win="three" mac="two" /> local tabs fan
+              </IfPowershell>{" "}
+              a command out to the shells running on{" "}
               <em>this machine</em>. A persistent yellow banner marks the danger:
               the command runs in every checked shell immediately, with no undo.
             </li>
@@ -2541,7 +2562,9 @@ export const SECTIONS: HelpSection[] = [
             <li>
               <Nav>Shortcut commands</Nav>: reusable commands for the dropdown on
               the Terminals and Broadcast pages, each for{" "}
-              <Plat win="Linux, Windows" mac="Unix shells, PowerShell" />, both,
+              <IfPowershell without="Unix shells">
+                <Plat win="Linux, Windows" mac="Unix shells, PowerShell" />, both,
+              </IfPowershell>{" "}
               or serial consoles. See{" "}
               <SectionLink id="help-sec-terminals">Terminals</SectionLink>.
             </li>

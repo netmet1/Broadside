@@ -210,6 +210,20 @@ pub async fn list_local_shells() -> Vec<crate::local::LocalShell> {
     crate::local::list_local_shells_cached().await
 }
 
+/// Whether PowerShell 7 is installed (always true on Windows). A Mac without
+/// it leaves PowerShell out of the app: the shortcut scopes, the colour row,
+/// the broadcast family and the custom terminal family. A custom terminal the
+/// operator has declared as PowerShell counts, wherever its program lives.
+#[tauri::command]
+pub async fn powershell_installed(state: State<'_, DbState>) -> AppResult<bool> {
+    let custom = with_db(&state, crate::db::custom_terminals::list)?
+        .into_iter()
+        .filter(|t| t.family == crate::db::custom_terminals::FAMILY_POWERSHELL)
+        .map(|t| t.exe_path)
+        .collect();
+    Ok(crate::local::powershell_installed(custom).await)
+}
+
 /// The serial ports on this machine, for the "New local shell" launcher's serial
 /// section. Not cached, unlike the shell list: a USB serial adapter is meant to
 /// be unplugged, and the enumeration is only a registry read (IOKit on macOS).

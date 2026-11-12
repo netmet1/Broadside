@@ -74,6 +74,26 @@ pub fn prewarm_shells() {
     });
 }
 
+/// Whether PowerShell 7 is installed, for whether the app mentions PowerShell
+/// at all. Always true on Windows, which has Windows PowerShell whatever else is
+/// there. On macOS it is looked for every time it is asked (Settings asks each
+/// time it is shown), so installing it needs no restart; `custom` is the
+/// programs of the custom terminals declared as PowerShell. Async because the
+/// look can start the login shell, which must never hold up the IPC thread.
+pub async fn powershell_installed(custom: Vec<String>) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(move || macos::powershell_installed(&custom))
+            .await
+            .unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        let _ = custom;
+        true
+    }
+}
+
 /// A user-defined terminal application resolved from the database, ready to
 /// launch. The command layer looks a `custom:<id>` shell id up and hands the
 /// row's stored program and arguments over; nothing here ever sees a path that

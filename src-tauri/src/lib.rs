@@ -245,6 +245,7 @@ pub fn run() {
             commands::pty::pty_open_local,
             commands::pty::list_local_shells,
             commands::pty::list_serial_ports,
+            commands::pty::powershell_installed,
             commands::pty::list_custom_terminals,
             commands::pty::create_custom_terminal,
             commands::pty::update_custom_terminal,

@@ -15,6 +15,8 @@ import {
   SHELL_KINDS,
   type ShellKind,
 } from "@/lib/terminalColors";
+import { IS_MAC } from "@/lib/platform";
+import { usePowershellInstalled } from "@/lib/powershell";
 
 /**
  * Settings -> Custom terminals -> the tab colours block.
@@ -34,6 +36,7 @@ import {
  */
 export function TerminalColorsBlock() {
   const [colors, setColors] = useState(loadShellColors);
+  const powershell = usePowershellInstalled();
 
   const set = (kind: ShellKind, color: string | null) => {
     const next = { ...colors, [kind]: color };
@@ -77,7 +80,8 @@ export function TerminalColorsBlock() {
       </div>
 
       <ul className="space-y-2">
-        {LOCAL_SHELL_KINDS.map((kind) => {
+        {/* No PowerShell row on a Mac without PowerShell (lib/powershell). */}
+        {LOCAL_SHELL_KINDS.filter((k) => powershell || k !== "powershell").map((kind) => {
           const color = colors[kind];
           return (
             <li key={kind} className="flex flex-wrap items-center gap-1.5">
@@ -144,7 +148,11 @@ export function TerminalColorsBlock() {
 
       <p className="text-[10px] text-muted-foreground">
         A custom terminal takes the colour of the command language it declares,
-        so Git Bash and MSYS2 are both Bash-like and wear the same colour.
+        so{" "}
+        {IS_MAC
+          ? "a Homebrew bash and fish are both Bash-like"
+          : "Git Bash and MSYS2 are both Bash-like"}{" "}
+        and wear the same colour.
         Serial ships with no colour: a console cable is the one session that is
         a piece of hardware rather than a program, and leaving it plain is what
         makes the coloured tabs read as the shells.

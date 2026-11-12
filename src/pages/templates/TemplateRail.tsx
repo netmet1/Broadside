@@ -9,7 +9,7 @@ import type { ShellProfile } from "@/lib/localShellProfiles";
 import { isTintable } from "@/lib/terminalColors";
 import { useHint } from "@/lib/status";
 import type { RailFilter } from "@/lib/useRailFilter";
-import { FALLBACK_SHELL_KIND } from "@/lib/platform";
+import { FALLBACK_SHELL_KIND, IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
 import {
@@ -146,8 +146,9 @@ export function TemplateRail({
         <Group title="Custom terminals" count={customTerminals.length}>
           {customTerminals.length === 0 ? (
             <Note>
-              None yet. Add one in Settings, Terminals (Git Bash, MSYS2,
-              Cygwin).
+              {IS_MAC
+                ? "None yet. Add one in Settings, Custom terminals (fish, or any other shell)."
+                : "None yet. Add one in Settings, Terminals (Git Bash, MSYS2, Cygwin)."}
             </Note>
           ) : (
             customTerminals.map((s) => (

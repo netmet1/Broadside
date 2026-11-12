@@ -183,3 +183,103 @@ fn utf8_locale() -> &'static str {
 pub(super) fn home_dir() -> Option<String> {
     std::env::var("HOME").ok()
 }
+
+/// Where the PowerShell installers put `pwsh`: Homebrew on Apple silicon, then
+/// on Intel, then Microsoft's own `.pkg` (which also links `/usr/local/bin`).
+const PWSH_PLACES: [&str; 3] = [
+    "/opt/homebrew/bin/pwsh",
+    "/usr/local/bin/pwsh",
+    "/usr/local/microsoft/powershell/7/pwsh",
+];
+
+/// How long the login shell gets to say where `pwsh` is. A profile that waits
+/// on the network can take a while, and the answer is only ever a nicety.
+const LOGIN_LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Whether PowerShell 7 is on this Mac, for whether the app talks about it at
+/// all. `custom` is the programs of the custom terminals the operator has said
+/// are PowerShell: one of those that is really there counts, wherever it is.
+///
+/// Cheapest first: the usual places, `/etc/shells` (the `.pkg` registers it),
+/// the app's own `PATH`, and only then the login shell's `PATH`, which is the
+/// one a Dock-launched app does not have and the one that knows about a `pwsh`
+/// somewhere unusual. Blocking: it can start a shell, so it runs off the IPC
+/// thread.
+pub(crate) fn powershell_installed(custom: &[String]) -> bool {
+    if custom.iter().any(|p| is_program(Path::new(p))) {
+        return true;
+    }
+    if PWSH_PLACES.iter().any(|p| is_program(Path::new(p))) {
+        return true;
+    }
+    if shells().iter().any(|s| s.name == "pwsh") {
+        return true;
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        if std::env::split_paths(&path).any(|d| is_program(&d.join("pwsh"))) {
+            return true;
+        }
+    }
+    login_shell_finds_pwsh()
+}
+
+/// Asks the operator's login shell, run as a login shell so its profile sets
+/// `PATH`, where `pwsh` is. Only a path to a real program counts: a profile
+/// may print a banner, so the last line is the one read.
+fn login_shell_finds_pwsh() -> bool {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    let shell = login_shell()
+        .filter(|p| is_program(p))
+        .unwrap_or_else(|| PathBuf::from("/bin/zsh"));
+    let Ok(mut child) = Command::new(&shell)
+        .args(["-l", "-c", "command -v pwsh"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if started.elapsed() < LOGIN_LOOKUP_TIMEOUT => {
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+    let mut out = String::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        let _ = stdout.read_to_string(&mut out);
+    }
+    out.lines()
+        .map(str::trim)
+        .rfind(|l| !l.is_empty())
+        .map(Path::new)
+        .is_some_and(|p| p.is_absolute() && is_program(p))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_powershell_custom_terminal_that_is_there_counts() {
+        assert!(powershell_installed(&["/bin/sh".to_string()]));
+    }
+
+    #[test]
+    fn the_login_shell_lookup_answers_without_hanging() {
+        let started = std::time::Instant::now();
+        let _ = login_shell_finds_pwsh();
+        assert!(started.elapsed() < LOGIN_LOOKUP_TIMEOUT + std::time::Duration::from_secs(1));
+    }
+}
