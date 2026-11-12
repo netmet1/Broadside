@@ -47,6 +47,7 @@ import {
   pasteBytes,
 } from "@/lib/terminalClipboard";
 import { watchStatusFooter } from "@/lib/terminalFooter";
+import { attachGpuRenderer } from "@/lib/terminalWebgl";
 import { relayHeldMouse } from "@/lib/terminalMouseRelay";
 import { useReachability } from "@/lib/useReachability";
 import { useHint } from "@/lib/status";
@@ -578,6 +579,24 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     fitRef.current = fit;
     const footer = watchStatusFooter(term);
     footerRef.current = footer;
+    // Refit a pane that has pixels on screen, keeping a viewport that was
+    // pinned to the bottom there. Only ever called while it is on screen: see
+    // the IntersectionObserver below for why a hidden pane is never fitted.
+    const refitOnScreen = () =>
+      footer.fit(fit, () => {
+        const buf = term.buffer.active;
+        const pinned = buf.viewportY >= buf.baseY;
+        fit.fit();
+        if (pinned) term.scrollToBottom();
+      });
+    // The GPU renderer, when the budget of WebGL contexts allows it, and the
+    // DOM renderer until then (see `terminalWebgl.ts`). A change of renderer
+    // can change the cell size, so a pane on screen is refitted after one.
+    const gpu = attachGpuRenderer(
+      term,
+      () => intersectingRef.current,
+      refitOnScreen,
+    );
     searchRef.current = search;
 
     const resultsSub = search.onDidChangeResults(({ resultIndex, resultCount }) => {
@@ -832,12 +851,11 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       const entry = entries[entries.length - 1];
       intersectingRef.current = entry.isIntersecting;
       if (!entry.isIntersecting) return;
-      footer.fit(fit, () => {
-        const buf = term.buffer.active;
-        const pinned = buf.viewportY >= buf.baseY;
-        fit.fit();
-        if (pinned) term.scrollToBottom();
-      });
+      // A pane waiting for a WebGL slot takes one here, and a pane the
+      // setting was turned off under lets its go, on the way back on screen
+      // and before the refit, never while hidden.
+      gpu.sync();
+      refitOnScreen();
     });
     if (containerRef.current) io.observe(containerRef.current);
 
@@ -1023,6 +1041,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       contextMenuEl?.removeEventListener("paste", onPaste, true);
       unlistenData.then((fn) => fn());
       unlistenClosed.then((fn) => fn());
+      gpu.dispose();
       term.dispose();
       ptyClose(sessionId).catch(() => {});
       onConnectionChangeRef.current?.(sessionId, false);
@@ -1543,8 +1562,17 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
 
           A literal 2px, not `pl-0.5`: rem follows the app font size and a
           terminal cell does not, so a rem gutter would grow against text that
-          had not moved. */}
-      <div ref={containerRef} className="h-full w-full pl-[2px]" />
+          had not moved.
+
+          `isolate` keeps xterm's own layers inside this box. xterm gives some
+          of them a z-index (its scrollbar 11, its helpers 5, and the WebGL
+          renderer's link canvas 2, which covers the whole pane), and without a
+          stacking context of its own here those numbers competed with the
+          panes drawn over the terminal below, none of which has one: with the
+          GPU renderer on, the link canvas sat on top of the failed-connect
+          panel and the disconnected banner and took every click meant for Try
+          again, Reconnect and Close tab. */}
+      <div ref={containerRef} className="isolate h-full w-full pl-[2px]" />
       {/* Back to the live end, for a pane you have scrolled up in.
           Ctrl+End does it and so does typing anything, but neither is
           discoverable, and reading something a thousand lines back and then

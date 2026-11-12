@@ -2537,7 +2537,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-settings",
     title: "Settings",
     keywords:
-      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored profile struck through after a restore profile lost its custom shell profile points at nothing which custom shell did it use name of the wanted shell remembered re-add the shell then edit has it chosen already backup from someone else untrusted backup file restore removed my saved passwords host changed in the backup restore locked admin passcode startup start page open on which tab first tab home greyed template holds startup panel table of contents left side section list highlight follows scroll jump to hidden narrow window profile table columns profiles columns hide shell folder startup command column restore warning disappeared too fast restore closed my terminals tabs gone after restore reset closed my sessions right-click right click mouse programs tmux claude code paste twice" +
+      "settings performance network probe destructive guard shortcut commands appearance theme columns column order drag reorder reset defaults chips drag a chip reorder from settings sessions session timeout idle keep alive keepalive backup restore csv hosts audit security admin lock reset jump search danger zone delete wipe all hosts credentials terminal font family dropdown list monospace fixed width installed fonts my font is missing cannot find my font nerd font cascadia consolas jetbrains fira code hack typeface change the font picker preview restart to see a new font applies instantly no save needed save font sizes button which settings need saving why is there a save button font applies as you pick it skills skill log where to log logging type output style remote history bash_history up arrow recall keep my history clean summary itemized run panel debug restore only a backup you made yourself trusted host keys not restored custom local shells not restored profile struck through after a restore profile lost its custom shell profile points at nothing which custom shell did it use name of the wanted shell remembered re-add the shell then edit has it chosen already backup from someone else untrusted backup file restore removed my saved passwords host changed in the backup restore locked admin passcode startup start page open on which tab first tab home greyed template holds startup panel table of contents left side section list highlight follows scroll jump to hidden narrow window profile table columns profiles columns hide shell folder startup command column restore warning disappeared too fast restore closed my terminals tabs gone after restore reset closed my sessions right-click right click mouse programs tmux claude code paste twice gpu webgl draw terminals with the gpu graphics renderer slow scrolling" +
       onMac("keychain cmd command key menlo sf mono zsh fish"),
     body: (
       <>
@@ -2555,7 +2555,8 @@ export const SECTIONS: HelpSection[] = [
               startup, because that always opens on <Nav>Terminals</Nav>.
             </li>
             <li>
-              <Nav>Performance</Nav>: how many hosts the app talks to at once.
+              <Nav>Performance</Nav>: how many hosts the app talks to at once,
+              and <Nav>Draw terminals with the GPU (WebGL)</Nav>, on by default.
             </li>
             <li>
               <Nav>Network probe</Nav>: how the app checks whether hosts are
@@ -2779,7 +2780,7 @@ export const SECTIONS: HelpSection[] = [
     id: "help-sec-system",
     title: "System requirements",
     keywords:
-      "already running another instance second copy open twice multiple instances warning dont ask me again turn back on dismissed warnings system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install antivirus defender windows security false positive quarantine flagged virus trojan bearfoos ml detection code signing unsigned publisher unknown smartscreen sha256 checksum verify protection history restore exclusion" +
+      "already running another instance second copy open twice multiple instances warning dont ask me again turn back on dismissed warnings system requirements specs spec minimum recommended hardware ram memory cpu processor cores disk space storage free windows 10 11 version 1809 64-bit x64 arm64 webview2 runtime edge resolution display screen monitor network latency conpty administrator admin rights install antivirus defender windows security false positive quarantine flagged virus trojan bearfoos ml detection code signing unsigned publisher unknown smartscreen sha256 checksum verify protection history restore exclusion gpu webgl graphics acceleration renderer drawing slow scrolling laggy scroll scrolling is slow long output virtual machine remote desktop text looks wrong" +
       onMac(
         "macos mac ventura sonoma sequoia apple silicon m1 m2 m3 m4 intel universal webkit gatekeeper cannot be opened unidentified developer open anyway control click notarized notarization damaged local network privacy no route to host keychain always allow asks again after update dmg applications shasum",
       ),
@@ -2958,6 +2959,17 @@ export const SECTIONS: HelpSection[] = [
               Memory use grows with the number of open terminals and how much
               scrollback each keeps (<Nav>Settings</Nav> &rarr;{" "}
               <Nav>Appearance</Nav> &rarr; <Nav>Terminal scrollback</Nav>).
+            </li>
+            <li>
+              Terminals are drawn with the GPU (WebGL), which keeps scrolling
+              through long output quick, even with many tiles in a grid. Up to 14
+              terminals use it at a time; any more are drawn the standard way
+              until one of those closes. If terminal text looks wrong, or the
+              computer has no graphics acceleration (some virtual machines and
+              Remote Desktop sessions), untick{" "}
+              <Nav>Draw terminals with the GPU (WebGL)</Nav> in{" "}
+              <Nav>Settings</Nav> &rarr; <Nav>Performance</Nav>. A computer
+              that can&apos;t do WebGL draws them the standard way by itself.
             </li>
             <li>
               Disk use grows with saved sessions, the audit log and backups, all
