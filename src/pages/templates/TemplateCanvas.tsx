@@ -11,6 +11,7 @@ import {
 import {
   GRID_PREFS_EVENT,
   isAutoGrid,
+  loadGridMinWidth,
   loadGridPrefs,
   loadRowFill,
   type RowFill,
@@ -19,20 +20,21 @@ import {
   TILE_BORDER_X,
   defaultGridStyle,
   fitsTwoUp,
-  gridTrackCounts,
+  flowGridStyle,
+  flowLayout,
+  flowPlace,
   tileSpan,
-  tracksFor,
   twoUpThresholdPx,
-  type GridTracks,
 } from "@/lib/gridShape";
 import { useGridFields } from "@/lib/gridFields";
 import { measureTerminalCell } from "@/lib/terminalCell";
 import { useHint } from "@/lib/status";
-import type { TemplateItem } from "@/lib/tauri/templates";
+import type { TemplateItem, TemplateLayout } from "@/lib/tauri/templates";
 import { MAX_TEMPLATE_ITEMS } from "@/lib/tauri/templates";
 import { useUiPrefs } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
 import { LocalShellIcon } from "@/pages/terminals/LocalShellIcon";
+import { layoutWidths } from "@/pages/terminals/gridTemplate";
 import { DRAG_BOX_PREFIX, parseDrag } from "@/pages/templates/drag";
 import { itemKey, resolveItem, type ItemSources } from "@/pages/templates/items";
 
@@ -101,7 +103,7 @@ export function TemplateCanvas({
    * open Grid settings panel has to be shut from here. */
   visible: boolean;
   /** Grid sizes saved with this template, or null for an even split. */
-  layout: GridTracks | null;
+  layout: TemplateLayout | null;
   /** Drop the saved sizes, so it opens evenly. */
   onForgetLayout: () => void;
 }) {
@@ -124,10 +126,12 @@ export function TemplateCanvas({
   // event the Terminals grid listens on.
   const [gridPrefs, setGridPrefs] = useState(loadGridPrefs);
   const [rowFill, setRowFill] = useState<RowFill>(loadRowFill);
+  const [minWidthPct, setMinWidthPct] = useState<number>(loadGridMinWidth);
   useEffect(() => {
     const reload = () => {
       setGridPrefs(loadGridPrefs());
       setRowFill(loadRowFill());
+      setMinWidthPct(loadGridMinWidth());
     };
     window.addEventListener(GRID_PREFS_EVENT, reload);
     window.addEventListener("storage", reload);
@@ -199,22 +203,36 @@ export function TemplateCanvas({
   const spanCols = gridPrefs.itemCols == null;
   const spanRows = gridPrefs.itemRows == null;
 
-  // The saved sizes, when the grid this would open into is the default one
-  // (a size pinned in Settings is the last word, there as here) and has the
-  // shape they were saved for.
-  const shape = gridTrackCounts({ count, cols, twoUpSplit: "cols", twoUpFits });
-  const ownTracks = isAutoGrid(gridPrefs) ? tracksFor(layout, shape) : null;
+  // The default grid is laid out in rows the way the Terminals tab lays it
+  // out, with the saved widths and row heights (see lib/gridShape's
+  // flowLayout). A size pinned in Settings is the last word, there as here,
+  // so then the saved sizes wait.
+  const autoGrid = isAutoGrid(gridPrefs);
+  const flow = autoGrid
+    ? flowLayout({
+        widths: layoutWidths(layout, count),
+        // A template does not store the two-up top/bottom flip, so two
+        // sessions get the grid's own default, side by side where the pane is
+        // wide enough.
+        cols: count <= 1 ? 1 : count === 2 ? (twoUpFits ? 2 : 1) : cols,
+        min: minWidthPct / 100,
+        rowFill,
+      })
+    : null;
 
-  const gridStyle = defaultGridStyle({
-    count,
-    cols,
-    // A template does not store the two-up top/bottom flip, so two sessions
-    // get the grid's own default, side by side where the pane is wide enough.
-    twoUpSplit: "cols",
-    twoUpFits,
-    tileMinH: PREVIEW_TILE_MIN_H,
-    tracks: ownTracks,
-  });
+  const gridStyle = flow
+    ? flowGridStyle(
+        flow,
+        layout?.rows,
+        count <= 2 ? "0" : `${PREVIEW_TILE_MIN_H}px`,
+      )
+    : defaultGridStyle({
+        count,
+        cols,
+        twoUpSplit: "cols",
+        twoUpFits,
+        tileMinH: PREVIEW_TILE_MIN_H,
+      });
 
   // Which box the pointer is currently over, so a drop has somewhere visible
   // to land. Null when the drag is elsewhere or there is none.
@@ -272,14 +290,16 @@ export function TemplateCanvas({
         <div className="grid h-full min-h-0 gap-2" style={gridStyle}>
           {items.map((item, i) => {
             const r = resolveItem(item, sources);
-            const span = tileSpan({
-              slot: i,
-              count,
-              cols,
-              rowFill,
-              spanCols,
-              spanRows,
-            });
+            const span = flow
+              ? flowPlace(flow, i)
+              : tileSpan({
+                  slot: i,
+                  count,
+                  cols,
+                  rowFill,
+                  spanCols,
+                  spanRows,
+                });
             return (
               <div
                 key={itemKey(item, i)}
@@ -444,13 +464,9 @@ export function TemplateCanvas({
         {layout && (
           <>
             {" "}
-            {ownTracks
-              ? "Rows and columns keep the sizes saved from the Terminals grid."
-              : `Has sizes saved from a grid of ${layout.rows.length} ${
-                  layout.rows.length === 1 ? "row" : "rows"
-                } by ${layout.cols.length} ${
-                  layout.cols.length === 1 ? "column" : "columns"
-                }; laid out like this, it opens evenly.`}{" "}
+            {autoGrid
+              ? "Keeps the tile widths and row heights saved from the Terminals grid."
+              : "Has sizes saved from the Terminals grid; a size pinned in Settings > Grid is used instead."}{" "}
             <button
               type="button"
               onClick={onForgetLayout}

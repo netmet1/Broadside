@@ -1,39 +1,49 @@
-import type { TilePlacement } from "@/lib/gridShape";
+import type { FlowLine, FlowTile } from "@/lib/gridShape";
 import type { SplitLine } from "@/pages/terminals/useGridSplitters";
 
 /**
- * The drag strips on a grid tile's shared edges while the tiles are unlocked.
- * Each strip moves the line it sits on: the top edge is the line above this
- * tile's first row, the bottom edge the line below its last, and the same for
- * left and right. An edge on the outside of the grid has no line and no strip.
+ * The drag strips on a grid tile's edges while the tiles are unlocked. The top
+ * and bottom strips move the line between this tile's rows and the next; the
+ * left and right ones move the line beside it in its own row (see
+ * useGridSplitters). The right edge of a tile with blank space beside it, or
+ * alone in its row, has a strip too, which sets its width. Every other edge
+ * on the outside of the grid has none.
  *
  * Above the terminal (z-20), because xterm's own scrollbar sits at z 11 and
  * would otherwise take the right edge.
  */
 export function SplitHandles({
-  place,
-  shape,
+  tile,
+  rows,
+  left,
+  right,
   onBegin,
 }: {
-  place: TilePlacement;
-  shape: { rows: number; cols: number };
+  tile: FlowTile;
+  /** How many rows the grid has. */
+  rows: number;
+  left: FlowLine | null;
+  right: FlowLine | null;
   onBegin: (e: React.MouseEvent, line: SplitLine) => void;
 }) {
-  const lastRow = place.row + place.rowSpan - 1;
-  const lastCol = place.col + place.colSpan - 1;
+  const lastRow = tile.row + tile.rowSpan - 1;
   const rowsHint = "Drag to move the line between these rows";
-  const colsHint = "Drag to move the line between these columns";
+  const pairHint =
+    "Drag to move the line between these tiles. Past the minimum width (Settings > Grid), the tile on the right moves down a row";
+  const edgeHint = "Drag to set this tile's width";
+  const sideHint = (line: FlowLine) =>
+    line.kind === "pair" ? pairHint : edgeHint;
   return (
     <>
-      {place.row > 0 && (
+      {tile.row > 0 && (
         <Strip
           className="inset-x-0 top-0 h-1.5 cursor-row-resize"
           orientation="horizontal"
           label={rowsHint}
-          onMouseDown={(e) => onBegin(e, { axis: "rows", index: place.row - 1 })}
+          onMouseDown={(e) => onBegin(e, { axis: "rows", index: tile.row - 1 })}
         />
       )}
-      {lastRow < shape.rows - 1 && (
+      {lastRow < rows - 1 && (
         <Strip
           className="inset-x-0 bottom-0 h-1.5 cursor-row-resize"
           orientation="horizontal"
@@ -41,20 +51,20 @@ export function SplitHandles({
           onMouseDown={(e) => onBegin(e, { axis: "rows", index: lastRow })}
         />
       )}
-      {place.col > 0 && (
+      {left && (
         <Strip
           className="inset-y-0 left-0 w-1.5 cursor-col-resize"
           orientation="vertical"
-          label={colsHint}
-          onMouseDown={(e) => onBegin(e, { axis: "cols", index: place.col - 1 })}
+          label={sideHint(left)}
+          onMouseDown={(e) => onBegin(e, { axis: "cols", line: left })}
         />
       )}
-      {lastCol < shape.cols - 1 && (
+      {right && (
         <Strip
           className="inset-y-0 right-0 w-1.5 cursor-col-resize"
           orientation="vertical"
-          label={colsHint}
-          onMouseDown={(e) => onBegin(e, { axis: "cols", index: lastCol })}
+          label={sideHint(right)}
+          onMouseDown={(e) => onBegin(e, { axis: "cols", line: right })}
         />
       )}
     </>

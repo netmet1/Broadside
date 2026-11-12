@@ -17,6 +17,7 @@ const ITEM_COLS_KEY = "terminal-grid-item-cols";
 const ITEM_ROWS_KEY = "terminal-grid-item-rows";
 const STRICT_KEY = "terminal-grid-strict";
 const ROW_FILL_KEY = "terminal-grid-row-fill";
+const MIN_WIDTH_KEY = "terminal-grid-min-width";
 const SEED_COLS_KEY = "terminal-grid-seed-cols";
 const SEED_ITEM_COLS_KEY = "terminal-grid-seed-item-cols";
 const SEED_ITEM_ROWS_KEY = "terminal-grid-seed-item-rows";
@@ -145,6 +146,27 @@ export function loadRowFill(): RowFill {
 export function saveRowFill(v: RowFill): void {
   localStorage.setItem(ROW_FILL_KEY, v);
   announce();
+}
+
+/** How narrow a tile may be dragged with the tiles unlocked, as a percentage
+ * of the grid's width. Dragging the line between two tiles so the one on the
+ * right would be at or under this moves it down to the next row instead, and
+ * the tile on the left keeps the width it was given. */
+export const GRID_MIN_WIDTH_MIN = 10;
+export const GRID_MIN_WIDTH_MAX = 50;
+export const DEFAULT_GRID_MIN_WIDTH = 15;
+
+export function loadGridMinWidth(): number {
+  return clampInt(
+    localStorage.getItem(MIN_WIDTH_KEY),
+    DEFAULT_GRID_MIN_WIDTH,
+    GRID_MIN_WIDTH_MIN,
+    GRID_MIN_WIDTH_MAX,
+  );
+}
+
+export function saveGridMinWidth(v: number): void {
+  writeSeed(MIN_WIDTH_KEY, v, GRID_MIN_WIDTH_MIN, GRID_MIN_WIDTH_MAX);
 }
 
 /**

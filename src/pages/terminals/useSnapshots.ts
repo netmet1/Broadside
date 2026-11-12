@@ -32,7 +32,12 @@ import {
   termSessionsFor,
   type LaunchPlan,
 } from "@/pages/templates/launch";
-import { sessionTemplateItem } from "@/pages/terminals/gridTemplate";
+import type { GridSizes } from "@/lib/gridShape";
+import {
+  layoutFromSizes,
+  sessionTemplateItem,
+  sizesFromLayout,
+} from "@/pages/terminals/gridTemplate";
 import type { TermSession } from "@/pages/terminals/session";
 import type { Workspace, WorkspaceExtras } from "@/pages/terminals/useWorkspaces";
 
@@ -55,6 +60,7 @@ export function useSnapshots({
   activeWorkspaceId,
   createWorkspace,
   adoptIfBlank,
+  setWorkspaceSizes,
 }: {
   sessions: TermSession[];
   setSessions: React.Dispatch<React.SetStateAction<TermSession[]>>;
@@ -65,6 +71,7 @@ export function useSnapshots({
   activeWorkspaceId: string;
   createWorkspace: (name?: string, color?: string, extras?: WorkspaceExtras) => string;
   adoptIfBlank: (name: string, color: string, extras?: WorkspaceExtras) => string | null;
+  setWorkspaceSizes: (id: string, sizes: GridSizes | null) => void;
 }) {
   /** What is open, as a snapshot: every workspace with a tab a snapshot can
    * hold, and how many tabs it could not (a serial console names a port on
@@ -79,16 +86,19 @@ export function useSnapshots({
     const kept: SnapshotWorkspace[] = [];
     for (const w of workspaces) {
       const tabs = sessions.filter((s) => s.workspaceId === w.id);
-      const items = tabs.flatMap((s) => sessionTemplateItem(s) ?? []);
-      skipped += tabs.length - items.length;
-      if (items.length === 0) continue;
+      const saved = tabs.flatMap((s) => {
+        const item = sessionTemplateItem(s);
+        return item ? [{ id: s.id, item }] : [];
+      });
+      skipped += tabs.length - saved.length;
+      if (saved.length === 0) continue;
       if (w.id === activeWorkspaceId) active = kept.length;
       kept.push({
         name: w.name,
         color: w.color,
         named: w.named,
-        layout: w.tracks,
-        items,
+        layout: layoutFromSizes(w.sizes, saved.map((t) => t.id)),
+        items: saved.map((t) => t.item),
       });
     }
     if (kept.length === 0) return null;
@@ -158,7 +168,7 @@ export function useSnapshots({
       snapshot.workspaces.forEach((w, i) => {
         const plan = plans[i];
         if (!plan || plan.sessions.length === 0) return;
-        const extras = { tracks: w.layout, held };
+        const extras = { held };
         let id: string | null = null;
         if (!usedBlank) {
           // An empty, unnamed workspace on screen takes the first one, as it
@@ -168,6 +178,16 @@ export function useSnapshots({
         }
         id ??= createWorkspace(w.name, w.color, extras);
         const tabs = termSessionsFor(plan.sessions, id, !held, nextSeq);
+        if (w.layout) {
+          setWorkspaceSizes(
+            id,
+            sizesFromLayout(
+              w.layout,
+              tabs.map((t) => t.id),
+              plan.skipped.length === 0,
+            ),
+          );
+        }
         if (i === snapshot.active || landing === null) landing = tabs[0]!.id;
         made.push(...tabs);
       });
@@ -182,7 +202,15 @@ export function useSnapshots({
         );
       }
     },
-    [adoptIfBlank, createWorkspace, nextSeq, setSessions, setActiveSessionId, showTerminals],
+    [
+      adoptIfBlank,
+      createWorkspace,
+      setWorkspaceSizes,
+      nextSeq,
+      setSessions,
+      setActiveSessionId,
+      showTerminals,
+    ],
   );
 
   const [pending, setPending] = useState<PendingSnapshot | null>(null);

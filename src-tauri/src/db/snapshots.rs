@@ -283,7 +283,8 @@ mod tests {
         let mut first = ws("Ops", 3);
         first.layout = Some(TemplateLayout {
             rows: vec![1.5, 0.5],
-            cols: vec![1.0, 1.0],
+            cols: vec![],
+            widths: vec![0.7, 0.0, 0.0],
         });
         first.items.push(TemplateItem::Host {
             host_id: Some(7),
@@ -334,7 +335,7 @@ mod tests {
         let mut bad_active = input("x", vec![ws("A", 1)]);
         bad_active.active = 1;
         let mut bad_layout = ws("A", 1);
-        bad_layout.layout = Some(TemplateLayout { rows: vec![0.0], cols: vec![1.0] });
+        bad_layout.layout = Some(TemplateLayout { rows: vec![0.0], cols: vec![1.0], widths: vec![] });
         let mut bad_colour = ws("A", 1);
         bad_colour.color = "red".into();
         for bad in [

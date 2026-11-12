@@ -104,16 +104,24 @@ pub enum TemplateItem {
 /// [`MAX_ITEMS`] sessions can make; a ceiling for a hand-edited file.
 pub const MAX_LAYOUT_TRACKS: usize = 16;
 
-/// How a template's grid shares the pane: one relative size (a CSS `fr`) per
-/// row, top to bottom, and per column, left to right, as the Terminals tab had
-/// them when the template was saved. Fractions, never pixels, so the
-/// arrangement fits any window. Used only while the grid it opens into has
-/// exactly this many rows and columns; otherwise the grid shares the pane
-/// evenly, as a template without one does.
+/// How a template's grid shares the pane, as the Terminals tab had it when the
+/// template was saved. Fractions, never pixels, so the arrangement fits any
+/// window.
+///
+/// - `rows`: one relative size (a CSS `fr`) per row, top to bottom.
+/// - `widths`: one per session, in order: its width as a fraction of the
+///   grid's, or 0 for a session that shares what its row has left.
+/// - `cols`: two column sizes, from a layout saved before sessions had widths
+///   of their own. Still read, so such a template keeps its sizes; written
+///   empty.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TemplateLayout {
+    #[serde(default)]
     pub rows: Vec<f64>,
+    #[serde(default)]
     pub cols: Vec<f64>,
+    #[serde(default)]
+    pub widths: Vec<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,9 +198,9 @@ fn layout_json(layout: &Option<TemplateLayout>) -> AppResult<String> {
 /// a plain number never gets that far.
 pub fn validate_layout(layout: &TemplateLayout) -> AppResult<()> {
     for (what, sizes) in [("rows", &layout.rows), ("columns", &layout.cols)] {
-        if sizes.is_empty() || sizes.len() > MAX_LAYOUT_TRACKS {
+        if sizes.len() > MAX_LAYOUT_TRACKS {
             return Err(AppError::InvalidInput(format!(
-                "a layout has 1 to {MAX_LAYOUT_TRACKS} {what}"
+                "a layout has at most {MAX_LAYOUT_TRACKS} {what}"
             )));
         }
         if sizes.iter().any(|s| !s.is_finite() || *s <= 0.0 || *s > 1000.0) {
@@ -200,6 +208,23 @@ pub fn validate_layout(layout: &TemplateLayout) -> AppResult<()> {
                 "a layout's {what} must be sizes between 0 and 1000"
             )));
         }
+    }
+    if layout.widths.len() > MAX_ITEMS {
+        return Err(AppError::InvalidInput(format!(
+            "a layout has at most {MAX_ITEMS} widths"
+        )));
+    }
+    if layout
+        .widths
+        .iter()
+        .any(|w| !w.is_finite() || *w < 0.0 || *w > 1.0)
+    {
+        return Err(AppError::InvalidInput(
+            "a layout's widths must be fractions between 0 and 1".into(),
+        ));
+    }
+    if layout.rows.is_empty() && layout.cols.is_empty() && layout.widths.is_empty() {
+        return Err(AppError::InvalidInput("a layout cannot be empty".into()));
     }
     Ok(())
 }
@@ -629,7 +654,8 @@ mod tests {
         let mut with = input("sized");
         with.layout = Some(TemplateLayout {
             rows: vec![1.4, 0.6],
-            cols: vec![1.0, 1.0],
+            cols: vec![],
+            widths: vec![0.85, 0.0, 0.0],
         });
         let t = create(&mut conn, &with).unwrap();
         assert_eq!(get(&conn, t.id).unwrap().layout, with.layout);
@@ -638,11 +664,20 @@ mod tests {
         let t = update(&mut conn, t.id, &input("sized")).unwrap();
         assert_eq!(t.layout, None);
 
+        let layout = |rows: Vec<f64>, cols: Vec<f64>, widths: Vec<f64>| TemplateLayout {
+            rows,
+            cols,
+            widths,
+        };
         for bad in [
-            TemplateLayout { rows: vec![], cols: vec![1.0] },
-            TemplateLayout { rows: vec![1.0, -1.0], cols: vec![1.0] },
-            TemplateLayout { rows: vec![1.0], cols: vec![f64::INFINITY] },
-            TemplateLayout { rows: vec![1.0; MAX_LAYOUT_TRACKS + 1], cols: vec![1.0] },
+            layout(vec![], vec![], vec![]),
+            layout(vec![1.0, -1.0], vec![1.0], vec![]),
+            layout(vec![1.0], vec![f64::INFINITY], vec![]),
+            layout(vec![1.0; MAX_LAYOUT_TRACKS + 1], vec![1.0], vec![]),
+            layout(vec![1.0], vec![], vec![1.5]),
+            layout(vec![1.0], vec![], vec![-0.1]),
+            layout(vec![1.0], vec![], vec![f64::NAN]),
+            layout(vec![1.0], vec![], vec![0.5; MAX_ITEMS + 1]),
         ] {
             let mut i = input("bad");
             i.layout = Some(bad);
@@ -666,6 +701,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(get(&conn, t.id).unwrap().layout, None);
+    }
+
+    #[test]
+    fn a_layout_saved_before_widths_still_reads() {
+        let mut conn = open_in_memory().unwrap();
+        let t = create(&mut conn, &input("older")).unwrap();
+        conn.execute(
+            "UPDATE templates SET layout_json = ?1 WHERE id = ?2",
+            params![r#"{"rows":[1.4,0.6],"cols":[0.8,1.2]}"#, t.id],
+        )
+        .unwrap();
+        assert_eq!(
+            get(&conn, t.id).unwrap().layout,
+            Some(TemplateLayout {
+                rows: vec![1.4, 0.6],
+                cols: vec![0.8, 1.2],
+                widths: vec![],
+            })
+        );
     }
 
     #[test]
