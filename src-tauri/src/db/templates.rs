@@ -108,12 +108,13 @@ pub const MAX_LAYOUT_TRACKS: usize = 16;
 /// template was saved. Fractions, never pixels, so the arrangement fits any
 /// window.
 ///
-/// - `rows`: one relative size (a CSS `fr`) per row, top to bottom.
+/// - `heights`: each row's height in lines of the terminal font, top to
+///   bottom.
 /// - `widths`: one per session, in order: its width as a fraction of the
 ///   grid's, or 0 for a session that shares what its row has left.
-/// - `cols`: two column sizes, from a layout saved before sessions had widths
-///   of their own. Still read, so such a template keeps its sizes; written
-///   empty.
+/// - `rows` and `cols`: relative row sizes (a CSS `fr`) and two column sizes,
+///   from a layout saved before rows and sessions had sizes of their own.
+///   Still read, so such a template keeps its sizes; written empty.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TemplateLayout {
     #[serde(default)]
@@ -122,6 +123,8 @@ pub struct TemplateLayout {
     pub cols: Vec<f64>,
     #[serde(default)]
     pub widths: Vec<f64>,
+    #[serde(default)]
+    pub heights: Vec<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,7 +200,11 @@ fn layout_json(layout: &Option<TemplateLayout>) -> AppResult<String> {
 /// of them. The sizes become CSS on the Terminals tab, so a value that is not
 /// a plain number never gets that far.
 pub fn validate_layout(layout: &TemplateLayout) -> AppResult<()> {
-    for (what, sizes) in [("rows", &layout.rows), ("columns", &layout.cols)] {
+    for (what, sizes) in [
+        ("rows", &layout.rows),
+        ("columns", &layout.cols),
+        ("row heights", &layout.heights),
+    ] {
         if sizes.len() > MAX_LAYOUT_TRACKS {
             return Err(AppError::InvalidInput(format!(
                 "a layout has at most {MAX_LAYOUT_TRACKS} {what}"
@@ -223,7 +230,11 @@ pub fn validate_layout(layout: &TemplateLayout) -> AppResult<()> {
             "a layout's widths must be fractions between 0 and 1".into(),
         ));
     }
-    if layout.rows.is_empty() && layout.cols.is_empty() && layout.widths.is_empty() {
+    if layout.rows.is_empty()
+        && layout.cols.is_empty()
+        && layout.widths.is_empty()
+        && layout.heights.is_empty()
+    {
         return Err(AppError::InvalidInput("a layout cannot be empty".into()));
     }
     Ok(())
@@ -653,9 +664,10 @@ mod tests {
         let mut conn = open_in_memory().unwrap();
         let mut with = input("sized");
         with.layout = Some(TemplateLayout {
-            rows: vec![1.4, 0.6],
+            rows: vec![],
             cols: vec![],
             widths: vec![0.85, 0.0, 0.0],
+            heights: vec![30.0, 12.5],
         });
         let t = create(&mut conn, &with).unwrap();
         assert_eq!(get(&conn, t.id).unwrap().layout, with.layout);
@@ -668,6 +680,7 @@ mod tests {
             rows,
             cols,
             widths,
+            heights: vec![],
         };
         for bad in [
             layout(vec![], vec![], vec![]),
@@ -678,6 +691,12 @@ mod tests {
             layout(vec![1.0], vec![], vec![-0.1]),
             layout(vec![1.0], vec![], vec![f64::NAN]),
             layout(vec![1.0], vec![], vec![0.5; MAX_ITEMS + 1]),
+            TemplateLayout { heights: vec![0.0], ..layout(vec![], vec![], vec![]) },
+            TemplateLayout { heights: vec![2000.0], ..layout(vec![], vec![], vec![]) },
+            TemplateLayout {
+                heights: vec![20.0; MAX_LAYOUT_TRACKS + 1],
+                ..layout(vec![], vec![], vec![])
+            },
         ] {
             let mut i = input("bad");
             i.layout = Some(bad);
@@ -718,6 +737,7 @@ mod tests {
                 rows: vec![1.4, 0.6],
                 cols: vec![0.8, 1.2],
                 widths: vec![],
+                heights: vec![],
             })
         );
     }

@@ -42,9 +42,10 @@ export const GRID_COLS_HYSTERESIS_PX = 16;
 export const TILE_BORDER_X = 2;
 export const TILE_BORDER_Y = 2;
 
-/** Legible minimum tile height, in rows **of the terminal font**. Rows fill the
- * pane when few (so a maximized window has no dead space) but never shrink
- * below this, overflowing to a vertical scroll when many.
+/** Legible minimum tile height, in rows **of the terminal font**: the default
+ * for Settings -> Grid's "Minimum tile height". Rows fill the pane when few (so
+ * a maximized window has no dead space) but never shrink below it, overflowing
+ * to a vertical scroll when many.
  *
  * Deliberately not a rem length. `rem` follows the *app* font size (see
  * UiPrefsProvider, which writes it onto the root element) and a terminal cell
@@ -90,16 +91,23 @@ export type TwoUpSplit = "cols" | "rows";
  * by tab rather than by position, so a closed tab takes its width with it and
  * a new one opens at the default.
  *
- * `rows`: each row's height relative to the others (CSS `fr`), top to bottom.
- * By position: a grid with more rows than this gives the new ones an even
- * share and one with fewer ignores the rest, so a row that comes and goes as
- * a tile moves down and back keeps its height.
+ * `heights`: each row's height in lines of the terminal font, top to bottom,
+ * once a row line has been dragged. Lines rather than pixels, so a row keeps
+ * the same number of lines on a laptop and on a wall of monitors. By
+ * position: a grid with more rows than this gives the new ones an even share
+ * of the pane, and one with fewer ignores the rest, so a row that comes and
+ * goes as a tile moves down and back keeps its height. Whether the rows then
+ * fit the pane or scroll is Settings -> Grid's "Fit rows to the window".
  *
- * Fractions rather than pixels or characters, so the same arrangement fits a
- * laptop and a wall of monitors, which is what lets a template or a snapshot
- * carry it.
+ * `rows`: relative row heights (CSS `fr`) from a template or snapshot saved
+ * before rows had heights in lines. Shared out over the pane until a row line
+ * is dragged, which replaces them with `heights`.
  */
-export type GridSizes = { rows: number[]; widths: Record<string, number> };
+export type GridSizes = {
+  heights: number[];
+  widths: Record<string, number>;
+  rows?: number[];
+};
 
 /** One tile of a flowed grid: its row (and how many it spans, two only for
  * the "tall" short-row fill), and its left edge and width as fractions of the
@@ -252,32 +260,81 @@ export function flowLayout({
   return { rows: rows.length, tiles, leftLine, rightLine, edges };
 }
 
-/** `sizes` stretched or cut to `n` rows, the new ones at an even share. */
-export function flowRowSizes(
-  sizes: number[] | null | undefined,
-  n: number,
-): number[] {
-  return Array.from({ length: n }, (_, i) => sizes?.[i] ?? 1);
+/** A tile's height in px for a row `lines` tall, and back: the lines of the
+ * terminal plus the tile's title bar and border (`chrome`). */
+export function linesToPx(lines: number, cellH: number, chrome: number): number {
+  return Math.round(lines * cellH) + chrome;
+}
+export function pxToLines(px: number, cellH: number, chrome: number): number {
+  return Math.max(Math.round(((px - chrome) / cellH) * 100) / 100, 1);
+}
+
+/**
+ * The grid's rows, as `grid-template-rows`.
+ *
+ * With nothing dragged the rows share the pane, none shorter than `minPx`, and
+ * scroll once they would be (`rows`, from an older template, share it
+ * unevenly). With `heightsPx`:
+ *  - `fit`: the heights are proportions of the pane, so the rows always fill
+ *    it and dragging one line trades height between two rows;
+ *  - otherwise each row is as tall as it says, and the grid scrolls when they
+ *    are taller than the pane. A row with no height yet gets `evenPx`, an
+ *    even share of the pane.
+ * A row with no height of its own is never shorter than `newMinPx` (Settings
+ * -> Grid's minimum tile height): only a row someone dragged may go under it,
+ * down to `minPx`.
+ */
+export function flowRowTracks({
+  n,
+  heightsPx,
+  rows,
+  fit,
+  minPx,
+  newMinPx = minPx,
+  evenPx,
+}: {
+  n: number;
+  heightsPx: number[];
+  rows?: number[] | null;
+  fit: boolean;
+  minPx: number;
+  newMinPx?: number;
+  evenPx: number;
+}): string {
+  const track = (i: number) => {
+    if (heightsPx.length > 0) {
+      const h = heightsPx[i];
+      const floor = h === undefined ? Math.max(minPx, newMinPx) : minPx;
+      if (!fit) return `${Math.round(Math.max(h ?? evenPx, floor))}px`;
+      const known = heightsPx.reduce((a, b) => a + b, 0) / heightsPx.length;
+      return `minmax(${Math.round(floor)}px, ${Math.round(h ?? known)}fr)`;
+    }
+    return `minmax(${minPx}px, ${rows?.[i] ?? 1}fr)`;
+  };
+  return Array.from({ length: n }, (_, i) => track(i)).join(" ");
 }
 
 /** The grid's tracks for a flow: a column between each pair of neighbouring
- * edges, and the rows at `rowSizes`, none shorter than `rowMin`. The columns
- * are in hundredths so they sum to 100, because `fr` values that sum to under
- * 1 leave part of the grid unused. */
-export function flowGridStyle(
-  flow: Flow,
-  rowSizes: number[] | null | undefined,
-  rowMin: string,
-): React.CSSProperties {
+ * edges, and the rows `flowRowTracks` worked out. The columns are in
+ * hundredths so they sum to 100, because `fr` values that sum to under 1
+ * leave part of the grid unused. */
+export function flowGridStyle(flow: Flow, rowTracks: string): React.CSSProperties {
   const cols = flow.edges
     .slice(1)
     .map((e, i) => Math.round((e - flow.edges[i]!) * 100000) / 1000);
   return {
     gridTemplateColumns: cols.map((f) => `minmax(0, ${f}fr)`).join(" "),
-    gridTemplateRows: flowRowSizes(rowSizes, flow.rows)
-      .map((f) => `minmax(${rowMin}, ${f}fr)`)
-      .join(" "),
+    gridTemplateRows: rowTracks,
   };
+}
+
+/** The real height of a tile's title bar. Also not a constant: the header is
+ * `py-1` plus a `text-sm` line box plus 3px of border, all of which scale with
+ * the app font, so a hard-coded 30 was only ever right at a 16px app font (this
+ * returns 31 there, and 38 at 20px). Zero when the titles are hidden, because
+ * then there is no header to make room for. */
+export function gridHeaderH(appFontSize: number, hidden: boolean): number {
+  return hidden ? 0 : Math.round(1.75 * appFontSize) + 3;
 }
 
 /** Where the tile in `slot` sits in the grid `flowGridStyle` makes. */
@@ -299,13 +356,6 @@ export function flowPlace(flow: Flow, slot: number): React.CSSProperties {
   };
 }
 
-/** Scale a list of sizes so they average 1: the same proportions, in numbers
- * that read as `fr` and stay small whatever pixel sizes they came from. */
-export function normalizeTracks(sizes: number[]): number[] {
-  const sum = sizes.reduce((a, b) => a + b, 0);
-  if (!(sum > 0)) return sizes.map(() => 1);
-  return sizes.map((s) => Math.round(((s * sizes.length) / sum) * 1000) / 1000);
-}
 /**
  * The tracks for the **default** (nothing pinned) grid.
  *

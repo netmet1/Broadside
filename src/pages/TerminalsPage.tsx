@@ -110,6 +110,8 @@ import {
 import {
   GRID_FLOOR_COLS,
   TILE_BORDER_X,
+  TILE_BORDER_Y,
+  pxToLines,
   type GridSizes,
 } from "@/lib/gridShape";
 import { useLauncherTemplates } from "@/pages/terminals/useLauncherTemplates";
@@ -939,6 +941,7 @@ export function TerminalsPage({
     flow,
     slotIds,
     minWidth,
+    fitRows,
     cell,
     headerH,
     splitMinH,
@@ -1011,13 +1014,19 @@ export function TerminalsPage({
   });
   // Unlocked, the edges between tiles are lines to drag instead, and the sizes
   // belong to the workspace on screen. See ./terminals/useGridSplitters.
+  // Every row's height, in lines. A drag replaces any relative heights a
+  // template from before rows had heights brought.
   const onRows = useCallback(
-    (rows: number[]) =>
+    (heights: number[]) =>
       onSetWorkspaceSizes(activeWorkspaceId, (prev) => ({
-        rows,
+        heights,
         widths: prev?.widths ?? {},
       })),
     [onSetWorkspaceSizes, activeWorkspaceId],
+  );
+  const toLines = useCallback(
+    (px: number) => pxToLines(px, cell.cellH, headerH + TILE_BORDER_Y),
+    [cell, headerH],
   );
   // Widths are kept by tab. A closed tab's width goes when the next one is
   // set, so the map holds this workspace's open tabs and nothing else.
@@ -1035,17 +1044,23 @@ export function TerminalsPage({
           if (w == null) delete widths[id];
           else widths[id] = w;
         }
-        return { rows: prev?.rows ?? [], widths };
+        return { ...prev, heights: prev?.heights ?? [], widths };
       }),
     [onSetWorkspaceSizes, activeWorkspaceId, sessions, slotIds],
   );
-  const { dragging: draggingLine, begin: beginSplit } = useGridSplitters({
+  const {
+    dragging: draggingLine,
+    begin: beginSplit,
+    gapProps: splitGapProps,
+  } = useGridSplitters({
     gridRef: gridScrollRef,
     flow,
     cell,
     minRowPx: splitMinH,
     minColPx: Math.round(GRID_FLOOR_COLS * cell.cellW) + TILE_BORDER_X,
     minWidth,
+    fitRows,
+    toLines,
     onRows,
     onWidths,
   });
@@ -3329,6 +3344,7 @@ export function TerminalsPage({
           !customGrid && gridMode && gridCount > 2 && "grid gap-2 overflow-auto",
         )}
         style={gridStyle}
+        {...splitGapProps}
       >
         {/* Every tile hidden but terminals still open: say so, or the grid
             reads as broken. The way out is offered here rather than only
@@ -3648,6 +3664,7 @@ export function TerminalsPage({
                   rows={flow.rows}
                   left={flow.leftLine[gridSlot.get(s.id) ?? 0] ?? null}
                   right={flow.rightLine[gridSlot.get(s.id) ?? 0] ?? null}
+                  fitRows={fitRows}
                   onBegin={beginSplit}
                 />
               )}

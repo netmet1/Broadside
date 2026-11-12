@@ -47,6 +47,7 @@ import { useRailFilter } from "@/lib/useRailFilter";
 import { cn } from "@/lib/utils";
 import { HELP_TEMPLATES, type HelpSectionId } from "@/pages/help/sections";
 import { TemplateCanvas } from "@/pages/templates/TemplateCanvas";
+import { layoutAfterItems } from "@/pages/terminals/gridTemplate";
 import { TemplateListView } from "@/pages/templates/TemplateListView";
 import { TemplateRail } from "@/pages/templates/TemplateRail";
 import { TemplateTopBar } from "@/pages/templates/TemplateTopBar";
@@ -380,18 +381,42 @@ export function TemplatesPage({
     setDraft((d) => {
       if (!d || d.items.length >= MAX_TEMPLATE_ITEMS) return d;
       const items = [...d.items];
-      items.splice(Math.min(index, items.length), 0, item);
-      return { ...d, items };
+      const at = Math.min(index, items.length);
+      items.splice(at, 0, item);
+      // Each width stays with its session (see layoutAfterItems).
+      const layout = layoutAfterItems(d.layout, d.items.length, (w) => {
+        w.splice(at, 0, 0);
+        return w;
+      });
+      return { ...d, items, layout };
     });
   }, []);
 
   const move = useCallback((from: number, to: number) => {
-    setDraft((d) => (d ? { ...d, items: moveItem(d.items, from, to) } : d));
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            items: moveItem(d.items, from, to),
+            layout: layoutAfterItems(d.layout, d.items.length, (w) =>
+              moveItem(w, from, to),
+            ),
+          }
+        : d,
+    );
   }, []);
 
   const remove = useCallback((index: number) => {
     setDraft((d) =>
-      d ? { ...d, items: d.items.filter((_, i) => i !== index) } : d,
+      d
+        ? {
+            ...d,
+            items: d.items.filter((_, i) => i !== index),
+            layout: layoutAfterItems(d.layout, d.items.length, (w) =>
+              w.filter((_, i) => i !== index),
+            ),
+          }
+        : d,
     );
   }, []);
 
@@ -791,6 +816,7 @@ export function TemplatesPage({
           onOpenGridSettings={onOpenGridSettings}
           visible={visible}
           layout={draft.layout}
+          onLayout={(layout) => setDraft((d) => (d ? { ...d, layout } : d))}
           onForgetLayout={() =>
             setDraft((d) => (d ? { ...d, layout: null } : d))
           }

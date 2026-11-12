@@ -108,7 +108,7 @@ export function StartupSection({
         ) : (
           <p className="text-xs text-muted-foreground">
             Applies the next time Broadside starts; no Save needed. Reset puts
-            it back to Hosts.
+            it back to Library.
           </p>
         )}
       </div>
