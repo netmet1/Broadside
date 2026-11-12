@@ -873,6 +873,19 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
     const contextMenuEl = containerRef.current;
     contextMenuEl?.addEventListener("contextmenu", onContextMenu);
 
+    // Control-click is a Mac's right-click, but it arrives as a left-button
+    // mousedown first, and xterm takes that as the start of a new selection
+    // and clears the old one before the `contextmenu` above fires. So with
+    // something selected it is kept from xterm, and the click copies it as a
+    // real right-click does.
+    const onCtrlClick = (e: MouseEvent) => {
+      if (e.button === 0 && e.ctrlKey && term.hasSelection()) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    if (IS_MAC) contextMenuEl?.addEventListener("mousedown", onCtrlClick, true);
+
     // ⌘C and ⌘V on a Mac. They are not keys the terminal sees: macOS sends
     // them to the menu bar's Edit → Copy / Paste, which fire `copy` and
     // `paste` events at the focused element, xterm's hidden textarea. Caught on
@@ -1006,6 +1019,7 @@ export const TerminalView = forwardRef<TerminalSearchHandle, Props>(
       io.disconnect();
       contextMenuEl?.removeEventListener("contextmenu", onContextMenu);
       contextMenuEl?.removeEventListener("copy", onCopy, true);
+      contextMenuEl?.removeEventListener("mousedown", onCtrlClick, true);
       contextMenuEl?.removeEventListener("paste", onPaste, true);
       unlistenData.then((fn) => fn());
       unlistenClosed.then((fn) => fn());
