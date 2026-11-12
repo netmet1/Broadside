@@ -152,7 +152,7 @@ export function CustomTerminalsSection({ id }: { id: string }) {
     <section id={id} className="space-y-4">
       <SectionHeading
         title="Custom terminals"
-        hint={`Add your own terminal application (${IS_MAC ? (powershell ? "fish, PowerShell, or any other shell" : "fish, or any other shell") : "Git Bash, MSYS2, Cygwin"}) to the Terminals + launcher, alongside the shells Broadside detects, and choose the colour each kind of local tab wears.`}
+        hint={`Add your own terminal application (${IS_MAC ? "fish, or any other shell" : "Git Bash, MSYS2, Cygwin"}) to the Terminals + launcher, alongside the shells Broadside detects, and choose the colour each kind of local tab wears.`}
       />
 
       <div className="max-w-2xl space-y-3">

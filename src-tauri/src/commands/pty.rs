@@ -201,13 +201,13 @@ pub fn pty_resize(
 
 /// Lists the local shells available on this machine (PowerShell / pwsh / Command
 /// Prompt / installed WSL distros on Windows; zsh, bash and the rest of
-/// `/etc/shells` on macOS) for the "New local shell" launcher. Async and
+/// `/etc/shells`, and PowerShell while `pwsh` is installed, on macOS) for the "New local shell" launcher. Async and
 /// cached: detection spawns wsl.exe (seconds when the WSL service is cold), and
 /// running that inside a sync command blocked the main thread, freezing every
 /// other IPC call (the Settings-spinner stall) and the event loop itself.
 #[tauri::command]
 pub async fn list_local_shells() -> Vec<crate::local::LocalShell> {
-    crate::local::list_local_shells_cached().await
+    crate::local::list_local_shells().await
 }
 
 /// Whether PowerShell 7 is installed (always true on Windows). A Mac without

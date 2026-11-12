@@ -155,7 +155,7 @@ export function SettingsPage({
     parsedScrollback,
     syncFromSettings: syncAppearanceFromSettings,
     saveFontSizes,
-  } = useAppearance();
+  } = useAppearance(visible);
 
   // Opt-in admin lock (gates the sudo toggle, credential editing and Reset).
   // All lock/passcode/recovery state + handlers live in the hook, which loads
@@ -1003,7 +1003,7 @@ export function SettingsPage({
           hint={
             IS_MAC
               ? powershell
-                ? "One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / local shell (Unix) commands run on SSH hosts and local zsh or bash tabs; PowerShell commands run in a PowerShell custom terminal. Core shortcuts are built in; add, edit or delete your own."
+                ? "One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / local shell (Unix) commands run on SSH hosts and local zsh or bash tabs; PowerShell commands run in PowerShell tabs. Core shortcuts are built in; add, edit or delete your own."
                 : "One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / local shell (Unix) commands run on SSH hosts and local zsh or bash tabs. Core shortcuts are built in; add, edit or delete your own."
               : "One-click commands for the dropdown on the Broadcast and Terminals pages. Each shortcut is scoped: SSH / WSL (Linux) commands run on SSH hosts and WSL tabs; Command Prompt / PowerShell commands run on local Windows shells. Core shortcuts are built in; add, edit or delete your own."
           }
@@ -1139,7 +1139,7 @@ export function SettingsPage({
                 {powershell ? (
                   <>
                     {IS_MAC
-                      ? "SSH / local shell commands run on SSH hosts and local zsh or bash tabs; PowerShell commands run in a PowerShell custom terminal;"
+                      ? "SSH / local shell commands run on SSH hosts and local zsh or bash tabs; PowerShell commands run in PowerShell tabs;"
                       : "SSH / WSL commands run on SSH hosts and WSL tabs; Command Prompt / PowerShell commands run on local Windows shells;"}{" "}
                     Both runs in either of those (for example whoami). Serial console stands on
                     its own, and Both does not reach it: the far end of a console

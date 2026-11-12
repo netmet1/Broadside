@@ -26,7 +26,9 @@ import { MAX_TERMINAL_SCROLLBACK, useUiPrefs } from "@/lib/uiPrefs";
 /** Appearance section: terminal/app fonts, host-table column visibility and the
  * local-shell launcher list. Font inputs are seeded from the loaded settings
  * via `syncFromSettings` (called once in the page's load()). */
-export function useAppearance() {
+/** `visible` is whether Settings is on screen: the page stays mounted between
+ * visits, and the shell list is read again on each one. */
+export function useAppearance(visible: boolean) {
   const { prefs, apply: applyUiPrefs } = useUiPrefs();
 
   // The Hosts table's and the Profiles table's columns (Appearance): which are
@@ -41,9 +43,13 @@ export function useAppearance() {
 
   // Local-shell launcher visibility (Appearance). The detected shells plus the
   // user's hide list (stored by id); the Terminals "+" menu reads the same list.
+  // Read again each time Settings is shown, as the Terminals page does: on a
+  // Mac, PowerShell comes and goes with pwsh, and a tick box for a shell the
+  // launcher no longer lists is a setting for nothing.
   const [shells, setShells] = useState<LocalShell[]>([]);
   const [disabledShells, setDisabledShells] = useState<Set<string>>(new Set());
   useEffect(() => {
+    if (!visible) return;
     listLocalShells()
       .then((s) => {
         setShells(s);
@@ -52,7 +58,7 @@ export function useAppearance() {
       .catch(() => {
         // Non-fatal: the section just shows "no local shells detected".
       });
-  }, []);
+  }, [visible]);
   const toggleShell = (id: string, enabled: boolean) => {
     setDisabledShells((prev) => {
       const next = new Set(prev);
