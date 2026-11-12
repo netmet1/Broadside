@@ -241,7 +241,7 @@ fn validate(input: &TemplateInput) -> AppResult<()> {
     Ok(())
 }
 
-fn validate_item(item: &TemplateItem) -> AppResult<()> {
+pub(crate) fn validate_item(item: &TemplateItem) -> AppResult<()> {
     match item {
         TemplateItem::Host { reference, .. } => {
             if reference.hostname.trim().is_empty() {
@@ -404,7 +404,36 @@ fn unique_name(
     desired: &str,
     keep: Option<i64>,
 ) -> AppResult<String> {
-    if !name_taken(tx, desired, keep)? {
+    unique_name_in(tx, NamedTable::Templates, desired, keep)
+}
+
+/// The tables whose rows are told apart by name and numbered the same way. A
+/// closed set, so the table name put into the SQL below is never anything a
+/// caller passed in.
+#[derive(Clone, Copy)]
+pub(crate) enum NamedTable {
+    Templates,
+    Snapshots,
+}
+
+impl NamedTable {
+    fn table(self) -> &'static str {
+        match self {
+            NamedTable::Templates => "templates",
+            NamedTable::Snapshots => "snapshots",
+        }
+    }
+}
+
+/// [`unique_name`]'s rule, for any of the [`NamedTable`]s: a snapshot is
+/// listed by name beside the templates, and the same reasoning holds for it.
+pub(crate) fn unique_name_in(
+    tx: &rusqlite::Transaction<'_>,
+    table: NamedTable,
+    desired: &str,
+    keep: Option<i64>,
+) -> AppResult<String> {
+    if !name_taken(tx, table, desired, keep)? {
         return Ok(desired.to_string());
     }
     let stem = match desired.rsplit_once(' ') {
@@ -419,30 +448,32 @@ fn unique_name(
     };
     for n in 2..=999u32 {
         let candidate = format!("{stem} {n:02}");
-        if !name_taken(tx, &candidate, keep)? {
+        if !name_taken(tx, table, &candidate, keep)? {
             return Ok(candidate);
         }
     }
     Err(AppError::InvalidInput(format!(
-        "there are already too many templates called \"{stem}\"; give this one a different name"
+        "there are already too many {} called \"{stem}\"; give this one a different name",
+        table.table()
     )))
 }
 
-/// Is some *other* template already called this? NOCASE, because two names that
+/// Is some *other* row already called this? NOCASE, because two names that
 /// differ only in capitals are two names only the database can tell apart.
 fn name_taken(
     tx: &rusqlite::Transaction<'_>,
+    table: NamedTable,
     name: &str,
     keep: Option<i64>,
 ) -> AppResult<bool> {
     // `id IS NOT ?2` rather than `<>`: with no id to keep the bind is NULL, and
     // `id <> NULL` is NULL for every row, which would match nothing at all.
+    let sql = format!(
+        "SELECT 1 FROM {} WHERE name = ?1 COLLATE NOCASE AND id IS NOT ?2 LIMIT 1",
+        table.table()
+    );
     Ok(tx
-        .query_row(
-            "SELECT 1 FROM templates WHERE name = ?1 COLLATE NOCASE AND id IS NOT ?2 LIMIT 1",
-            params![name, keep],
-            |_| Ok(()),
-        )
+        .query_row(&sql, params![name, keep], |_| Ok(()))
         .optional()?
         .is_some())
 }

@@ -86,6 +86,7 @@ import {
   SaveIcon,
   Grid2x2Icon,
   LayersIcon,
+  CameraIcon,
   LayoutGridIcon,
   ListFilterIcon,
   ListIcon,
@@ -178,6 +179,8 @@ export function TerminalRail({
   onDisconnectAll,
   onCloseAll,
   onNewWorkspace,
+  onSaveSnapshot,
+  canSaveSnapshot,
   workspaceCount,
   allSessionCount,
   onCloseAllWorkspaces,
@@ -253,6 +256,9 @@ export function TerminalRail({
   /** Start an empty workspace and show it. Once there are two, the workspace
    * strip appears above the tabs. */
   onNewWorkspace: () => void;
+  /** Ask for a name and save every open workspace as a snapshot. */
+  onSaveSnapshot: () => void;
+  canSaveSnapshot: boolean;
   /** How many workspaces there are, and how many tabs they hold between
    * them. At two or more workspaces the menu offers to close them all. */
   workspaceCount: number;
@@ -999,6 +1005,16 @@ export function TerminalRail({
               >
                 <LayersIcon />
                 New workspace
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={onSaveSnapshot}
+                disabled={!canSaveSnapshot}
+                {...hint(
+                  "Save every open workspace, with its tabs, names and grid sizes, under one name. Open it again from Library > Snapshots",
+                )}
+              >
+                <CameraIcon />
+                Save workspaces as snapshot…
               </DropdownMenuItem>
 
               {/* The bulk repairs, above the bulk destruction. Each is the way

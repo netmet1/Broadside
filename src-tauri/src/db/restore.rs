@@ -49,6 +49,9 @@
 //! - `templates`: an ordered list of sessions to open. A host item is a
 //!   reference that meets the same host-key check, and a profile item opens a
 //!   profile whose startup command was cleared below.
+//! - `snapshots`: several such lists, one per workspace, so the same holds.
+//!   Whether opening one connects anything at once is a preference kept in the
+//!   app's local storage, which a backup file never reaches.
 //! - `shell_profiles`: restored, but a profile's `startup_command` is typed into
 //!   a local shell on the next click with nothing guarding it, so every one is
 //!   emptied. A profile naming a custom local shell is re-pointed at
@@ -90,6 +93,7 @@ const TABLES_RESTORED: &[&str] = &[
     "omni_blocks",
     "skills",
     "templates",
+    "snapshots",
     "shell_profiles",
 ];
 

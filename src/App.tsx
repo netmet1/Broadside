@@ -36,6 +36,7 @@ import { HostsPage } from "@/pages/HostsPage";
 import { TemplatesPage, type TemplateFocus } from "@/pages/TemplatesPage";
 import {
   planTemplateLaunch,
+  termSessionsFor,
   type LaunchPlan,
   type LaunchSession,
 } from "@/pages/templates/launch";
@@ -91,6 +92,8 @@ import {
 import { onPtySudo, onPtySudoRejected } from "@/lib/tauri/pty";
 import { useWindowBlurredAttr } from "@/lib/windowFocus";
 import type { GridTracks } from "@/lib/gridShape";
+import { OpenSnapshotDialog, SaveSnapshotDialog } from "@/components/SnapshotDialogs";
+import { useSnapshots } from "@/pages/terminals/useSnapshots";
 
 function App() {
   // Let the stylesheet know when the window is not the one taking keys, so the
@@ -479,34 +482,13 @@ function App() {
       if (sessions.length === 0) return;
       let workspaceId = activeWorkspaceId;
       if (place === "new") {
-        workspaceId = createWorkspace(from?.name, from?.color, from?.layout);
+        workspaceId = createWorkspace(from?.name, from?.color, {
+          tracks: from?.layout,
+        });
       } else if (from) {
-        adoptIfBlank(from.name, from.color, from.layout);
+        adoptIfBlank(from.name, from.color, { tracks: from.layout });
       }
-      const made: TermSession[] = sessions.map((s) =>
-        s.type === "ssh"
-          ? {
-              id: crypto.randomUUID(),
-              type: "ssh" as const,
-              seq: nextSeq(),
-              workspaceId,
-              host: s.host,
-              startClosed: !connect,
-            }
-          : {
-              id: crypto.randomUUID(),
-              type: "local" as const,
-              seq: nextSeq(),
-              workspaceId,
-              shell: s.shell,
-              cwd: s.opts.cwd,
-              startupCommand: s.opts.startupCommand,
-              profileLabel: s.opts.profileLabel,
-              profileId: s.opts.profileId,
-              profileColor: s.opts.profileColor,
-              startClosed: !connect,
-            },
-      );
+      const made = termSessionsFor(sessions, workspaceId, connect, nextSeq);
       setSessions((prev) =>
         place === "front" ? [...made, ...prev] : [...prev, ...made],
       );
@@ -587,6 +569,38 @@ function App() {
     },
     [sessions, activeSessionId, removeEmptyWorkspace],
   );
+
+  // Workspace snapshots: save every open workspace, open them again as a set.
+  // See pages/terminals/useSnapshots.
+  const showTerminals = useCallback(() => setPage("terminals"), []);
+  const snaps = useSnapshots({
+    sessions,
+    setSessions,
+    setActiveSessionId,
+    showTerminals,
+    nextSeq,
+    workspaces: ws.workspaces,
+    activeWorkspaceId,
+    createWorkspace,
+    adoptIfBlank,
+  });
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const openSaveSnapshot = useCallback(() => setSavingSnapshot(true), []);
+  // Moves on every save, so Library's Snapshots list reads the new one even
+  // when the dialog was opened from the Terminals tab.
+  const [snapshotsVersion, setSnapshotsVersion] = useState(0);
+  const { saveNew: saveSnapshotNow } = snaps;
+  const saveSnapshot = useCallback(
+    async (name: string) => {
+      const ok = await saveSnapshotNow(name);
+      if (ok) setSnapshotsVersion((n) => n + 1);
+      return ok;
+    },
+    [saveSnapshotNow],
+  );
+  const snapshotWorkspaceCount = ws.workspaces.filter((w) =>
+    sessions.some((s) => s.workspaceId === w.id),
+  ).length;
 
   /**
    * Open saved profiles as local shell tabs: one from its row on the Hosts
@@ -1063,6 +1077,11 @@ function App() {
           openHostIds={openHostIds}
           onBrowseTemplates={browseTemplates}
           onOpenProfiles={openProfiles}
+          canSaveSnapshot={snaps.canSave}
+          onSaveSnapshot={openSaveSnapshot}
+          onOpenSnapshot={snaps.open}
+          onRetakeSnapshot={snaps.retake}
+          snapshotsVersion={snapshotsVersion}
           onOpenHelp={openHelpAt}
           startWithNewHost={newHostRequested}
           onNewHostConsumed={clearNewHostRequest}
@@ -1129,6 +1148,9 @@ function App() {
           onRenameWorkspace={ws.rename}
           onRecolorWorkspace={ws.recolor}
           onSetWorkspaceTracks={ws.setTracks}
+          onReleaseWorkspace={ws.release}
+          canSaveSnapshot={snaps.canSave}
+          onSaveSnapshot={openSaveSnapshot}
           onReorderWorkspace={ws.reorder}
           onCloseWorkspace={closeWorkspace}
           onMoveToWorkspace={moveToWorkspace}
@@ -1406,6 +1428,17 @@ function App() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        <SaveSnapshotDialog
+          open={savingSnapshot}
+          onOpenChange={setSavingSnapshot}
+          workspaces={snapshotWorkspaceCount}
+          tabs={sessions.length}
+          onSave={saveSnapshot}
+        />
+        <OpenSnapshotDialog
+          pending={snaps.pending}
+          onResolve={snaps.resolvePending}
+        />
         <Toaster />
         <ToastRecorder />
       </AppShell>

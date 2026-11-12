@@ -20,6 +20,7 @@ import {
   SearchIcon,
   ServerIcon,
   SquareTerminalIcon,
+  CameraIcon,
   TagIcon,
   TerminalIcon,
   Trash2Icon,
@@ -98,6 +99,9 @@ import { RowGrip } from "@/components/RowGrip";
 import { useColumnResize } from "@/pages/hosts/useColumnResize";
 import { useHostTagFilter } from "@/pages/hosts/useHostTagFilter";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
+import { SnapshotsView } from "@/pages/hosts/SnapshotsView";
+import { useSnapshotList } from "@/pages/hosts/useSnapshotList";
+import type { Snapshot } from "@/lib/tauri/snapshots";
 import { ProfilesView } from "@/pages/hosts/ProfilesView";
 import { ShellProfileDialog } from "@/components/ShellProfileDialog";
 import { ShellProfileImportDialog } from "@/components/ShellProfileImportDialog";
@@ -130,6 +134,11 @@ export function HostsPage({
   onOpenHelp,
   startWithNewHost = false,
   onNewHostConsumed,
+  canSaveSnapshot,
+  onSaveSnapshot,
+  onOpenSnapshot,
+  onRetakeSnapshot,
+  snapshotsVersion,
 }: {
   onOpenTerminal: (host: Host) => void;
   /** Open terminal tabs for several hosts at once (multi-select). */
@@ -151,6 +160,15 @@ export function HostsPage({
    * Hosts section). One-shot: cleared by the caller once taken. */
   startWithNewHost?: boolean;
   onNewHostConsumed?: () => void;
+  /** Something is open that a snapshot can hold. */
+  canSaveSnapshot: boolean;
+  /** Ask for a name and save every open workspace as a snapshot. */
+  onSaveSnapshot: () => void;
+  onOpenSnapshot: (s: Snapshot) => void;
+  /** Take a snapshot again from what is open; resolves true once done. */
+  onRetakeSnapshot: (s: Snapshot) => Promise<boolean>;
+  /** Bumped by App whenever a snapshot is saved, so the list reads it. */
+  snapshotsVersion: number;
 }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,6 +177,11 @@ export function HostsPage({
   // of the same switch on every launch. Templates sits between them in the
   // switch but is a way to the Templates tab's List, not a side of this page.
   const [side, setSide] = useState<HostsSide>(loadHostsSide);
+  const {
+    snapshots,
+    loading: snapshotsLoading,
+    reload: reloadSnapshots,
+  } = useSnapshotList(snapshotsVersion);
   const chooseSide = useCallback(
     (next: HostsSide | "templates") => {
       if (next === "templates") {
@@ -798,7 +821,13 @@ export function HostsPage({
   };
 
   usePageStatus(
-    side === "profiles"
+    side === "snapshots"
+      ? snapshotsLoading
+        ? null
+        : `Showing ${snapshots.length} ${
+            snapshots.length === 1 ? "snapshot" : "snapshots"
+          }`
+      : side === "profiles"
       ? profilesLoading
         ? null
         : profileSelection.size > 0
@@ -1050,10 +1079,32 @@ export function HostsPage({
                 icon: SquareTerminalIcon,
                 hint: "Saved local-shell launch profiles: a shell, a folder and an optional startup command. Open one from its row, or tick several and open them together.",
               },
+              {
+                value: "snapshots",
+                label: "Snapshots",
+                icon: CameraIcon,
+                hint: "Every workspace you had open, saved under one name. Open one to get them all back.",
+              },
             ]}
           />
         </div>
-        {side === "profiles" ? (
+        {side === "snapshots" ? (
+          <div className="flex shrink-0 gap-2">
+            <Button
+              onClick={onSaveSnapshot}
+              disabled={!canSaveSnapshot}
+              aria-label="Save open workspaces"
+              {...hint(
+                canSaveSnapshot
+                  ? "Save every open workspace, with its tabs, names and grid sizes, as a snapshot"
+                  : "Nothing is open on the Terminals tab to save. Open some workspaces first",
+              )}
+            >
+              <CameraIcon />
+              {!compact && "Save open workspaces"}
+            </Button>
+          </div>
+        ) : side === "profiles" ? (
           <div className="flex shrink-0 gap-2">
             {/* The same button the Hosts side has, doing the same thing to the
                 same kind of list: open every ticked one at once. A profile is
@@ -1245,7 +1296,32 @@ export function HostsPage({
         )}
       </div>
 
-      {side === "profiles" ? (
+      {side === "snapshots" ? (
+        snapshotsLoading || snapshots.length > 0 ? (
+          <SnapshotsView
+            snapshots={snapshots}
+            loading={snapshotsLoading}
+            canRetake={canSaveSnapshot}
+            onOpen={onOpenSnapshot}
+            onRetake={onRetakeSnapshot}
+            onChanged={reloadSnapshots}
+          />
+        ) : (
+          <EmptyState
+            icon={CameraIcon}
+            title="Snapshots"
+            actionLabel="Save open workspaces"
+            onAction={() => {
+              if (canSaveSnapshot) onSaveSnapshot();
+              else toast.info("Open some terminals on the Terminals tab first, then save them here.");
+            }}
+            actionHint="Save every open workspace, with its tabs, names and grid sizes, as a snapshot"
+            description="A snapshot keeps every workspace you have open, with its tabs, name, colour and grid sizes. Open it later to get them all back at once."
+            helpSection={HELP_TERMINALS}
+            onOpenHelp={onOpenHelp}
+          />
+        )
+      ) : side === "profiles" ? (
         profilesLoading || profiles.length > 0 ? (
           <ProfilesView
             profiles={profiles}

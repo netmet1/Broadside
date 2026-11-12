@@ -24,7 +24,10 @@ import type { ShellProfile } from "@/lib/localShellProfiles";
 import type { TemplateItem } from "@/lib/tauri/templates";
 import { resolveItem } from "@/pages/templates/items";
 import { loadShellColors } from "@/lib/terminalColors";
-import type { LocalShellOpenOpts } from "@/pages/terminals/session";
+import type {
+  LocalShellOpenOpts,
+  TermSession,
+} from "@/pages/terminals/session";
 
 export type LaunchSession =
   | { type: "ssh"; host: Host }
@@ -38,6 +41,41 @@ export type LaunchPlan = {
    * say so, which is more use than refusing the lot. */
   skipped: string[];
 };
+
+/** The tabs a plan's sessions become, in `workspaceId`. `connect` false makes
+ * every pane mount onto its Reconnect button instead of opening a shell. The
+ * one place a launched session is built, for a template and a snapshot alike. */
+export function termSessionsFor(
+  sessions: LaunchSession[],
+  workspaceId: string,
+  connect: boolean,
+  nextSeq: () => number,
+): TermSession[] {
+  return sessions.map((s) =>
+    s.type === "ssh"
+      ? {
+          id: crypto.randomUUID(),
+          type: "ssh" as const,
+          seq: nextSeq(),
+          workspaceId,
+          host: s.host,
+          startClosed: !connect,
+        }
+      : {
+          id: crypto.randomUUID(),
+          type: "local" as const,
+          seq: nextSeq(),
+          workspaceId,
+          shell: s.shell,
+          cwd: s.opts.cwd,
+          startupCommand: s.opts.startupCommand,
+          profileLabel: s.opts.profileLabel,
+          profileId: s.opts.profileId,
+          profileColor: s.opts.profileColor,
+          startClosed: !connect,
+        },
+  );
+}
 
 export async function planTemplateLaunch(
   items: TemplateItem[],

@@ -9,8 +9,9 @@
  *
  * `profiles` joined the switch in build 69. `templates` was a side until
  * prompts135 moved that list to the Templates tab; Library's Templates button
- * now goes there instead. */
-export type HostsSide = "hosts" | "profiles";
+ * now goes there instead. `snapshots` (prompts135) lists saved sets of
+ * workspaces. */
+export type HostsSide = "hosts" | "profiles" | "snapshots";
 
 const SIDE_KEY = "hosts-side";
 
@@ -19,7 +20,7 @@ const SIDE_KEY = "hosts-side";
  * page showing nothing. */
 export function loadHostsSide(): HostsSide {
   const saved = localStorage.getItem(SIDE_KEY);
-  return saved === "profiles" ? saved : "hosts";
+  return saved === "profiles" || saved === "snapshots" ? saved : "hosts";
 }
 
 export function rememberHostsSide(side: HostsSide): void {

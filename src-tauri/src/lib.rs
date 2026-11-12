@@ -362,6 +362,11 @@ pub fn run() {
             commands::templates::delete_template,
             commands::templates::export_template,
             commands::templates::read_template_file,
+            commands::snapshots::list_snapshots,
+            commands::snapshots::create_snapshot,
+            commands::snapshots::update_snapshot,
+            commands::snapshots::rename_snapshot,
+            commands::snapshots::delete_snapshot,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
